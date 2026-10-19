@@ -53,6 +53,17 @@ Versions (every public function takes `version`; the default is the current one)
       - known partial floor: latest keeps 5 people (55 move sentences fit the 1k exam), so a reader
         that tracks moves but ignores whose they are scores 1 in 5; whose-fact reading is what
         lookup and keyed test (12 and 16 candidates).
+  v2.1  exams added on top of v2, nothing existing changed (protocol review 2026-10-13; v2 training documents
+      and the id / harder / paraphrase exams stay byte-identical). Built with `version="v2"`; their records
+      say `text-world-v2.1`:
+      - `crowded`: quote, lookup and keyed with every fact of the document packed into a 1,024-token band
+        around the asked fact, so a long document is as crowded as a 1k one (v2 spreads the facts out as
+        the document grows, which changes the difficulty for a model that summarises chunks);
+      - `paraphrase2`: three more sentence shapes per relation that training never uses (v2's paraphrase
+        split has one);
+      - `steps`: one-step compose ("Where does the teacher of Lumo live?") and one-step deduce ("Pim is a
+        wump. Every wump is shiny."), in-distribution for training, to show partial progress on the two
+        tasks that showed none at two steps.
 
 Text-level only: no tokenizer here. Lengths are measured with a caller-supplied `ntok`
 (token counter) so the builder can target exact token lengths with the frozen tokenizer.
@@ -62,11 +73,16 @@ from __future__ import annotations
 import random
 import re
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 TEXT_WORLD_VERSION = "text-world-v2"
 VERSIONS = ("v0", "v1", "v2")
+# v2.1: exam splits added to v2 (eval only; see the module docstring)
+ADDED_SPLITS = {"crowded": ("quote", "lookup", "keyed"),
+                "paraphrase2": ("quote", "lookup", "keyed", "latest", "compose", "count"),
+                "steps": ("compose", "deduce")}
+CROWD_TOKENS = 1024   # crowded: every fact within this many tokens around the asked fact
 
 
 def _v(version: str) -> int:
@@ -151,6 +167,8 @@ EVAL_DIALS_V2 = {"quote": {"signs": 12}, "lookup": {"cast": 12}, "keyed": {"cast
 HARDER_DIALS_V2 = {"quote": {"signs": 24}, "lookup": {"cast": 16}, "keyed": {"cast": 64},
                    "latest": {"moves": 16, "cast": 8}, "compose": {"hops": 3, "cast": 16},
                    "count": {"cast": 8}, "deduce": {"depth": 3, "cast": 12}}
+# v2.1 `steps` split: one step of the two multi-step tasks (other dials as the id split)
+STEPS_DIALS_V2 = {"compose": {"hops": 1}, "deduce": {"depth": 1}}
 
 # Sentence templates per relation. The last template of each relation is held out of training
 # (the "paraphrase" split); the others are used for training and the ID split.
@@ -178,6 +196,18 @@ TEMPLATES = {
               "In the morning {p} visited {v}.", "{p} paid a visit to {v}."],
 }
 
+# v2.1 `paraphrase2` split: three more sentence shapes per relation, never used in training or in the v2
+# paraphrase split (relations the v2 exams use; others fall back to their one held-out shape)
+HELDOUT_TEMPLATES_2 = {
+    "home": ["{p2} house was in {v}.", "In {v} lived a person named {p}.", "{p} spent every day at home in {v}."],
+    "move": ["Some time later, {p} left for a new home in {v}.", "{p} said goodbye and settled in {v}.",
+             "The next home of {p} was {v}."],
+    "sign": ["Written on a board by {p2} door were the words: {v}.", "{p} wrote these words on a sign: {v}.",
+             "Everyone could read {p2} sign: {v}."],
+    "teacher": ["{q} gave lessons to {p}.", "The person who taught {p} was {q}.", "{p} was a student of {q}."],
+    "visit": ["{p} stopped by {v}.", "{p} made a trip to {v}.", "{p} dropped in at {v}."],
+}
+
 QUESTIONS = {
     "quote": "What did the sign of {p} say?",
     "lookup": "Where does {p} live?",
@@ -192,6 +222,11 @@ QUESTIONS = {
     "count": "How many times did {p} visit {v}?",
     "deduce": "Is {p} {v}?",
     "deduce2": "What is {p} like?",
+    # bridge questions (training only, `make_train_document(bridge=…)`)
+    "bridge_teacher": "Who is the teacher of {p}?",
+    "bridge_isa": "What is {p}?",
+    "bridge_cat": "What is a {p}?",
+    "bridge_prop": "What is a {p} like?",
 }
 
 
@@ -324,11 +359,23 @@ class WorldItem:
     # v1: (question, answer) about every cast member of the same world, the asked one first. Training
     # documents may end with several of them (more answer signal per document); never serialized.
     qa: list = field(default_factory=list)
+    # Bridge questions (training only, off by default): the single facts a multi-step answer chains through,
+    # asked on their own — compose "Who is the teacher of Lumo?" → "Pim"; deduce "What is Pim?" → "a wump",
+    # "What is a wump like?" → "shiny". Exams never use them; never serialized. Drawing them uses no random
+    # numbers, so the document itself is unchanged.
+    bridge: list = field(default_factory=list)
+    # Read targets (training only, 2026-10-17): question → (index into `facts`, that hop's output word) for every fact
+    # its answer chains through, in hop order (compose: teacher facts, output the teacher, then the home, output the
+    # place; deduce: the class fact, the class links, the property). Drawing them uses no random numbers; never
+    # serialized.
+    steps: dict = field(default_factory=dict)
 
 
 def _tmpl(rng: random.Random, rel: str, split: str, **kw) -> str:
     pool = TEMPLATES[rel]
-    if split == "paraphrase":
+    if split == "paraphrase2" and rel in HELDOUT_TEMPLATES_2:
+        t = rng.choice(HELDOUT_TEMPLATES_2[rel])
+    elif split in ("paraphrase", "paraphrase2"):
         t = pool[-1]
     else:
         t = rng.choice(pool[:-1])
@@ -340,6 +387,8 @@ def _dial(task: str, split: str, rng: random.Random, key: str, version: str = "v
     v2 = _v(version) >= 2
     if split == "harder":
         return (HARDER_DIALS_V2 if v2 else HARDER_DIALS)[task][key]
+    if split == "steps" and key in STEPS_DIALS_V2.get(task, {}):
+        return STEPS_DIALS_V2[task][key]
     if split == "train":
         lo, hi = (ID_DIALS_V2 if v2 else ID_DIALS)[task][key]
         return rng.randint(lo, hi)
@@ -353,7 +402,7 @@ def _latest_v1(rng, tsplit, k, n, cast, letters: bool = False) -> WorldItem:
     places = (sample_places(rng, n * (k + 1), distinct_letters=k + 1) if letters
               else sample_places(rng, n * (k + 1), distinct_first=True))
     facts, target = [], places[: k + 1]
-    last, qa = {}, []
+    last, qa, steps = {}, [], {}
     for i, c in enumerate(cast):
         mine = places[i * (k + 1): (i + 1) * (k + 1)]
         qa.append((QUESTIONS["latest"].format(p=c), mine[-1]))
@@ -361,11 +410,13 @@ def _latest_v1(rng, tsplit, k, n, cast, letters: bool = False) -> WorldItem:
         facts.append(Fact(_tmpl(rng, "home", tsplit, p=c, v=mine[0]), evidence=(i == 0), order=rng.uniform(0.0, 0.15)))
         facts += [Fact(_tmpl(rng, "move", tsplit, p=c, v=v), evidence=(i == 0), order=o) for v, o in zip(mine[1:], pos)]
         last[i] = (len(facts) - 1, pos[-1])
+        # the read target / hop naming (text multi-hop, 18 Oct): the one fact that answers is the person's LAST move
+        steps[QUESTIONS["latest"].format(p=c)] = [(len(facts) - 1, mine[-1])] if k > 0 else [(len(facts) - 1, mine[0])]
     if n > 1 and k > 0 and all(last[i][1] < last[0][1] for i in range(1, n)):
         j = rng.randrange(1, n)
         facts[last[j][0]].order = rng.uniform(last[0][1], 0.97)
     return WorldItem("latest", QUESTIONS["latest"].format(p=cast[0]), target[-1], list(reversed(target)),
-                     1.0 / (k + 1), facts, cast, meta={"moves": k}, qa=qa)
+                     1.0 / (k + 1), facts, cast, meta={"moves": k}, qa=qa, steps=steps)
 
 
 def _compose_v1(rng, tsplit, hops, n, cast, letters: bool = False) -> WorldItem:
@@ -392,8 +443,23 @@ def _compose_v1(rng, tsplit, hops, n, cast, letters: bool = False) -> WorldItem:
         for _ in range(hops):
             j = teacher[j]
         qa.append((QUESTIONS[f"teach{hops}"].format(p=cast[i]), places[j]))
+    bridge = [(QUESTIONS["bridge_teacher"].format(p=cast[i]), cast[teacher[i]]) for i in range(n)]
+    steps = {}  # facts[2i] = cast[i]'s teacher, facts[2i + 1] = cast[i]'s home
+    for i in range(n):
+        j, idx = i, []
+        for _ in range(hops):
+            idx.append((2 * j, cast[teacher[j]]))
+            j = teacher[j]
+        steps[QUESTIONS[f"teach{hops}"].format(p=cast[i])] = idx + [(2 * j + 1, places[j])]
+        steps[QUESTIONS["bridge_teacher"].format(p=cast[i])] = [(2 * i, cast[teacher[i]])]
     return WorldItem("compose", QUESTIONS[f"teach{hops}"].format(p=cast[0]), ans, cands, 1.0 / n, facts, cast,
-                     meta={"hops": hops}, qa=qa)
+                     meta={"hops": hops}, qa=qa, bridge=bridge, steps=steps)
+
+
+# Count supervision (18 Oct): a count question's visits carry this round base in the read targets — one quad
+# (pos, COUNT_ROUND, -1, -1) marks the question, one (pos, COUNT_ROUND + j, span) per visit j — so the training read
+# target and hop naming (rounds 1-4) ignore them and a count head can be told the true number.
+COUNT_ROUND = 100
 
 
 def _count_v1(rng, tsplit, cast, where, k, numbers: tuple = tuple(NUMBER_WORDS)) -> WorldItem:
@@ -402,15 +468,20 @@ def _count_v1(rng, tsplit, cast, where, k, numbers: tuple = tuple(NUMBER_WORDS))
     NUMBER_WORDS = list(numbers)  # noqa: N806  (v2 passes the 0-10 list)
     others = [p for p in VISIT_PLACES if p != where]
     facts = [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=where), evidence=True) for _ in range(k)]
+    # count supervision (18 Oct): the visits that answer, marked COUNT_ROUND (+1, +2 …) so read targets and hop naming
+    # (rounds 1-4) leave them alone; an empty list still marks the question as a count with zero visits
+    steps = {QUESTIONS["count"].format(p=cast[0], v=where): [(j, where, COUNT_ROUND) for j in range(k)]}
     facts += [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=rng.choice(others))) for _ in range(rng.randint(1, 2))]
     qa = [(QUESTIONS["count"].format(p=cast[0], v=where), NUMBER_WORDS[k])]
     for c in cast[1:]:
         kc = rng.randrange(len(NUMBER_WORDS))
+        o = len(facts)
         facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=where)) for _ in range(kc)]
+        steps[QUESTIONS["count"].format(p=c, v=where)] = [(o + j, where, COUNT_ROUND) for j in range(kc)]
         facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=rng.choice(others))) for _ in range(rng.randint(0, 2))]
         qa.append((QUESTIONS["count"].format(p=c, v=where), NUMBER_WORDS[kc]))
     return WorldItem("count", QUESTIONS["count"].format(p=cast[0], v=where), NUMBER_WORDS[k], list(NUMBER_WORDS),
-                     1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k}, qa=qa)
+                     1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k}, qa=qa, steps=steps)
 
 
 def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
@@ -419,23 +490,36 @@ def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
     guessing rate is 1 / cast size and every other chain is a same-shaped decoy."""
     props = rng.sample(PROPERTIES_V2, n)
     cats = [w.lower() for w in sample_names(rng, n * depth, cat_split, taken=set(cast))]
-    facts, qa = [], []
+    facts, qa, bridge, steps = [], [], [], {}
     for i, c in enumerate(cast):
         chain = cats[i * depth:(i + 1) * depth]
         ev = i == 0
+        o = len(facts)  # this chain's facts: o (class), o + 1 … (links), o + depth (property)
+        outs = list(chain) + [props[i]]
+        steps[QUESTIONS["deduce2"].format(p=c)] = [(o + k, outs[k]) for k in range(depth + 1)]
+        steps[QUESTIONS["bridge_isa"].format(p=c)] = [(o, chain[0])]
+        for k, a in enumerate(chain[:-1]):
+            steps[QUESTIONS["bridge_cat"].format(p=a)] = [(o + 1 + k, chain[k + 1])]
+        steps[QUESTIONS["bridge_prop"].format(p=chain[-1])] = [(o + depth, props[i])]
         facts.append(Fact(f"{c} is a {chain[0]}.", evidence=ev))
         facts += [Fact(f"Every {a} is a {b}.", evidence=ev) for a, b in zip(chain, chain[1:])]
         facts.append(Fact(f"Every {chain[-1]} is {props[i]}.", evidence=ev))
         qa.append((QUESTIONS["deduce2"].format(p=c), props[i]))
+        bridge.append((QUESTIONS["bridge_isa"].format(p=c), f"a {chain[0]}"))
+        bridge += [(QUESTIONS["bridge_cat"].format(p=a), f"a {b}") for a, b in zip(chain, chain[1:])]
+        bridge.append((QUESTIONS["bridge_prop"].format(p=chain[-1]), props[i]))
     return WorldItem("deduce", QUESTIONS["deduce2"].format(p=cast[0]), props[0], list(props), 1.0 / n, facts, cast,
-                     meta={"depth": depth}, qa=qa)
+                     meta={"depth": depth}, qa=qa, bridge=bridge, steps=steps)
 
 
 def build_item(task: str, rng: random.Random, split: str = "train", version: str = TEXT_WORLD_VERSION) -> WorldItem:
-    """One question about a fresh world. `split` ∈ train | id | harder | paraphrase."""
+    """One question about a fresh world. `split` ∈ train | id | harder | paraphrase, and from v2 the added exam
+    splits crowded | paraphrase2 | steps (v2.1)."""
     v1 = _v(version) >= 1
     v2 = _v(version) >= 2
-    tsplit = "paraphrase" if split == "paraphrase" else ("train" if split == "train" else "id")
+    if split in ADDED_SPLITS and not v2:
+        raise ValueError(f"split {split!r} exists from text-world-v2.1 (version v2), not {version!r}")
+    tsplit = split if split in ("paraphrase", "paraphrase2") else ("train" if split == "train" else "id")
     names_split = "train" if split == "train" else "eval"
     if task == "quote":
         n = _dial(task, split, rng, "signs", version)
@@ -451,7 +535,8 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
                     break
         facts = [Fact(_tmpl(rng, "sign", tsplit, p=c, v=s), evidence=(i == 0)) for i, (c, s) in enumerate(zip(cast, signs))]
         qa = [(QUESTIONS["quote"].format(p=c), x) for c, x in zip(cast, signs)] if v1 else []
-        return WorldItem(task, QUESTIONS["quote"].format(p=cast[0]), signs[0], signs, 1.0 / n, facts, cast, qa=qa)
+        return WorldItem(task, QUESTIONS["quote"].format(p=cast[0]), signs[0], signs, 1.0 / n, facts, cast, qa=qa,
+                         steps={QUESTIONS["quote"].format(p=c): [(i, x)] for i, (c, x) in enumerate(zip(cast, signs))})
 
     if task in ("lookup", "keyed"):
         n = _dial(task, split, rng, "cast", version)
@@ -465,7 +550,8 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
         # keyed, and lookup from v1: every person's home is stated (lookup: few people, no look-alikes)
         facts = [Fact(_tmpl(rng, "home", tsplit, p=c, v=v), evidence=(i == 0)) for i, (c, v) in enumerate(zip(cast, places))]
         qa = [(QUESTIONS[task].format(p=c), v) for c, v in zip(cast, places)] if v1 else []
-        return WorldItem(task, QUESTIONS[task].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast, qa=qa)
+        return WorldItem(task, QUESTIONS[task].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast, qa=qa,
+                         steps={QUESTIONS[task].format(p=c): [(i, v)] for i, (c, v) in enumerate(zip(cast, places))})
 
     if task == "latest":
         k = _dial(task, split, rng, "moves", version)
@@ -567,13 +653,15 @@ def qa_suffix(question: str) -> str:
 
 def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Callable[[str], int],
              rng: random.Random, depth: Optional[float] = None, remove_evidence: bool = False,
-             filler_seed: Optional[int] = None, version: str = TEXT_WORLD_VERSION) -> tuple[str, dict]:
+             filler_seed: Optional[int] = None, version: str = TEXT_WORLD_VERSION,
+             cluster_tokens: Optional[int] = None) -> tuple[str, dict]:
     """Return (prompt text ending in 'Answer:', info). The prompt plus ' <answer>.' is about
     `target_tokens` tokens. `depth` ∈ [0,1] places the single evidence fact (tasks whose
     evidence is one sentence); `remove_evidence` swaps evidence sentences for filler sentences.
 
     `filler_seed` fixes the filler draw so an item and its evidence-removed twin share the
-    same filler stories in the same places."""
+    same filler stories in the same places. `cluster_tokens` (v2.1 `crowded` split, with `depth`): every
+    free fact sits in a band of that many tokens around the asked fact instead of anywhere."""
     frng = random.Random(filler_seed if filler_seed is not None else rng.random())
     suffix = qa_suffix(item.question)
     budget = target_tokens - ntok(suffix) - ntok(" " + item.answer + ".") - 1
@@ -604,10 +692,15 @@ def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Call
     # v1: one decoy sits beyond a single fact placed at a fixed depth (before an early one, after a
     # late one), so "the first / last such sentence" does not find it
     beyond = None
+    lo, hi = 0.0, 1.0  # where free facts go: anywhere, or (crowded) a band around the asked fact
+    if cluster_tokens and single:
+        band = min(1.0, cluster_tokens / max(1, target_tokens))
+        lo = min(max(0.0, depth - band / 2), 1.0 - band)
+        hi = lo + band
     if single and _v(version) >= 1:
         others = [i for i, f in enumerate(facts) if not f.evidence and f.order is None]
         if others:
-            beyond = (others[0], rng.uniform(0.0, depth) if depth < 0.5 else rng.uniform(depth, 1.0))
+            beyond = (others[0], rng.uniform(lo, depth) if depth < 0.5 else rng.uniform(depth, hi))
     for i, f in enumerate(facts):
         if beyond is not None and i == beyond[0]:
             pos = beyond[1]
@@ -615,6 +708,8 @@ def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Call
             pos = depth
         elif f.order is not None:
             pos = f.order
+        elif cluster_tokens and single:
+            pos = rng.uniform(lo, hi)
         else:
             pos = rng.random()
         text = f.text
@@ -637,6 +732,8 @@ def assemble(item: WorldItem, stories: list[str], target_tokens: int, ntok: Call
     out.extend(p[2] for p in placed[fi:] if p[2])
     body = " ".join(out)
     info = {"n_filler_sentences": len(filler), "n_facts": len(facts), "evidence_removed": remove_evidence}
+    if cluster_tokens and single:
+        info["fact_band"] = [round(lo, 4), round(hi, 4)]
     return body + suffix, info
 
 
@@ -653,13 +750,14 @@ def make_eval_record(task: str, seed: int, split: str, length: int, depth_bin: O
     depth = {"early": 0.05, "middle": 0.5, "late": 0.95}.get(depth_bin) if depth_bin else None
     fseed = rng.randrange(2**31)
     place_seed = rng.randrange(2**31)
+    cluster = CROWD_TOKENS if split == "crowded" else None
     prompt, info = assemble(item, stories, length, ntok, random.Random(place_seed), depth=depth, filler_seed=fseed,
-                            version=version)
+                            version=version, cluster_tokens=cluster)
     twin, _ = assemble(item, stories, length, ntok, random.Random(place_seed), depth=depth, remove_evidence=True,
-                       filler_seed=fseed, version=version)
+                       filler_seed=fseed, version=version, cluster_tokens=cluster)
     return {
         "id": f"{task}-{split}-{length}-{depth_bin or 'spread'}-{seed}",
-        "version": f"text-world-v{_v(version)}",
+        "version": f"text-world-v{_v(version)}" + (".1" if split in ADDED_SPLITS else ""),
         "task": task, "level": LEVEL_OF[task], "split": split, "length": length,
         "depth": depth_bin or "spread", "seed": seed,
         "prompt": prompt, "prompt_removed": twin, "answer": answer_text(item),
@@ -669,21 +767,56 @@ def make_eval_record(task: str, seed: int, split: str, length: int, depth_bin: O
 
 
 def make_train_document(seed: int, stories: list[str], length: int, ntok: Callable[[str], int],
-                        tasks: tuple = TASKS, version: str = TEXT_WORLD_VERSION, questions: int = 1) -> str:
+                        tasks: tuple = TASKS, version: str = TEXT_WORLD_VERSION, questions: int = 1,
+                        bridge: int = 0, bridge_only: bool = False, chains: Optional[list] = None) -> str:
     """One training world document: a random task at ID dials, question and answer included.
 
     `questions` > 1 (v1): the document ends with up to that many questions about different cast
     members of the same world (the asked one first, then a random sample), each with its answer.
     One answer of ~3 tokens per ~550-token document was too little task signal for a 16M model
-    (lab tier, 2026-10-08); exam documents keep one question."""
+    (lab tier, 2026-10-08); exam documents keep one question.
+
+    `bridge` > 0 (v2 compose / deduce, 2026-10-16): up to that many bridge questions follow the task's own
+    questions — the single steps of the chain asked on their own ("Who is the teacher of Lumo?"), placed
+    after every multi-step question so none of them can read its bridge from an answer above it. Other
+    tasks, and `bridge` = 0, give the same bytes as before.
+
+    `bridge_only` (2026-10-17, the two-name gate of the multi-hop diagnosis): a compose / deduce document asks ONLY
+    its bridge questions (up to `bridge`, at least one), none of the task's own; other tasks are unchanged.
+
+    `chains` (a list, 2026-10-17): filled with (question, [(fact sentence, that hop's output word) in hop order]) for
+    every question placed whose chain the item knows (`WorldItem.steps`); the text is the same with or without it."""
     rng = random.Random(seed)
     task = rng.choice(tasks)
     item = build_item(task, rng, "train", version)
+    if bridge_only and item.bridge:
+        pool = list(item.bridge)
+        random.Random(seed ^ 0xB81D6E).shuffle(pool)
+        pool = pool[: max(1, bridge)]
+        item = replace(item, question=pool[0][0], answer=pool[0][1])
+        extra = "".join(f"{qa_suffix(q)} {a}." for q, a in pool[1:])
+        prompt, _ = assemble(item, stories, max(64, length - (ntok(extra) if extra else 0)), ntok, rng, version=version)
+        _fill_chains(chains, item, [q for q, _ in pool])
+        return prompt + answer_text(item) + extra
     extra = ""
     if questions > 1 and item.qa:
         more = item.qa[1:]
         qrng = random.Random(seed ^ 0x5EED)  # separate stream: the document itself is unchanged
         qrng.shuffle(more)
         extra = "".join(f"{qa_suffix(q)} {a}." for q, a in more[: questions - 1])
+    if bridge > 0 and item.bridge:
+        pool = list(item.bridge)
+        random.Random(seed ^ 0xB81D6E).shuffle(pool)  # separate stream again
+        extra += "".join(f"{qa_suffix(q)} {a}." for q, a in pool[:bridge])
     prompt, _ = assemble(item, stories, max(64, length - (ntok(extra) if extra else 0)), ntok, rng, version=version)
+    if chains is not None:
+        _fill_chains(chains, item, [item.question] + re.findall(r"\n\nQuestion: (.*?)\nAnswer:", extra))
     return prompt + answer_text(item) + extra
+
+
+def _fill_chains(chains: Optional[list], item: WorldItem, questions: list) -> None:
+    if chains is None:
+        return
+    for q in questions:
+        if q in item.steps:
+            chains.append((q, [(item.facts[st[0]].text, *st[1:]) for st in item.steps[q]]))

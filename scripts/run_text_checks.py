@@ -46,10 +46,12 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from data.text_world import ADDED_SPLITS  # noqa: E402
 from evaluation.text_checks import (  # noqa: E402
     ARCHES,
     CURVE_FRACTIONS,
     ENV_OF,
+    resolve_token_args,
     TEXT_CHECKS_VERSION,
     TIERS,
     fit_params,
@@ -61,7 +63,7 @@ from evaluation.text_checks import (  # noqa: E402
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-SESSION = "textchk"
+SESSION = os.environ.get("TEXTCHK_SESSION", "textchk")  # byobu session of the generated starters (one per agent session)
 
 
 def _git_commit() -> str:
@@ -243,6 +245,7 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
     steps = steps_for(tokens, t.global_rows, mean_row)
     save_steps = max(1, steps // 20)
     args_model, n_params = fit_params(arch, tier)
+    args_model = resolve_token_args(args_model, data / "tokenizer")
     recipe = load_recipe(arch)
     jobdir = out / "jobs" / name
     if (jobdir / "status.run").exists() or (jobdir / "DONE").exists():
@@ -299,10 +302,19 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
         ("final_extra.json", f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "harder.jsonl")} '
                              f'{_q(data / "eval" / "paraphrase.jsonl")} --lengths {extra_lens} --out "$JOB/final_extra.json"'),
     ]
+    # exams added after the build (v2.1: crowded, paraphrase2, steps), when this build has them; re-planning the eval
+    # job of a finished run scores only what is missing, so existing checkpoints get the added exams without retraining
+    added = [data / "eval" / f"{sp}.jsonl" for sp in ADDED_SPLITS if (data / "eval" / f"{sp}.jsonl").exists()]
+    if added:
+        finals.append(("final_added.json", f'{dev}{ev} --checkpoint "$MODEL" --items {" ".join(_q(x) for x in added)} '
+                                           f'--lengths {extra_lens} --out "$JOB/final_added.json"'))
     if ARCHES[arch].has_notebook:
         finals.append(("final_id_notebook_off.json",
                        f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "id.jsonl")} --lengths {t.seq_len} '
                        f'{max(eval_lengths)} --message_override none --no_removed --out "$JOB/final_id_notebook_off.json"'))
+    # a finished job re-planned with a new final (e.g. added exams) runs again; every finished part is skipped
+    if (jobdir / "DONE").exists() and any(not (jobdir / f).exists() for f, _ in finals):
+        (jobdir / "DONE").unlink()
     cmds = [f'[ -f "$JOB/{f}" ] || {c} || {{ echo "EXIT {name} 1 ({f})"; exit 1; }}' for f, c in finals]
     # copy probe: can the model repeat text it has just read? (every task builds on it; diagnostic only)
     pdev = "mps" if mode == "local" else "cuda"

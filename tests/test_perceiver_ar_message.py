@@ -8,6 +8,7 @@ import torch
 from unittest.mock import patch
 
 from nn.perceiver_ar_lm import (
+    TAG_SIDES,
     KVCompressor,
     MESSAGE_QUERY_NBHD_DEFAULT,
     MessageCtx,
@@ -181,7 +182,7 @@ def test_message_pred_equals_dense_mask_on_packed_multi_side_rows_and_captures_i
     for kv_ok in (None, key_valid):
         for override in ("real", "none", "swapped", "raw"):
             ctx = _ctx(side, doc, slot_doc, slot_side, override)
-            assert ctx.n_sides == 0 and ctx.tag_stride() == 6      # lazily derived: 3 sides
+            assert ctx.tag_stride() == 2 * TAG_SIDES  # a constant (traceable under dynamic shapes), not 2 · sides
             pred = make_message_mask_pred(S, ctx, kv_ok)
             for cell in pred.__closure__:
                 v = cell.cell_contents

@@ -88,9 +88,9 @@ strong LLM scores ≤ 30 %) is too hard and too slow to generate for training a 
 | | **screen** | **main** | optional **large** |
 |---|---|---|---|
 | parameters (all trainable, incl. embeddings, head, memory) | 30M ± 5 % | 100M ± 5 % | 150M ± 5 % (hard max) |
-| training tokens (data budget) | 0.6B | 2.0B | 3.0B |
+| training tokens (data budget) | 1.5B (calibration ladder, §16.1; first draft 0.6B) | 2.0B | 3.0B |
 | training length | 4,096 | 4,096 | 4,096 |
-| tokens per optimizer step | 262,144 (64 rows × 4,096) | 262,144 | 524,288 |
+| tokens per optimizer step | ≈ 190k (96 rows; story rows 4,096 tokens, world rows ≈ 1,390 on average) | ≈ 190k | to set |
 | data order | the same pre-tokenized shards in the same order for every run | same | same |
 | compute cap (active training time, Polonez 4 × 3090) | 6 h | 30 h (= 120 GPU-hours) | 48 h |
 | expected time for the dense model | ~1.5–2 h | ~15–20 h | ~30–40 h |
@@ -222,7 +222,14 @@ The answer ends with a period, which is part of the scored answer.
 | **in-distribution (ID)** | new seeds, **held-out names**, held-out filler stories | the gating scores |
 | **length** | ID settings at 1k … 128k (more filler, the same facts) | length reading |
 | **harder** | cast 64, 3 hops, 8 moves, deduction depth 3 | generalization, reported |
-| **paraphrase** | 2 held-out sentence templates per relation | reported, not gating |
+| **paraphrase** | 1 held-out sentence template per relation | reported, not gating |
+| **crowded** (v2.1) | quote / lookup / keyed with every fact within 1,024 tokens of the asked one, at 4k and 16k | separates length from fact crowding; reported |
+| **paraphrase2** (v2.1) | three more sentence shapes per relation, never used in training | meaning vs surface; reported |
+| **steps** (v2.1) | one-step compose and one-step deduce (in-distribution for training) | partial progress on the multi-step tasks; reported |
+
+The v2.1 splits (2026-10-13) are added to the v2 build with `build_text_checks_data.py --add_exams`; training
+documents and the id / harder / paraphrase exams stay byte-identical, so every existing checkpoint can be scored
+on them (the eval job's `final_added.json`) with no retraining.
 
 ## 9. Levels and tasks
 
@@ -290,8 +297,36 @@ right fact" separately from "copied it exactly".
 - **Floors printed.** Every score is printed as `score (floor)`.
 
 ### 10.4 Pass
-A (task, length) cell **passes** when exact-answer accuracy ≥ 75 % and the evidence-removed control is at
-the floor. Items per cell: 400 up to 16k, 200 at 32k–128k (standard error ≈ 2.2 and 3.1 points at 75 %).
+A (task, length) cell **passes** when its headline score (§10.5: far facts for quote, lookup and keyed; every item
+otherwise) is ≥ 75 % exact and the evidence-removed control is at the floor. Items per cell: 400 up to 16k, 200 at
+32k–128k (standard error ≈ 2.2 and 3.1 points at 75 %; the far score uses two thirds of them).
+
+### 10.5 Reading rules (protocol review, 2026-10-13)
+These change how a score is read, not how it is measured, so they apply to every result already in the ledgers
+(`evaluation/text_checks.py`: `far_near`, `effective_floor`, `learned`, `headline`; tests
+`tests/test_text_checks_reading.py`).
+
+- **Far and near facts.** Single-fact exams (quote, lookup, keyed) place the fact early, in the middle or late:
+  5 %, 50 % or 95 % of the document before the question, balanced (item i gets bin i % 3). At 1k–4k a late fact
+  sits 50–200 tokens before the question, inside any local window: E31c's whole score came from late facts (lookup
+  at 4k: 0 % early, 0 % middle, 49 % late, the same with the notebook off). The **headline** score of these exams
+  is therefore the **far** score (early + middle facts); late facts are reported as **near**. Older results are
+  re-read from their per-depth shares; the scorer now writes `far`, `near` and their item counts itself.
+- **Effective floor.** The best score of a model-free reader that does not do the task. Guessing one candidate
+  gives the printed floor; for latest, a reader that follows every move but ignores whose it is gets 1 in 5
+  (§16 audit), so latest's effective floor is 20 %. Runs that learned nothing sat at 19–26 % on latest at 1k.
+- **Learned** = the headline score is above the effective floor by 10 points or 3 standard errors, whichever is
+  larger. Learned says a skill switched on; pass (75 %) says it is mastered. A task is **learnable** at a budget
+  when the dense reference learned it at the training length; the board names a leader per task only at the
+  training length, among models that learned it, ahead of the next by more than 5 points and 2 combined
+  standard errors, and marks a lead from a single run.
+- **Past the training length** a model with no length method on its card (dense: `none`) is scored, but its score
+  measures position extrapolation, not memory (dense read 0 % at 16k on every task). The fair long-range
+  references are the no-memory control (local window only) and a dense model with a declared length method;
+  neither has been run on `text-world-v2` yet (§16.2).
+- **Rephrased facts** (the paraphrase split) are shown next to every main score: dense read lookup at 39–53 % with
+  training sentence shapes and 0–2 % with an unseen one, while E33 kept 53 % (one run) — the closest the exams
+  come to "reads the meaning, not the surface".
 
 ## 11. Length: train short, read long
 - Training length is 4,096 for every model. Evaluation lengths are 1k, 2k, **4k**, 8k, 16k, 32k, 64k
@@ -565,6 +600,28 @@ guessing rate.
   v2, exams 1k–16k): E33 loop, then dense plain seed 1, E31c, the no-memory control, then dense plain on
   training documents with up to 8 questions each (`--train_questions 8`, data `text_checks_v2q8`, exams
   unchanged, sha256 identical). An E33 run with the tables was stopped after 2 minutes.
+
+### 16.2 Protocol review (2026-10-13)
+
+A review of every result so far (13 ledgers, 18 trained models) against the protocol. The exams themselves held up
+(rule reader 100 %, no answer in any evidence-removed twin); the problems were in how results were read and how the
+reference trains. Findings, most severe first, and what was done:
+
+| # | finding (evidence) | done |
+|---|---|---|
+| 1 | **Dense learns by luck at 30M / 1.5B tokens**: of four mixed-training runs, one passed quote only, one learned four tasks, two learned nothing; skills switch on abruptly at 60–70 % of training; training on quote only did not help. Answers are ≈ 0.1 % of training tokens (one question per ≈ 1.4k-token document). | the recipe test is queued: dense 30M × 3 seeds on 8 questions per training document (`text_checks_v2q8`, exams byte-identical); 2 of 3 learning makes it the recipe. Single-task series paused. |
+| 2 | **Near facts are free**: at 1k–4k the late depth bin sits inside every local window; E31c's whole score on quote, lookup and keyed came from it. | reading rule §10.5 (far facts), applied to all ledgers. |
+| 3 | **Length also spreads the facts**: longer documents add filler, so facts are less crowded; E33 on far facts: ≈ 30 % at 1k, 73–93 % at 16k. | `crowded` exams (v2.1, eval only): implemented, audited locally (rule reader 100 %, shortcuts at guessing); built on Odra and scored on the existing checkpoints when it is back. |
+| 4 | **Dense is not a reference past 4k** (no length method: 0 % at 16k on everything); the no-memory control has not run on v2. | reading rule §10.5; control and a dense long-text method queued after the recipe test. |
+| 5 | **Training rarely asks far back**: only ≈ 20 % of training questions have their fact > 1k tokens back, ≈ 4.5 % > 2k (log-uniform 256–4,096-token documents, facts uniform); dense drops on early facts at 4k (quote 72 % vs 95 % middle). | builder option for a later training mix (not in force). |
+| 6 | **Rephrased facts are the clearest meaning-vs-surface signal**: dense lookup 37–48 % → 0–1 % with an unseen sentence shape; E33 64 % → 64 % on far facts (one run). Only one held-out shape per relation. | shown next to every main score; `paraphrase2` exams (v2.1): three more unseen shapes per relation, implemented and audited locally. |
+| 7 | **Floors**: latest's partial reader gets 1 in 5; count's "four"/"five" share a first token. | effective floor §10.5. |
+| 8 | **Compose and deduce give no signal** (graded pick exactly at guessing in every run); exams ask only 2 hops / depth 2. | `steps` exams (v2.1): one-step compose and deduce, implemented and audited locally. |
+| 9 | **Bookkeeping**: the budget table was stale; memory models borrowed dense's step size (§7 asks for their own tuning); the board's leader rule was looser than the pass rule. | §5 table fixed; the board names leaders by §10.5; tuning the memory models' step size is due before the next round. |
+
+**Trust on the board.** The board is the mission control of these checks: every run carries a standing (in use,
+calibration, history), every conclusion a state (holds, single run, open, retracted) and every protocol change a
+log entry saying what it did to earlier results (`analysis/text_board_notes.py`; skill `text-checks`, "The board").
 
 ## 17. Open decisions for the author
 1. **Main tier:** 100M parameters and 2B tokens, about one Polonez day (recommended), or 150M and 3B,

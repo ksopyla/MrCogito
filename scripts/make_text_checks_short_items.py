@@ -3,6 +3,9 @@
 short?). Same generator, held-out stories and names as the frozen sets; written as an extra split file.
 
   uv run python scripts/make_text_checks_short_items.py --data Cache/text_checks/lab_v1 --lengths 256 512 --n 100
+
+Development items (fresh seeds at exam lengths, for choosing an exam-time setting without the exam set):
+  ... --tag dev --lengths 4096 16384 --tasks latest lookup --n 150 --out Cache/e33_next/dev.jsonl
 """
 from __future__ import annotations
 
@@ -26,6 +29,9 @@ def main():
     p.add_argument("--n", type=int, default=100)
     p.add_argument("--split", default="id")
     p.add_argument("--max_train_files", type=int, default=1)
+    p.add_argument("--tasks", nargs="+", default=list(TASKS))
+    p.add_argument("--tag", default="short", help="seed prefix: different tags give different worlds")
+    p.add_argument("--out", default=None, help="default: <data>/eval/<split>_short.jsonl")
     a = p.parse_args()
     data = Path(a.data)
     meta = json.loads((data / "text_checks_meta.json").read_text())
@@ -35,11 +41,11 @@ def main():
     tok = AutoTokenizer.from_pretrained(str(data / "tokenizer"))
     ntok = lambda s: len(tok.encode(s, add_special_tokens=False))  # noqa: E731
     _, held = load_stories("full", a.max_train_files, 0)
-    out = data / "eval" / f"{a.split}_short.jsonl"
+    out = Path(a.out) if a.out else data / "eval" / f"{a.split}_short.jsonl"
     with out.open("w") as fh:
-        for task in TASKS:
+        for task in a.tasks:
             for length in a.lengths:
-                base = zlib.crc32(f"short/{a.split}/{task}/{length}".encode()) * 10_000
+                base = zlib.crc32(f"{a.tag}/{a.split}/{task}/{length}".encode()) * 10_000
                 for i in range(a.n):
                     depth = ("early", "middle", "late")[i % 3] if task in SINGLE_EVIDENCE_TASKS else None
                     rec = make_eval_record(task, base + i, a.split, length, depth, held, ntok, version=version)

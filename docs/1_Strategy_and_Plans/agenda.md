@@ -20,6 +20,54 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-10-17 — Agent to agent through the notebook works (E33f, E33 trained as two agents).** Agent A keeps an
+  E33 notebook of a document. Agent B never sees the document: it holds only its question and fetches A's best 4
+  notes per read of its loop, for every answer token.
+  - Results on documents of 16k–1M tokens, from about 20 fetched notes (5 KB down):
+    - far lookup 97–100 %;
+    - keyed 86–100 %;
+    - word-for-word quotes 92–100 %;
+    - 0 % with no notes or another document's notebook;
+    - reading the whole 1M notebook: 42 % (lookup) and 0 % (quotes).
+  - The trained 16-vector messages (E35) carried nothing in three runs.
+  - Open:
+    - B's requests (22–29 KB per answer) need compressing;
+    - near facts and latest got worse;
+    - one seed.
+  - Spec: [E33f_notes_on_the_wire.md](../experiments_specs/ahead/E33f_notes_on_the_wire.md).
+- **2026-10-17 — Reasoning on text: compose (T5) and deduce (T7), then count (T6). Analysed; waiting for the
+  author's go-ahead.**
+  - **Where we stand:** every model, dense included, sits exactly on the uniform guess over the document's
+    candidates, one step and two steps, 1k–16k, even when the single steps are taught.
+  - **The diagnosis:**
+    - the join between two lookups gets about 0.04 % of the training loss and no curriculum;
+    - E33's four rounds score the same as one;
+    - a read hands out the next token, not the bridge entity.
+  - **Plan:**
+    1. measurements on existing checkpoints (no training);
+    2. three runs at 30M from E33's bridge-data checkpoint, plus a dense control:
+       - a reasoning phase with task-dense, staged data and exits on answers only;
+       - the same plus a round-1 target that names the bridge;
+       - the same plus a target for where each round reads;
+    3. supervision switched off before the exam.
+
+    Count is a separate fix: a summing read.
+  - **Step 0 measured (17 Oct, no training).** Link 1 breaks in both models: asked a two-step question, neither
+    makes the first lookup.
+    - E33's reads go to all home facts about equally (the answer's type).
+    - Dense never holds the bridge, although it answers each single step when asked for it (77 % and 68 %).
+    - E33 also cannot read a two-name fact ("Who is the teacher of X?", 8 %).
+
+    Next: the per-round read target leads. E33 must first pass the teacher question (≥ 60 %), with two keys per
+    note if it does not.
+
+    Note: [e33_text_multihop_diagnosis_20261017.md](../4_Research_Notes/e33_text_multihop_diagnosis_20261017.md).
+- **2026-10-14 — E33d, notes with a page distance (built; text runs handed to the text-checks session).**
+  E33's notes carry no position, so it cannot tell which of two facts is newer (latest: 95 % at 1k, 22 % at
+  4k, guessing 20 %). E33d adds one signed slope per read head, starting at 0, that lowers a note's score by
+  the log of how many pages back it is; content matching is untouched. Pass: latest at 4k ≥ 60 %; stop: far
+  lookup at 16k more than 5 points under E33. Spec [E33d](../experiments_specs/ahead/E33d_note_page_distance.md) ·
+  plan [E33d plan](../experiments_specs/ahead/E33d_note_page_distance_plan.md).
 - **2026-10-03 — E31c, the E31 notebook on plain text (designed and built; runs wait for go-ahead).**
   - **The change:** every token reads the notes of the windows that have already closed, plus the
     last 256 tokens verbatim. Slot keys are matched by content, relative to the reader. With
@@ -405,6 +453,18 @@ content. E17c's carryless signal is not that platform. From-scratch and other ba
 decode stays parked/revivable from `parked/`. Instruction SFT, long-context, and audio
 remain long-term Vision only. Multi-agent latent communication stays the Stage-2
 headline (see [team_brief](../sprind_frontier_ai/team_brief.md)).
+
+- **For later — notebook compression (analysed 2026-10-16, parked 2026-10-17 so that reasoning comes first).**
+  Today a note stores 28× more bits than the token ids it covers (6 tokens per note, 48× less memory than a
+  dense cache), and our 30M reader takes in only about 85 bits per vector. Plan when we return to it:
+  1. Step 0: measure what today's notes use (quantization curve, effective rank, read-back probe), with no
+     training.
+  2. Step 1: a rate-matched notebook at 30M on the E31c base: 8 notes per page, 192-bit quantized notes,
+     notes-only questions, and a note-only decoder that rebuilds and continues the page. Kill it if far lookup
+     at 16k falls below 60 %.
+  3. Step 2: the same at 100M.
+
+  Note: [notebook_writer_compression_20261016.md](../4_Research_Notes/notebook_writer_compression_20261016.md).
 
 ## Engineering notes (not live experiments)
 Canonical eval protocol, Tier-1 data-protocol upgrade, compute audit, and training-pipeline

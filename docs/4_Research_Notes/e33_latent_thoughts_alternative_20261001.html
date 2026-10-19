@@ -52,14 +52,29 @@ code{font:13px ui-monospace,Menlo,monospace;background:var(--card2);padding:1px 
 </style>
 <div id="tip"></div>
 <main>
-<div class="kicker">MrCogito · alternative to E33a (latent thoughts, not chosen) · 1 Oct 2026</div>
+<div class="kicker">MrCogito · alternative to E33a (latent thoughts, not chosen) · 1 Oct 2026 · status added 15 Oct 2026</div>
 <h1>Latent thoughts over the E31 memory</h1>
 <p class="sub">The simplest way to add multi-hop reasoning to E31 without new parameters. After the question, the model takes a few extra "thinking" steps. Each step feeds its own output back as the next input and looks at the memory again. The memory, the writer and the reader stay exactly as they are.</p>
+
+<div class="callout warn"><b>Status on 15 Oct: what happened since this page, and why its curriculum matters again on text</b>
+<ul style="margin:6px 0 0;padding-left:18px">
+<li><b>Not chosen on 1 Oct.</b> The read–think–reread loop (E33a) was built instead: the same layers run 4 times, so every position gets 4 dependent reads without new positions.</li>
+<li><b>On DNA the loop composed, once it had this page's ingredient: a curriculum.</b> After a 1-hop stage it solved 2-hop chains at 94 % (2 of 3 seeds, answer-only targets), and 97.8 % with a target per round. The single read (9 %) and dense (15 %) failed on the same schedule. The written path (this page's "explicit scratchpad") passed for every model: 90–95 %.</li>
+<li><b>On text, nobody composes yet.</b> E33 on text (the loop over the E31 notebook) and dense both sit at guessing on compose and deduce, even on the one-step versions. The text training never asks the bridge ("Who is the teacher of Lumo?"), and the loop's early rounds are trained on the next story token, not on a step. That is the situation this page described for DNA on 1 Oct.</li>
+<li><b>So this page's plan is the leading route for the text tasks T5 and T7</b>, in the loop's form: teach the bridge as its own question, use the written path as the ceiling, then move the steps into the loop's rounds. Latent thoughts (extra positions fed with the previous state) stay the fallback if rounds cannot hold a multi-token name. Section 0 below shows the text version; the experiments are in the E33 page, section 11.</li>
+</ul></div>
+
+<h2 id="text">0 · The same idea on text (added 15 Oct)</h2>
+<p>The text exam "Where does the teacher of Lumo live?" needs two lookups: Lumo's teacher (Pim), then Pim's home. Pick a way of answering. Facts are notes in E33's notebook; the question side is the reading tokens. Scores marked <b>DNA</b> come from the 2-hop chain exams of 6–9 Oct; text scores are from the 8-questions round.</p>
+<div class="controls" style="position:static">
+ <span><span class="lab">Way of answering</span><span class="seg" id="tmode"><button data-v="today" class="on">today: one answer, no steps</button><button data-v="bridge">teach the bridge</button><button data-v="pad">written path</button><button data-v="loop">loop rounds with a step target</button><button data-v="lat">latent thoughts</button></span></span>
+</div>
+<div class="card"><div class="svgwrap"><svg id="tsvg" viewBox="0 0 1040 330" role="img" aria-label="Text compose with and without steps"></svg></div><div class="step" id="tsay"></div></div>
 
 <div class="callout good"><b>The idea in one sentence.</b> Today the question side gets one look at the memory. With latent thoughts it gets one look <i>per hop</i>, and each look asks with what the previous look found. That is the dependence a chain A → B → C → D needs, and the ingredient our repeated read (E33) was missing.</div>
 
 <div class="grid g3">
-<div class="tile"><div class="q">New parameters</div><div class="a">0</div>The thought input is the model's own last hidden state (960-d), fed straight into the main path. No new layer, head or embedding.</div>
+<div class="tile"><div class="q">New parameters</div><div class="a">0</div>The thought input is the model's own last hidden state (960-d on the DNA model, 576 on the 30M text model), fed straight into the main path. No new layer, head or embedding.</div>
 <div class="tile"><div class="q">Past performance</div><div class="a">kept by design</div>Questions that need no reasoning use zero thoughts and run exactly as today. Retrieval exams stay in the training mix, and one arm freezes the writer.</div>
 <div class="tile"><div class="q">Extra compute</div><div class="a">k short steps</div>One extra question-side position per hop, each with one memory read. The book and the memory are written once.</div>
 </div>
@@ -153,6 +168,7 @@ code{font:13px ui-monospace,Menlo,monospace;background:var(--card2);padding:1px 
 <tr><td>Memory consolidation loop</td><td>+1 latent block</td><td>at risk (memory changes)</td><td>synthetic only</td><td>medium</td></tr>
 <tr><td>Recursive reasoning core (TRM/Huginn)</td><td>0 if tied</td><td>mostly</td><td>puzzles and math; text test negative</td><td>medium</td></tr>
 <tr><td>Repeated read (E33)</td><td>0</td><td>yes</td><td><b>tested here: no gain</b></td><td>done</td></tr>
+<tr><td>Read–think–reread loop (E33a, chosen 1 Oct)</td><td>4 marker vectors</td><td>yes (no harm on 17 DNA tasks)</td><td><b>DNA: 2 hops 94 % with a 1-hop stage</b>; text: not yet (guessing, dense too)</td><td>done; text curriculum next</td></tr>
 </table></div>
 
 <h3>Plan</h3>
@@ -292,7 +308,39 @@ function drawCost(){const s=document.getElementById('costsvg');s.innerHTML='';co
  items.forEach(([l,sub,col,v],i)=>{const y=14+i*52;el('text',{x:10,y:y+14,'font-size':12.5,'font-weight':650},s,l);el('text',{x:10,y:y+30,'font-size':11,class:'s'},s,sub);el('rect',{x:200,y:y+4,width:Math.max(6,v*250),height:24,rx:5,fill:col,'fill-opacity':.7},s);});
  el('text',{x:10,y:224,'font-size':11,class:'m'},s,'relative work per question at 1k (sketch, not measured)');}
 
-function drawAll(){drawFlow();drawCell();drawCur();drawEx();drawCost();}
+/* ================= 0 · text version (15 Oct) ================= */
+const TX={mode:'today'};
+const TFACT=[['Pim was the teacher of Lumo.','t'],['Kodaford was where Pim made a home.','h'],['Lumo lived in Ashmere.','d'],['Ravi was the teacher of Pim.','d'],['Ravi lived in Belton.','d'],['Tobu was the teacher of Ravi.','d']];
+const TM={
+ today:{pos:[['Question: Where does the teacher of Lumo live?','q'],['Answer:','a']],reads:[[1,[0,1,2,4]]],ans:{K:.09,A:.08,B:.08,x:.75},lbl:'measured on text: every model at guessing (8 %), even one step',
+  say:'<b>Today.</b> One position must produce the answer. Its reads can find notes about Lumo and about teachers, but nothing asks for Pim first, so the read spreads over every place in the document. Measured: picks spread evenly over the 12 places, for E33, E31c and dense alike.'},
+ bridge:{pos:[['Question: Who is the teacher of Lumo?','q'],['Answer: Pim.','w']],reads:[[1,[0]]],ans:null,lbl:'a training change: the bridge becomes its own lookup',
+  say:'<b>Teach the bridge.</b> Add the one-step relation as its own question in training. Answering it is a lookup with a person as the answer, the kind of skill the notebook models learn by 0.3B tokens on homes. On DNA, the loop composed only after such a 1-hop stage.'},
+ pad:{pos:[['Question: … teacher of Lumo live?','q'],['Lumo\'s teacher is Pim.','w'],['Pim lives in','w'],['Kodaford.','a']],reads:[[1,[0]],[2,[1]]],ans:{K:.94,A:.02,B:.02,x:.02},lbl:'DNA, written path: 90–95 % for every model',
+  say:'<b>Written path (the ceiling).</b> The answer is written as two steps. Each written step is an ordinary lookup: "Lumo\'s teacher" finds Pim, then the written "Pim" finds Pim\'s home. On DNA every model passed this (90–95 %). It costs a few written tokens per step.'},
+ loop:{pos:[['Question: … teacher of Lumo live?','q'],['Answer:  round 1 → "Pim"   round 2 → Kodaford','a']],reads:[[1,[0]],[1,[1]]],ans:{K:.9,A:.03,B:.03,x:.04},lbl:'DNA: 94 % answer-only after a 1-hop stage, 97.8 % with a step target',
+  say:'<b>Loop rounds with a step target (the E33 route).</b> The answer position runs 4 rounds. Round 1 is trained to name the bridge (Pim) at this position; round 2 reads with that state and finds Pim\'s home. On DNA this recipe composed 2 hops at 97.8 %, and 3 hops at 98.4 %. On text the round targets come free from the generator, which knows every bridge.'},
+ lat:{pos:[['Question: … teacher of Lumo live?','q'],['θ₁ ≈ Pim','t'],['Answer:','a']],reads:[[1,[0]],[2,[1]]],ans:{K:.9,A:.03,B:.03,x:.04},lbl:'not tested',
+  say:'<b>Latent thoughts (this page\'s 1 Oct proposal).</b> One extra position per hop, fed with the previous position\'s final state. Use it if the loop\'s rounds cannot carry a multi-token name (on DNA one read returned about 4 letters of a name). It costs one extra position per hop and a sequential training step.'}};
+function drawText(){const s=document.getElementById('tsvg');if(!s)return;s.innerHTML='';marker(s,'tO',C('--orange'));marker(s,'tG',C('--muted'));
+ const m=TM[TX.mode];
+ el('rect',{x:10,y:10,width:400,height:310,rx:12,fill:C('--violet'),'fill-opacity':.05,stroke:C('--line')},s);
+ el('text',{x:24,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--violet')}`},s,'NOTEBOOK (facts as notes)');
+ const hot=new Set();m.reads.forEach(([p,fs])=>fs.forEach(f=>hot.add(f)));const fy={};
+ TFACT.forEach(([t,k],i)=>{const y=52+i*44;const on=hot.has(i);const col=k==='d'?C('--muted'):C('--violet');
+  rbox(s,24,y,372,34,on?C('--orange'):col,on?.25:.12,t,12.5,on,null);fy[i]=y+17;});
+ el('rect',{x:430,y:10,width:600,height:310,rx:12,fill:C('--blue'),'fill-opacity':.04,stroke:C('--line')},s);
+ el('text',{x:444,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--blue')}`},s,'READING SIDE');
+ const py=i=>60+i*52;
+ m.pos.forEach(([t,k],i)=>{const col=k==='q'?C('--blue'):k==='a'?C('--green'):k==='t'?C('--teal'):C('--amber');rbox(s,560,py(i),450,36,col,.16,t,12.5,k!=='q',null);});
+ m.reads.forEach(([p,fs],j)=>fs.forEach(f=>{const y1=py(p)+18+(j?6:-6);el('path',{d:`M558,${y1} C500,${y1} 470,${fy[f]} 398,${fy[f]}`,fill:'none',stroke:C('--orange'),'stroke-width':TX.mode==='today'?1.2:2.4,'marker-end':'url(#tO)'},s);}));
+ if(m.ans){const bx=600,by=278;const ks=Object.keys(m.ans);el('text',{x:bx,y:by-82,'font-size':11,class:'s'},s,'answer: share of the pick');ks.forEach((k,j)=>{const h=m.ans[k]*70;el('rect',{x:bx+j*74,y:by-h,width:30,height:Math.max(h,1),rx:3,fill:k==='K'?C('--green'):C('--muted')},s);
+   el('text',{x:bx+15+j*74,y:by+14,'text-anchor':'middle','font-size':10.5,class:'s'},s,{K:'Kodaford ✓',A:'Ashmere',B:'Belton',x:'9 others'}[k]);});}
+ el('text',{x:444,y:310,'font-size':11.5,'font-weight':700,class:'s'},s,m.lbl);
+ document.getElementById('tsay').innerHTML=m.say;}
+document.querySelectorAll('#tmode button').forEach(b=>b.onclick=()=>{TX.mode=b.dataset.v;document.querySelectorAll('#tmode button').forEach(x=>x.classList.toggle('on',x===b));drawText();});
+
+function drawAll(){drawText();drawFlow();drawCell();drawCur();drawEx();drawCost();}
 drawAll();matchMedia('(prefers-color-scheme: dark)').addEventListener('change',drawAll);
 document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')document.getElementById('next').click();if(e.key==='ArrowLeft')document.getElementById('prev').click();});
 </script>

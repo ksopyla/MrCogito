@@ -266,3 +266,296 @@ def test_v2_shortcuts_stay_near_the_guessing_rate(task):
 
 def test_v2_count_answers_cover_zero_to_ten():
     assert len({rec2("count", s, length=900)["answer"] for s in range(220)}) == 11
+
+
+# ---------------------------------------------------------------- v2.1: exams added on top of v2 (eval only)
+@pytest.mark.parametrize("split", ["crowded", "paraphrase2", "steps"])
+def test_v21_added_splits_need_v2_and_say_so(split):
+    from data.text_world import ADDED_SPLITS
+
+    task = ADDED_SPLITS[split][0]
+    with pytest.raises(ValueError):
+        make_eval_record(task, 0, split, 600, None, STORIES, ntok, version="v1")
+    r = rec2(task, 0, split=split, depth="middle" if task in ("quote", "lookup", "keyed") else None)
+    assert r["version"] == "text-world-v2.1" and rec2(task, 0)["version"] == "text-world-v2"
+
+
+@pytest.mark.parametrize("split", ["crowded", "paraphrase2", "steps"])
+def test_v21_rule_reader_recovers_every_answer(split):
+    from data.text_world import ADDED_SPLITS
+
+    for task in ADDED_SPLITS[split]:
+        for s in range(8):
+            depth = ("early", "middle", "late")[s % 3] if task in ("quote", "lookup", "keyed") else None
+            r = rec2(task, s, length=3000, split=split, depth=depth)
+            got, _ = _audit(r)
+            assert got == r["answer"].strip(" ."), (split, task, s, got)
+            assert r["answer"].strip(" .") not in r["prompt_removed"] or task in ("count", "deduce")
+
+
+@pytest.mark.parametrize("task", ["quote", "lookup", "keyed"])
+def test_v21_crowded_packs_every_fact_into_the_band(task):
+    """Every fact sentence sits inside the 1,024-token band around the asked fact (word count stands in for tokens)."""
+    from data.text_world import CROWD_TOKENS, ADDED_SPLITS
+
+    assert task in ADDED_SPLITS["crowded"]
+    for s, depth in enumerate(("early", "middle", "late")):
+        r = rec2(task, s, length=6000, split="crowded", depth=depth)
+        lo, hi = r["meta"]["fact_band"]
+        assert abs((hi - lo) - CROWD_TOKENS / 6000) < 1e-3
+        body = r["prompt"].rpartition("\n\nQuestion:")[0]
+        item = build_item(task, random.Random(r["seed"]), "crowded", "v2")
+        for f in item.facts:
+            at = body.find(f.text)
+            assert at >= 0
+            frac = len(body[:at].split()) / max(1, len(body.split()))
+            assert lo - 0.03 <= frac <= hi + 0.03, (task, depth, frac, lo, hi)
+        spread = rec2(task, s, length=6000, depth=depth)  # the id split spreads them over the document
+        assert "fact_band" not in spread["meta"]
+
+
+def test_v21_paraphrase2_uses_only_unseen_sentence_shapes():
+    from analysis.text_checks_audit import split_doc
+    from data.text_world import HELDOUT_TEMPLATES_2, TEMPLATES
+    from analysis.text_checks_audit import _compile
+
+    seen = [_compile(rel, t) for rel, ts in TEMPLATES.items() for t in ts]
+    new = [_compile(rel, t) for rel, ts in HELDOUT_TEMPLATES_2.items() for t in ts]
+    for task in ("quote", "lookup", "keyed", "latest", "compose", "count"):
+        r = rec2(task, 2, length=2000, split="paraphrase2", depth="middle" if task in ("quote", "lookup", "keyed") else None)
+        sents, _ = split_doc(r["prompt"])
+        facts = [x for x in sents if any(p.fullmatch(x) for p in new)]
+        assert facts, task
+        assert not any(p.fullmatch(x) for x in sents for p in seen), task
+
+
+def test_v21_steps_are_one_step():
+    r = rec2("compose", 4, split="steps")
+    assert r["prompt"].rstrip().endswith("Where does the teacher of " + r["prompt"].split("teacher of ")[-1].split(" live?")[0] + " live?\nAnswer:")
+    assert r["prompt"].count("the teacher of the teacher") == 0
+    d = rec2("deduce", 4, split="steps")
+    assert d["meta"]["depth"] == 1 and not re.search(r"Every \w+ is a \w+\.", d["prompt"])
+
+
+def test_v2_published_data_is_byte_identical():
+    """Pins text-world-v2 (published on the Hub): exams of the id / harder / paraphrase splits and training
+    documents (1 and 8 questions) on the test fixtures. Hash from the v2 generator of 2026-10-10, checked
+    unchanged by the v2.1 additions (2026-10-13). A change here is a new data version, never an edit."""
+    import hashlib
+    import json
+
+    h = hashlib.sha256()
+    for split in ("id", "harder", "paraphrase"):
+        for task in TASKS:
+            for i in range(3):
+                depth = ("early", "middle", "late")[i] if task in ("quote", "lookup", "keyed") else None
+                h.update(json.dumps(make_eval_record(task, 7 * i + 1, split, 1500, depth, STORIES, ntok, version="v2"),
+                                    sort_keys=True).encode())
+    for q in (1, 8):
+        for i in range(10):
+            h.update(make_train_document(i, STORIES, 400 + 50 * i, ntok, version="v2", questions=q).encode())
+    assert h.hexdigest() == "56bb1906d48ffd41d74157222c236094dac9b09ce8501b0471dab0ea01997ffc"
+
+
+# ---------------------------------------------------------------- bridge questions (training only, 2026-10-16)
+def _seed_for(task, start=0):
+    for s in range(start, start + 500):
+        if random.Random(s).choice(TASKS) == task:
+            return s
+    raise AssertionError(task)
+
+
+@pytest.mark.parametrize("task", TASKS)
+def test_bridge_off_and_other_tasks_keep_their_bytes(task):
+    s = _seed_for(task)
+    base = make_train_document(s, STORIES, 600, ntok, version="v2", questions=8)
+    assert make_train_document(s, STORIES, 600, ntok, version="v2", questions=8, bridge=0) == base
+    with_b = make_train_document(s, STORIES, 600, ntok, version="v2", questions=8, bridge=4)
+    if task in ("compose", "deduce"):
+        assert with_b != base and with_b.count("Question:") == base.count("Question:") + 4
+    else:
+        assert with_b == base
+
+
+@pytest.mark.parametrize("task", ["compose", "deduce"])
+def test_bridge_answers_are_stated_and_follow_the_task_questions(task):
+    for k in range(5):
+        s = _seed_for(task, 100 * k)
+        doc = make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=4)
+        body, _, tail = doc.partition("\n\nQuestion:")
+        qs = re.findall(r"Question: (.*?)\nAnswer: (.*?)\.(?=\n|$)", "Question:" + tail)
+        own = [q for q, _ in qs if q.startswith("Where does") or q.endswith("like?") and not q.startswith("What is a ")]
+        brid = [(q, a) for q, a in qs if q.startswith(("Who is the teacher", "What is a ")) or
+                (q.startswith("What is ") and not q.endswith("like?"))]
+        assert len(brid) == 4
+        assert [q for q, _ in qs].index(brid[0][0]) >= len(own)  # bridges come after the task's own questions
+        for q, a in brid:
+            if task == "compose":
+                p = re.match(r"Who is the teacher of (.*)\?", q).group(1)
+                assert any(f in body for f in (f"{a} was the teacher of {p}.", f"{p} was taught by {a}.",
+                                               f"{p}'s teacher was {a}.", f"{p} learned to read from {a}",
+                                               f"{p} went to lessons with a teacher named {a}."))
+            elif q.endswith("like?"):
+                cat = re.match(r"What is a (.*) like\?", q).group(1)
+                assert f"Every {cat} is {a}." in body
+            elif q.startswith("What is a "):
+                cat = re.match(r"What is a (.*)\?", q).group(1)
+                assert f"Every {cat} is {a}." in body
+            else:
+                p = re.match(r"What is (.*)\?", q).group(1)
+                assert f"{p} is {a}." in body
+
+
+def test_bridge_never_reaches_the_exams():
+    for task in ("compose", "deduce"):
+        r = make_eval_record(task, 3, "id", 1500, None, STORIES, ntok, version="v2")
+        assert r["prompt"].count("Question:") == 1
+        assert "Who is the teacher" not in r["prompt"] and "What is a " not in r["prompt"]
+
+@pytest.mark.parametrize("task", TASKS)
+def test_bridge_only_asks_just_the_bridges(task):
+    s = _seed_for(task)
+    base = make_train_document(s, STORIES, 600, ntok, version="v2", questions=8)
+    assert make_train_document(s, STORIES, 600, ntok, version="v2", questions=8, bridge=0, bridge_only=False) == base
+    doc = make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=8, bridge_only=True)
+    if task not in ("compose", "deduce"):
+        assert doc == make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=8)
+        return
+    qs = re.findall(r"Question: (.*?)\nAnswer: (.*?)\.(?=\n|$)", doc)
+    assert 1 <= len(qs) <= 8
+    if task == "compose":
+        assert all(q.startswith("Who is the teacher of ") for q, _ in qs)
+    else:
+        assert all(q.startswith("What is ") for q, _ in qs)
+    body = doc.partition("\n\nQuestion:")[0]
+    for q, a in qs:  # every bridge answer is stated in the document
+        assert a in body
+
+
+# ---------------------------------------------------------------- read targets (training only, 2026-10-17)
+def _word_offsets(text):
+    return [(m.start(), m.end()) for m in re.finditer(r"\S+|\s+", text)]
+
+
+@pytest.mark.parametrize("task", ["compose", "deduce", "lookup", "quote", "latest"])
+def test_read_targets_point_at_the_chain_facts(task):
+    from scripts.build_text_checks_data import read_targets
+
+    for k in range(4):
+        s = _seed_for(task, 100 * k)
+        chains = []
+        doc = make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=4, chains=chains)
+        assert doc == make_train_document(s, STORIES, 900, ntok, version="v2", questions=8, bridge=4)
+        offs = _word_offsets(doc)
+        q = read_targets(doc, offs, chains)
+        quads = [q[i:i + 4] for i in range(0, len(q), 4)]
+        answers = [x for x in quads if x[1] == 0]
+        assert len(answers) == doc.count("\nAnswer:")
+        for pos, _, _, _ in answers:  # the answer position is the "Answer:" token (BOS shifts by one)
+            a, b = offs[pos - 1]
+            assert doc[a:b].endswith("Answer:")
+        chain_of = dict(chains)
+        assert chain_of
+        if task == "latest":  # 18 Oct: one step, the asked person's LAST move (its place is the answer)
+            assert all(len(c) == 1 for c in chain_of.values())
+        for pos, r, t0, t1 in quads:
+            if r == 0:
+                continue
+            a, b = offs[pos - 1]
+            question = re.findall(r"Question: (.*?)\nAnswer:", doc[: b])[-1]
+            fact, word = chain_of[question][r - 1]
+            assert doc[offs[t0 - 1][0]: offs[t1 - 1][1]] == fact
+            assert offs[t1 - 1][1] < a  # the fact sits before its question
+            assert word in fact
+        if task == "compose":  # a one-step question: teacher fact, then the teacher's home
+            for qq, facts in chains:
+                if qq.startswith("Where does the teacher of ") and "the teacher of the teacher" not in qq:
+                    p = qq[len("Where does the teacher of "):-len(" live?")]
+                    assert p in facts[0][0] and len(facts) == 2
+        # output spans: the hop's output word inside its fact
+        qo = read_targets(doc, offs, chains, span="output")
+        for pos, r, t0, t1 in [qo[i:i + 4] for i in range(0, len(qo), 4)]:
+            if r == 0:
+                continue
+            a, b = offs[pos - 1]
+            question = re.findall(r"Question: (.*?)\nAnswer:", doc[: b])[-1]
+            fact, word = chain_of[question][r - 1]
+            assert doc[offs[t0 - 1][0]: offs[t1 - 1][1]].strip(" .:,") == word.strip(" .")
+
+
+def test_read_targets_tensor_pads_and_cuts():
+    from data.data_collators import read_targets_tensor
+
+    t = read_targets_tensor([{"read_targets": [9, 0, -1, -1, 9, 1, 2, 4]}, {"read_targets": []},
+                             {"read_targets": [30, 0, -1, -1]}], max_len=20)
+    assert t.shape == (3, 2, 4)
+    assert t[0].tolist() == [[9, 0, -1, -1], [9, 1, 2, 4]]
+    assert (t[1] == -1).all() and (t[2] == -1).all()  # row 3's answer sits past the cut
+
+
+def test_count_questions_mark_every_visit_once():
+    """18 Oct: a count question's read targets carry (pos, COUNT_ROUND, -1, -1) and one quad per visit of the asked
+    person to the place, each a different occurrence; the number of visit quads equals the answer."""
+    from data.text_world import COUNT_ROUND, NUMBER_WORDS
+    from scripts.build_text_checks_data import read_targets
+
+    for k in range(6):
+        s = _seed_for("count", 100 * k)
+        chains = []
+        doc = make_train_document(s, STORIES, 1500, ntok, version="v2", questions=8, chains=chains)
+        offs = _word_offsets(doc)
+        q = read_targets(doc, offs, chains, span="output")
+        quads = [q[i:i + 4] for i in range(0, len(q), 4)]
+        marks = [x for x in quads if x[1] == COUNT_ROUND]
+        assert marks and len(marks) == doc.count("\nAnswer:")
+        for pos, _, _, _ in marks:
+            a, b = offs[pos - 1]
+            answer = doc[b:].split("\n")[0].strip().rstrip(".")
+            visits = [x for x in quads if x[0] == pos and COUNT_ROUND < x[1] < 2 * COUNT_ROUND]
+            assert len(visits) == NUMBER_WORDS.index(answer) if answer in NUMBER_WORDS else True
+            assert len({(x[2], x[3]) for x in visits}) == len(visits)  # every visit its own occurrence
+            assert not [x for x in quads if x[0] == pos and 0 < x[1] < COUNT_ROUND]  # rounds 1-4 untouched
+
+
+def test_count_naming_quads_point_at_the_answer_word():
+    """--train_count_naming: rounds 1-3 of a count question name its answer word (tokens after "Answer:")."""
+    from data.text_world import COUNT_ROUND, NUMBER_WORDS_V2
+    from scripts.build_text_checks_data import read_targets
+
+    s = _seed_for("count", 7)
+    chains = []
+    doc = make_train_document(s, STORIES, 1500, ntok, version="v2", questions=8, chains=chains)
+    offs = _word_offsets(doc)
+    quads = [x for x in (lambda q: [q[i:i + 4] for i in range(0, len(q), 4)])(
+        read_targets(doc, offs, chains, span="output", count_naming=True))]
+    marks = [x[0] for x in quads if x[1] == COUNT_ROUND]
+    assert marks
+    for pos in marks:
+        named = [x for x in quads if x[0] == pos and 1 <= x[1] <= 3]
+        assert [x[1] for x in named] == [1, 2, 3] and len({(x[2], x[3]) for x in named}) == 1
+        _, t0, t1 = named[0][1:]
+        word = doc[offs[t0 - 1][0]: offs[t1 - 1][1]].strip().rstrip(".")  # test tokens are whole words
+        assert word in NUMBER_WORDS_V2
+    plain = read_targets(doc, offs, chains, span="output")
+    assert not [x for x in (plain[i:i + 4] for i in range(0, len(plain), 4)) if 1 <= x[1] <= 3 and x[0] in marks]
+
+
+def test_task_free_cuts_keep_length_and_are_deterministic():
+    """--task_free_boundary (stage-W writer, 18 Oct): up to k boundaries, none in the first 128 tokens, length kept."""
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location("build_tc", "scripts/build_text_checks_data.py")
+    b = importlib.util.module_from_spec(spec)
+    argv, sys.argv = sys.argv, ["build_tc"]
+    try:
+        spec.loader.exec_module(b)
+    finally:
+        sys.argv = argv
+    ids = list(range(1000, 1900))
+    out = b.task_free_cuts(ids, 7, 3)
+    pos = [i for i, t in enumerate(out) if t == 7]
+    assert len(out) == len(ids) and len(pos) == 3 and min(pos) >= 128 and max(pos) < len(out) - 31
+    assert [t for t in out if t != 7] == ids[: len(ids) - 3]
+    assert b.task_free_cuts(ids, 7, 3) == out
+    assert b.task_free_cuts(list(range(200)), 7, 3) == list(range(200))  # too short to cut

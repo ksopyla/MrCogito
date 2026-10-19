@@ -1,101 +1,208 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Text Capability Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Same visual system as the DNA capability board. One reading column: status brief, results by round
-   (budget, models, tasks, observations), length and learning charts, task guide, then calibration and
-   pipeline checks kept apart from results, and the sources. */
+/* Dashboard layout (docs/engineering_specs/capability_boards.md): status → compare architectures → what changed the
+   results → what we know → tasks and exam versions → curves → runs → archive. One colour per architecture, status
+   colours reserved for state, every number with its meaning, detail on demand. */
 :root {
-  --bg: #f6f7f8; --surface: #ffffff; --ink: #14171a; --ink-2: #4b535b; --ink-3: #7b838b;
-  --rule: #dfe3e7; --grid: #edf0f2; --accent: #1c5cab; --tint: #e8f0fa;
+  --bg: #f5f6f7; --surface: #ffffff; --raised: #fbfbfc; --ink: #15181b; --ink-2: #4a525a; --ink-3: #7a828a;
+  --rule: #e1e4e8; --grid: #eef0f2; --accent: #1c5cab; --tint: #e6effa; --tint-2: #f1f6fc;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
-  --good: #0a7d0a; --critical: #c62f2f; --warning: #9a6400; --muted-chip: #5d656d; --info: #1c5cab;
-  --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --good: #0a7d0a; --good-bg: #e7f4e7; --critical: #c62f2f; --critical-bg: #fbeaea; --warning: #9a6400; --warning-bg: #fbf2df;
+  --muted-chip: #5d656d; --muted-bg: #eef0f2; --info: #1c5cab; --info-bg: #e6effa;
+  --sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
-    --rule: #2c3136; --grid: #24292d; --accent: #6da7ec; --tint: #1d2a3a;
+    --bg: #111315; --surface: #1a1d20; --raised: #1f2226; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
+    --rule: #2c3136; --grid: #24292d; --accent: #6da7ec; --tint: #1d2c40; --tint-2: #192330;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
-    --good: #2fbf2f; --critical: #e66767; --warning: #fab219; --muted-chip: #9aa2aa; --info: #6da7ec;
+    --good: #48c548; --good-bg: #163118; --critical: #e66767; --critical-bg: #3a1c1c; --warning: #f2b23a; --warning-bg: #352a12;
+    --muted-chip: #9aa2aa; --muted-bg: #24292d; --info: #6da7ec; --info-bg: #1d2c40;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #121416; --surface: #1a1d20; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
-  --rule: #2c3136; --grid: #24292d; --accent: #6da7ec; --tint: #1d2a3a;
+  --bg: #111315; --surface: #1a1d20; --raised: #1f2226; --ink: #f2f4f6; --ink-2: #b9c0c7; --ink-3: #868e96;
+  --rule: #2c3136; --grid: #24292d; --accent: #6da7ec; --tint: #1d2c40; --tint-2: #192330;
   --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
-  --good: #2fbf2f; --critical: #e66767; --warning: #fab219; --muted-chip: #9aa2aa; --info: #6da7ec;
+  --good: #48c548; --good-bg: #163118; --critical: #e66767; --critical-bg: #3a1c1c; --warning: #f2b23a; --warning-bg: #352a12;
+  --muted-chip: #9aa2aa; --muted-bg: #24292d; --info: #6da7ec; --info-bg: #1d2c40;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+html { scroll-padding-top: 64px; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); margin: 0; }
-a { color: var(--accent); }
-.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 64px; display: grid; gap: 36px; }
-h1 { font-size: 30px; line-height: 1.15; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
-h2 { font-size: 21px; margin: 0; text-wrap: balance; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1 { font-size: 19px; line-height: 1.2; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 22px; line-height: 1.2; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
 h3 { font-size: 15px; margin: 0; }
-p { margin: 0; max-width: 78ch; }
-ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; max-width: 82ch; }
+p { margin: 0; }
+ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
 .muted { color: var(--ink-2); }
 .small { font-size: 13px; color: var(--ink-3); }
 .mono, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-header { display: grid; gap: 12px; }
-.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
-nav.toc { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 14px; }
+
+/* top bar: the board is an application, the bar never scrolls away */
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: saturate(1.4) blur(10px); -webkit-backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--rule); }
+.top .in { max-width: 1240px; margin: 0 auto; padding: 10px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.brand { display: grid; gap: 1px; }
+.brand .eyebrow { font: 500 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.tabs { display: flex; flex-wrap: wrap; gap: 2px; font-size: 14px; margin-left: auto; }
+.tabs a { color: var(--ink-2); padding: 5px 10px; border-radius: 7px; }
+.tabs a:hover { background: var(--grid); text-decoration: none; color: var(--ink); }
+.tabs a.on { background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--rule); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 24px 80px; display: grid; gap: 44px; }
 section { display: grid; gap: 14px; min-width: 0; }
-.brief { background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--accent); border-radius: 8px;
-  padding: 16px 20px; display: grid; gap: 12px; }
-.brief .headline { font-size: 17px; font-weight: 600; max-width: 80ch; }
-.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
-.cols h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 6px; }
-.round { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px 20px; display: grid; gap: 16px; min-width: 0; }
-.round .meta { font-size: 13px; color: var(--ink-3); }
-.verdict-line { font-weight: 600; max-width: 82ch; }
-.budget { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
-.bud { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 12px; display: grid; gap: 2px; }
-.bud .k { font-size: 12px; color: var(--ink-3); }
-.bud .v { font: 500 15px var(--mono); font-variant-numeric: tabular-nums; }
-.bud .n { font-size: 12px; color: var(--ink-2); }
-.tablebox { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; max-width: 100%; background: var(--surface); }
+.sechead { display: grid; gap: 4px; }
+.sechead .q { color: var(--ink-2); max-width: 80ch; }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; }
+
+/* overview */
+.lead { font-size: 20px; line-height: 1.4; font-weight: 600; max-width: 62ch; text-wrap: pretty; }
+.asof { font-size: 13px; color: var(--ink-3); }
+table.rcp { min-width: 1040px; } table.rcp td.v { text-align: center; font-variant-numeric: tabular-nums; }
+table.rcp td.v b { font-size: 16px; } table.rcp td.v .rg { display: block; font-size: 11px; color: var(--ink-3); }
+table.rcp td.v.goalmet { background: var(--good-bg); } table.rcp td.v.low { color: var(--ink-3); }
+table.rcp th.held { color: var(--ink-3); } table.rcp td.held { border-left: 1px solid var(--rule); }
+.sig { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; margin: 2px 4px 0 0; border: 1px solid var(--rule); color: var(--ink-2); }
+.sig.s-privileged { border-color: var(--warning); color: var(--warning); } .sig.s-data { border-color: var(--info); color: var(--info); }
+table.rcp td.rname { min-width: 230px; max-width: 280px; } table.rcp td.rname .sigs { margin-top: 4px; line-height: 1.6; }
+.rname b { display: block; } .rname .small { display: block; }
+.goal { padding: 14px 16px; }
+.morechg > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; color: var(--ink-2); }
+#runsTable td.res .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#runsTable tr.r.open td.res .clamp { -webkit-line-clamp: unset; display: block; } .goal h3 { margin: 0 0 2px; font-size: 15px; } .goal .gsub { font-size: 13px; color: var(--ink-3); margin: 0 0 10px; }
+.goal .grow { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) minmax(0, 1fr); gap: 6px 16px; align-items: center; padding: 5px 0; border-top: 1px solid var(--grid); }
+.goal .grow.head { border-top: 0; padding: 0; font-size: 12px; color: var(--ink-3); }
+.goal .gname { font-weight: 600; font-size: 14px; } .goal .gname span { display: block; font-weight: 400; font-size: 12px; color: var(--ink-3); }
+.goal .gcell { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.goal .gcell b { font-size: 15px; } .goal .gcell .gw { color: var(--ink-3); overflow-wrap: anywhere; }
+.goal .gkey { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-3); margin-top: 8px; }
+@media (max-width: 640px) { .goal .grow { grid-template-columns: 1fr; } .goal .grow.head { display: none; } .goal .gcell::before { content: attr(data-l); font-size: 11px; color: var(--ink-3); grid-column: 1 / -1; } }
+.now { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+.now .card { padding: 14px 16px; display: grid; gap: 10px; align-content: start; }
+.now h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); display: flex; align-items: center; gap: 8px; }
+.now .count { font: 600 12px var(--mono); color: var(--ink-2); background: var(--grid); border-radius: 999px; padding: 1px 8px; }
+.job { display: grid; gap: 2px; padding-top: 8px; border-top: 1px solid var(--grid); }
+.job:first-of-type { border-top: 0; padding-top: 0; }
+.job .t { font-weight: 600; }
+.job .w { font-size: 13px; color: var(--ink-3); font-family: var(--mono); }
+.card.ask { border-color: var(--warning); background: var(--warning-bg); }
+.card.ask ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.updates summary { cursor: pointer; font-size: 14px; color: var(--accent); }
+.updates ul { margin-top: 10px; max-width: 90ch; font-size: 14px; }
+.updates li { color: var(--ink-2); }
+
+/* segmented controls */
+.seg { display: inline-flex; background: var(--grid); border-radius: 9px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button { font: 500 13px var(--sans); border: 0; background: transparent; color: var(--ink-2); padding: 5px 12px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; font-size: 13px; color: var(--ink-3); }
+.bar label { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+.bar select { min-width: 0; max-width: min(72vw, 460px); }
+.wrap { grid-template-columns: minmax(0, 1fr); }
+
+/* compare table */
+.tablebox { overflow-x: auto; max-width: 100%; }
 table { border-collapse: collapse; font-size: 13px; width: 100%; }
-th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
-th { font-weight: 600; color: var(--ink-2); background: var(--surface); vertical-align: bottom; }
-td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-td.model .nm { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
-td.model .wh { font-size: 12px; color: var(--ink-3); }
-.swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; display: inline-block; }
-th.mcol { text-align: center; min-width: 96px; font-size: 12px; line-height: 1.3; }
-th.mcol .swatch { display: block; margin: 0 auto 4px; }
-td.task { min-width: 190px; }
-td.task .tid { font-size: 12px; color: var(--ink-3); }
-td.cell { text-align: center; font-family: var(--mono); font-variant-numeric: tabular-nums; line-height: 1.25; }
-td.cell .sub { display: block; font-size: 10px; color: var(--ink-3); }
-td.cell.at { color: var(--ink-3); }
-td.cell.above { background: var(--tint); color: var(--ink); font-weight: 600; }
-td.cell.pass { box-shadow: inset 0 0 0 2px var(--good); color: var(--good); font-weight: 600; }
-td.cell.short { text-decoration: line-through; color: var(--critical); }
-td.floor { text-align: center; font-family: var(--mono); color: var(--ink-3); }
-table.sb th.grp { text-align: center; border-left: 2px solid var(--rule); }
-table.sb td.lead { font-size: 12px; color: var(--ink-3); border-right: 2px solid var(--rule); white-space: nowrap; }
-table.sb td.lead.win { color: var(--ink); font-weight: 600; }
-td.cell.queued, td.cell.missing { color: var(--ink-3); font: 12px var(--sans); font-style: italic; }
-td.cell.running { color: var(--info); font: 600 12px var(--sans); }
-.sbsum { margin: 10px 0 4px; }
-details.rundetail { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); padding: 10px 14px; }
-details.rundetail > summary { cursor: pointer; }
-details.rundetail[open] > summary { margin-bottom: 10px; }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--ink-3); }
+th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-weight: 600; color: var(--ink-3); font-size: 12px; vertical-align: bottom; }
+table.cmp { min-width: 960px; }
+table.cmp th, table.cmp td { padding: 8px 6px; }
+table.cmp th.t { text-align: center; min-width: 86px; }
+table.cmp th.t .tq { display: block; font-weight: 400; color: var(--ink-3); font-size: 11px; line-height: 1.25; margin-top: 2px; }
+table.cmp th.t.gate { color: var(--ink); }
+table.cmp td { vertical-align: middle; }
+table.cmp tbody tr:last-child td { border-bottom: 0; }
+.arch { display: grid; grid-template-columns: 12px 1fr; gap: 2px 10px; min-width: 230px; max-width: 290px; }
+.arch .sw { width: 12px; height: 12px; border-radius: 3px; margin-top: 4px; grid-row: span 3; }
+.arch .n { font-weight: 600; font-size: 14px; }
+.arch .d { font-size: 12px; color: var(--ink-3); line-height: 1.35; }
+.c { text-align: center; border-radius: 8px; padding: 6px 4px; display: grid; justify-items: center; gap: 2px; cursor: default; }
+.c .v { font: 600 18px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.c .v small { font-size: 11px; font-weight: 500; color: var(--ink-3); margin-left: 1px; }
+.c .r { font: 11px var(--mono); color: var(--ink-3); }
+.c.all { background: var(--tint); }
+.c.some { background: var(--tint-2); }
+.c.none .v { color: var(--ink-3); font-weight: 500; }
+.c.best { box-shadow: inset 0 0 0 2px var(--accent); }
+.c.na, .c.wait { font-size: 12px; color: var(--ink-3); font-style: italic; }
+.c.wait { color: var(--info); font-style: normal; font-weight: 600; }
+.strip { display: block; }
+.pips { display: inline-flex; gap: 3px; }
+.pip { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--good); }
+.pip.on { background: var(--good); }
+.pip.off { border-color: var(--ink-3); }
+.verdict { font-size: 12px; color: var(--ink); margin-top: 4px; line-height: 1.35; max-width: 34ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12px; color: var(--ink-3); align-items: center; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
-.legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1px solid var(--rule); }
-.chip { display: inline-flex; align-items: center; gap: 5px; font: 500 12px/1 var(--sans); padding: 4px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
-.chip.done { color: var(--good); } .chip.running { color: var(--info); } .chip.pending { color: var(--muted-chip); } .chip.failed { color: var(--critical); }
-.controls { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; }
-select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
+.legend i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+details.how { font-size: 13px; color: var(--ink-2); }
+details.how summary { cursor: pointer; color: var(--accent); }
+details.how p { margin-top: 6px; max-width: 95ch; }
+
+/* changes */
+.changes { display: grid; }
+.chg { display: grid; grid-template-columns: 112px minmax(0, 1.25fr) minmax(0, 1fr) 104px; gap: 8px 18px; padding: 14px 16px;
+  border-top: 1px solid var(--grid); align-items: start; }
+.chg:first-child { border-top: 0; }
+.chg .when { font: 13px var(--mono); color: var(--ink-3); display: grid; gap: 6px; justify-items: start; }
+.chg .what b { font-size: 14px; }
+.chg .what .cmpd { font-size: 12px; color: var(--ink-3); }
+.chg .what .note { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+.mets { display: grid; gap: 8px; }
+.met { display: grid; gap: 2px; }
+.met .lbl { font-size: 12px; color: var(--ink-3); }
+.met .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.met .ba { font: 500 13px var(--mono); white-space: nowrap; }
+.chg .eff { justify-self: end; }
+@media (max-width: 820px) { .chg { grid-template-columns: 1fr; } .chg .eff { justify-self: start; } }
+
+/* chips: status colours are reserved for state */
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 600 11px/1 var(--sans); padding: 4px 8px; border-radius: 999px; white-space: nowrap; letter-spacing: .01em; }
+.chip.good { color: var(--good); background: var(--good-bg); } .chip.bad { color: var(--critical); background: var(--critical-bg); }
+.chip.warn { color: var(--warning); background: var(--warning-bg); } .chip.info { color: var(--info); background: var(--info-bg); }
+.chip.muted { color: var(--muted-chip); background: var(--muted-bg); }
+.kind { font: 500 11px var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; }
+
+/* findings */
+.findings { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 14px; align-items: start; }
+.fgroup { padding: 12px 16px; display: grid; gap: 4px; }
+.fgroup > h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 4px; }
+.claim { border-top: 1px solid var(--grid); padding: 8px 0 6px; }
+.claim:first-of-type { border-top: 0; }
+.claim summary { cursor: pointer; list-style: none; font-size: 14px; line-height: 1.4; }
+.claim summary::-webkit-details-marker { display: none; }
+.claim summary::before { content: "›"; display: inline-block; width: 14px; color: var(--ink-3); transition: transform .15s; }
+.claim[open] summary::before { transform: rotate(90deg); }
+.claim .ev { font-size: 13px; color: var(--ink-2); margin: 6px 0 2px 14px; display: grid; gap: 4px; }
+.fgroup.retracted .claim summary { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--rule); }
+
+/* tasks and exam versions */
+.versions { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0; padding: 4px; }
+.ver { padding: 12px 14px; display: grid; gap: 4px; align-content: start; position: relative; border-left: 1px solid var(--grid); }
+.ver:first-child { border-left: 0; }
+.ver .vn { font-weight: 700; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ver .vd { font: 12px var(--mono); color: var(--ink-3); }
+.ver .vc { font-size: 13px; color: var(--ink-2); }
+.ver.cur { background: var(--tint-2); border-radius: 8px; }
+table.tasks td { vertical-align: top; }
+table.tasks td.tn { min-width: 150px; }
+table.tasks td.tn b { display: block; font-size: 14px; }
+table.tasks .ex { font: 12px/1.5 var(--mono); color: var(--ink-2); min-width: 280px; }
+table.tasks .ex .qa { color: var(--ink); }
+table.tasks td.d { font-size: 13px; color: var(--ink-2); min-width: 260px; max-width: 420px; }
+
+/* charts */
 .multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 12px; }
-.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 12px 6px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 12px 6px; min-width: 0; }
 .panel h3 { font-size: 14px; }
 .panel .stage { font-size: 12px; color: var(--ink-3); }
 .panel svg { display: block; width: 100%; height: auto; overflow: visible; }
@@ -106,133 +213,164 @@ select { font: inherit; padding: 4px 8px; border-radius: 6px; border: 1px solid 
 .series path { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .series circle { stroke: var(--surface); stroke-width: 2; }
 .empty-note { font-size: 13px; color: var(--ink-3); padding: 18px 4px; }
-.guide { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
-.gcard { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 16px; display: grid; gap: 4px; align-content: start; }
-.gcard .q { color: var(--ink-2); font-size: 14px; }
-.gcard .d { font-size: 13px; color: var(--ink-3); }
-.calib { background: var(--surface); border: 1px dashed var(--rule); border-radius: 10px; padding: 16px 20px; display: grid; gap: 16px; }
-details summary { cursor: pointer; font-weight: 600; font-size: 17px; }
-details[open] > summary { margin-bottom: 12px; }
-#tip { position: fixed; pointer-events: none; z-index: 10; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.14); max-width: 340px; }
-#tip .row { display: flex; gap: 10px; justify-content: space-between; }
+select { font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); max-width: 100%; }
+
+/* runs */
+.filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 13px; }
+.fchip { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.filters input[type=date] { font: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
+.fbtn { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--accent); cursor: pointer; }
+#runsTable tbody tr.r { cursor: pointer; }
+#runsTable tbody tr.r:hover td { background: var(--raised); }
+#runsTable td.res { max-width: 520px; color: var(--ink-2); }
+#runsTable tr.x td { background: var(--raised); font-size: 13px; color: var(--ink-2); }
+#runsTable tr.x dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; }
+#runsTable tr.x dt { color: var(--ink-3); }
+#runsTable tr.x dd { margin: 0; }
+
+/* archive: everything kept, nothing on the way */
+.archive > details { padding: 12px 16px; }
+.archive > details > summary { cursor: pointer; font-weight: 600; font-size: 16px; }
+.archive > details[open] > summary { margin-bottom: 12px; }
+.archive { display: grid; gap: 10px; }
+.log { display: grid; gap: 10px; }
+.logitem { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; border-top: 1px solid var(--grid); padding-top: 10px; }
+.logdate { color: var(--ink-3); font-size: 13px; }
+.logbody { display: grid; gap: 4px; min-width: 0; }
+.loghead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+details.rundetail { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface); padding: 10px 14px; }
+details.rundetail > summary { cursor: pointer; }
+details.rundetail[open] > summary { margin-bottom: 10px; }
+.round { display: grid; gap: 16px; min-width: 0; }
+.round .meta { font-size: 13px; color: var(--ink-3); }
+.round h2 { font-size: 17px; }
+.verdict-line { font-weight: 600; max-width: 82ch; }
+.budget { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.bud { border: 1px solid var(--grid); border-radius: 8px; padding: 8px 12px; display: grid; gap: 2px; }
+.bud .k { font-size: 12px; color: var(--ink-3); } .bud .v { font: 500 15px var(--mono); } .bud .n { font-size: 12px; color: var(--ink-2); }
+.round .tablebox, .archive .tablebox { border: 1px solid var(--rule); border-radius: 8px; }
+td.num, th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.model .nm { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
+td.model .wh { font-size: 12px; color: var(--ink-3); }
+.swatch { width: 11px; height: 11px; border-radius: 3px; flex: none; display: inline-block; }
+th.mcol { text-align: center; min-width: 96px; font-size: 12px; line-height: 1.3; }
+th.mcol .swatch { display: block; margin: 0 auto 4px; }
+td.task { min-width: 190px; } td.task .tid { font-size: 12px; color: var(--ink-3); }
+td.cell { text-align: center; font-family: var(--mono); font-variant-numeric: tabular-nums; line-height: 1.25; }
+td.cell .sub { display: block; font-size: 10px; color: var(--ink-3); }
+td.cell.at { color: var(--ink-3); } td.cell.above { background: var(--tint); font-weight: 600; }
+td.cell.pass { box-shadow: inset 0 0 0 2px var(--good); color: var(--good); font-weight: 600; }
+td.cell.short { text-decoration: line-through; color: var(--critical); }
+td.floor { text-align: center; font-family: var(--mono); color: var(--ink-3); }
+.calib { display: grid; gap: 16px; }
+#tip { position: fixed; pointer-events: none; z-index: 30; background: var(--surface); color: var(--ink); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.16); max-width: 360px; }
+#tip .row { display: flex; gap: 12px; justify-content: space-between; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 560px) { h1 { font-size: 24px; } .wrap { padding-inline: 16px; } .round, .brief, .calib { padding: 14px; } }
+table.cmp th:first-child, table.cmp td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; }
+@media (max-width: 640px) { .tabs { flex-wrap: nowrap; overflow-x: auto; width: 100%; scrollbar-width: none; } .tabs a { white-space: nowrap; }
+  .arch { min-width: 140px; max-width: 150px; } .arch .d, .arch .verdict { display: none; } .top .in { padding-block: 8px; } }
+@media (max-width: 640px) { .wrap { padding-inline: 16px; gap: 36px; } .top .in { padding-inline: 16px; } .tabs { margin-left: 0; } .lead { font-size: 18px; } .logitem { grid-template-columns: 1fr; gap: 4px; } }
 </style>
 
-<div class="wrap">
-  <header>
-    <div class="eyebrow">MrCogito · text capability checks</div>
-    <h1>Text Capability Board</h1>
-    <p class="small" id="asof"></p>
-    <nav class="toc" aria-label="Sections">
-      <a href="#scoreboard">Scoreboard</a><a href="#length">Length</a><a href="#learning">Learning curves</a>
-      <a href="#guide">Tasks</a><a href="#ladder">All runs</a><a href="#results">Run details</a>
-      <a href="#calibration">Calibration</a><a href="#sources">Sources</a>
-    </nav>
-    <div class="brief" id="brief"></div>
-  </header>
+<header class="top"><div class="in">
+  <div class="brand"><span class="eyebrow">MrCogito · text capability checks</span><h1>Text Capability Board</h1></div>
+  <nav class="tabs" aria-label="Sections">
+    <a href="#overview">Now</a><a href="#recipes">Recipes</a><a href="#compare">Architectures</a><a href="#changes">What changed</a><a href="#findings">What we know</a>
+    <a href="#tasks">Tasks &amp; exams</a><a href="#curves">Curves</a><a href="#runs">Runs</a><a href="#archive">Archive</a>
+  </nav>
+</div></header>
 
-  <section id="scoreboard">
-    <div>
-      <h2>Scoreboard: who reads which facts</h2>
-      <p class="muted">The current comparison: 30M models, plain input, 1.5B training tokens, exams v2. Each cell is the share of
-        exact answers at the 4k training length (one number per seed), with the score at 16k — four times the training length —
-        underneath. Green border: a pass (75 % or more). Shaded: clearly above guessing. Grey: at guessing.</p>
-    </div>
-    <div id="sbbox"></div>
+<main class="wrap">
+  <section id="overview">
+    <p class="asof" id="asof"></p>
+    <p class="lead" id="lead"></p>
+    <div class="card goal" id="goal"></div>
+    <div class="now" id="now"></div>
+    <details class="updates"><summary id="updSum">Latest updates</summary><ul id="updates"></ul></details>
   </section>
 
-  <section id="length">
-    <div>
-      <h2>Length: does it still work on longer texts?</h2>
-      <p class="muted">Each model trains at the length marked by the vertical line, then reads longer documents with no more training
-        (more story filler, the same facts). Dashed grey: the 75 % pass mark. Dotted red: the guessing rate.</p>
-    </div>
-    <div class="controls"><label>Round <select id="roundSel"></select></label></div>
-    <div class="multiples" id="lengthbox"></div>
+  <section id="recipes">
+    <div class="sechead"><h2>Which recipe is closest to the goal?</h2>
+      <p class="q">One row per trained recipe: the architecture, what it was told in training, and where it started. Cells: % exact,
+        the middle of its runs (range underneath when there are several). Green: at or above the 70 % goal. The last columns test
+        what training never showed: new sentence shapes and one more hop.</p></div>
+    <div class="bar"><span class="seg" id="recipeLen" role="group" aria-label="Document length"></span></div>
+    <div class="card tablebox"><table class="cmp rcp" id="rcp"></table></div>
+    <div class="legend" id="rcpLegend"></div>
   </section>
 
-  <section id="learning">
-    <div>
-      <h2>Learning curves: when does each skill appear?</h2>
-      <p class="muted">Score at the training length on checkpoints saved along training (result rounds: 10, 25, 50, 75
-        and 100 % of the training tokens; calibration runs: every 10 or 20 %), and the held-out loss of the training mix
-        (lower is better).</p>
-    </div>
-    <div class="multiples" id="learnbox"></div>
+  <section id="compare">
+    <div class="sechead"><h2>Which architecture is best when trained from scratch?</h2>
+      <p class="q">Each cell: the middle of the runs (big number) and the range across runs, % of exact answers. Blue: learned in every run;
+        light blue: in some runs; grey: never (not clearly above guessing). Ring: the best architecture in that column.</p></div>
+    <div class="bar"><span class="seg" id="measureSeg" role="group" aria-label="Measure"></span><span class="seg" id="recipeSeg" role="group" aria-label="Training recipe"></span></div>
+    <div class="card tablebox"><table class="cmp" id="cmp"></table></div>
+    <div class="legend" id="cmpLegend"></div>
+    <details class="how"><summary>How it is scored</summary><p id="howText"></p></details>
   </section>
 
-  <section id="guide">
-    <div>
-      <h2>Task guide</h2>
-      <p class="muted">Each question comes at the end of a document of simple stories about an invented cast, with fact sentences
-        woven in. Names and stories in the exams never appear in training.</p>
-    </div>
-    <div class="guide" id="guidebox"></div>
+  <section id="changes">
+    <div class="sechead"><h2>What changed the results</h2>
+      <p class="q">Every change of recipe, architecture, exam or reading rule whose effect we measured, newest first:
+        before (hollow) → after (filled). "Measurement" changes the exam or the rule, not the model.</p></div>
+    <div class="card changes" id="chg"></div>
   </section>
 
-  <section id="ladder">
-    <div>
-      <h2>All runs, in order</h2>
-      <p class="muted">Everything trained so far and what is queued, oldest first: the calibration ladder (the dense reference
-        alone, growing tokens and size), then the architecture rounds. Times are UTC. Each finished run has its details below.</p>
-    </div>
-    <div style="overflow-x:auto"><table id="ladderTable"></table></div>
+  <section id="findings">
+    <div class="sechead"><h2>What we know</h2>
+      <p class="q">Every conclusion with how sure we are. Click one for its evidence. A claim is never deleted: when the evidence changes, its state does.</p></div>
+    <div class="findings" id="fbox"></div>
   </section>
 
-  <section id="results">
-    <div>
-      <h2>Run details</h2>
-      <p class="muted">One block per run, newest first; click to open. Every model in a run trains from scratch on the same data,
-        with the same number of tokens and compute cap, and its own tuned step size. Scores are exact answers, word for word
-        including the final period; a pass is 75 % or more.</p>
-    </div>
-    <div id="rounds" style="display:grid; gap:20px"></div>
+  <section id="tasks">
+    <div class="sechead"><h2>Tasks and exam versions</h2>
+      <p class="q">Every exam is a document of simple stories about invented people, with fact sentences woven in and a question at the end.
+        Names and stories in the exams never appear in training.</p></div>
+    <div class="card versions" id="versions"></div>
+    <div class="card tablebox"><table class="tasks" id="taskTable"></table></div>
   </section>
 
-  <section id="calibration">
-    <details class="calib">
-      <summary>Calibration and pipeline checks: not results</summary>
-      <p class="muted">Work that sets up or checks the protocol, kept apart from the results. Pipeline checks are tiny models
-        (2M parameters, a quarter of a million tokens, minutes) that show training, scoring and resuming work end to end; their scores mean
-        nothing. Step-size tuning runs pick each model's step size by held-out loss, never by exam scores.</p>
-      <div>
-        <h3>Superseded rounds</h3>
-        <ul id="superseded" class="small" style="margin-top:6px"></ul>
-      </div>
-      <div>
-        <h3>Pipeline checks (2M-parameter models)</h3>
-        <div class="tablebox" style="margin-top:6px"><table id="pipetable"></table></div>
-      </div>
-      <div>
-        <h3>Step-size tuning</h3>
-        <p class="small">Held-out loss after a short run (lower is better) for each step size; the lowest is frozen in the model's recipe card.</p>
-        <div class="multiples" id="tunebox" style="margin-top:6px"></div>
-      </div>
-      <div>
-        <h3>Data builds</h3>
-        <div class="tablebox" style="margin-top:6px"><table id="datatable"></table></div>
-      </div>
+  <section id="curves">
+    <div class="sechead"><h2>Curves</h2>
+      <p class="q" id="curveQ"></p></div>
+    <div class="bar"><span class="seg" id="curveSeg" role="group" aria-label="Chart"></span>
+      <label>Runs <select id="roundSel"></select></label>
+      <label>Score <select id="modeSel"><option value="far">far facts (beyond the short window)</option><option value="all">every item</option></select></label></div>
+    <div class="legend" id="curveLegend"></div>
+    <div class="multiples" id="curvebox"></div>
+  </section>
+
+  <section id="runs">
+    <div class="sechead"><h2>Runs</h2>
+      <p class="q">Every run, newest first. Click a row for its setup and why it has its standing. <b>In use</b> feeds the comparison;
+        <b>calibration</b> sets the recipe; <b>history</b> used older exams or recipe (kept, not compared).</p></div>
+    <div class="filters" id="filters"></div>
+    <div class="card tablebox"><table id="runsTable"></table></div>
+  </section>
+
+  <section id="archive" class="archive">
+    <div class="sechead"><h2>Archive</h2><p class="q">Everything behind the numbers above, kept for the record.</p></div>
+    <details class="card"><summary>Protocol log: every change and what it did to earlier results</summary><div class="log" id="logbox"></div></details>
+    <details class="card"><summary>Run details: budget, models, every task and exam set per run</summary><div id="rounds" style="display:grid; gap:12px"></div></details>
+    <details class="card calib"><summary>Calibration and pipeline checks (not results)</summary>
+      <div><h3>Superseded rounds</h3><ul id="superseded" class="small" style="margin-top:6px"></ul></div>
+      <div><h3>Pipeline checks (2M-parameter models)</h3><div class="tablebox" style="margin-top:6px"><table id="pipetable"></table></div></div>
+      <div><h3>Step-size tuning</h3><p class="small">Held-out loss after a short run (lower is better) per step size; the lowest is frozen in the model's recipe card.</p>
+        <div class="multiples" id="tunebox" style="margin-top:6px"></div></div>
+      <div><h3>Data builds</h3><div class="tablebox" style="margin-top:6px"><table id="datatable"></table></div></div>
     </details>
+    <details class="card"><summary>Where these numbers come from</summary><div class="tablebox"><table id="srctable"></table></div>
+      <p class="small" style="margin-top:8px">Refresh with <span class="mono">bash scripts/pull_text_checks_results.sh &lt;host&gt; &lt;run…&gt;</span>;
+        judgement text in <span class="mono">analysis/text_board_notes.py</span>; protocol in <span class="mono">docs/engineering_specs/text_capability_checks.md</span>;
+        board rules in <span class="mono">docs/engineering_specs/capability_boards.md</span>.</p></details>
   </section>
-
-  <section id="sources">
-    <details>
-      <summary>Where these numbers come from</summary>
-      <div class="tablebox"><table id="srctable"></table></div>
-      <p class="small" style="margin-top:8px">Refresh with <span class="mono">bash scripts/pull_text_checks_results.sh &lt;host&gt; &lt;run…&gt;</span>.
-        Verdicts and observations: <span class="mono">analysis/text_board_notes.py</span>. Protocol:
-        <span class="mono">docs/engineering_specs/text_capability_checks.md</span>.</p>
-    </details>
-  </section>
-</div>
+</main>
 <div id="tip" hidden></div>
 
 <script>
 const D = /*__DATA__*/null;
-const SERIES = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
-const ARCH_COLOR = { dense: "--s1", local: "--s4", e31c: "--s3", e31c_loop: "--s7", dense_plain: "--s1",
-  local_plain: "--s4", e31c_plain: "--s3", e31c_loop_plain: "--s7" };
+const ARCH_COLOR = { dense: "--s1", dense_plain: "--s1", local: "--s4", local_plain: "--s4", e31c: "--s3", e31c_plain: "--s3",
+  e33: "--s2", e31c_loop: "--s2", e31c_loop_plain: "--s2", e33d: "--s7", e33d_plain: "--s7" };
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const el = (tag, attrs = {}, ...kids) => { const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) { if (k === "class") e.className = v; else if (k === "html") e.innerHTML = v; else e.setAttribute(k, v); }
@@ -243,97 +381,440 @@ const fmtLen = L => L >= 1024 ? (L / 1024) + "k" : String(L);
 const fmtTime = s => s ? s.replace("T", " ").replace(/\+00:00$/, "").slice(0, 16) + " UTC" : "–";
 const colorOf = m => m.color || ARCH_COLOR[m.arch] || "--s8";
 const sw = m => { const s = el("span", { class: "swatch" }); s.style.background = css(colorOf(m)); return s; };
+const median = xs => { const s = [...xs].sort((a, b) => a - b); const n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : null; };
 const tip = document.getElementById("tip");
 function showTip(ev, html) { tip.innerHTML = html; tip.hidden = false;
   const x = Math.min(ev.clientX + 14, innerWidth - tip.offsetWidth - 8), y = Math.min(ev.clientY + 14, innerHeight - tip.offsetHeight - 8);
   tip.style.left = x + "px"; tip.style.top = y + "px"; }
 function hideTip() { tip.hidden = true; }
 const ul = items => el("ul", {}, ...items.map(t => el("li", {}, t)));
-
-function header() {
-  document.getElementById("asof").textContent = `Status as of ${D.status.as_of} · page generated ${D.generated} · protocol ${D.version} (first draft, being calibrated)`;
-  const b = document.getElementById("brief");
-  b.append(el("p", { class: "headline" }, D.status.headline),
-    el("div", { class: "cols" }, el("div", {}, el("h3", {}, "Where we are"), ul(D.status.where)),
-                                 el("div", {}, el("h3", {}, "What is next"), ul(D.status.next))));
-  const t = document.getElementById("ladderTable");
-  t.append(el("thead", {}, el("tr", {}, ...["Run", "Model", "Training tokens", "Exams", "What it learned (guessing rate)", "When", "State"]
-    .map(h => el("th", {}, h)))));
-  const tb = el("tbody");
-  for (const r of D.ladder || []) {
-    tb.append(el("tr", {}, el("td", { class: "model" }, el("div", { class: "nm" }, r.run)), el("td", {}, r.model),
-      el("td", {}, r.tokens), el("td", {}, r.exams), el("td", {}, r.result), el("td", { class: "num" }, r.when),
-      el("td", {}, r.state)));
+const store = { get(k, d) { try { const v = localStorage.getItem("textboard." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem("textboard." + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } } };
+function seg(id, options, value, onChange) {
+  const box = document.getElementById(id); box.innerHTML = "";
+  for (const [v, label] of options) {
+    const b = el("button", { type: "button", "aria-pressed": String(v === value) }, label);
+    b.addEventListener("click", () => { for (const x of box.children) x.setAttribute("aria-pressed", "false"); b.setAttribute("aria-pressed", "true"); onChange(v); });
+    box.append(b);
   }
-  t.append(tb);
 }
 
-function scoreboardTable() {
-  const S = D.scoreboard, box = document.getElementById("sbbox");
-  const fams = Object.keys(S.families);
-  const leadName = v => v === "pending" ? "running" : v === "tie" ? "tie" : v ? S.families[v] : "nobody yet";
-  const t = el("table", { class: "sb" });
-  const h1 = el("tr", {}, el("th", { rowspan: 2 }, "Task"), el("th", { rowspan: 2, class: "num" }, "Guessing"));
-  const h2 = el("tr");
-  for (const st of S.setups) {
-    h1.append(el("th", { colspan: fams.length + 1, class: "grp" }, st.title));
-    for (const f of fams) h2.append(el("th", { class: "num" }, S.families[f]));
-    h2.append(el("th", {}, "Leading"));
+// ---- now: status, what runs, what is next, what needs the author ------------------------------------------
+function goalTrack(nb, dn, floor, target) {
+  const W = 120, H = 16, X = v => 4 + v * (W - 8);
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", W); svg.setAttribute("height", H);
+  const mk = (t, a) => { const e = document.createElementNS(ns, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
+  svg.append(mk("line", { x1: X(0), x2: X(1), y1: 8, y2: 8, stroke: css("--rule"), "stroke-width": 3, "stroke-linecap": "round" }));
+  if (nb) svg.append(mk("line", { x1: X(0), x2: X(nb.score), y1: 8, y2: 8, stroke: css("--accent"), "stroke-width": 3, "stroke-linecap": "round" }));
+  if (floor != null) svg.append(mk("line", { x1: X(floor), x2: X(floor), y1: 3, y2: 13, stroke: css("--critical"), "stroke-width": 1, opacity: .6 }));
+  svg.append(mk("line", { x1: X(target), x2: X(target), y1: 1, y2: 15, stroke: css("--ink"), "stroke-width": 1.5 }));
+  if (dn) svg.append(mk("rect", { x: X(dn.score) - 3.5, y: 4.5, width: 7, height: 7, transform: `rotate(45 ${X(dn.score)} 8)`, fill: css("--surface"), stroke: css("--ink-3"), "stroke-width": 1.5 }));
+  if (nb) svg.append(mk("circle", { cx: X(nb.score), cy: 8, r: 4, fill: css("--accent"), stroke: css("--surface"), "stroke-width": 1.5 }));
+  return svg;
+}
+function goal() {
+  const G = D.goal, box = document.getElementById("goal");
+  if (!G) { box.hidden = true; return; }
+  const pct = v => v == null ? "—" : Math.round(100 * v) + " %";
+  box.append(el("h3", {}, `Goal: ${Math.round(100 * G.target)} % on T4-T7`),
+    el("p", { class: "gsub" }, `${G.text} Set ${G.set}. Best run so far on the current exams; a single run counts until a second confirms it.`));
+  const lens = G.lengths.map(L => L >= 1024 ? (L / 1024) + "k" : String(L));
+  box.append(el("div", { class: "grow head" }, el("span", {}, "Task"), ...lens.map(l => el("span", {}, `Document ${l} tokens`))));
+  for (const task of G.tasks) {
+    const g = D.guide[task] || [task, ""];
+    const row = el("div", { class: "grow" }, el("div", { class: "gname" }, g[0], el("span", {}, g[1].replace("Can it ", "").replace("?", ""))));
+    G.lengths.forEach((L, i) => {
+      const b = G.best[`${task}|${L}`] || {}, nb = b.notebook, dn = b.dense;
+      const words = el("span", { class: "gw" }, el("b", {}, pct(nb && nb.score)), nb ? ` ${nb.name}` : " no notebook run",
+        dn && L <= 4096 ? ` · dense ${pct(dn.score)}` : "");
+      const c = el("div", { class: "gcell", "data-l": `Document ${lens[i]} tokens` }, goalTrack(nb, L <= 4096 ? dn : null, (nb || dn || {}).floor, G.target), words);
+      c.title = nb ? `Best notebook run: ${nb.run}` : "";
+      row.append(c);
+    });
+    box.append(row);
   }
-  t.append(el("thead", {}, h1, h2));
+  box.append(el("div", { class: "gkey" }, el("span", {}, "● best notebook model"), el("span", {}, "◇ best dense model (has no method past 4k)"),
+    el("span", {}, "| black: the goal"), el("span", {}, "| red: guessing (effective floor)")));
+}
+let RL = store.get("recipeLen", 4096);
+function recipes() {
+  const t = document.getElementById("rcp"); t.innerHTML = "";
+  const seg = document.getElementById("recipeLen"); seg.innerHTML = "";
+  for (const [L, lab] of [[4096, "4k documents (training length)"], [16384, "16k documents (4× longer)"]]) {
+    const b = el("button", { type: "button", "aria-pressed": String(RL === L) }, lab);
+    b.addEventListener("click", () => { RL = L; store.set("recipeLen", L); recipes(); });
+    seg.append(b);
+  }
+  const pct = v => v == null ? "—" : Math.round(100 * v);
+  const head = el("tr", {}, el("th", {}, "Recipe"));
+  for (const task of D.tasks) { const g = D.guide[task]; head.append(el("th", { class: "t" }, g[0], el("span", { class: "tq" }, g[1].replace("Can it ", "").replace("?", "")))); }
+  head.append(el("th", { class: "t held" }, "Compose, new shapes"), el("th", { class: "t held" }, "Compose, 3 hops"),
+    el("th", { class: "t held" }, "Deduce, 3 steps"), el("th", { class: "t" }, "Notebook off", el("span", { class: "tq" }, "compose 4k")),
+    el("th", { class: "t" }, "Story loss", el("span", { class: "tq" }, "lower is better")));
+  t.append(el("thead", {}, head));
   const tb = el("tbody");
-  const wins = {};
-  for (const task of D.tasks) {
-    const g = D.guide[task], fl = S.floors[task];
-    const tr = el("tr", {}, el("td", { class: "task" }, el("div", {}, g[0] + (D.gating.includes(task) ? "" : " · frontier")),
-      el("div", { class: "tid" }, g[1])), el("td", { class: "floor" }, fl != null ? pct(fl) + " %" : "–"));
-    for (const st of S.setups) {
-      const row = (S.cells[st.key] || {})[task] || {};
-      for (const f of fams) {
-        const es = row[f] || [];
-        const done = es.filter(e => e.state === "done");
-        if (!es.length) { tr.append(el("td", { class: "cell missing" }, "not planned")); continue; }
-        if (!done.length) { tr.append(el("td", { class: "cell " + es[0].state }, es[0].state === "running" ? "training…" : "queued")); continue; }
-        const best = Math.max(...done.map(e => Math.max(e.at4k || 0, e.atmax || 0)));
-        const cls = best >= D.pass ? "pass" : (fl != null && best > fl + 0.10) ? "above" : "at";
-        const td = el("td", { class: "cell " + cls }, done.map(e => pct(e.at4k) + " %").join(" · "));
-        td.append(el("span", { class: "sub" }, done.map(e => e.lmax > 4096 ? fmtLen(e.lmax) + ": " + pct(e.atmax) + " %" : "4k only").join(" · ")));
-        if (done.length > 1) td.append(el("span", { class: "sub" }, done.length + " seeds"));
-        if (es.some(e => e.state !== "done")) td.append(el("span", { class: "sub" }, "+ 1 training"));
-        td.addEventListener("mousemove", ev => showTip(ev, `<b>${g[0]}</b> · ${S.families[f]} · ${st.title}` +
-          done.map(e => `<div class="row"><span>seed ${e.seed}: 1k / 4k / ${fmtLen(e.lmax)}</span><span>${pct(e.at1k)} / ${pct(e.at4k)} / ${pct(e.atmax)} %</span></div>`).join("") +
-          `<div class="row"><span>run</span><span>${done.map(e => e.run.split(".")[0]).join(", ")}</span></div>`));
-        td.addEventListener("mouseleave", hideTip);
-        tr.append(td);
-      }
-      const lead = S.leaders[st.key + "|" + task];
-      if (lead && !["pending", "tie"].includes(lead)) wins[st.key + "|" + lead] = (wins[st.key + "|" + lead] || 0) + 1;
-      tr.append(el("td", { class: "lead " + (lead && !["pending", "tie"].includes(lead) ? "win" : "") }, leadName(lead)));
-    }
+  const cell = (c, extraCls) => {
+    if (!c) return el("td", { class: "v " + (extraCls || "") }, "—");
+    const cls = ["v", extraCls || "", c.mid >= D.goal.target ? "goalmet" : "", (c.floor != null && c.mid <= c.floor + 0.1) ? "low" : ""].join(" ");
+    return el("td", { class: cls, title: `${c.n} run(s): ${pct(c.lo)}–${pct(c.hi)} %` }, el("b", {}, pct(c.mid)),
+      c.n > 1 && Math.round(100 * c.hi) !== Math.round(100 * c.lo) ? el("span", { class: "rg" }, `${pct(c.lo)}–${pct(c.hi)}`) : null);
+  };
+  for (const r of D.recipes || []) {
+    const sigs = el("div", { class: "sigs" }, ...(r.signals || []).map(k => { const s = (D.signals || {})[k] || [k, "arch", ""]; return el("span", { class: "sig s-" + s[1], title: s[2] }, s[0]); }));
+    const runsTxt = `${r.n_runs} run${r.n_runs === 1 ? "" : "s"}` + (r.pending.length ? ` · ${r.pending.length} pending` : "");
+    const tr = el("tr", {}, el("td", { class: "rname" }, el("b", {}, r.name), el("span", { class: "small" }, r.what),
+      el("span", { class: "small" }, r.from + " · " + runsTxt), sigs));
+    for (const task of D.tasks) tr.append(cell(r.cells[`id|${task}|${RL}`]));
+    tr.append(cell(r.cells["paraphrase|compose|4096"], "held"), cell(r.cells["harder|compose|4096"], "held"), cell(r.cells["harder|deduce|4096"], "held"),
+      el("td", { class: "v" }, r.off_compose == null ? "—" : String(Math.round(100 * r.off_compose))),
+      el("td", { class: "v" }, r.story == null ? "—" : r.story.toFixed(3)));
     tb.append(tr);
   }
   t.append(tb);
-  box.append(el("div", { class: "tablebox" }, t));
-  const lines = S.setups.map(st => {
-    const w = fams.map(f => [S.families[f], wins[st.key + "|" + f] || 0]).filter(x => x[1]).map(x => `${x[0]} leads ${x[1]}`);
-    const pending = D.tasks.filter(task => S.leaders[st.key + "|" + task] === "pending").length;
-    return `${st.title}: ${w.length ? w.join(", ") : "no leader yet"}` + (pending ? `; ${pending} task${pending > 1 ? "s" : ""} still training or queued` : "") + ".";
-  });
-  box.append(el("ul", { class: "small sbsum" }, ...lines.map(l => el("li", {}, l))));
-  box.append(el("p", { class: "small" }, "Leading = the best score at 4k or 16k, at least 10 points above guessing and 5 ahead of the next model. " +
-    "Single seeds: a lead is a signal, not a verdict, until a second seed repeats it. Hover a cell for 1k / 4k / 16k per seed."));
+  const lg = document.getElementById("rcpLegend"); lg.innerHTML = "";
+  lg.append(el("span", {}, "Training signals: "), el("span", { class: "sig" }, "architecture or start"),
+    el("span", { class: "sig s-data" }, "training data"), el("span", { class: "sig s-privileged" }, "privileged: an annotation only the data generator has"),
+    el("span", { class: "small" }, " · held-out columns at 4k; notebook off = the same model with its notes removed (should fall to guessing)."));
+}
+function overview() {
+  document.getElementById("asof").textContent = `Status ${D.status.as_of} · exams v2.1 · reading rules of 13 Oct · page built ${D.generated}`;
+  document.getElementById("lead").textContent = D.status.headline;
+  const now = document.getElementById("now");
+  const card = (title, items, cls, empty) => {
+    const c = el("div", { class: "card " + (cls || "") }, el("h3", {}, title, el("span", { class: "count" }, String(items.length))));
+    if (!items.length) c.append(el("div", { class: "small" }, empty));
+    for (const it of items) c.append(it);
+    return c;
+  };
+  const job = r => el("div", { class: "job" }, el("span", { class: "t" }, r.run), el("span", { class: "small" }, r.model), el("span", { class: "w" }, r.when));
+  const running = (D.ladder || []).filter(r => r.standing === "running").map(job);
+  const queued = (D.ladder || []).filter(r => ["queued", "blocked"].includes(r.standing)).map(job);
+  const asks = D.decisions || [];
+  now.append(card("Running now", running, "", "Nothing is training. Both servers are free."),
+    card("Up next", queued, "", "Nothing queued."));
+  const a = el("div", { class: "card ask" }, el("h3", {}, "Needs your decision", el("span", { class: "count" }, String(asks.length))));
+  if (asks.length) a.append(el("ol", {}, ...asks.map(t => el("li", {}, t)))); else a.append(el("div", { class: "small" }, "Nothing waiting."));
+  now.append(a);
+  const ups = [...(D.status.where || []), ...(D.status.next || [])];
+  document.getElementById("updSum").textContent = `Latest updates (${(D.status.where || []).length}) and plans`;
+  document.getElementById("updates").append(...ups.map(t => el("li", {}, t)));
 }
 
-// a score cell: pass / clearly above guessing / at guessing
+// ---- compare: one row per architecture, one column per task ------------------------------------------------
+const MEASURES = [["at4k", "At the training length (4k)"], ["atmax", "4× longer (16k)"], ["crowd4k", "Crowded facts (4k)"], ["para4k", "New sentence shapes (4k)"]];
+const LEARNED_OF = { at4k: "learned4k", atmax: "learnedmax", crowd4k: "learned_crowd", para4k: "learned_para" };
+let CM = { measure: store.get("measure", "at4k"), setup: store.get("setup", "q8") };
+function stripSvg(vals, color, floor) {
+  const W = 76, H = 12, X = v => 3 + v * (W - 6);
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", W); svg.setAttribute("height", H); svg.setAttribute("class", "strip");
+  const mk = (t, a) => { const e = document.createElementNS(ns, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
+  svg.append(mk("line", { x1: X(0), x2: X(1), y1: 6, y2: 6, stroke: css("--rule"), "stroke-width": 2, "stroke-linecap": "round" }));
+  if (floor != null) svg.append(mk("line", { x1: X(floor), x2: X(floor), y1: 2, y2: 10, stroke: css("--critical"), "stroke-width": 1, opacity: .6 }));
+  svg.append(mk("line", { x1: X(D.pass), x2: X(D.pass), y1: 2, y2: 10, stroke: css("--ink-3"), "stroke-width": 1, "stroke-dasharray": "2 1" }));
+  for (const [v, on] of vals) svg.append(mk("circle", { cx: X(v), cy: 6, r: 3.2, fill: on ? css(color) : css("--surface"), stroke: css(color), "stroke-width": 1.5 }));
+  return svg;
+}
+function compare() {
+  const S = D.scoreboard, t = document.getElementById("cmp"); t.innerHTML = "";
+  const st = S.setups.find(s => s.key === CM.setup) || S.setups[0];
+  const fams = st.families, cells = S.cells[st.key] || {};
+  const head = el("tr", {}, el("th", {}, "Architecture"), el("th", {}, "Reads far facts"));
+  for (const task of D.tasks) { const g = D.guide[task];
+    head.append(el("th", { class: "t" + (D.gating.includes(task) ? " gate" : "") }, g[0], el("span", { class: "tq" }, g[1].replace("Can it ", "").replace("?", "")))); }
+  head.append(el("th", { class: "num" }, "Language"), el("th", { class: "num" }, "Training"));
+  t.append(el("thead", {}, head));
+  // per task: medians and learned state per family, then the best family
+  const M = CM.measure, Lk = LEARNED_OF[M];
+  const stat = {};
+  for (const task of D.tasks) for (const f of fams) {
+    const es = ((cells[task] || {})[f] || []);
+    const done = es.filter(e => e.state === "done");
+    const vals = done.map(e => e[M]).filter(v => v != null);
+    stat[task + "|" + f] = { es, done, vals, med: vals.length ? median(vals) : null, nl: done.filter(e => e[Lk]).length };
+  }
+  const best = {};
+  for (const task of D.tasks) {
+    let b = null;
+    for (const f of fams) { const s = stat[task + "|" + f];
+      if (M === "atmax" && f === "dense") continue;
+      if (s.nl && s.med != null && (!b || s.med > b[1])) b = [f, s.med]; }
+    // a lead counts only by more than 5 points over the next learned family
+    if (b) { const others = fams.filter(f => f !== b[0]).map(f => stat[task + "|" + f]).filter(s => s.nl && s.med != null && !(M === "atmax" && s === stat[task + "|dense"]));
+      if (!others.some(s => b[1] - s.med <= 0.05)) best[task] = b[0]; }
+  }
+  const dense = fams.includes("dense") ? (cells.lookup || {}).dense || [] : [];
+  const denseStory = median(dense.filter(e => e.state === "done" && e.story != null).map(e => e.story));
+  const tb = el("tbody");
+  for (const f of fams) {
+    const A = D.archs[f] || { name: S.families[f], what: "" };
+    const color = ARCH_COLOR[f];
+    const swatch = el("span", { class: "sw" }); swatch.style.background = css(color);
+    const tr = el("tr", {}, el("td", {}, el("div", { class: "arch" }, swatch, el("span", { class: "n" }, A.name), el("span", { class: "d" }, A.what),
+      st.key === "q8" && A.verdict ? el("span", { class: "verdict", style: "grid-column: 2" }, A.verdict) : null)));
+    // reliability: runs whose far lookup at 4k is learned
+    const lk = stat["lookup|" + f];
+    const pips = el("span", { class: "pips" }, ...lk.done.map(e => el("span", { class: "pip " + (e.learned4k ? "on" : "off"), title: `${e.run.split(".")[0]}: far lookup at 4k ${pct(e.at4k)} %` })));
+    const waiting = lk.es.filter(e => e.state !== "done").length;
+    tr.append(el("td", {}, lk.done.length ? el("div", {}, pips, el("div", { class: "small" }, `${lk.done.filter(e => e.learned4k).length} of ${lk.done.length} runs`)) : el("span", { class: "small" }, "no runs yet"),
+      waiting ? el("div", { class: "small" }, `+${waiting} ${lk.es.find(e => e.state !== "done").state}`) : null));
+    for (const task of D.tasks) {
+      const s = stat[task + "|" + f], floor = S.eff_floors[task];
+      if (M === "atmax" && f === "dense") { tr.append(el("td", {}, el("div", { class: "c na", title: "Dense has no method for reading past its 4k training length" }, "no long-text method"))); continue; }
+      if (!s.done.length) { tr.append(el("td", {}, el("div", { class: "c " + (s.es.length ? "wait" : "na") }, s.es.length ? (s.es[0].state === "running" ? "training…" : s.es[0].state) : "not run"))); continue; }
+      if (s.med == null) { tr.append(el("td", {}, el("div", { class: "c na" }, "not scored"))); continue; }
+      const cls = s.nl === s.done.length ? "all" : s.nl ? "some" : "none";
+      const lo = Math.min(...s.vals), hi = Math.max(...s.vals);
+      const c = el("div", { class: `c ${cls}${best[task] === f ? " best" : ""}` },
+        el("span", { class: "v" }, String(pct(s.med)), el("small", {}, "%")),
+        el("span", { class: "r" }, s.vals.length > 1 ? `${pct(lo)}–${pct(hi)}` : "1 run"),
+        stripSvg(s.done.filter(e => e[M] != null).map(e => [e[M], e[Lk]]), color, floor));
+      c.addEventListener("mousemove", ev => showTip(ev, `<b>${D.guide[task][0]}</b> · ${A.name}` +
+        s.done.map(e => `<div class="row"><span>${e.run.split(".")[0]}</span><span>${pct(e[M])} %${e[Lk] ? " · learned" : ""}</span></div>`).join("") +
+        `<div class="row"><span>guessing</span><span>${pct(floor)} %</span></div>`));
+      c.addEventListener("mouseleave", hideTip);
+      tr.append(el("td", {}, c));
+    }
+    const story = median(lk.done.filter(e => e.story != null).map(e => e.story));
+    const gpu = median(lk.done.filter(e => e.gpu_h != null).map(e => e.gpu_h));
+    const gap = story != null && denseStory != null && f !== "dense" ? ` (${story >= denseStory ? "+" : ""}${(100 * (story - denseStory) / denseStory).toFixed(1)} %)` : "";
+    tr.append(el("td", { class: "num", title: "Story loss: surprise at the next word of held-out stories, lower is better; % vs dense" }, story != null ? story.toFixed(3) : "–", el("div", { class: "small" }, gap || (f === "dense" ? "reference" : ""))),
+      el("td", { class: "num", title: "GPU-hours per run (middle run), training only" }, gpu != null ? gpu.toFixed(1) : "–", el("div", { class: "small" }, "GPU-hours")));
+    tb.append(tr);
+  }
+  t.append(tb);
+  const lg = document.getElementById("cmpLegend"); lg.innerHTML = "";
+  const box = (bg, ring) => { const i = el("i"); i.style.background = bg; if (ring) i.style.boxShadow = "inset 0 0 0 2px " + css("--accent"); return i; };
+  lg.append(el("span", {}, box(css("--tint")), "learned in every run"), el("span", {}, box(css("--tint-2")), "in some runs"),
+    el("span", {}, box("transparent"), "never"), el("span", {}, box("transparent", true), "best in the column"),
+    el("span", {}, "dots: one per run (filled = learned) · red tick: guessing · dashed tick: 75 % pass"),
+    el("span", {}, "Reads far facts: runs whose notebook (or attention) found facts far back, on lookup at 4k"));
+  document.getElementById("howText").textContent = "Scores are exact answers, word for word. Quote, lookup and keyed count only facts placed early or in the " +
+    "middle of the story: facts at the end sit inside every model's short window and say nothing about memory. Latest, compose, count and " +
+    "deduce count every item. Learned = above guessing by 10 points or 3 standard errors; latest's guessing is 20 %, because following the " +
+    "moves without reading whose they are already gets 1 in 5. Best = the highest middle score among architectures that learned the task, " +
+    "more than 5 points ahead of the next. Dense has no method for reading past 4k, so it is not compared at 16k. 30M models, plain input, " +
+    "1.5B training tokens, exams v2 (+ v2.1 for crowded facts and new sentence shapes). " + st.title + ".";
+}
+function compareControls() {
+  seg("measureSeg", MEASURES, CM.measure, v => { CM.measure = v; store.set("measure", v); compare(); });
+  seg("recipeSeg", D.scoreboard.setups.map(s => [s.key, s.key === "q8" ? "Current recipe" : "Earlier recipe"]), CM.setup,
+    v => { CM.setup = v; store.set("setup", v); compare(); });
+}
+
+// ---- what changed the results ---------------------------------------------------------------------------
+const EFFECT = { "helped": "good", "hurt": "bad", "no effect": "muted", "mixed": "warn", "measurement": "info" };
+function dumbbell(before, after, eff) {
+  const W = 150, H = 14, X = v => 5 + v / 100 * (W - 10);
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", W); svg.setAttribute("height", H);
+  const mk = (t, a) => { const e = document.createElementNS(ns, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
+  const col = css({ good: "--good", bad: "--critical", warn: "--warning", info: "--info", muted: "--muted-chip" }[EFFECT[eff]] || "--ink-3");
+  svg.append(mk("line", { x1: X(0), x2: X(100), y1: 7, y2: 7, stroke: css("--grid"), "stroke-width": 4, "stroke-linecap": "round" }));
+  svg.append(mk("line", { x1: X(before), x2: X(after), y1: 7, y2: 7, stroke: col, "stroke-width": 2, opacity: .55 }));
+  svg.append(mk("circle", { cx: X(before), cy: 7, r: 4, fill: css("--surface"), stroke: css("--ink-3"), "stroke-width": 1.5 }));
+  svg.append(mk("circle", { cx: X(after), cy: 7, r: 4.5, fill: col }));
+  return svg;
+}
+function changes() {
+  const box = document.getElementById("chg");
+  const all = D.changes || [], SHOWN = 8;
+  let more = null;
+  all.forEach((c, i) => {
+    if (i === SHOWN) { more = el("details", { class: "morechg" }, el("summary", {}, `Earlier changes (${all.length - SHOWN})`)); box.append(more); }
+    const target = more || box;
+    const mets = el("div", { class: "mets" });
+    for (const [label, b, a, unit] of c.metrics) {
+      let vis = null, txt;
+      if (unit === "%") { vis = dumbbell(b, a, c.effect); txt = `${b} → ${a} %`; }
+      else if (unit === "runs") { const f = s => { const [k, n] = s.split("/").map(Number); return 100 * k / n; }; vis = dumbbell(f(b), f(a), c.effect); txt = `${b.replace("/", " of ")} → ${a.replace("/", " of ")}`; }
+      else txt = `${b} → ${a} ${unit}`;
+      mets.append(el("div", { class: "met" }, el("span", { class: "lbl" }, label), el("div", { class: "row" }, vis || el("span"), el("span", { class: "ba" }, txt))));
+    }
+    target.append(el("div", { class: "chg" },
+      el("div", { class: "when" }, c.date, el("span", { class: "kind" }, c.kind)),
+      el("div", { class: "what" }, el("b", {}, c.change), el("div", { class: "cmpd" }, c.compared), el("div", { class: "note" }, c.note)),
+      mets, el("div", { class: "eff" }, el("span", { class: "chip " + (EFFECT[c.effect] || "muted") }, c.effect))));
+  });
+}
+
+// ---- what we know -----------------------------------------------------------------------------------------
+const CLAIM_GROUPS = [["holds", "Holds", "good", "repeated, or overwhelming within its runs"], ["single run", "Needs another run", "warn", "one run so far"],
+  ["open", "Open", "muted", "cannot be tested yet"], ["retracted", "Disproved", "bad", "kept with the date"]];
+function findings() {
+  const box = document.getElementById("fbox");
+  for (const [state, title, cls, hint] of CLAIM_GROUPS) {
+    const cs = (D.claims || []).filter(c => c.state === state);
+    if (!cs.length) continue;
+    const g = el("div", { class: "card fgroup " + (state === "retracted" ? "retracted" : "") },
+      el("h3", {}, el("span", { class: "chip " + cls }, title), el("span", { class: "small" }, `${cs.length} · ${hint}`)));
+    for (const c of cs) g.append(el("details", { class: "claim" }, el("summary", {}, c.claim),
+      el("div", { class: "ev" }, el("div", {}, c.evidence), c.settle && c.settle !== "—" ? el("div", {}, el("b", {}, "Would settle it: "), c.settle) : null,
+        el("div", { class: "small" }, "since " + c.since))));
+    box.append(g);
+  }
+}
+
+// ---- tasks and exam versions ------------------------------------------------------------------------------
+function tasksAndVersions() {
+  const vb = document.getElementById("versions");
+  const vs = (D.protocol_log || []).filter(e => ["exams", "reading"].includes(e.kind));
+  for (const e of vs) {
+    const key = e.version.replace("exams ", "");
+    const n = D.exam_runs[key];
+    vb.append(el("div", { class: "ver" + (e.effect === "current" || e.effect === "re-read" ? " cur" : "") },
+      el("div", { class: "vn" }, e.kind === "reading" ? "Reading rules" : e.version.replace("exams ", "Exams "),
+        el("span", { class: "chip " + (e.effect === "history" ? "muted" : "good") }, e.effect === "history" ? "history" : "in use")),
+      el("div", { class: "vd" }, e.date + (n ? ` · ${n} runs` : "")), el("div", { class: "vc" }, e.change)));
+  }
+  const t = document.getElementById("taskTable");
+  t.append(el("thead", {}, el("tr", {}, ...["Task", "Example (illustrative)", "What the exam does", "Guessing", "Scored on"].map((h, i) => el("th", { class: i === 3 ? "num" : "" }, h)))));
+  const tb = el("tbody");
+  for (const task of D.tasks) {
+    const g = D.guide[task], ex = D.examples[task], S = D.scoreboard;
+    const fl = S.floors[task], eff = S.eff_floors[task];
+    tb.append(el("tr", {},
+      el("td", { class: "tn" }, el("b", {}, g[0]), el("span", { class: "small" }, g[1]), el("div", {}, el("span", { class: "chip " + (D.gating.includes(task) ? "info" : "muted") }, D.gating.includes(task) ? "core" : "frontier"))),
+      el("td", { class: "ex" }, ex ? el("div", {}, ex[0], el("div", { class: "qa" }, "Q: " + ex[1]), el("div", { class: "qa" }, "A: " + ex[2])) : "–"),
+      el("td", { class: "d" }, g[2]),
+      el("td", { class: "num" }, fl == null ? "–" : pct(fl) + " %", eff != null && eff > fl + 1e-9 ? el("div", { class: "small" }, `effective ${pct(eff)} %`) : null),
+      el("td", { class: "small" }, ["quote", "lookup", "keyed"].includes(task) ? "facts early or in the middle (far)" : "every item")));
+  }
+  tb.append(el("tr", {}, el("td", { class: "tn" }, el("b", {}, D.guide.language[0]), el("span", { class: "small" }, D.guide.language[1])),
+    el("td", { class: "ex" }, "held-out stories"), el("td", { class: "d" }, D.guide.language[2]), el("td", { class: "num" }, "–"), el("td", { class: "small" }, "next-word surprise")));
+  t.append(tb);
+}
+
+// ---- curves ---------------------------------------------------------------------------------------------
+let CV = { kind: store.get("curve", "length") };
+function curves() {
+  const r = D.chart_rounds.find(x => x.id === document.getElementById("roundSel").value) || D.chart_rounds[0];
+  const box = document.getElementById("curvebox"), lg = document.getElementById("curveLegend"); box.innerHTML = ""; lg.innerHTML = "";
+  document.getElementById("curveQ").textContent = CV.kind === "length"
+    ? "Does it still work on longer documents? Every model trains at 4k (the dashed vertical line), then reads longer documents with no more training. Dashed grey: the 75 % pass mark; dotted red: guessing. Dense has no method for reading past 4k."
+    : "When does each skill appear? Score at the training length on checkpoints along training, and the held-out loss of the training mix (lower is better).";
+  if (!r) return;
+  const ms = r.models;
+  const seen = new Set();
+  for (const m of ms) { const k = colorOf(m); if (seen.has(k)) continue; seen.add(k);
+    lg.append(el("span", {}, sw(m), m.name.replace(/ · run \d+$/, "").replace(", plain input", ""))); }
+  if (ms.some(m => m.dash)) lg.append(el("span", {}, "line style: solid run 1 · dashed run 2 · dotted run 3"));
+  if (CV.kind === "length") {
+    for (const task of D.tasks) {
+      let floor = null;
+      const series = ms.map(m => ({ name: m.name, color: colorOf(m), dash: m.dash, points: Object.entries(m.cells).filter(([k]) => k.startsWith(`id|${task}|`))
+        .map(([k, c]) => { floor = c.eff_floor != null ? c.eff_floor : c.floor; return [+k.split("|")[2], modeScore(c)]; }).filter(p => p[1] != null) }));
+      chart(box, { title: D.guide[task][0], sub: D.guide[task][1], series, xlabel: "document length", floor, vline: r.budget.seq_len });
+    }
+  } else {
+    chart(box, { title: "Held-out loss of the training mix", sub: "lower is better", xlabel: "training tokens", logx: false, ymax: null,
+      yfmt: v => v.toFixed(2), xfmt: fmtTok,
+      series: ms.map(m => ({ name: m.name, color: colorOf(m), dash: m.dash, points: m.eval_loss.map(([s, l]) => [s * m.tokens_per_step, l]) })) });
+    for (const task of D.tasks) {
+      const c0 = ms[0] ? (ms[0].cells[`id|${task}|${r.budget.seq_len}`] || {}) : {};
+      const floor = c0.eff_floor != null ? c0.eff_floor : c0.floor;
+      const cur = m => scoreMode() === "far" && m.curve_far ? m.curve_far : m.curve;
+      chart(box, { title: D.guide[task][0], sub: "score at 4k vs training tokens", xlabel: "training tokens", logx: false, xfmt: fmtTok, floor,
+        series: ms.map(m => ({ name: m.name, color: colorOf(m), dash: m.dash, points: Object.entries(cur(m)).map(([s, v]) => [+s * m.tokens_per_step, v[task]]).filter(p => p[1] != null) })) });
+    }
+  }
+}
+function curveControls() {
+  seg("curveSeg", [["length", "Longer documents"], ["learning", "During training"]], CV.kind, v => { CV.kind = v; store.set("curve", v); curves(); });
+  const s = document.getElementById("roundSel");
+  for (const r of D.chart_rounds) s.append(el("option", { value: r.id }, r.notes.title || r.id));
+  s.value = D.chart_rounds[0].id;
+  s.addEventListener("change", curves);
+  document.getElementById("modeSel").addEventListener("change", curves);
+}
+// chart mode: "far" (default) reads quote / lookup / keyed on far facts; "all" on every item
+const headScore = c => !c ? null : (c.far != null ? c.far : c.exact);
+const scoreMode = () => (document.getElementById("modeSel") || {}).value || "far";
+const modeScore = c => !c ? null : (scoreMode() === "far" ? headScore(c) : c.exact);
 function cellClass(c) {
   if (!c || c.exact == null) return "at";
-  const margin = Math.max(0.05, 2 * (c.exact_se || 0));
-  const above = c.exact - c.floor > margin;
-  // a shortcut: it scores above guessing AND still does with the evidence removed
+  const above = c.exact - c.floor > Math.max(0.10, 2 * (c.exact_se || 0));
   const short = above && c.removed_exact != null && c.removed_exact > c.floor + Math.max(0.10, 2 * (c.exact_se || 0));
   if (short) return "short";
-  if (c.exact >= D.pass) return "pass";
-  return above ? "above" : "at";
+  if (c.learned && headScore(c) >= D.pass) return "pass";
+  return c.learned ? "above" : "at";
+}
+
+// ---- runs: filters and the compact list -------------------------------------------------------------------
+const STANDING_GROUPS = [["in use", "In use"], ["calibration", "Calibration"], ["active", "Running / queued"], ["history", "History"]];
+const groupOf = st => ["running", "queued", "blocked"].includes(st) ? "active" : st;
+const STANDING_CLASS = { "in use": "good", "calibration": "info", "history": "muted", "running": "info", "queued": "warn", "blocked": "warn" };
+let F = { groups: ["in use", "calibration", "active"], data: "all", from: "", to: "", ...store.get("filters", {}) };
+const saveF = () => store.set("filters", F);
+const passes = (standing, data, start) => {
+  if (!F.groups.includes(groupOf(standing))) return false;
+  if (F.data !== "all" && data !== F.data) return false;
+  if (start && start !== "planned") { if (F.from && start < F.from) return false; if (F.to && start > F.to) return false; }
+  return true;
+};
+function filterBar() {
+  const box = document.getElementById("filters"); box.innerHTML = "";
+  for (const [key, label] of STANDING_GROUPS) {
+    const id = "fg-" + key.replace(/\W/g, ""), cb = el("input", { type: "checkbox", id });
+    cb.checked = F.groups.includes(key);
+    cb.addEventListener("change", () => { F.groups = cb.checked ? [...new Set([...F.groups, key])] : F.groups.filter(g => g !== key); saveF(); applyFilters(); });
+    box.append(el("label", { for: id, class: "fchip" }, cb, " " + label));
+  }
+  const versions = [...new Set((D.ladder || []).map(r => r.data).filter(Boolean))].sort();
+  const sel = el("select", {}, el("option", { value: "all" }, "all exams"), ...versions.map(v => el("option", { value: v }, "exams " + v)));
+  sel.value = F.data; sel.addEventListener("change", () => { F.data = sel.value; saveF(); applyFilters(); });
+  const from = el("input", { type: "date", value: F.from }), to = el("input", { type: "date", value: F.to });
+  from.addEventListener("change", () => { F.from = from.value; saveF(); applyFilters(); });
+  to.addEventListener("change", () => { F.to = to.value; saveF(); applyFilters(); });
+  const reset = el("button", { type: "button", class: "fbtn" }, "Show everything");
+  reset.addEventListener("click", () => { F = { groups: STANDING_GROUPS.map(g => g[0]), data: "all", from: "", to: "" }; saveF(); filterBar(); applyFilters(); });
+  box.append(sel, el("label", {}, "from ", from), el("label", {}, "to ", to), reset, el("span", { class: "small", id: "fcount" }));
+}
+function applyFilters() {
+  let shown = 0, hidden = 0;
+  for (const tr of document.querySelectorAll("#runsTable tbody tr.r")) {
+    const ok = passes(tr.dataset.standing, tr.dataset.data, tr.dataset.start);
+    tr.hidden = !ok; if (!ok && tr.nextSibling) tr.nextSibling.hidden = true; ok ? shown++ : hidden++;
+  }
+  for (const d of document.querySelectorAll("#rounds details.rundetail")) d.hidden = !passes(d.dataset.standing, d.dataset.data, d.dataset.start);
+  document.getElementById("fcount").textContent = `${shown} shown` + (hidden ? ` · ${hidden} hidden` : "");
+}
+function runs() {
+  const t = document.getElementById("runsTable");
+  t.append(el("thead", {}, el("tr", {}, ...["Started", "Run", "Standing", "Model", "Result"].map(h => el("th", {}, h)))));
+  const tb = el("tbody");
+  for (const r of [...(D.ladder || [])].map((r, i) => [r, i]).sort((a, b) => (b[0].start || "").localeCompare(a[0].start || "") || b[1] - a[1]).map(x => x[0])) {
+    const tr = el("tr", { class: "r", "data-standing": r.standing, "data-data": r.data || "", "data-start": r.start || "", title: "Click for details" },
+      el("td", { class: "num", style: "text-align:left" }, r.start || ""), el("td", {}, el("b", {}, r.run)),
+      el("td", {}, el("span", { class: "chip " + (STANDING_CLASS[r.standing] || "muted") }, r.standing)),
+      el("td", { class: "small" }, r.model), el("td", { class: "res" }, el("div", { class: "clamp" }, r.result)));
+    const x = el("tr", { class: "x", hidden: "" }, el("td", { colspan: 5 }, el("dl", {},
+      el("dt", {}, "Why this standing"), el("dd", {}, r.why || "–"), el("dt", {}, "Training"), el("dd", {}, r.tokens || "–"),
+      el("dt", {}, "Exams"), el("dd", {}, r.exams || "–"), el("dt", {}, "When (UTC)"), el("dd", {}, r.when || "–"),
+      r.id && document.getElementById("round-" + r.id) ? el("dt", {}, "") : null,
+      r.id && document.getElementById("round-" + r.id) ? el("dd", {}, (() => { const a = el("a", { href: "#archive" }, "Full run details →");
+        a.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); const d = document.getElementById("round-" + r.id).closest("details");
+          d.closest("section").querySelectorAll(":scope > details")[1].open = true; d.hidden = false; d.open = true; d.scrollIntoView({ behavior: "smooth", block: "start" }); }); return a; })()) : null)));
+    tr.addEventListener("click", () => { x.hidden = !x.hidden; tr.classList.toggle("open", !x.hidden); });
+    tb.append(tr, x);
+  }
+  t.append(tb);
+}
+
+// ---- archive: protocol log, run details, calibration, sources ----------------------------------------------
+const EFFECT_CLASS = { "current": "good", "re-read": "info", "running": "info", "history": "muted", "paused": "warn", "planned": "muted" };
+function protocolLog() {
+  const box = document.getElementById("logbox");
+  for (const e of [...(D.protocol_log || [])].reverse()) {
+    box.append(el("div", { class: "logitem" }, el("div", { class: "logdate num" }, e.date),
+      el("div", { class: "logbody" },
+        el("div", { class: "loghead" }, el("b", {}, e.version), el("span", { class: "kind" }, e.kind),
+          el("span", { class: "chip " + (EFFECT_CLASS[e.effect] || "muted") }, e.effect === "re-read" ? "re-read, no retraining" : e.effect)),
+        el("p", {}, e.change), el("p", { class: "small" }, el("b", {}, "Why: "), e.why),
+        el("p", { class: "small" }, el("b", {}, "What it did to earlier results: "), e.effect_text),
+        e.learned ? el("p", { class: "small" }, el("b", {}, "What we learned: "), e.learned) : null)));
+  }
 }
 
 function roundBlock(r) {
@@ -387,16 +868,18 @@ function roundBlock(r) {
     const g = D.guide[task];
     const anyc = ms.map(m => m.cells[`id|${task}|${L0}`]).find(c => c);
     const tr = el("tr", {}, el("td", { class: "task" }, el("div", {}, g[0]), el("div", { class: "tid" }, g[1] + (D.gating.includes(task) ? "" : " · frontier"))),
-      el("td", { class: "floor" }, anyc ? pct(anyc.floor) + " %" : "–"));
+      el("td", { class: "floor" }, anyc ? pct(anyc.floor) + " %" + (anyc.eff_floor > anyc.floor + 1e-9 ? ` · ${pct(anyc.eff_floor)} %*` : "") : "–"));
     for (const m of ms) {
       const c = m.cells[`id|${task}|${L0}`], cm = Lmax ? m.cells[`id|${task}|${Lmax}`] : null;
-      const td = el("td", { class: "cell " + cellClass(c) }, c ? pct(c.exact) + " %" : "–");
-      if (cm && Lmax > L0) td.append(el("span", { class: "sub" }, `${pct(cm.exact)} % at ${fmtLen(Lmax)}`));
+      const td = el("td", { class: "cell " + cellClass(c) }, c ? pct(headScore(c)) + " %" : "–");
+      if (c && c.far != null) td.append(el("span", { class: "sub" }, `near ${pct(c.near)} %`));
+      if (cm && Lmax > L0) td.append(el("span", { class: "sub" }, `${pct(headScore(cm))} % at ${fmtLen(Lmax)}`));
       if (c) {
         td.addEventListener("mousemove", ev => showTip(ev, `<b>${g[0]}</b> · ${m.name}` +
-          `<div class="row"><span>exact answer at ${fmtLen(L0)}</span><span>${pct(c.exact)} % ± ${pct(c.exact_se)}</span></div>` +
+          `<div class="row"><span>exact answer at ${fmtLen(L0)}, all items</span><span>${pct(c.exact)} % ± ${pct(c.exact_se)}</span></div>` +
+          (c.far != null ? `<div class="row"><span>facts early or middle (far) / at the end (near)</span><span>${pct(c.far)} / ${pct(c.near)} %</span></div>` : "") +
           `<div class="row"><span>picked the right candidate</span><span>${c.pick == null ? "–" : pct(c.pick) + " %"}</span></div>` +
-          `<div class="row"><span>guessing rate</span><span>${pct(c.floor)} %</span></div>` +
+          `<div class="row"><span>guessing rate</span><span>${pct(c.floor)} %${c.eff_floor > c.floor + 1e-9 ? ` (effective ${pct(c.eff_floor)} %)` : ""}</span></div>` +
           (c.pick_prob != null ? `<div class="row"><span>graded pick (probability on the right candidate)</span><span>${pct(c.pick_prob)} %</span></div>` : "") +
           `<div class="row"><span>evidence removed</span><span>${pct(c.removed_exact)} %</span></div>` +
           (c.answer_nll != null ? `<div class="row"><span>surprise at the answer</span><span>${c.answer_nll.toFixed(2)} nats/token</span></div>` : "") +
@@ -408,14 +891,55 @@ function roundBlock(r) {
     tb.append(tr);
   }
   tt.append(tb);
-  box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, `TASKS · exact answers at the ${fmtLen(L0)} training length` + (Lmax && Lmax > L0 ? `; small line: at ${fmtLen(Lmax)}` : "")),
+  box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, `TASKS · exact answers at the ${fmtLen(L0)} training length; quote, lookup and keyed on far facts (near: facts at the end)` + (Lmax && Lmax > L0 ? `; small line: at ${fmtLen(Lmax)}` : "")),
     el("div", { class: "tablebox" }, tt),
     el("div", { class: "legend", style: "margin-top:8px" },
       el("span", {}, el("i", { style: "box-shadow: inset 0 0 0 2px var(--good)" }), "pass (75 % or more)"),
-      el("span", {}, el("i", { style: "background: var(--tint)" }), "clearly above guessing, not a pass"),
-      el("span", {}, el("i", {}), "at the guessing rate"),
+      el("span", {}, el("i", { style: "background: var(--tint)" }), "learned (clearly above the floor), not a pass"),
+      el("span", {}, el("i", {}), "not learned"),
+      el("span", {}, "* latest: following moves without reading whose they are gets 1 in 5"),
       el("span", { style: "text-decoration: line-through; color: var(--critical)" }, "answered without the evidence (shortcut)"),
       el("span", {}, "hover a cell for the details"))));
+
+  // other exam sets: harder dials, rephrased facts (v2) and the exams added in v2.1, when scored
+  const SPLITS = [["harder", "Harder settings", "more people, moves, hops; reported, not gating"],
+    ["paraphrase", "Rephrased facts", "one sentence shape never seen in training"],
+    ["paraphrase2", "Rephrased facts, more shapes (v2.1)", "three more unseen sentence shapes"],
+    ["crowded", "Crowded facts (v2.1)", "every fact within 1,024 tokens of the asked one, at any length"],
+    ["steps", "One step (v2.1)", "one-step compose and deduce"]];
+  const rows = [];
+  for (const [sp, label, hint] of SPLITS) {
+    for (const task of D.tasks) {
+      const lens = [...new Set(ms.flatMap(m => Object.keys(m.cells).filter(k => k.startsWith(`${sp}|${task}|`)).map(k => +k.split("|")[2])))].sort((a, b) => a - b);
+      if (lens.length) rows.push([sp, label, hint, task, lens]);
+    }
+  }
+  if (rows.length) {
+    const ot = el("table");
+    const oh = el("tr", {}, el("th", {}, "Exam set"), el("th", {}, "Task"), el("th", { class: "mcol" }, "Floor"));
+    for (const m of ms) oh.append(el("th", { class: "mcol" }, sw(m), m.name));
+    ot.append(el("thead", {}, oh));
+    const ob = el("tbody");
+    let lastSp = null;
+    for (const [sp, label, hint, task, lens] of rows) {
+      const L = lens.includes(L0) ? L0 : lens[0], Lx = lens[lens.length - 1];
+      const any = ms.map(m => m.cells[`${sp}|${task}|${L}`]).find(c => c);
+      const first = sp !== lastSp; lastSp = sp;
+      const tr = el("tr", {}, el("td", { class: "task" }, first ? el("div", {}, label) : null, first ? el("div", { class: "tid" }, hint) : null),
+        el("td", {}, D.guide[task][0]), el("td", { class: "floor" }, any ? pct(any.eff_floor != null ? any.eff_floor : any.floor) + " %" : "–"));
+      for (const m of ms) {
+        const c = m.cells[`${sp}|${task}|${L}`], cx = Lx !== L ? m.cells[`${sp}|${task}|${Lx}`] : null;
+        const td = el("td", { class: "cell " + cellClass(c) }, c ? pct(headScore(c)) + " %" : "–");
+        if (c && c.far != null) td.append(el("span", { class: "sub" }, `near ${pct(c.near)} %`));
+        if (cx) td.append(el("span", { class: "sub" }, `${pct(headScore(cx))} % at ${fmtLen(Lx)}`));
+        tr.append(td);
+      }
+      ob.append(tr);
+    }
+    ot.append(ob);
+    box.append(el("div", {}, el("h3", { class: "small", style: "margin-bottom:6px" }, `OTHER EXAM SETS · at ${fmtLen(L0)} (small line: at the longest length scored); quote, lookup and keyed on far facts`),
+      el("div", { class: "tablebox" }, ot)));
+  }
   return box;
 }
 
@@ -423,11 +947,13 @@ function results() {
   const box = document.getElementById("rounds");
   if (!D.rounds.length) { box.append(el("div", { class: "empty-note" }, "No result rounds yet.")); return; }
   for (const r of D.rounds) {
-    const d = el("details", { class: "rundetail" }, el("summary", {}, el("b", {}, r.notes.title || r.id),
-      el("span", { class: "small" }, "  " + (r.notes.dates || ""))), roundBlock(r));
+    const d = el("details", { class: "rundetail", "data-standing": r.standing, "data-data": r.data || "", "data-start": r.start || "" },
+      el("summary", {}, el("span", { class: "chip " + (STANDING_CLASS[r.standing] || "muted") }, r.standing), " ", el("b", {}, r.notes.title || r.id),
+        el("span", { class: "small" }, "  " + (r.notes.dates || ""))), r.why ? el("p", { class: "small", style: "margin-bottom:8px" }, "Standing: " + r.why) : null, roundBlock(r));
     box.append(d);
   }
 }
+
 
 function chart(box, { title, sub, series, xs, xlabel, logx = true, ymax = 1, yfmt = v => pct(v), floor = null, pass = D.pass, vline = null, xfmt = fmtLen }) {
   const W = 300, H = 180, L = 34, R = 10, T = 8, B = 26;
@@ -457,52 +983,13 @@ function chart(box, { title, sub, series, xs, xlabel, logx = true, ymax = 1, yfm
   for (const s of live) {
     const g = mk("g", { class: "series" }); const c = css(s.color);
     const pts = [...s.points].sort((a, b) => a[0] - b[0]);
-    g.append(mk("path", { d: pts.map((p, i) => (i ? "L" : "M") + X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1)).join(" "), stroke: c }));
+    g.append(mk("path", { d: pts.map((p, i) => (i ? "L" : "M") + X(p[0]).toFixed(1) + " " + Y(p[1]).toFixed(1)).join(" "), stroke: c, "stroke-dasharray": s.dash || "" }));
     for (const p of pts) { const ci = mk("circle", { cx: X(p[0]), cy: Y(p[1]), r: 4, fill: c });
       ci.addEventListener("mousemove", ev => showTip(ev, `<b>${s.name}</b><div class="row"><span>${xlabel}</span><span>${xfmt(p[0])}</span></div><div class="row"><span>value</span><span>${yfmt(p[1])}${ymax === 1 ? " %" : ""}</span></div>`));
       ci.addEventListener("mouseleave", hideTip); g.append(ci); }
     svg.append(g);
   }
   panel.append(svg); box.append(panel);
-}
-
-function charts() {
-  const r = D.chart_rounds.find(x => x.id === document.getElementById("roundSel").value) || D.chart_rounds[0];
-  const lb = document.getElementById("lengthbox"), cb = document.getElementById("learnbox"); lb.innerHTML = ""; cb.innerHTML = "";
-  if (!r) return;
-  const ms = r.models;
-  for (const box of [lb, cb]) {
-    const lg = el("div", { class: "legend", style: "grid-column: 1 / -1" });
-    for (const m of ms) lg.append(el("span", {}, sw(m), m.name));
-    box.append(lg);
-  }
-  for (const task of D.tasks) {
-    let floor = null;
-    const series = ms.map(m => ({ name: m.name, color: colorOf(m), points: Object.entries(m.cells).filter(([k]) => k.startsWith(`id|${task}|`))
-      .map(([k, c]) => { floor = c.floor; return [+k.split("|")[2], c.exact]; }).filter(p => p[1] != null) }));
-    chart(lb, { title: D.guide[task][0], sub: D.guide[task][1], series, xlabel: "document length", floor, vline: r.budget.seq_len });
-  }
-  chart(cb, { title: "Held-out loss of the training mix", sub: "lower is better", xlabel: "training tokens", logx: false, ymax: null,
-    yfmt: v => v.toFixed(2), xfmt: fmtTok,
-    series: ms.map(m => ({ name: m.name, color: colorOf(m), points: m.eval_loss.map(([s, l]) => [s * m.tokens_per_step, l]) })) });
-  for (const task of D.tasks) {
-    const floor = (ms[0] && Object.values(ms[0].cells).find(c => c)) ? (ms[0].cells[`id|${task}|${r.budget.seq_len}`] || {}).floor : null;
-    chart(cb, { title: D.guide[task][0], sub: "score at the training length vs training tokens", xlabel: "training tokens", logx: false, xfmt: fmtTok, floor,
-      series: ms.map(m => ({ name: m.name, color: colorOf(m), points: Object.entries(m.curve).map(([s, v]) => [+s * m.tokens_per_step, v[task]]).filter(p => p[1] != null) })) });
-  }
-}
-
-function roundSelect() {
-  const s = document.getElementById("roundSel");
-  for (const r of D.chart_rounds) s.append(el("option", { value: r.id }, r.notes.title || r.id));
-  s.value = D.chart_rounds[0].id;
-  s.addEventListener("change", charts);
-}
-
-function guide() {
-  const box = document.getElementById("guidebox");
-  for (const [k, [name, q, d]] of Object.entries(D.guide))
-    box.append(el("div", { class: "gcard" }, el("h3", {}, name), el("div", { class: "q" }, q), el("div", { class: "d" }, d)));
 }
 
 function calibration() {
@@ -546,5 +1033,5 @@ function sources() {
   t.append(body);
 }
 
-header(); scoreboardTable(); results(); roundSelect(); charts(); guide(); calibration(); sources();
+overview(); goal(); recipes(); compareControls(); compare(); changes(); findings(); tasksAndVersions(); results(); runs(); filterBar(); applyFilters(); protocolLog(); curveControls(); curves(); calibration(); sources();
 </script>

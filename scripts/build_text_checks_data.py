@@ -20,15 +20,20 @@ Smoke (local, minutes; filler from the small validation/test story files):
 Full (servers):
   uv run python scripts/build_text_checks_data.py --stories full --out_dir $DATA/text_checks_v0 \
       --seq_len 4096 --n_lang_rows ... --n_world_rows ...
+Add exams to an existing build (v2.1 splits; tokenizer, training mix and existing exams untouched):
+  uv run python scripts/build_text_checks_data.py --stories full --out_dir $DATA/text_checks_v2 \
+      --add_exams --eval_splits crowded paraphrase2 steps
 """
 from __future__ import annotations
 
 import argparse
+import bisect
 import hashlib
 import json
 import math
 import os
 import random
+import re
 import shutil
 import sys
 import time
@@ -37,6 +42,7 @@ from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from data.text_world import ADDED_SPLITS  # noqa: E402
 from data.text_world import (  # noqa: E402
     TASKS,
     TEXT_WORLD_VERSION,
@@ -127,10 +133,108 @@ def train_tokenizer(texts, vocab: int, out: Path):
     return fast
 
 
-def _row(ids: list[int], bos: int, eos: int) -> dict:
+def task_free_cuts(ids: list[int], boundary: int, k: int) -> list[int]:
+    """Task-free split rows (2026-10-18, the stage-W writer of the multi-hop review): up to `k` boundary tokens at
+    seeded random positions (none in the first 128 tokens or the last 32), the row's end trimmed so its length is
+    unchanged. Each boundary starts a new side, which reads everything before it only through the notes, so the
+    plain language-model loss after it asks the writer for what continuing the text needs."""
+    n = min(k, max(0, (len(ids) - 160) // 192))
+    if n == 0:
+        return ids
+    rng = random.Random(zlib.crc32(bytes(str(ids[:32]), "ascii")) ^ len(ids))
+    body = ids[: len(ids) - n]
+    cuts = sorted(rng.sample(range(128, len(body) - 32), n))
+    out, prev = [], 0
+    for c in cuts:
+        out += body[prev:c] + [boundary]
+        prev = c
+    return out + body[prev:]
+
+
+def _row(ids: list[int], bos: int, eos: int, read_targets: list | None = None) -> dict:
+    if _VERSION["task_free"]:
+        ids = task_free_cuts(ids, _VERSION["task_free"][0], _VERSION["task_free"][1])
     full = [bos] + ids + [eos]
-    return {"input_ids": full, "attention_mask": [1] * len(full),
-            "special_tokens_mask": [1] + [0] * len(ids) + [1]}
+    row = {"input_ids": full, "attention_mask": [1] * len(full),
+           "special_tokens_mask": [1] + [0] * len(ids) + [1]}
+    if _VERSION["read_targets"]:
+        row["read_targets"] = list(read_targets or [])
+    return row
+
+
+_QA = re.compile(r"\n\nQuestion: (.*?)\nAnswer:")
+
+
+def _count_base(question: str):
+    """A count question with no visits: its chain is empty, so the base comes from the question's shape."""
+    from data.text_world import COUNT_ROUND
+
+    return COUNT_ROUND if question.startswith("How many times") else None
+
+
+def read_targets(text: str, offsets: list, chains: list, span: str = "fact", count_naming: bool = False) -> list[int]:
+    """Flat (answer position, round, first token, last token) quadruples in row positions (BOS = 0), 2026-10-17.
+    Every question gives (pos, 0, -1, -1): `pos` is the "Answer:" colon, the position that predicts the first answer
+    token. A question whose chain is known (`chains`: question → (fact sentence, hop output word) in hop order) also
+    gives one quadruple per fact: round r of the answer's read should land on fact r — the whole sentence
+    (`span="fact"`) or only that hop's output word inside it (`span="output"`: the teacher's name, the place, the
+    class word, the property; the sentence when the word is not found)."""
+    starts = [a for a, _ in offsets]
+
+    def tok_of(c: int) -> int:  # the token holding character c
+        return max(0, bisect.bisect_right(starts, c) - 1)
+
+    chain_of = dict(chains)
+    out: list[int] = []
+    for m in _QA.finditer(text):
+        pos = tok_of(m.end() - 1) + 1
+        out += [pos, 0, -1, -1]
+        body_end = m.start()
+        steps = chain_of.get(m.group(1), [])
+        # count (18 Oct): steps (fact, word, base) — every visit is its own occurrence of a possibly repeated sentence,
+        # rounds base + 1, base + 2 …, and (pos, base, -1, -1) marks the question even with zero visits
+        base = next((st[2] for st in steps if isinstance(st, (tuple, list)) and len(st) > 2), None)
+        if base is None and m.group(1) in chain_of and not steps:
+            base = _count_base(m.group(1))
+        if base is not None:
+            out += [pos, base, -1, -1]
+            if count_naming:  # rounds 1-3 name the count word itself (its tokens after "Answer:"), for the naming lens
+                a0, stop = m.end(), text.find(".", m.end())
+                if 0 <= stop - a0 <= 12:
+                    for r in (1, 2, 3):
+                        out += [pos, r, tok_of(a0) + 1, tok_of(stop - 1) + 1]
+        seen: dict = {}
+        if base is not None:  # longer sentences first, so a shorter template never claims a visit inside a longer one
+            steps = sorted(steps, key=lambda st: -len(st[0]))
+        for r, step in enumerate(steps, 1):
+            fact, word = (step[0], step[1]) if isinstance(step, (tuple, list)) else (step, None)
+            if base is not None:
+                # every visit its own occurrence: a whole-word match, in order, never inside a region an earlier visit
+                # of this question took (one template's sentence can sit inside another's longer sentence)
+                pat, c0, at = re.compile(r"(?<!\w)" + re.escape(fact)), -1, seen.get(fact, 0)
+                while True:
+                    mm = pat.search(text, at, body_end)
+                    if not mm:
+                        break
+                    if not any(mm.start() < e and s0 < mm.end() for s0, e in seen.get("_taken", [])):
+                        c0 = mm.start()
+                        break
+                    at = mm.start() + 1
+                seen[fact] = c0 + len(fact) if c0 >= 0 else body_end
+                if c0 >= 0:
+                    seen.setdefault("_taken", []).append((c0, c0 + len(fact)))
+                r = base + r
+            else:
+                c0 = text.find(fact, 0, body_end)
+            if c0 < 0:
+                continue
+            a, b = c0, c0 + len(fact)
+            if span == "output" and word:
+                w = re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text[c0:c0 + len(fact)])
+                if w:
+                    a, b = c0 + w.start(), c0 + w.end()
+            out += [pos, r, tok_of(a) + 1, tok_of(b - 1) + 1]
+    return out
 
 
 def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int):
@@ -143,12 +247,14 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
         i += 1
         cur = cur + (sep if cur else []) + ids
         if len(cur) >= seq_len - 2:
-            yield _row(cur[: seq_len - 2], bos, eos)
+            yield _row(cur[: seq_len - 2], bos, eos, [])
             made += 1
             cur = []
 
 
-_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS}  # set from the arguments before workers fork
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "bridge_only": False, "a2a": False,
+            "vocab": 0, "read_targets": False, "task_free": None}
+_TOKREF: dict = {"tok": None}  # the tokenizer, for read-target offsets (set before workers fork)  # set from the arguments before workers fork
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -160,12 +266,33 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
     while len(rows) < n:
         target = int(math.exp(rng.uniform(math.log(min_len), math.log(seq_len - 2))))
         for shrink in (1.0, 0.9, 0.8, 0.6):
+            chains = [] if _VERSION["read_targets"] else None
             text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
                                        tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
-                                       questions=_VERSION["questions"])
-            ids = encode(text)
+                                       questions=_VERSION["questions"], bridge=_VERSION["bridge"],
+                                       bridge_only=_VERSION["bridge_only"], chains=chains)
+            if _VERSION["task_free"]:
+                text = text.partition("\n\nQuestion:")[0]  # facts and filler only: no question, no answer
+            if _VERSION["a2a"]:
+                # E35: agent A gets the document, agent B the questions: BOS document EOS BOS questions EOS
+                body, _, rest = text.partition("\n\nQuestion:")
+                ids = encode(body) + [eos, bos] + encode("Question:" + rest)
+            else:
+                ids = encode(text)
+            if _VERSION["vocab"] and not all(0 <= t < _VERSION["vocab"] for t in ids):
+                # a token id outside the vocabulary (2026-10-16 on Polonez: 2**62 + 1789, one flipped bit) — drop the
+                # row and draw the next document instead of writing garbage
+                print(f"warning: invalid token id in world row (seed {seed}, k {k}); skipped", flush=True)
+                break
             if len(ids) <= seq_len - 2:
-                rows.append(_row(ids, bos, eos))
+                rt = None
+                if _VERSION["read_targets"] and not _VERSION["a2a"]:
+                    enc = _TOKREF["tok"](text, add_special_tokens=False, return_offsets_mapping=True)
+                    if list(enc["input_ids"]) != list(ids):
+                        raise RuntimeError("read targets: offset tokenization differs from encode()")
+                    rt = read_targets(text, enc["offset_mapping"], chains, span=_VERSION["read_targets"],
+                                      count_naming=bool(_VERSION.get("count_naming")))
+                rows.append(_row(ids, bos, eos, rt))
                 break
         k += 1
     return rows
@@ -177,8 +304,11 @@ FEATURES = None
 def _features():
     from datasets import Features, Sequence, Value
 
-    return Features({"input_ids": Sequence(Value("int32")), "attention_mask": Sequence(Value("int8")),
-                     "special_tokens_mask": Sequence(Value("int8"))})
+    cols = {"input_ids": Sequence(Value("int32")), "attention_mask": Sequence(Value("int8")),
+            "special_tokens_mask": Sequence(Value("int8"))}
+    if _VERSION["read_targets"]:
+        cols["read_targets"] = Sequence(Value("int32"))
+    return Features(cols)
 
 
 def _save(rows, path: Path, chunk: int = 5000):
@@ -194,7 +324,7 @@ def _save(rows, path: Path, chunk: int = 5000):
     parts, buf = [], []
 
     def flush():
-        cols = {k: [r[k] for r in buf] for k in ("input_ids", "attention_mask", "special_tokens_mask")}
+        cols = {k: [r[k] for r in buf] for k in _features()}
         p = tmp / f"part_{len(parts):05d}"
         Dataset.from_dict(cols, features=_features()).save_to_disk(str(p))
         parts.append(str(p))
@@ -285,17 +415,50 @@ def main():
     p.add_argument("--train_tasks", nargs="+", default=list(TASKS),
                    help="tasks of the training world documents (single-task runs, 2026-10-11); exams are unchanged")
     p.add_argument("--eval_from", default=None, help="link eval/ from this build instead of freezing new exams")
+    p.add_argument("--add_exams", action="store_true",
+                   help="only freeze --eval_splits into an existing build (its own tokenizer; training mix and other "
+                        "exams untouched; meta updated), e.g. the v2.1 splits crowded paraphrase2 steps")
     p.add_argument("--eval_tasks", nargs="+", default=list(TASKS))
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--world_version", default=TEXT_WORLD_VERSION, help="generator version: v0 (published draft) or v1")
     p.add_argument("--train_questions", type=int, default=1,
                    help="questions per training world document (v1; about different cast members); exams keep one")
+    p.add_argument("--train_bridge", type=int, default=0,
+                   help="bridge questions per compose / deduce training document (the single steps of the chain, "
+                        "asked after the task's own questions); 0 = none (earlier builds)")
+    p.add_argument("--train_bridge_only", action="store_true",
+                   help="compose / deduce training documents ask only their bridge questions (up to --train_bridge), "
+                        "none of the task's own (the two-name gate, 2026-10-17)")
+    p.add_argument("--train_read_targets", nargs="?", const="fact", default=None, choices=("fact", "output"),
+                   help="every row gets a read_targets column: per question its answer position and, where the chain "
+                        "is known, per read round the token span of fact r (fact) or of that hop's output word inside "
+                        "it (output); 2026-10-17; stories get an empty list")
+    p.add_argument("--train_count_naming", action="store_true",
+                   help="with --train_read_targets: count questions also name their answer word on read rounds 1-3 "
+                        "(the naming lens decodes the count heads' sum into the number word; 2026-10-18)")
+    p.add_argument("--task_free_boundary", default=None,
+                   help="task-free split rows (2026-10-18): world documents lose their questions, and every row "
+                        "(stories too) gets up to --task_free_cuts copies of this single-token boundary at random "
+                        "points, after which earlier text is readable only through the notes")
+    p.add_argument("--task_free_cuts", type=int, default=3)
+    p.add_argument("--a2a", action="store_true",
+                   help="E35: world rows become BOS document EOS BOS questions EOS (sender | receiver); stories unchanged")
     p.add_argument("--tokenizer", default=None,
                    help="reuse this tokenizer folder instead of training one (e.g. the published one, so data versions compare)")
     args = p.parse_args()
     _VERSION["world"] = args.world_version
     _VERSION["questions"] = args.train_questions
     _VERSION["tasks"] = tuple(args.train_tasks)
+    _VERSION["bridge"] = args.train_bridge
+    _VERSION["bridge_only"] = bool(args.train_bridge_only)
+    _VERSION["read_targets"] = args.train_read_targets or False
+    _VERSION["count_naming"] = bool(args.train_count_naming)
+    _VERSION["a2a"] = bool(args.a2a)
+    if args.task_free_boundary and (args.train_read_targets or args.a2a):
+        raise SystemExit("--task_free_boundary takes no read targets and no --a2a")
+    if args.eval_from and args.eval_splits:
+        # eval/ becomes a link to the source build: writing a split here would overwrite that build's frozen exams
+        p.error("--eval_from links the source exams; pass --eval_splits with no values")
     wv = f"text-world-v{args.world_version.replace('text-world-', '').lstrip('v')}"
 
     out = Path(args.out_dir)
@@ -303,6 +466,9 @@ def main():
     t0 = time.time()
     train_st, held_st = load_stories(args.stories, args.max_train_files, args.seed)
     print(f"stories: {len(train_st):,} train / {len(held_st):,} held-out ({time.time() - t0:.0f}s)")
+    if args.add_exams:
+        add_exams(args, out, held_st, t0)
+        return
 
     # tokenizer: stories + world documents (approximate lengths; names and places must be in its data)
     approx = lambda s: max(1, len(s) // 4)  # noqa: E731
@@ -319,6 +485,7 @@ def main():
         ]
         tok = train_tokenizer(tok_texts, args.vocab, out / "tokenizer")
     bos, eos = tok.bos_token_id, tok.eos_token_id
+    _TOKREF["tok"] = tok
     cache: dict[str, list[int]] = {}
 
     def encode(s: str) -> list[int]:
@@ -331,6 +498,12 @@ def main():
                 cache[s] = r
         return r
 
+    _VERSION["vocab"] = len(tok)
+    if args.task_free_boundary:
+        b_ids = tok.encode(args.task_free_boundary, add_special_tokens=False)
+        if len(b_ids) != 1:
+            raise SystemExit(f"--task_free_boundary {args.task_free_boundary!r} is {len(b_ids)} tokens; it must be one")
+        _VERSION["task_free"] = (b_ids[0], int(args.task_free_cuts))
     print(f"tokenizer: {len(tok)} tokens ({time.time() - t0:.0f}s)")
 
     # training mix
@@ -391,7 +564,7 @@ def main():
         n = 0
         with path.open("w") as fh:
             lengths = args.eval_lengths if split == "id" else args.extra_lengths
-            for task in args.eval_tasks:
+            for task in [t for t in args.eval_tasks if t in ADDED_SPLITS.get(split, TASKS)]:
                 for length in lengths:
                     base = zlib.crc32(f"{split}/{task}/{length}".encode()) * 10_000
                     n_items = args.eval_items if length <= 16384 else args.eval_items_long
@@ -416,13 +589,78 @@ def main():
         "mix": {"story_rows": len(lang_tr), "world_rows": len(world_tr), "mean_story_row_tokens": m_lang,
                 "mean_world_row_tokens": m_world, "row_weights": [w_lang, w_world],
                 "mean_row_tokens": w_lang * m_lang + w_world * m_world,
-                "lang_token_share": f, "train_questions": args.train_questions,
+                "lang_token_share": f, "train_questions": args.train_questions, "train_bridge": args.train_bridge, "a2a": bool(args.a2a),
+                "task_free": ({"boundary": args.task_free_boundary, "cuts": args.task_free_cuts}
+                              if args.task_free_boundary else None),
                 "train_tasks": list(args.train_tasks)},
         "eval_from": args.eval_from,
         "built_s": round(time.time() - t0, 1),
     }
     (out / "text_checks_meta.json").write_text(json.dumps(meta, indent=2))
     print(json.dumps({k: meta[k] for k in ("version", "eval_items", "mix")}, indent=2))
+
+
+def write_split(path: Path, split: str, tasks: list, lengths: list, n_items: int, n_items_long: int, stories: list,
+                encode, version: str) -> int:
+    """Freeze one exam split: `n_items` per (task, length) up to 16k, `n_items_long` above. Item i of a single-fact
+    task gets depth bin i % 3 (early, middle, late); seeds are a pure function of (split, task, length, i)."""
+    ntok = lambda s: len(encode(s))  # noqa: E731
+    n = 0
+    with path.open("w") as fh:
+        for task in tasks:
+            for length in lengths:
+                base = zlib.crc32(f"{split}/{task}/{length}".encode()) * 10_000
+                for i in range(n_items if length <= 16384 else n_items_long):
+                    depth = ("early", "middle", "late")[i % 3] if task in SINGLE_EVIDENCE_TASKS else None
+                    rec = make_eval_record(task, base + i, split, length, depth, stories, ntok, version=version)
+                    rec["n_tokens"] = 1 + len(encode(rec["prompt"])) + len(encode(rec["answer"]))
+                    fh.write(json.dumps(rec) + "\n")
+                    n += 1
+    return n
+
+
+def add_exams(args, out: Path, held_st: list, t0: float) -> None:
+    """--add_exams: freeze new exam splits into an existing build with its own tokenizer; nothing else changes."""
+    from transformers import AutoTokenizer
+
+    meta_path = out / "text_checks_meta.json"
+    if not meta_path.exists() or not (out / "tokenizer").exists():
+        raise SystemExit(f"--add_exams needs an existing build at {out} (text_checks_meta.json and tokenizer/)")
+    if (out / "eval").is_symlink():
+        raise SystemExit(f"{out}/eval links to {(out / 'eval').resolve()}: add the exams to the build that owns it")
+    meta = json.loads(meta_path.read_text())
+    tok = AutoTokenizer.from_pretrained(str(out / "tokenizer"))
+    if _sha(out / "tokenizer" / "tokenizer.json") != meta.get("tokenizer_sha256"):
+        raise SystemExit("tokenizer hash differs from the build's meta: refusing to add exams")
+    cache: dict[str, list[int]] = {}
+
+    def encode(s: str) -> list[int]:
+        r = cache.get(s)
+        if r is None:
+            r = tok.encode(s, add_special_tokens=False)
+            if len(s) < 400:
+                if len(cache) > 2_000_000:
+                    cache.clear()
+                cache[s] = r
+        return r
+
+    version = meta.get("args", {}).get("world_version") or args.world_version
+    added = meta.setdefault("exams_added", {})
+    for split in args.eval_splits:
+        if split in meta.get("eval_sha256", {}) and split not in added:
+            raise SystemExit(f"split {split!r} is part of the original build: it is never rewritten")
+        tasks = [t for t in args.eval_tasks if t in ADDED_SPLITS.get(split, TASKS)]
+        path = out / "eval" / f"{split}.jsonl"
+        n = write_split(path, split, tasks, args.extra_lengths, args.eval_items, args.eval_items_long, held_st, encode,
+                        version)
+        meta.setdefault("eval_sha256", {})[split] = _sha(path)
+        meta.setdefault("eval_items", {})[split] = n
+        added[split] = {"version": "text-world-v2.1" if split in ADDED_SPLITS else meta.get("version"),
+                        "tasks": tasks, "lengths": list(args.extra_lengths),
+                        "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        print(f"eval {split}: {n} items ({time.time() - t0:.0f}s)")
+    meta_path.write_text(json.dumps(meta, indent=2))
+    print(json.dumps({k: meta[k] for k in ("version", "eval_items", "exams_added")}, indent=2))
 
 
 if __name__ == "__main__":

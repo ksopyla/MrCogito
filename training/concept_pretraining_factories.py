@@ -248,6 +248,10 @@ def build_pretraining_model(
     """Construct the selected model family and preserve warm-start behavior."""
     if getattr(model_args, "model_family", "auto") == "perceiver_ar":
         return _build_perceiver_ar_model(tokenizer, model_args, data_args)
+    if getattr(model_args, "model_family", "auto") == "a2a":
+        return _build_a2a_model(tokenizer, model_args, data_args)
+    if getattr(model_args, "model_family", "auto") == "frozen_reader":
+        return _build_frozen_reader_model(tokenizer, model_args, data_args)
     if getattr(model_args, "model_family", "auto") == "perceiver_concept":
         return _build_perceiver_concept_model(tokenizer, model_args, data_args)
     if is_backbone:
@@ -421,10 +425,78 @@ def _latent_memory_kwargs(model_args) -> dict:
         return {}
     keys = ("lm_read", "lm_context", "lm_window", "lm_stride", "lm_latents", "lm_latent_dim", "lm_heads",
             "lm_writer_dim", "lm_enc_layers", "lm_rounds", "lm_reader_tokens", "lm_addr", "lm_slot_pos",
-            "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets")
+            "lm_note_age", "lm_note_age_unit", "lm_note_rank_margin", "lm_note_rank_sharp", "lm_note_age_init", "lm_note_age_learn", "lm_count_heads", "lm_count_max", "lm_count_aux", "message_loop_rounds", "message_loop_exit_aux", "message_loop_exit_targets",
+            "message_loop_exit_mask", "message_loop_read_aux", "message_loop_read_target", "lm_readback_aux",
+            "lm_key_grad", "message_loop_name_lens", "message_loop_feedback", "message_loop_feedback_temp",
+            "lm_writer_input", "lm_note_rank_gate", "lm_note_order_gate", "message_loop_control",
+            "message_loop_control_window", "message_loop_control_dim", "message_loop_control_heads",
+            "message_loop_control_words")
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
     return out
+
+
+def _build_frozen_reader_model(tokenizer, model_args, data_args):
+    """E36 — a trained span writer read by a frozen pretrained decoder (nn/frozen_reader_memory.py)."""
+    from nn.frozen_reader_memory import FrozenReaderMemory, FrozenReaderMemoryConfig
+
+    need = 2 + (model_args.fr_mem_spans + 1) * model_args.fr_span
+    if data_args.max_seq_length < need:
+        raise ValueError(f"E36 rows need max_seq_length >= {need} (BOS + {model_args.fr_mem_spans + 1} spans + EOS)")
+    config = FrozenReaderMemoryConfig(
+        reader_name=model_args.fr_reader, writer_init=model_args.fr_writer_init,
+        writer_layers=model_args.fr_writer_layers, span=model_args.fr_span, mem_spans=model_args.fr_mem_spans,
+        way=model_args.fr_way, recon_frac=model_args.fr_recon_frac, entry_positions=model_args.fr_entry_positions,
+        proj_hidden=model_args.fr_proj_hidden,
+    )
+    model = FrozenReaderMemory(config)
+    if len(tokenizer) > config.vocab_size:
+        raise ValueError(f"tokenizer has {len(tokenizer)} tokens, the reader {config.vocab_size}")
+    parts = {k: sum(p.numel() for p in getattr(model, k).parameters() if p.requires_grad) for k in ("writer", "adapter")}
+    logger.info(f"Initializing FrozenReaderMemory (E36): reader={config.reader_name} (frozen) "
+                f"writer={config.writer_init}[:{config.writer_layers}] trainable "
+                + " ".join(f"{k}={v/1e6:.2f}M" for k, v in parts.items())
+                + f" | way={config.way} span={config.span} mem_spans={config.mem_spans} "
+                f"recon={config.recon_frac} positions={config.entry_positions}")
+    return model, config, "frozen_reader_memory"
+
+
+def _build_a2a_model(tokenizer, model_args, data_args):
+    """E35 — latent messages between agents (nn/latent_messages.py): agent A's writer and token embedding from a
+    notebook checkpoint, agent B from a decoder checkpoint, a fresh transmitter between them."""
+    from nn.latent_messages import build_a2a_from_checkpoints
+
+    req = {}
+    if model_args.a2a_tx_request != "none" or model_args.a2a_loss_on != "all":  # tokens that open a question / answer
+        q_ids = tokenizer.encode("Question", add_special_tokens=False)
+        a_ids = tokenizer.encode("Answer", add_special_tokens=False)
+        if len(q_ids) != 1 or len(a_ids) != 1:
+            raise ValueError(f"request mode needs single-token 'Question' / 'Answer', got {q_ids} / {a_ids}")
+        req = dict(question_token_id=q_ids[0], answer_token_id=a_ids[0])
+        if model_args.a2a_tx_request != "none":
+            req["tx_request"] = model_args.a2a_tx_request
+        if model_args.a2a_loss_on != "all":
+            req.update(loss_on=model_args.a2a_loss_on, end_token_id=tokenizer.encode(".", add_special_tokens=False)[-1])
+    model = build_a2a_from_checkpoints(
+        model_args.a2a_sender_init, model_args.a2a_receiver_init,
+        msg_slots=model_args.a2a_msg_slots, tx_layers=model_args.a2a_tx_layers, tx_dim=model_args.a2a_tx_dim,
+        tx_order=model_args.a2a_tx_order, max_sequence_length=data_args.max_seq_length,
+        tokenizer_name=data_args.tokenizer_name, **req,
+    )
+    if model_args.a2a_freeze_receiver:  # only agent A learns; B keeps its decoder (Cramming-style: a frozen reader)
+        for prm in model.receiver.parameters():
+            prm.requires_grad_(False)
+    if len(tokenizer) != model.receiver.config.vocab_size:
+        raise ValueError(f"tokenizer has {len(tokenizer)} tokens, the receiver {model.receiver.config.vocab_size}")
+    n = sum(p.numel() for p in model.parameters())
+    parts = {k: sum(p.numel() for p in getattr(model, k).parameters()) for k in ("sender_tok", "writer", "transmitter",
+                                                                             "receiver")}
+    logger.info(f"Initializing A2AModel (E35): {n/1e6:.1f}M params "
+                + " ".join(f"{k}={v/1e6:.2f}M" for k, v in parts.items())
+                + f" | K={model.config.msg_slots} tx_layers={model.config.tx_layers} order={model.config.tx_order}"
+                + f" request={model.config.tx_request} loss_on={model.config.loss_on}"
+                + f" frozen_receiver={model_args.a2a_freeze_receiver}")
+    return model, model.config, "a2a_latent_messages"
 
 
 def _build_perceiver_ar_model(tokenizer, model_args, data_args):
@@ -493,12 +565,24 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
 
         weights = os.path.join(model_args.model_name_or_path, "model.safetensors")
         state = load_file(weights)
+        skip = [t.strip() for t in str(getattr(model_args, "warm_start_skip", "") or "").split(",") if t.strip()]
+        if skip:  # weights deliberately left at their fresh init (e.g. E33i resets E33g's order strengths)
+            state = {k: v for k, v in state.items() if not any(t in k for t in skip)}
+            logger.info(f"Warm start skips {skip}")
         missing, unexpected = model.load_state_dict(state, strict=False)
         # Tolerated fresh parameters: the E19 write-back hook, and value embeddings added to a
         # layer the checkpoint did not have one on (E18b R2 adds one to the global read, which the
         # P2 copy result says the retrieving layer needs). Their init is already ~0.3% of |v|, so
         # the warm start is effectively unchanged at step 0. Anything else is a real mismatch.
-        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda", "prefix_ae_head")
+        _ALLOWED_FRESH = ("write_back_proj", "value_embed", "value_proj", "value_lambda", "prefix_ae_head",
+                          "note_readback",  # note_readback: the text multi-hop read-back head (training only)
+                          "note_age_slope",  # E33g: order heads added to a model trained without them (set strengths)
+                          "note_counter",  # E33h: count heads added to a warm start (zero output projection)
+                          "loop_feedback_gate",  # E33q: the feedback gate starts at 0 (warm start = E33r)
+                          "keyread_",  # lm_key_grad=address: the key's own read (zero output projection)
+                          "note_order_gate",  # E33i: the order switch starts nearly off
+                          "loop_control.",  # E33c: the question control (its gate starts at 0)
+                          *skip)
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:
             raise ValueError(
@@ -562,6 +646,36 @@ def build_training_wandb_identity(
                 f"backend-{model_args.attn_backend}",
                 resolved_experiment,
             ],
+        )
+    if getattr(model_args, "model_family", "auto") == "frozen_reader":
+        resolved_experiment = experiment_id or "E36"
+        reader = model_args.fr_reader.split("/")[-1]
+        architecture_id = (f"frozen_reader_{reader}_w{model_args.fr_writer_layers}_s{model_args.fr_span}"
+                           f"m{model_args.fr_mem_spans}_{model_args.fr_way}")
+        return WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="frozen_reader",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_frozen_reader_writer",
+            tags=["train", "frozen_reader", "memory_writer", "causal_lm", f"way-{model_args.fr_way}",
+                  resolved_experiment],
+        )
+    if getattr(model_args, "model_family", "auto") == "a2a":
+        resolved_experiment = experiment_id or "E35"
+        architecture_id = (f"a2a_K{model_args.a2a_msg_slots}_tx{model_args.a2a_tx_layers}_{model_args.a2a_tx_order}"
+                           + ("_req" if model_args.a2a_tx_request != "none" else "")
+                           + ("_ans" if model_args.a2a_loss_on != "all" else "")
+                           + ("_frozenB" if model_args.a2a_freeze_receiver else ""))
+        return WandbRunIdentity(
+            experiment_id=resolved_experiment,
+            model_family="a2a",
+            objective_family="causal_lm",
+            architecture_id=architecture_id,
+            group=f"{resolved_experiment}_{architecture_id}",
+            job_type="train_a2a_latent_messages",
+            tags=["train", "a2a", "latent_messages", "causal_lm", resolved_experiment],
         )
     if getattr(model_args, "model_family", "auto") == "perceiver_ar":
         resolved_experiment = experiment_id or "E18"
