@@ -512,3 +512,37 @@ def test_task_free_cuts_keep_length_and_are_deterministic():
     assert [t for t in out if t != 7] == ids[: len(ids) - 3]
     assert b.task_free_cuts(ids, 7, 3) == out
     assert b.task_free_cuts(list(range(200)), 7, 3) == list(range(200))  # too short to cut
+
+
+def test_written_chains_rule_matches_the_generator():
+    """--written_chains (R2, 18 Oct): answers are rewritten as reasoning text, and the rule that reads the per-hop
+    output words back off that text agrees with the generator's own labels on nearly every step."""
+    import importlib.util
+    import sys
+
+    spec = importlib.util.spec_from_file_location("build_tc2", "scripts/build_text_checks_data.py")
+    b = importlib.util.module_from_spec(spec)
+    argv, sys.argv = sys.argv, ["build_tc2"]
+    try:
+        spec.loader.exec_module(b)
+    finally:
+        sys.argv = argv
+    stories = ["Tom had a red ball. He played in the park all day."] * 20
+    ntok = lambda s: len(s.split())  # noqa: E731
+    agree = total = 0
+    for k in range(40):
+        chains = []
+        text = make_train_document(500 + k, stories, 600, ntok, tasks=("compose", "deduce", "lookup"), version="v2",
+                                   questions=8, bridge=4, chains=chains)
+        full, derived, pairs = b.write_chains(text, chains, "all")
+        none, derived_none, _ = b.write_chains(text, chains, "none")
+        assert derived == derived_none  # targets come from the written chain whether or not it is shown
+        assert none == text  # "none" keeps the plain answers
+        for q, steps in derived:
+            assert f"Question: {q}\nAnswer: {steps[0][0]}" in full
+        agree += sum(a.lower() == g.lower() or g.lower().endswith(a.lower()) for a, g in pairs)
+        total += len(pairs)
+    assert total > 100 and agree / total > 0.97
+    assert b.parse_written_chain("Lumo is a kavi. Every kavi is shiny. So shiny.", "What is Lumo like?",
+                                 "Lumo is a kavi. Every kavi is shiny.") == [("Lumo is a kavi.", "kavi"),
+                                                                             ("Every kavi is shiny.", "shiny")]

@@ -49,6 +49,7 @@ from data.text_world import (  # noqa: E402
     clean_story,
     make_eval_record,
     make_train_document,
+    qa_suffix,
 )
 
 STORY_FILES = {
@@ -213,8 +214,73 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
 
 
 _VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "bridge_only": False, "a2a": False,
-            "vocab": 0, "read_targets": False, "task_free": None}
+            "vocab": 0, "read_targets": False, "task_free": None, "written": None}
+_AGREE = [0, 0]  # written chains: rule-derived output words that match the generator's, of all derived
 _TOKREF: dict = {"tok": None}  # the tokenizer, for read-target offsets (set before workers fork)  # set from the arguments before workers fork
+
+
+_STOP = {"a", "an", "the", "is", "are", "of", "in", "s", "every", "to", "and", "at", "on", "so", "was", "who"}
+
+
+def _words(s: str) -> list[str]:
+    return re.findall(r"[A-Za-z]+", s)
+
+
+def parse_written_chain(written: str, question: str, body: str) -> list[tuple[str, str]]:
+    """Read a written reasoning chain back into (step sentence, output word) pairs by a rule on the text alone
+    (R2 of the multi-hop review, 2026-10-18). `written` is "<step>. <step>. … So <answer>.".
+    - A step's output word is the word it shares with the next step, excluding the question's words and function
+      words; ties go to the rarest word in the document `body` (entities are rare, relation words common).
+    - The last step's output word is the answer after "So" (a leading article dropped).
+    The generator's own labels are not used; `written_chain_agreement` measures how often the rule agrees with them."""
+    head, sep, tail = written.strip().rpartition(" So ")
+    if not sep:
+        return []
+    steps = [s.strip() + "." for s in head.split(". ") if s.strip()]
+    steps = [s[:-1] if s.endswith("..") else s for s in steps]
+    answer = re.sub(r"^(a|an|the) ", "", tail.strip().rstrip("."))
+    qw = {w.lower() for w in _words(question)}
+    low_body = [w.lower() for w in _words(body)]
+    out = []
+    for r, step in enumerate(steps):
+        if r == len(steps) - 1:
+            word = answer
+        else:
+            nxt = {w.lower() for w in _words(steps[r + 1])}
+            cands = [w for w in dict.fromkeys(_words(step)) if w.lower() in nxt and w.lower() not in qw
+                     and w.lower() not in _STOP]
+            if not cands:
+                return []
+            word = min(cands, key=lambda w: low_body.count(w.lower()))
+        out.append((step, word))
+    return out
+
+
+def write_chains(text: str, chains: list, keep: str) -> tuple[str, list, list]:
+    """Rewrite every answer whose chain is known as written reasoning (`keep` = all | drop1 | none of its steps
+    visible), and return (text, rule-derived chains for the read and naming targets, (rule word, generator word)
+    pairs for the agreement check). The full written chain is always parsed, visible or not: a reasoning dataset
+    holds the text even where the schedule hides it from the input."""
+    derived, pairs = [], []
+    for q, steps in chains:
+        block = qa_suffix(q)
+        i = text.find(block)
+        if i < 0:
+            continue
+        j = text.find(".", i + len(block))
+        if j < 0:
+            continue
+        answer = text[i + len(block):j].strip()
+        facts = [f for f, _ in steps]
+        written = " ".join(facts) + f" So {answer}."
+        shown = {"all": facts, "drop1": facts[1:], "none": []}[keep]
+        new = (" " + " ".join(shown) + f" So {answer}.") if shown else f" {answer}."
+        text = text[: i + len(block)] + new + text[j + 1:]
+        parsed = parse_written_chain(written, q, text[:i])
+        if parsed:
+            derived.append((q, parsed))
+            pairs += [(w, g) for (_, w), (_, g) in zip(parsed, steps)]
+    return text, derived, pairs
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -226,13 +292,17 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
     while len(rows) < n:
         target = int(math.exp(rng.uniform(math.log(min_len), math.log(seq_len - 2))))
         for shrink in (1.0, 0.9, 0.8, 0.6):
-            chains = [] if _VERSION["read_targets"] else None
+            chains = [] if (_VERSION["read_targets"] or _VERSION["written"]) else None
             text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
                                        tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
                                        questions=_VERSION["questions"], bridge=_VERSION["bridge"],
                                        bridge_only=_VERSION["bridge_only"], chains=chains)
             if _VERSION["task_free"]:
                 text = text.partition("\n\nQuestion:")[0]  # facts and filler only: no question, no answer
+            if _VERSION["written"]:
+                text, chains, pairs = write_chains(text, chains, _VERSION["written"])
+                _AGREE[0] += sum(a.lower() == b.lower() or b.lower().endswith(a.lower()) for a, b in pairs)
+                _AGREE[1] += len(pairs)
             if _VERSION["a2a"]:
                 # E35: agent A gets the document, agent B the questions: BOS document EOS BOS questions EOS
                 body, _, rest = text.partition("\n\nQuestion:")
@@ -397,6 +467,11 @@ def main():
                         "(stories too) gets up to --task_free_cuts copies of this single-token boundary at random "
                         "points, after which earlier text is readable only through the notes")
     p.add_argument("--task_free_cuts", type=int, default=3)
+    p.add_argument("--written_chains", default=None, choices=("all", "drop1", "none"),
+                   help="R2 (2026-10-18): answers with a known chain are written as reasoning ('<fact>. <fact>. So "
+                        "<answer>.'), with all, all but the first, or none of the steps visible; the read and naming "
+                        "targets come from the written chain by a rule (parse_written_chain), not from the generator. "
+                        "Needs --train_read_targets (output spans for the naming lens)")
     p.add_argument("--a2a", action="store_true",
                    help="E35: world rows become BOS document EOS BOS questions EOS (sender | receiver); stories unchanged")
     p.add_argument("--tokenizer", default=None,
@@ -409,6 +484,9 @@ def main():
     _VERSION["bridge_only"] = bool(args.train_bridge_only)
     _VERSION["read_targets"] = args.train_read_targets or False
     _VERSION["a2a"] = bool(args.a2a)
+    _VERSION["written"] = args.written_chains
+    if args.written_chains and not args.train_read_targets:
+        raise SystemExit("--written_chains needs --train_read_targets (output)")
     if args.task_free_boundary and (args.train_read_targets or args.a2a):
         raise SystemExit("--task_free_boundary takes no read targets and no --a2a")
     if args.eval_from and args.eval_splits:
