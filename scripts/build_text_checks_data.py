@@ -200,7 +200,13 @@ def read_targets(text: str, offsets: list, chains: list, span: str = "fact", cou
         if base is not None:
             out += [pos, base, -1, -1]
             if count_naming:  # rounds 1-3 name the count word itself (its tokens after "Answer:"), for the naming lens
-                a0, stop = m.end(), text.find(".", m.end())
+                a0 = m.end()
+                line_end = text.find("\n", a0)
+                line_end = len(text) if line_end < 0 else line_end
+                so = text.rfind(" So ", a0, line_end)  # a written tally: the number follows its last "So"
+                if so >= 0:
+                    a0 = so + len(" So") 
+                stop = text.find(".", a0)
                 if 0 <= stop - a0 <= 12:
                     for r in (1, 2, 3):
                         out += [pos, r, tok_of(a0) + 1, tok_of(stop - 1) + 1]
@@ -296,6 +302,15 @@ def parse_written_chain(written: str, question: str, body: str) -> list[tuple[st
     return out
 
 
+def parse_written_tally(written: str) -> list[str]:
+    """Count's written reasoning (19 Oct): "<visit>. <visit>. … So <number>." read back by a rule on the text alone:
+    every sentence before "So" is one counted event (the number of them is the count the read must reach)."""
+    head, sep, _ = written.strip().rpartition(" So ")
+    if not sep:
+        head = "" if written.strip().startswith("So ") else head
+    return [s.strip().rstrip(".") + "." for s in head.split(". ") if s.strip().rstrip(".")] if head.strip() else []
+
+
 def write_chains(text: str, chains: list, keep: str) -> tuple[str, list, list]:
     """Rewrite every answer whose chain is known as written reasoning (`keep` = all | drop1 | none of its steps
     visible), and return (text, rule-derived chains for the read and naming targets, (rule word, generator word)
@@ -311,7 +326,16 @@ def write_chains(text: str, chains: list, keep: str) -> tuple[str, list, list]:
         if j < 0:
             continue
         answer = text[i + len(block):j].strip()
-        facts = [f for f, _ in steps]
+        if _count_base(q) is not None:  # count (19 Oct): the visits listed one by one, then the number
+            facts = [st[0] for st in steps]
+            shown = {"all": facts, "drop1": facts[1:], "none": []}[keep]
+            new = (" " + " ".join(shown) + f" So {answer}.") if shown else f" {answer}."
+            text = text[: i + len(block)] + new + text[j + 1:]
+            listed = parse_written_tally(" ".join(facts) + f" So {answer}.")
+            derived.append((q, [(s, None, _count_base(q)) for s in listed]))
+            pairs.append((str(len(listed)), str(len(steps))))
+            continue
+        facts = [st[0] for st in steps]
         written = " ".join(facts) + f" So {answer}."
         shown = {"all": facts, "drop1": facts[1:], "none": []}[keep]
         new = (" " + " ".join(shown) + f" So {answer}.") if shown else f" {answer}."
