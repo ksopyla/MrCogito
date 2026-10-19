@@ -16,11 +16,12 @@ def _tiny(layers, hidden, heads, kv):
     return LlamaForCausalLM(cfg)
 
 
-def _build(way="input", entry_positions="span_mid", recon_frac=0.0):
+def _build(way="input", entry_positions="span_mid", recon_frac=0.0, **kw):
     torch.manual_seed(0)
     reader, writer = _tiny(2, 32, 4, 2), _tiny(3, 24, 4, 2).model
     cfg = FrozenReaderMemoryConfig(writer_layers=2, span=S, mem_spans=M, way=way, proj_hidden=16,
-                                   reader_dtype="float32", recon_frac=recon_frac, entry_positions=entry_positions)
+                                   reader_dtype="float32", recon_frac=recon_frac, entry_positions=entry_positions,
+                                   **kw)
     return FrozenReaderMemory(cfg, reader=reader, writer_base=writer)
 
 
@@ -109,3 +110,32 @@ def test_reconstruction_draw_is_the_same_on_every_rank():
 
 def test_trainer_divides_the_loss_by_accumulation_steps():
     assert FrozenReaderMemory.accepts_loss_kwargs is False
+
+
+def test_attention_pool_starts_as_the_mean_and_learns():
+    mean, attn = _build("kv").eval(), _build("kv", writer_pool="attn").eval()
+    attn.writer.load_state_dict(mean.writer.state_dict(), strict=False)  # same layers and norm
+    ids = _rows(2)[:, 1:1 + S]
+    with torch.no_grad():
+        assert torch.allclose(mean.writer(ids), attn.writer(ids), atol=1e-5)
+    attn.train()
+    attn(input_ids=_rows()).loss.backward()
+    assert attn.writer.pool.q.grad.abs().sum() > 0
+
+
+def test_curriculum_runs_reconstruction_phases_by_optimizer_step():
+    model = _build("kv", curriculum="2:2,4:1", grad_accum=2).train()
+    spans = []
+    for _ in range(8):
+        model._fwd += 1
+        spans.append(model._curriculum_span())
+        model._fwd -= 1
+        out = model(input_ids=_rows())  # advances the counter
+        assert torch.isfinite(out.loss)
+    # steps 0-1 (forward calls 1-4) at 2 tokens, step 2 (calls 5-6) at 4 tokens, then the main objective
+    assert spans == [2, 2, 2, 2, 4, 4, None, None]
+
+
+def test_curriculum_spec_is_validated():
+    with pytest.raises(ValueError):
+        FrozenReaderMemoryConfig(span=8, curriculum="16:10")

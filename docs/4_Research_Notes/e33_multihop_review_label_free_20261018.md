@@ -11,6 +11,19 @@ Run details and numbers: `e33_text_multihop_diagnosis_20261017.md` §7–§8, an
 
 ## Brief
 
+**Update 19 Oct: the label-free route works (R2, §5).**
+- **Data.** Answers write their chain out as reasoning text: "Lumo's teacher is Pim. Pim's teacher is Mari. Mari
+  lives in Corvo. So Corvo."
+- **Targets.** A rule reads the per-hop naming and read targets off that text alone. It agrees with the
+  generator's labels on 99.3 % of steps; the generator's labels are not used.
+- **Schedule.** Three stages of 0.1B tokens: all steps written, the first step dropped, then plain answers. This
+  is iCoT's step removal.
+- **Result.** From E33x, which never had read targets: compose 92 / 97 % and deduce 99 / 100 % at 4k / 16k. That
+  is the generator-label result (E33qn 94 / 98 %) at the same 0.6B-token budget from the shared E33 base.
+  - The reads follow the chain: 95 / 93 / 96 % per round.
+  - The notes hold places at 92 % and the property at 63 %.
+- **Still failing:** 3-hop compose and held-out templates.
+
 - **What we reached.** Compose 94–95 % and deduce 98–99 % at 4k on the board's id split, against 8 % and 13 %
   before. Two recipes get there, both replicated or matched:
   - E33q / E33qn: each loop round names its hop's word.
@@ -61,6 +74,7 @@ training signal comes from the task generator, not from the text.
 | E33c | per-round control read over the question (gate from 0) | gen. labels | — | — | — | **unused**: gate 0.0013 at checkpoint 445; stopped early |
 | R1 = E33qn0 | naming only, no read target, from E33x | gen. labels (naming) | **8 %** | **99 %** | 97 % | naming writes content (property 74 %) and teaches deduce, not compose |
 | R3 = E33w | writer only, task-free cut text, frozen E33x reader | none | 1 % | 7 % | 6 % | **erased note content** (place 80 → 13 %) |
+| **R2** | written-chain data; naming + read targets from the text by rule; iCoT 3 stages (all → drop1 → none), from E33x | **text only** | **92 % (97)** | **99 % (100)** | 98 % | **the goal without generator labels** |
 
 ## 2. Main facts
 
@@ -188,7 +202,7 @@ stable message format: notes another model can read without co-training.
 | # | run | question | success / kill | cost |
 |---|---|---|---|---|
 | R1 | E33qn with the read target off (naming only) | Are read targets needed once each hop is named? | id compose / deduce ≥ 90 % → read targets dropped | **done, 18 Oct:** deduce 99 %, compose 8 %. Needed for compose. |
-| R2 | **written-chain data**: each answer writes its chain ("Lumo's teacher is Pim. Pim lives in Corvo. So Corvo."). Naming targets are read off the written steps by a rule; then iCoT removal over the last 40 %. | Does text-derived per-hop supervision match the generator labels? | id compose / deduce ≥ 90 % with the steps removed; harder ≥ E33r | data build + 4 GPUs, 4 h |
+| R2 | **written-chain data**: each answer writes its chain ("Lumo's teacher is Pim. Pim lives in Corvo. So Corvo."). Naming targets are read off the written steps by a rule; then iCoT removal over the last 40 %. | Does text-derived per-hop supervision match the generator labels? | id compose / deduce ≥ 90 % with the steps removed; harder ≥ E33r | **done, 19 Oct: passed.** Compose 92 %, deduce 99 % at 4k; harder deduce 90 %, harder compose 0 %. |
 | R3 | **stage-W writer**: from E33x (property 12 %), only the writer trains, on task-free text (stories, and world documents without their questions) cut at random points, after which earlier text is readable only through the notes (arch e33w) | Does a task-free, notes-only continuation make a writer keep common words? | property probe ≥ 50 % (E33f, trained on questions in split mode: 69 %); place ≥ 74 % | **done, 18 Oct: failed.** Property 9 %, place 13 %. Next: R3b (below). |
 | R3b | stage-W writer with **reconstruction**: the notes of page p must regenerate p, plus ~20 % continuation, reader at a low LR | Does a reconstruction objective keep every word? | property ≥ 50 %, place ≥ 74 % | needs a decoder head for notes → text (2 GPUs, 3 h) |
 | R4 | R3's writer + R2's reader (stage R), then stage J | Does the staged recipe reach the goal without generator labels? | compose / deduce ≥ 70 % at 4k (the original goal) | 4 GPUs, 5 h |
@@ -196,6 +210,30 @@ stable message format: notes another model can read without co-training.
 
 R2 still uses our synthetic world, but the supervision reaches the model only as text. The same pipeline then
 runs on real chain-of-thought and decomposed-QA data (R5).
+
+**R2 details (19 Oct, Polonez).**
+- Arch e33qn_plain, warm start from the E33x final.
+- Three stages of 0.1B tokens each, every stage warm-started from the previous final, at LR 3.3e-4 cosine:
+  - written_r2s1_all, 08:49–09:52 UTC, GPU 2;
+  - written_r2s2_drop1, until 10:52, GPUs 2–3;
+  - written_r2s3_none, until 12:32.
+- The same documents in all three stages, differing only in how much of each chain is written.
+- After stage 2, lookup at 1k was already 90 %: a one-step chain loses its only step at "drop1".
+- Story loss 1.535, against E33qn's 1.523.
+
+| exam at 4k (16k) | R1: naming only | R2: written chains | E33qn: generator labels |
+|---|---|---|---|
+| compose, two steps | 8 % (9) | **92 % (97)** | 94 % (97) |
+| deduce, depth 2 | 99 % (100) | **99 % (100)** | 98 % (100) |
+| lookup / keyed | 97 / 94 % | 98 / 97 % | 98 / 98 % |
+| harder deduce (depth 3) | 54 % (63) | 90 % (98) | 87 % (93) |
+| harder compose (3 hops) | 6 % | 0 % | 1 % |
+| teacher step asked alone | 6 % | 96 % | — |
+
+**What R2 does not yet show.** The written steps copy the document's fact sentences verbatim, so the string match
+is exact. Real reasoning text paraphrases ("Pim is the one who taught Lumo"). Moving to real chain-of-thought or
+decomposed-QA data (R5) needs a softer match: shared entities instead of whole sentences, which the rule already
+uses for the output words.
 
 ## 6. What I am not sure about
 

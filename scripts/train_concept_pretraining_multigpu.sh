@@ -271,6 +271,8 @@ FR_WAY="${FR_WAY:-input}"                                   # input | kv
 FR_RECON_FRAC="${FR_RECON_FRAC:-0.2}"                       # share of steps rebuilding a span from its entry
 FR_ENTRY_POSITIONS="${FR_ENTRY_POSITIONS:-span_mid}"        # span_mid | compact
 FR_PROJ_HIDDEN="${FR_PROJ_HIDDEN:-2048}"
+FR_WRITER_POOL="${FR_WRITER_POOL:-mean}"                    # mean | attn
+FR_CURRICULUM="${FR_CURRICULUM:-}"                          # reconstruction-first phases, e.g. 64:750,128:750,256:750,512:750
 PAR_LOOP_ROUNDS="${PAR_LOOP_ROUNDS:-1}"                    # E33a loop on text: 4
 PAR_LOOP_EXIT_AUX="${PAR_LOOP_EXIT_AUX:-0.0}"              # E33a: 0.3
 PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
@@ -501,6 +503,8 @@ if [ "$MODEL_FAMILY" = "frozen_reader" ]; then
         --fr_recon_frac "$FR_RECON_FRAC"
         --fr_entry_positions "$FR_ENTRY_POSITIONS"
         --fr_proj_hidden "$FR_PROJ_HIDDEN"
+        --fr_writer_pool "$FR_WRITER_POOL"
+        --fr_curriculum "$FR_CURRICULUM"
     )
 fi
 if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then

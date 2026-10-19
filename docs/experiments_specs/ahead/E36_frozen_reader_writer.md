@@ -1,6 +1,6 @@
 # E36 — a trained writer for a frozen reader
 
-- **Status:** S0 + S1 started 2026-10-18 (Polonez). The author asked (18 Oct) to train the memory (the writer) and
+- **Status:** S0 + S1 done 2026-10-18 (Polonez): the span ladder 512 → 256 → 128 stays below the pass mark (18–27 % of the raw-text gain on books, no facts cross); the writer, not the entry format, is the limit (54 vs 781 bits per entry). The author asked (18 Oct) to train the memory (the writer) and
   keep a frozen, well-evaluated small decoder as the reader, with no extra labels; entries start at 512 tokens per
   vector ("aligned with Cramming 1568 tokens"), shrinking to 256 then 128 if a stage fails; "implement the training
   and evaluation and do a training and evaluation on Odra or Polonez".
@@ -35,4 +35,135 @@ hurt the reader when they come from another document.
 - Reported per source (books / PDFs), with bits carried per entry and SQuAD none / raw / memory / other.
 
 ## Result
-_Pending._
+
+### S0 — the frozen reader alone (Polonez GPU3, 17:10–17:28 UTC, 18 Oct)
+Reader SmolLM2-360M; the first 256 held-out rows per source; tokens 1–511 of the target span scored.
+
+| measure | no text | raw text in context | last 512 raw tokens only |
+|---|---|---|---|
+| continuation, PG-19 books (nats/token) | 2.959 | 2.748 (155 bits per span) | 2.806 |
+| continuation, FinePDFs (nats/token) | 2.239 | 1.747 (363 bits per span) | 1.920 |
+| SQuAD v1.1, 500 items, answer contained / exact | 8.8 % / 4.4 % | 51.6 % / 14.4 % | — |
+
+The Cramming probe optimises one entry per text (8 texts, 800 Adam steps). For each way in it reports the share of
+tokens the reader then predicts correctly, the exact prefix in tokens, and the bits the entry adds:
+
+| text length | one input vector | one key/value entry (all 32 layers) |
+|---|---|---|
+| 128 tokens | 61 %, 20 tokens, 227 bits | 99.9 %, 111 tokens (7/8 exact), 547 bits |
+| 256 tokens | 53 %, 15 tokens, 238 bits | 99.95 %, 223 tokens (7/8 exact), 1,044 bits |
+| 512 tokens | 49 %, 12 tokens, 264 bits | 99.98 %, 448 tokens (7/8 exact), 1,994 bits |
+
+**Reading:** an input vector carries about 250 bits whatever the length. A key/value entry carries a whole
+512-token span. So the channel allows 512 tokens per entry only through the key/value way.
+
+### S1 round 1 — 10.6M writer, 512 tokens per entry, 4,000 steps × 32 rows (≈ 0.59B row tokens)
+- Arm B (key/value): GPU3, 17:28:58–19:07:27 UTC. W&B `frozen_reader_SmolLM2-360M_w3_s512m8_kv_20261018_172911`.
+- Arm A (input positions): GPU1, 17:34:01–19:01:53 UTC. W&B `frozen_reader_SmolLM2-360M_w3_s512m8_input_20261018_173412`.
+- Evaluation: `evaluation/frozen_reader_eval.py`. Results in `Cache/e36/<run>/eval_final.json` (Polonez ~/dev/MrCogito-e36).
+
+| measure | none | raw | arm B memory | arm B other doc | arm A memory | arm A other doc |
+|---|---|---|---|---|---|---|
+| PG-19 continuation | 2.959 | 2.748 | 2.921 | 2.930 | 2.952 | 2.952 |
+| FinePDFs continuation | 2.239 | 1.747 | 2.177 | 2.216 | 2.231 | 2.235 |
+| trainer's 256 eval rows (89 % books) | 2.781 | 2.515 | 2.738 | 2.824 | 2.773 | 2.784 |
+| share of the raw-text gain recovered (books / PDFs / trainer rows) | — | 100 % | 18 / 13 / 16 % | — | 4 / 2 / 3 % | — |
+| span rebuilt from its own entry (bits per 511 tokens, books / PDFs) | — | — | 32 / 48 | — | 8 / 9 | — |
+| SQuAD, passage only in memory (contains) | 8.8 % | 51.6 % | 9.8 % | 8.4 % | 9.4 % | 8.8 % |
+
+- **Verdict against the marks:** both arms are below the 20 % stop line, so the 512 span fails. By the ladder, S1
+  reruns at 256.
+- **What crosses is document-specific but small.** Another document's entries are worse than none on the trainer
+  rows (2.824 vs 2.781). The gain is about 4–6 bits per entry. No SQuAD facts cross.
+- **The writer is the bottleneck, not the channel.** Arm B's entries let the reader rebuild about 35 bits of their
+  own span; an optimised key/value entry carries about 2,000 bits for the same span (S0), roughly 50× more.
+  Arm B's held-out loss was still falling at step 4,000 (2.762 at step 500, 2.738 at 4,000).
+- **Correction:** at 17:53 UTC I reported arm B "recovering ~93 %". I had compared the trainer's eval loss (a
+  shuffled sample over both sources) with S0's baseline on different rows. On the same rows the share is 16 %.
+
+### S1 round 2 — key/value way only, 4,000 steps each (Polonez, 18 Oct)
+Two runs, one change each from round 1's arm B:
+- Span ladder, 256 tokens per entry (16 entries). GPU1, 19:12:01–20:15:28 UTC; W&B
+  `frozen_reader_SmolLM2-360M_w3_s256m16_kv_20261018_191213`. The target span is 256 tokens here, so its
+  none / raw baselines differ from the 512 rows.
+- Writer ladder, 8 layers = 28.3M at 512. GPU3, 19:12:01–21:17:42 UTC; W&B
+  `frozen_reader_SmolLM2-360M_w8_s512m8_kv_20261018_191213`.
+
+| run | books: none / raw / memory / other | PDFs: none / raw / memory / other | recovered (books / PDFs) | span rebuilt (bits, books / PDFs) | SQuAD from memory |
+|---|---|---|---|---|---|
+| 512, 3 layers (round 1) | 2.959 / 2.748 / 2.921 / 2.930 | 2.239 / 1.747 / 2.177 / 2.216 | 18 / 13 % | 32 / 48 | 9.8 % |
+| **256, 3 layers** | 3.074 / 2.745 / 3.000 / 3.027 | 2.455 / 1.749 / 2.350 / 2.435 | 22 / 15 % | 35 / 42 | 9.0 % |
+| **512, 8 layers** | 2.959 / 2.748 / 2.920 / 2.932 | 2.239 / 1.747 / 2.175 / 2.219 | 18 / 13 % | 31 / 48 | 9.0 % |
+
+- **Neither change moves the result.** Shorter spans and a writer 2.7× larger leave the share recovered within
+  4 points. Each entry carries ~35–45 bits of its own span at every setting. The total useful information about the
+  next span is ~28 bits in all three runs (8 × 3.5 at 512; 16 × 1.7 at 256).
+- **The cap sits in how the writer is trained or pooled, not in its size or the span length.** The reader takes
+  ~2,000 bits through one key/value entry (S0).
+- 256 is still below the pass mark (50 %) and below the stop line on PDFs. The 128 rung and a capacity diagnostic
+  follow after the cooling pause (Polonez loaded 16:01–21:17 UTC; pause 21:18–21:38).
+
+### S1 round 3 — the last rung, 128 tokens per entry (32 entries), key/value way
+Polonez GPU1, 21:38:11–22:29:08 UTC. W&B `frozen_reader_SmolLM2-360M_w3_s128m32_kv_20261018_213822`.
+
+| corpus | none | raw | memory | other doc | recovered | span rebuilt from its own entry |
+|---|---|---|---|---|---|---|
+| books | 3.245 | 2.739 | 3.109 | 3.163 | 27 % | 36 bits |
+| PDFs | 2.732 | 1.777 | 2.562 | 2.723 | 18 % | 36 bits |
+
+SQuAD, passage only in memory: 8.6 % (none 8.8 %, with the passage 51.6 %).
+
+**The span ladder is done: 512 → 256 → 128 recovers 18 → 22 → 27 % (books) and 13 → 15 → 18 % (PDFs).**
+- Every rung is below the 50 % pass mark, and no rung moves SQuAD.
+- Each entry carries ~36 bits of its own span at every span length. The useful information about the next span
+  stays ~25–31 bits in total. The share recovered rises only because a shorter target span has less to gain.
+- By the plan, E36's S1 stops here. The capacity diagnostic below shows the format would allow more, so the next
+  step is a better writer, not a shorter span.
+
+### S1 round 4 — the improved writer (Polonez, 19 Oct, 08:37–11:17 UTC)
+All runs use the key/value way, 512 tokens per entry and the 3-layer writer, evaluated as before.
+- **Attention pooling:** one learned query per head, starting as the mean.
+- **Reconstruction-first curriculum:** 750 steps each of rebuilding spans of 64 / 128 / 256 / 512 tokens from their
+  own entry (reader frozen), then the round-1 objective for 4,000 steps. 7,000 steps in all.
+
+W&B: `frozen_reader_SmolLM2-360M_w3_s512m8_kv_attn_20261019_083716`, `..._kv_cur_20261019_083716`,
+`..._kv_attn_cur_20261019_083716`.
+
+| writer | books recovered | PDFs recovered | own span rebuilt (bits, books / PDFs) | SQuAD from memory (other doc) |
+|---|---|---|---|---|
+| round 1: mean, no curriculum (4,000 steps) | 18 % | 13 % | 32 / 48 | 9.8 % (8.4 %) |
+| attention pooling only (4,000 steps; GPU3, 08:37–10:13) | 17 % | 12 % | 29 / 44 | 9.4 % (7.4 %) |
+| curriculum only, mean (7,000 steps; GPU0, 08:37–11:17) | 24.5 % | 16.7 % | 135 / 114 | 11.2 % (6.4 %) |
+| **both (7,000 steps; GPU1, 08:37–11:02)** | 24.4 % | 16.5 % | **145 / 128** | 11.0 % (6.4 %) |
+
+SQuAD: 8.8 % with no passage, 51.6 % with the passage in context.
+
+- **The curriculum is what works.** Rebuilding first, at growing spans, makes each entry carry 3–4× more of its
+  span (114–145 bits vs 32–48). The share of the continuation gain rises by 4–6 points.
+- **Attention pooling adds nothing measurable,** alone or with the curriculum. Its early lead in rebuilding
+  64-token spans (2.56 vs 2.72 at step 500) was gone by the end.
+- **The first sign of facts crossing:** SQuAD from the own memory 11 % vs another document's 6.4 % (no passage
+  8.8 %). Small, but in the right order on 500 items.
+- Still below the 50 % pass mark. The entries now hold ~145 of the 781 bits the format allows (S1 capacity
+  diagnostic).
+- Caveat: the curriculum runs had 3,000 extra steps of rebuilding. The no-curriculum runs had flattened by step
+  4,000 (held-out loss 2.741 → 2.740), so extra continuation steps alone are unlikely to explain a 3–4× change in
+  bits rebuilt.
+
+### Capacity diagnostic (Polonez GPU3, 21:38–21:44 UTC)
+8 held-out texts of 512 tokens (4 books, 4 PDFs). The table gives the bits one entry adds about its own span when
+the reader rebuilds it (`Cache/e36/subspace_probe.json`):
+
+| entry | bits |
+|---|---|
+| the trained writer's entry (round 1, key/value way) | 54 |
+| optimised in the writer's 576-number output space, through the trained expander (800 Adam steps) | 781 |
+| the same through a fresh, untrained expander | 290 |
+| a free key/value entry, 20,480 numbers (S0) | ~2,000 |
+
+**Reading:** the entry format and the trained expander can hold ~14× what the writer puts in. The gap is the
+writer's: its encoder and mean pooling, and an objective in which continuation on books pays for little. The next
+fixes target the writer:
+- attention pooling instead of a mean over 512 tokens;
+- reconstruction-first training at growing spans (REFRAG's curriculum, with the reader frozen);
+- then teacher matching on passages with questions (S2).
