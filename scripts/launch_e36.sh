@@ -15,6 +15,7 @@ export PATH="$HOME/.local/bin:$PATH" PYTHONPATH=.
 source scripts/remote_paths.sh >/dev/null 2>&1 || true
 RUN="${RUN:?set RUN=<run folder>}"
 MANIFEST="${MANIFEST:-$DATASETS_TOK_DIR/e36_longdoc_4k6_v1_manifest.json}"
+EVAL_MANIFEST="${EVAL_MANIFEST:-$DATASETS_TOK_DIR/e36_longdoc_4k6_v1_manifest.json}"  # the evaluation always reads the long-document rows
 EVAL_ROWS="${EVAL_ROWS:-256}"          # held-out rows per source for the continuation measure
 SQUAD_ITEMS="${SQUAD_ITEMS:-500}"
 EVAL_EXTRA="${EVAL_EXTRA:-}"
@@ -27,7 +28,7 @@ if [ -n "${S0_READER:-}" ]; then
     [ -f "$OUT" ] && { echo "$(stamp) S0 done: $OUT"; exit 0; }
     echo "$(stamp) S0 reader=$S0_READER gpu=$GPU_IDS" | tee -a "$RUN/launch.log"
     CUDA_VISIBLE_DEVICES="$GPU_IDS" uv run python evaluation/frozen_reader_eval.py --reader "$S0_READER" \
-        --manifest "$MANIFEST" --rows_per_source "$EVAL_ROWS" --squad_items "$SQUAD_ITEMS" --cramming \
+        --manifest "$EVAL_MANIFEST" --rows_per_source "$EVAL_ROWS" --squad_items "$SQUAD_ITEMS" --cramming \
         --out "$OUT" $EVAL_EXTRA 2>&1 | tee -a "$RUN/s0.log"
     echo "$(stamp) S0 finished" | tee -a "$RUN/launch.log"
     exit 0
@@ -62,7 +63,7 @@ OUT="$RUN/eval_final.json"
 if [ ! -f "$OUT" ]; then
     echo "$(stamp) S1 eval $FINAL" | tee -a "$RUN/launch.log"
     CUDA_VISIBLE_DEVICES="${GPU_IDS%%,*}" uv run python evaluation/frozen_reader_eval.py --checkpoint "$FINAL" \
-        --manifest "$MANIFEST" --rows_per_source "$EVAL_ROWS" --squad_items "$SQUAD_ITEMS" --out "$OUT" $EVAL_EXTRA \
+        --manifest "$EVAL_MANIFEST" --rows_per_source "$EVAL_ROWS" --squad_items "$SQUAD_ITEMS" --out "$OUT" $EVAL_EXTRA \
         2>&1 | tee -a "$RUN/eval.log"
     echo "$(stamp) S1 eval finished: $OUT" | tee -a "$RUN/launch.log"
 fi
