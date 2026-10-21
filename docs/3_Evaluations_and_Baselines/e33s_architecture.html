@@ -1,0 +1,423 @@
+<title>E33s Alignment</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one reading column; a stage stepper over a detail panel; the example and checklist below. */
+:root {
+  --paper: #f6f7f8; --panel: #ffffff; --ink: #1d2730; --muted: #5b6874; --rule: #d8dee4;
+  --new: #0f6e7a; --new-bg: #e2f1f2; --prop: #9a5b00; --prop-bg: #fbefdc; --base: #5f6b78; --base-bg: #eceff2;
+  --same: #4a6b3a; --same-bg: #e9f1e4; --focus: #0f6e7a;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #12171c; --panel: #1a2128; --ink: #e3e8ec; --muted: #9aa6b1; --rule: #2d3740;
+  --new: #5fc3ce; --new-bg: #163236; --prop: #e7a54a; --prop-bg: #3a2b14; --base: #a6b1bc; --base-bg: #262e36;
+  --same: #9cc58a; --same-bg: #1f2d1c; --focus: #5fc3ce; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #12171c; --panel: #1a2128; --ink: #e3e8ec; --muted: #9aa6b1; --rule: #2d3740;
+  --new: #5fc3ce; --new-bg: #163236; --prop: #e7a54a; --prop-bg: #3a2b14; --base: #a6b1bc; --base-bg: #262e36;
+  --same: #9cc58a; --same-bg: #1f2d1c; --focus: #5fc3ce; color-scheme: dark }
+body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 980px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 34px; }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: .01em; }
+h1 { font-size: 30px; line-height: 1.15; }
+h2 { font-size: 21px; }
+h3 { font-size: 16px; }
+p { margin: 0; max-width: 68ch; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.lede { display: flex; flex-direction: column; gap: 10px; }
+.controls { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; }
+.ctl { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ctl label { font-size: 12px; color: var(--muted); font-family: var(--f-mono); letter-spacing: .05em; text-transform: uppercase; }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg button { font: inherit; font-size: 14px; border: 0; background: transparent; color: var(--ink); padding: 7px 12px; cursor: pointer; border-right: 1px solid var(--rule); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+section { display: flex; flex-direction: column; gap: 14px; }
+.stepper { display: flex; flex-wrap: wrap; gap: 6px; }
+.node { font: inherit; font-size: 13px; text-align: left; border: 1px solid var(--rule); background: var(--panel); color: var(--ink);
+  border-radius: 6px; padding: 7px 10px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.node .n { font-family: var(--f-mono); font-size: 11px; color: var(--muted); }
+.node[aria-current="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.tag { display: inline-block; font-family: var(--f-mono); font-size: 11px; padding: 1px 6px; border-radius: 4px; width: fit-content; }
+.t-new { color: var(--new); background: var(--new-bg); }
+.t-prop { color: var(--prop); background: var(--prop-bg); }
+.t-base { color: var(--base); background: var(--base-bg); }
+.t-same { color: var(--same); background: var(--same-bg); }
+.t-off { color: var(--muted); background: transparent; border: 1px dashed var(--rule); }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel .head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.kv { display: grid; grid-template-columns: 150px 1fr; gap: 6px 14px; }
+.kv dt { color: var(--muted); font-size: 13px; }
+.kv dd { margin: 0; min-width: 0; }
+.mono, code { font-family: var(--f-mono); font-size: 13px; }
+.navrow { display: flex; gap: 8px; }
+.navrow button, .btn { font: inherit; font-size: 13px; border: 1px solid var(--rule); background: var(--panel); color: var(--ink); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.btn.primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.doc { font-family: var(--f-mono); font-size: 12.5px; line-height: 1.5; display: flex; flex-direction: column; gap: 6px; }
+.para { border-left: 3px solid var(--rule); padding: 4px 10px; background: var(--panel); border-radius: 0 4px 4px 0; }
+.para.sup { border-left-color: var(--new); }
+.para .pt { color: var(--muted); }
+.hl { background: var(--new-bg); color: var(--new); border-radius: 3px; padding: 0 2px; }
+.hl2 { background: var(--prop-bg); color: var(--prop); border-radius: 3px; padding: 0 2px; }
+.ans { border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; background: var(--panel); }
+.hidden-step { text-decoration: line-through; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid2 > * { min-width: 0; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.rounds { display: flex; flex-direction: column; gap: 8px; }
+.round { display: grid; grid-template-columns: 74px 1fr; gap: 10px; align-items: start; }
+.round .r { font-family: var(--f-mono); font-size: 12px; color: var(--muted); padding-top: 2px; }
+.bar { height: 8px; border-radius: 4px; background: var(--base-bg); overflow: hidden; margin-top: 4px; }
+.bar > i { display: block; height: 100%; background: var(--new); }
+.note { font-size: 13px; color: var(--muted); }
+.check { display: flex; flex-direction: column; gap: 10px; }
+.crow { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.crow .q { min-width: 0; }
+.crow .q b { font-weight: 600; }
+.crow .opts { display: flex; gap: 4px; flex-wrap: wrap; }
+.crow .opts label { font-size: 12.5px; border: 1px solid var(--rule); border-radius: 5px; padding: 3px 8px; cursor: pointer; display: flex; gap: 4px; align-items: center; background: var(--panel); }
+.crow textarea { grid-column: 1 / -1; font: inherit; font-size: 13px; border: 1px solid var(--rule); border-radius: 6px; padding: 6px 8px; background: var(--panel); color: var(--ink); min-height: 34px; resize: vertical; }
+#out { width: 100%; min-height: 160px; font-family: var(--f-mono); font-size: 12.5px; border: 1px solid var(--rule); border-radius: 6px; padding: 8px; background: var(--panel); color: var(--ink); }
+svg text { font-family: var(--f-mono); fill: var(--ink); }
+@media (max-width: 640px) {
+  .grid2 { grid-template-columns: 1fr; }
+  .kv { grid-template-columns: 1fr; gap: 2px; }
+  .kv dt { margin-top: 6px; }
+  .crow { grid-template-columns: 1fr; }
+  h1 { font-size: 25px; }
+}
+@media (prefers-reduced-motion: no-preference) { .bar > i { transition: width .25s ease; } }
+</style>
+
+<div class="wrap">
+  <header class="lede">
+    <span class="eyebrow">E33s · alignment page · draft spec 2026-10-21</span>
+    <h1>Multi-hop on real text, taught by written reasoning, at 100M</h1>
+    <p>The bet: a 100M notebook model is trained on real multi-hop questions and maths whose answers write their
+      reasoning out. A fixed rule reads each step's word and location off that text and supervises one loop round
+      per step. The written steps are then removed in three stages. At exam time it should answer directly, as well
+      as a dense model trained the same way at 4k, and stay accurate at 16k–64k, where the dense model's window
+      cannot see the evidence.</p>
+    <p class="note">The 30M synthetic pilot (R2) reached compose 92 % and deduce 99 % at 4k this way, with no
+      generator labels. Spec: <code>docs/experiments_specs/ahead/E33s_written_chains_real_data.md</code>.</p>
+  </header>
+
+  <div class="controls">
+    <div class="ctl"><label id="arm-l">Arm</label>
+      <div class="seg" role="group" aria-labelledby="arm-l" id="arm"></div></div>
+    <div class="ctl"><label id="stage-l">Training stage</label>
+      <div class="seg" role="group" aria-labelledby="stage-l" id="stage"></div></div>
+  </div>
+
+  <section aria-labelledby="pipe-h">
+    <h2 id="pipe-h">The pipeline, step by step</h2>
+    <p class="note">Shapes are per GPU at the claim scale: 100M main tier, 16,384-token vocabulary, rows of 4,096
+      tokens, 4 rows per device. Tags: <span class="tag t-new">new</span> <span class="tag t-same">unchanged</span>
+      <span class="tag t-prop">proposed</span> <span class="tag t-base">baseline</span> <span class="tag t-off">off in this arm</span>.</p>
+    <div class="stepper" id="stepper" role="tablist" aria-label="Pipeline stages"></div>
+    <div class="panel" id="detail" role="tabpanel" aria-live="polite"></div>
+  </section>
+
+  <section aria-labelledby="ex-h">
+    <h2 id="ex-h">A worked example</h2>
+    <p class="note">An illustrative two-hop question in MuSiQue's style. The paragraphs are made up for this page, and
+      the read shares are hand-set to show where the information should go, not measured.</p>
+    <div class="grid2">
+      <div class="panel">
+        <h3>The context (padded with distractors)</h3>
+        <div class="doc" id="doc"></div>
+      </div>
+      <div class="panel">
+        <h3>The answer as written in training</h3>
+        <div class="ans mono" id="written"></div>
+        <h3>What the rule reads off it</h3>
+        <div class="scroll"><table id="ruletab"></table></div>
+        <h3>What the loop does at the answer position</h3>
+        <div class="rounds" id="rounds"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="mask-h">
+    <h2 id="mask-h">Who may attend to what</h2>
+    <div class="grid2">
+      <div class="panel scroll">
+        <svg viewBox="0 0 420 250" width="100%" role="img" aria-label="Attention permissions for one query position">
+          <rect x="10" y="40" width="400" height="26" rx="3" fill="var(--base-bg)" stroke="var(--rule)"/>
+          <text x="14" y="33" font-size="11">the row: 4,096 tokens (pages of 256, a new one every 192)</text>
+          <rect x="10" y="40" width="270" height="26" fill="var(--new-bg)"/>
+          <text x="16" y="57" font-size="10.5">closed pages → read only as notes</text>
+          <rect x="280" y="40" width="80" height="26" fill="var(--prop-bg)"/>
+          <text x="284" y="57" font-size="10.5">raw window 256</text>
+          <line x1="360" y1="34" x2="360" y2="72" stroke="var(--ink)" stroke-width="2"/>
+          <text x="330" y="86" font-size="10.5">query (Answer:)</text>
+          <rect x="360" y="40" width="50" height="26" fill="var(--panel)" stroke="var(--rule)" stroke-dasharray="3 3"/>
+          <text x="364" y="57" font-size="10" fill="var(--muted)">future</text>
+          <text x="10" y="116" font-size="11.5">prelude, loop local layer, coda: last 16 tokens only</text>
+          <text x="10" y="138" font-size="11.5">global read: raw window 256 ‖ every closed note, one softmax</text>
+          <text x="10" y="160" font-size="11.5">writer: both ways inside its page, never across pages</text>
+          <text x="10" y="182" font-size="11.5">notes: readable only after their page closes</text>
+          <text x="10" y="204" font-size="11.5">dense arm: full causal attention over all 4,096</text>
+          <text x="10" y="232" font-size="11.5" fill="var(--prop)">training targets sit AFTER the answer position:</text>
+          <text x="10" y="246" font-size="11.5" fill="var(--prop)">they supervise, the model never reads them</text>
+        </svg>
+      </div>
+      <div class="panel">
+        <h3>Leaks this prevents</h3>
+        <p>The written chain comes after <code>Answer:</code>. The loop rounds run at the <code>Answer:</code>
+          position, so causally they cannot see the chain in any stage. The chain only provides targets, and in stage
+          1 next-token text to predict.</p>
+        <p>Exam documents never contain a chain. The evidence-removed twin swaps the supporting paragraphs for
+          distractors, so any score left is the floor from guessing or from what the model memorised.</p>
+        <p>Dev and test questions never enter training. Distractor padding for the exams comes from the dev pool
+          only.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="bud-h">
+    <h2 id="bud-h">Information budget along the path</h2>
+    <p class="note">Rough figures for one 4k row, to show where the bottleneck should be. A token of a 16k vocabulary
+      carries at most 14 bits. The board's measured reader ceiling is about 85 bits per note vector.</p>
+    <div class="scroll"><table>
+      <thead><tr><th>stage</th><th>units at 4k (16k · 64k)</th><th>capacity</th><th>what the answer needs</th></tr></thead>
+      <tbody>
+        <tr><td>context tokens</td><td>4,096 (16,384 · 65,536)</td><td>≤ 57 kbit</td><td>2–4 supporting sentences ≈ 60–200 tokens</td></tr>
+        <tr><td>notes (32 per page)</td><td>672 (2,688 · 10,912)</td><td>≈ 85 bits each, ≈ 6 tokens per note</td><td>one entity per hop ≈ 2–5 tokens ≈ 30–70 bits: fits in one note</td></tr>
+        <tr><td>one loop round's read</td><td>14 heads × 64 values</td><td>one softmax mixture over raw window + notes</td><td>pick the step's note out of 672–10,912</td></tr>
+        <tr><td>answer</td><td>≤ 24 tokens</td><td>—</td><td>the last hop's entity</td></tr>
+      </tbody>
+    </table></div>
+    <p>Capacity is not the expected limit: one note holds a hop's entity. Selection is: the round must land on the
+      right note among thousands. The per-round read target and the naming loss train exactly that. The pilot's
+      reads landed on the right fact 93–96 % of the time.</p>
+  </section>
+
+  <section aria-labelledby="gate-h">
+    <h2 id="gate-h">How we will know</h2>
+    <div class="grid2">
+      <div class="panel">
+        <h3>Success (stage 3, answers only)</h3>
+        <p><b>No harm at 4k.</b> MuSiQue and HotpotQA F1 within 2 points of the dense model, or above.</p>
+        <p><b>The latent chain.</b> MuSiQue F1 at 4k at least 70 % of the ceiling, the dense model writing its chain
+          out. At least 5 F1 above the same model trained without chains.</p>
+        <p><b>Length.</b> At 16k and 64k it keeps at least 80 % of its own 4k F1. The dense model, which sees only its
+          last 4k tokens, sits within 5 F1 of its no-evidence floor.</p>
+        <p><b>Maths, secondary.</b> GSM8K exact answers are reported for all arms. No gate if all are below 5 %.</p>
+      </div>
+      <div class="panel">
+        <h3>Stop early if</h3>
+        <p>The rule parses fewer than 60 % of the training chains (CPU check, before any GPU).</p>
+        <p>After pretraining, the notebook model's language loss is worse than dense by more than 0.10 nats.</p>
+        <p>After stage 3, MuSiQue F1 at 4k is below the no-evidence floor + 5.</p>
+        <p>Written chains add less than 1 F1 over the no-chain control.</p>
+        <p class="note">Cost: about 280 GPU-hours, roughly 4 days on Polonez and Odra. A 30M pipeline pilot of about
+          8 GPU-hours runs first.</p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="chk-h">
+    <h2 id="chk-h">Alignment checklist</h2>
+    <p class="note">Mark each decision, add a note where you want a change, then copy the summary into the chat.
+      Answers stay in this browser only.</p>
+    <div class="check" id="check"></div>
+    <div class="navrow"><button class="btn primary" id="collect" type="button">Copy answers</button>
+      <button class="btn" id="reset" type="button">Clear</button></div>
+    <textarea id="out" readonly aria-label="Collected answers"></textarea>
+  </section>
+</div>
+
+<script>
+(() => {
+  const ARMS = [
+    { id: "bet", name: "The bet: notebook + written chains" },
+    { id: "dense", name: "Dense control" },
+    { id: "nochain", name: "Notebook, no chains" },
+  ];
+  const STAGES = [
+    { id: "s1", name: "1 · all steps" }, { id: "s2", name: "2 · first step dropped" },
+    { id: "s3", name: "3 · plain answer" }, { id: "exam", name: "exam" },
+  ];
+  // Pipeline stages. tag/what/shape per arm; missing arm keys fall back to "all".
+  const PIPE = [
+    { key: "row", title: "Training row", tag: { all: "new" },
+      what: { all: "A real QA context from MuSiQue, HotpotQA, 2Wiki or GSM8K-Aug, padded with distractor paragraphs from the same dataset to a random length up to 4,096 tokens, then the question and the answer. Thirty percent of tokens are general text replay from pretraining.",
+              nochain: "The same documents and questions, but every answer is the plain answer in every stage." },
+      shape: { all: "input_ids [4, 4096] · read_targets [4, 4096, 4] (answer position, round, first and last token of the step)", dense: "input_ids [4, 4096]", nochain: "input_ids [4, 4096]" },
+      keeps: { all: "everything in the text; the supporting paragraphs sit at random depths" } },
+    { key: "tok", title: "Tokenizer + embedding", tag: { all: "new" },
+      what: { all: "A 16,384-token BPE trained on the pretraining mix. A 256-d table, projected up to the 896-d model width." },
+      shape: { all: "[4, 4096] → table [16384 × 256] → [4, 4096, 896]" },
+      keeps: { all: "token identity. The vocabulary is sized so the FFN keeps 1,728 (notebook) / 1,856 (dense) width at 100M." } },
+    { key: "pre", title: "Prelude", tag: { all: "same", dense: "base" },
+      what: { all: "Three local layers, each seeing the last 16 tokens.", dense: "Dense model: the first 3 of 12 full-attention layers (all 4,096 tokens)." },
+      shape: { all: "[4, 4096, 896], 14 heads × 64, one shared key/value head" },
+      keeps: { all: "local phrase context", dense: "everything in the window" } },
+    { key: "writer", title: "Notebook writer", tag: { all: "same", dense: "off" },
+      what: { all: "Every 256-token page (a new one each 192 tokens) is encoded both ways inside the page, and 32 latents read it twice. Each latent leaves one note: a 64-d key and a 64-d value.", dense: "Not present: the dense model has no notes." },
+      shape: { all: "21 pages × 32 = 672 notes at 4k (2,688 at 16k, 10,912 at 64k), each key [64] + value [64]", dense: "—" },
+      keeps: { all: "about 6 tokens per note. Per the pilot, names, places and (once a loss asks) properties stay decodable from the notes (probe 63–92 %).", dense: "—" } },
+    { key: "loop", title: "Loop: 4 tied rounds", tag: { all: "same", dense: "off" },
+      what: { all: "Each round: one global read over the raw window (256 tokens) and every closed note in one softmax, then one local layer. The same weights in every round.", dense: "Not present: the dense model has one pass of 12 layers." },
+      shape: { all: "query [4, 4096, 14, 64] against raw keys [256] ‖ notes [672]; 4 rounds", dense: "—" },
+      keeps: { all: "round r should carry hop r's entity: the bridge after round 1, the answer after the last hop", dense: "—" } },
+    { key: "target", title: "Per-round targets", tag: { all: "new", dense: "off", nochain: "off" },
+      what: { all: "At each answer position: round r's read is pushed onto step r's sentence in the context (read target, weight 0.5), and round r's state, sent through the LM head with the head's weights frozen, must name step r's word (naming, weight 0.3). Both come from the written chain by the rule, even when the stage hides the steps.",
+              dense: "No loop, so no per-round targets: the dense model learns the chain only as text to predict, in stages 1–2.",
+              nochain: "Off: no chain, so no per-round targets." },
+      shape: { all: "naming target: the step's word tokens (≤ 4); read target: share of the read on the step's tokens or notes" },
+      keeps: { all: "this is where the reasoning is taught: which fact to fetch at each hop, and what it says" } },
+    { key: "coda", title: "Coda + LM head", tag: { all: "same", dense: "base" },
+      what: { all: "Seven local layers, then the LM head. Next-token loss on all text: in stages 1–2 that includes the written chain.", dense: "The remaining dense layers, then the LM head. Next-token loss on all text, chains included in stages 1–2." },
+      shape: { all: "[4, 4096, 896] → logits [4, 4096, 16384]" },
+      keeps: { all: "the answer tokens" } },
+    { key: "exam", title: "Exam", tag: { all: "new" },
+      what: { all: "Greedy answer, at most 24 tokens, after the question, with no chain in the document. MuSiQue-Ans dev, HotpotQA and 2Wiki dev samples, GSM8K test, at 4k / 16k / 64k, plus the evidence-removed twin. The notebook arms also run with the notebook off.",
+              dense: "The same exam. At 16k / 64k the dense model sees its last 4,096 tokens, so evidence earlier in the document is invisible to it." },
+      shape: { all: "EM and token F1 (SQuAD normalisation) per dataset × length; GSM8K exact number" },
+      keeps: { all: "the stage-1 checkpoints also answer with their chain written out: the ceiling" } },
+  ];
+  const TAGS = { new: ["new", "t-new"], same: ["unchanged", "t-same"], prop: ["proposed", "t-prop"], base: ["baseline", "t-base"], off: ["off in this arm", "t-off"] };
+  const pick = (o, arm) => (o && (o[arm] ?? o.all)) || "";
+
+  let arm = "bet", stage = "s1", cur = 0;
+  const $ = (id) => document.getElementById(id);
+
+  function segs(el, items, get, set) {
+    el.innerHTML = "";
+    items.forEach((it) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = it.name; b.setAttribute("aria-pressed", String(get() === it.id));
+      b.addEventListener("click", () => { set(it.id); render(); });
+      el.appendChild(b);
+    });
+  }
+
+  function renderPipe() {
+    const st = $("stepper"); st.innerHTML = "";
+    PIPE.forEach((p, i) => {
+      const t = TAGS[pick(p.tag, arm)];
+      const b = document.createElement("button");
+      b.className = "node"; b.type = "button"; b.setAttribute("role", "tab");
+      b.setAttribute("aria-current", String(i === cur)); b.setAttribute("aria-selected", String(i === cur));
+      b.innerHTML = `<span class="n">${String(i + 1).padStart(2, "0")}</span><span>${p.title}</span><span class="tag ${t[1]}">${t[0]}</span>`;
+      b.addEventListener("click", () => { cur = i; render(); });
+      st.appendChild(b);
+    });
+    const p = PIPE[cur], t = TAGS[pick(p.tag, arm)];
+    $("detail").innerHTML = `
+      <div class="head"><h3>${cur + 1}. ${p.title}</h3><span class="tag ${t[1]}">${t[0]}</span></div>
+      <dl class="kv">
+        <dt>What happens</dt><dd>${pick(p.what, arm)}</dd>
+        <dt>Shapes</dt><dd class="mono">${pick(p.shape, arm)}</dd>
+        <dt>What survives</dt><dd>${pick(p.keeps, arm)}</dd>
+      </dl>
+      <div class="navrow"><button type="button" id="prev">← previous</button><button type="button" id="next">next →</button></div>`;
+    $("prev").disabled = cur === 0; $("next").disabled = cur === PIPE.length - 1;
+    $("prev").addEventListener("click", () => { cur = Math.max(0, cur - 1); render(); });
+    $("next").addEventListener("click", () => { cur = Math.min(PIPE.length - 1, cur + 1); render(); });
+  }
+
+  // Worked example (illustrative text, written for this page).
+  const PARAS = [
+    { t: "Lake Orvel", s: "Lake Orvel is a reservoir in the north of the province, built in 1962 to supply three towns." },
+    { t: "Glass Harbour (album)", s: "Glass Harbour is the second studio album by the folk singer <span class=\"hl\">Ada Renn</span>. It was recorded in a single week in 1979.", sup: 1 },
+    { t: "Quarry Line", s: "The Quarry Line is a closed railway that once carried stone from the hills to the coast." },
+    { t: "Tomas Ilvo", s: "Tomas Ilvo was a painter known for small winter landscapes and for teaching at the city academy." },
+    { t: "Ada Renn", s: "Ada Renn is a singer and songwriter. She has been married to the sound engineer <span class=\"hl2\">Joel Marsh</span> since 1983.", sup: 1 },
+    { t: "Corvo Festival", s: "The Corvo Festival is an annual music festival held every August on the old harbour front." },
+  ];
+  const STEP1 = "Glass Harbour is the second studio album by the folk singer Ada Renn.";
+  const STEP2 = "She has been married to the sound engineer Joel Marsh since 1983.";
+  function renderExample() {
+    $("doc").innerHTML = PARAS.map((p, i) => `<div class="para${p.sup ? " sup" : ""}"><span class="pt">[P${i + 1}] ${p.t}${p.sup ? " · supporting" : ""}</span><br>${p.s}</div>`).join("")
+      + `<div class="para"><span class="pt">Question:</span> Who is the spouse of the singer of Glass Harbour?<br><span class="pt">Answer:</span></div>`;
+    let w;
+    if (arm === "nochain" || stage === "s3") w = ` Joel Marsh.`;
+    else if (stage === "exam") w = `<span class="note">(nothing written: the model answers)</span> Joel Marsh.`;
+    else if (stage === "s2") w = ` <span class="hidden-step">${STEP1}</span> ${STEP2} So Joel Marsh.`;
+    else w = ` ${STEP1} ${STEP2} So Joel Marsh.`;
+    $("written").innerHTML = "Answer:" + w;
+    const rows = [
+      ["1", STEP1, "Ada Renn", "the word shared with step 2 (the rarest such word in the document)"],
+      ["2", STEP2, "Joel Marsh", "the answer after “So”"],
+    ];
+    const on = arm === "bet";
+    $("ruletab").innerHTML = `<thead><tr><th>round</th><th>step (found in P2 / P5)</th><th>word</th><th>why</th></tr></thead><tbody>`
+      + rows.map((r) => `<tr><td class="mono">${r[0]}</td><td>${r[1]}</td><td class="mono">${on ? r[2] : "—"}</td><td class="note">${on ? r[3] : (arm === "dense" ? "dense: no rounds; the chain is only text to predict" : "no chain, no targets")}</td></tr>`).join("") + `</tbody>`;
+    const R = arm === "dense"
+      ? [["one pass", "12 full-attention layers over all 4,096 tokens; at 16k and 64k only the last 4,096 are visible", 0]]
+      : [["round 1", "reads P2's notes, names “Ada Renn”", on ? 92 : 30], ["round 2", "reads P5's notes, names “Joel Marsh”", on ? 90 : 25],
+         ["round 3", "re-reads P5 (no third hop)", on ? 60 : 20], ["round 4", "the coda answers “Joel Marsh”", on ? 0 : 0]];
+    $("rounds").innerHTML = R.map((r) => `<div class="round"><span class="r">${r[0]}</span><div>${r[1]}${r[2] ? `<div class="bar" aria-label="illustrative read share ${r[2]} %"><i style="width:${r[2]}%"></i></div>` : ""}</div></div>`).join("")
+      + `<p class="note">${on ? "Bars: illustrative share of the round's read on the supporting paragraph (the pilot measured 93–96 %)." : arm === "nochain" ? "Without targets the rounds are expected to stay near uniform, as in the pilot (R1: compose 8 %)." : ""}</p>`;
+  }
+
+  // Checklist
+  const DECISIONS = [
+    ["id", "Name it E33s, a flavour of E33 (real data and 100M are a run of the written-chain recipe)."],
+    ["scale", "100M main tier for both arms: width 896, 3 + 1 + 8 layers, 14 heads, 4 loop rounds."],
+    ["tok", "A new 16,384-token BPE trained on the pretraining mix (32k would thin the FFN to 1,152)."],
+    ["mix", "Phase P: 1.5B tokens, Wikipedia 40 % · web (Nemotron-CC) 30 % · PG-19 15 % · FinePDFs 15 %, rows of 4,096."],
+    ["stages", "Phase M: 3 stages × 0.15B tokens (all steps → first dropped → plain answer), 30 % text replay."],
+    ["data", "MuSiQue-Ans, HotpotQA distractor, 2WikiMultiHopQA, GSM8K-Aug as the phase-M data."],
+    ["annot", "Dataset annotations (supporting sentences, decompositions, equations) are used only to write the chain text; every training target is read off that text by the rule."],
+    ["gsm", "GSM8K: name the first 3 step results, round 4 names the answer; no read target (the problem is in the raw window)."],
+    ["arms", "Three arms: notebook + chains (the bet), dense + the same chains, notebook without chains."],
+    ["pad", "Training contexts padded with same-dataset distractors up to 4k; exams at 4k / 16k / 64k padded from the dev pool."],
+    ["gates", "Gates: no harm at 4k (within 2 F1 of dense), ≥ 70 % of the written-chain ceiling, ≥ 80 % kept at 64k, chains ≥ +5 F1."],
+    ["kills", "Kill rules: rule coverage < 60 %, language loss worse than dense by > 0.10 nats, stage 3 below the floor + 5, chains < +1 F1."],
+    ["pilot", "Run the CPU rule check and a 30M pipeline pilot (~8 GPU-h) before the 100M runs."],
+    ["compute", "About 280 GPU-hours over ~4 days, on Polonez and Odra (Odra needs the board session's agreement)."],
+  ];
+  const KEY = "e33s-align-v1";
+  let state = {};
+  try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { state = {}; }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+  function renderChecklist() {
+    $("check").innerHTML = DECISIONS.map(([k, q], i) => {
+      const v = (state[k] || {}).v || "", n = (state[k] || {}).n || "";
+      const opt = (val, lab) => `<label><input type="radio" name="c-${k}" id="c-${k}-${val}" value="${val}" ${v === val ? "checked" : ""}> ${lab}</label>`;
+      return `<div class="crow"><div class="q"><b>${i + 1}.</b> ${q}</div>
+        <div class="opts">${opt("agree", "agree")}${opt("change", "change")}${opt("question", "question")}</div>
+        <textarea id="n-${k}" aria-label="note for decision ${i + 1}" placeholder="note (optional)">${n.replace(/</g, "&lt;")}</textarea></div>`;
+    }).join("");
+    DECISIONS.forEach(([k]) => {
+      document.querySelectorAll(`input[name="c-${k}"]`).forEach((r) => r.addEventListener("change", () => { state[k] = { ...(state[k] || {}), v: r.value }; save(); }));
+      $(`n-${k}`).addEventListener("input", (e) => { state[k] = { ...(state[k] || {}), n: e.target.value }; save(); });
+    });
+  }
+  function collect() {
+    const lines = ["E33s alignment answers:"];
+    DECISIONS.forEach(([k, q], i) => {
+      const s = state[k] || {};
+      lines.push(`${i + 1}. [${s.v || "no answer"}] ${q}${s.n ? "\n   note: " + s.n.trim() : ""}`);
+    });
+    const text = lines.join("\n");
+    const out = $("out"); out.value = text;
+    const done = () => { $("collect").textContent = "Copied"; setTimeout(() => { $("collect").textContent = "Copy answers"; }, 1600); };
+    try {
+      navigator.clipboard.writeText(text).then(done, () => { out.focus(); out.select(); $("collect").textContent = "Selected: copy it"; });
+    } catch (e) { out.focus(); out.select(); }
+  }
+
+  function render() {
+    segs($("arm"), ARMS, () => arm, (v) => { arm = v; });
+    segs($("stage"), STAGES, () => stage, (v) => { stage = v; });
+    renderPipe(); renderExample();
+  }
+  $("collect").addEventListener("click", collect);
+  $("reset").addEventListener("click", () => { state = {}; save(); renderChecklist(); $("out").value = ""; });
+  render(); renderChecklist();
+})();
+</script>

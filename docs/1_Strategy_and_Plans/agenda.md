@@ -20,6 +20,19 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-10-21 — E33s, multi-hop on real text taught by written reasoning, at 100M. Spec drafted, awaiting
+  alignment.**
+  - **The 30M pilot (R2, 19 Oct)** used no generator labels:
+    - answers wrote their chain out, and a rule read each hop's word and location off that text;
+    - the written steps were removed in three stages;
+    - compose reached 92 % and deduce 99 % at 4k, as with generator labels (94 / 98 %).
+  - **E33s** moves this to real data at 100M, against a dense 100M model trained on the same chains:
+    - data: MuSiQue, HotpotQA, 2WikiMultiHopQA and GSM8K-Aug;
+    - pretraining: 1.5B tokens of long-document text, then 3 × 0.15B written-chain stages;
+    - exams: 4k / 16k / 64k contexts padded with real distractors.
+  - Spec: [E33s_written_chains_real_data.md](../experiments_specs/ahead/E33s_written_chains_real_data.md) ·
+    alignment page: [e33s_architecture.html](../3_Evaluations_and_Baselines/e33s_architecture.html) · review:
+    [e33_multihop_review_label_free_20261018.md](../4_Research_Notes/e33_multihop_review_label_free_20261018.md).
 - **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
   ladder failed its pass mark.**
   - The frozen reader can take a whole 512-token span through one optimised key/value entry: 99.98 % of tokens,
