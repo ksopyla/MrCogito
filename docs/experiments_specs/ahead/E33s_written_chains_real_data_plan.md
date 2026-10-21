@@ -183,3 +183,42 @@ def assemble(item, target_tokens, ntok, rng, pool, depth=None, remove_evidence=F
 def written_answer(steps, answer, keep: str) -> str: ...
 def chain_targets(text, offsets, question, derived, after_answer=False) -> list[int]: ...  # flat quads
 ```
+
+## 10. Pre-flight results (21–22 Oct 2026, Polonez)
+
+### P0 — rule coverage (CPU, full training sets)
+
+| dataset | questions | coverage, sentences only | coverage, with the next paragraph's title |
+|---|---|---|---|
+| MuSiQue | 19,598 | 68 % (2 / 3 / 4 hops: 76 / 52 / 28 %) | **83 %** (90 / 69 / 44 %) |
+| HotpotQA | 90,425 | 58 % (bridge 56 %) | **67 %** (bridge 68 %) |
+| 2WikiMultiHopQA | 167,454 | 67 % | **74 %** (compositional 98 %, inference 99 %, bridge-comparison 38 %) |
+| GSM8K-Aug | 385,531 | 100 % | 100 % |
+
+- **The kill measure (MuSiQue + HotpotQA bridge):** 58.7 % with the sentence-only rule, just under the 60 % line.
+  With the title-aware rule (829fa69), 70.8 %, which is above the kill line but under the 80 % target.
+  - The title is text the model sees above each paragraph. A later fact often names its subject only by that title,
+    or by a pronoun.
+- **MuSiQue's bridge agrees with its own per-hop sub-answer** 90 % of the time (20,222 bridges).
+
+### P1 — 30M pipeline pilot (21:12–23:08 UTC, GPUs 2–3)
+
+- **Setup:** `e33qn_plain`, screen tier with a 16k vocabulary (FFN 448).
+  - Pretraining: 0.3B tokens of Wikipedia + FineWeb-Edu.
+  - Then stages all → drop1 → none, 0.05B tokens each: 17.5k / 17.8k / 18.4k QA rows of ~2k tokens, 30 % replay.
+- **Eval loss:** 3.95 after pretraining, then 3.46, 3.32 and 3.24 after the three stages.
+- **The pipeline ran end to end:** every stage trained, and every exam and control ran. Pass.
+- **No measurable skill:** every score sits on its no-evidence floor.
+
+  | exam at 4k, after stage 3 | exact | evidence removed | notebook off | greedy F1 |
+  |---|---|---|---|---|
+  | MuSiQue | 0 % | 0 % | 0.7 % | 2.8 % |
+  | HotpotQA | 2.7 % | 3.0 % | 3.0 % | 5.0 % |
+  | 2WikiMultiHopQA | 4.7 % | 4.7 % | 3.3 % | 6.2 % |
+  | GSM8K | 2.0 % | — | 2.0 % | — |
+
+  The model answers with typed guesses ("The New York Times", "no", "London", "4"), so the second pass condition
+  (MuSiQue above its floor) fails.
+- **Reading:** at 30M and 0.35B tokens of real text, real multi-hop QA is far out of reach. The main run's gates are
+  absolute and have no measured ceiling yet (design rule 4). Before spending ~280 GPU-h, a ceiling at the 100M class
+  is needed: a pretrained ~100M model fine-tuned on the same written-chain data.
