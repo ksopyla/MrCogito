@@ -47,6 +47,7 @@ class QAItem:
     kind: str = "multihop"                          # multihop | math
     qtype: str = ""                                 # bridge | comparison | … where the dataset says
     meta: dict = field(default_factory=dict)        # e.g. MuSiQue's per-hop sub-answers (for the rule check only)
+    step_titles: list = field(default_factory=list) # the title of each step's paragraph (shown above it in the text)
 
 
 # ------------------------------------------------------------------ loaders (HF records → QAItem)
@@ -61,7 +62,7 @@ def _find_ci(hay: str, needle: str) -> int:
 def from_musique(rec: dict) -> QAItem | None:
     """Per hop: the sentence of its supporting paragraph that contains the hop's sub-answer."""
     paras = [(p["title"], p["paragraph_text"], bool(p["is_supporting"])) for p in rec["paragraphs"]]
-    steps = []
+    steps, titles = [], []
     for hop in rec["question_decomposition"]:
         idx = hop["paragraph_support_idx"]
         if idx is None or not (0 <= idx < len(paras)):
@@ -70,16 +71,17 @@ def from_musique(rec: dict) -> QAItem | None:
         if sent is None:
             return None
         steps.append(sent)
+        titles.append(paras[idx][0])
     return QAItem("musique", rec["id"], rec["question"], rec["answer"], list(rec.get("answer_aliases") or []),
                   paras, steps, qtype=f"{len(steps)}hop",
-                  meta={"sub_answers": [h["answer"] for h in rec["question_decomposition"]]})
+                  meta={"sub_answers": [h["answer"] for h in rec["question_decomposition"]]}, step_titles=titles)
 
 
-def _sf_sentences(context: dict, sf: dict) -> tuple[list, list[str]] | None:
+def _sf_sentences(context: dict, sf: dict) -> tuple[list, list[str], list[str]] | None:
     titles, sents = list(context["title"]), list(context["sentences"])
     sup_titles = set(sf["title"])
     paras = [(t, " ".join(s.strip() for s in ss), t in sup_titles) for t, ss in zip(titles, sents)]
-    steps = []
+    steps, step_titles = [], []
     for t, i in zip(sf["title"], sf["sent_id"]):
         if t not in titles:
             return None
@@ -87,7 +89,8 @@ def _sf_sentences(context: dict, sf: dict) -> tuple[list, list[str]] | None:
         if not (0 <= i < len(ss)):
             return None
         steps.append(ss[i].strip())
-    return paras, steps
+        step_titles.append(t)
+    return paras, steps, step_titles
 
 
 def from_hotpot(rec: dict, dataset: str = "hotpotqa") -> QAItem | None:
@@ -95,9 +98,9 @@ def from_hotpot(rec: dict, dataset: str = "hotpotqa") -> QAItem | None:
     got = _sf_sentences(rec["context"], rec["supporting_facts"])
     if got is None:
         return None
-    paras, steps = got
+    paras, steps, titles = got
     return QAItem(dataset, str(rec["id"]), rec["question"], rec["answer"], [], paras, steps,
-                  qtype=str(rec.get("type", "")))
+                  qtype=str(rec.get("type", "")), step_titles=titles)
 
 
 _EQ = re.compile(r"<<(.*?)>>")
@@ -175,13 +178,18 @@ def _number_after_eq(step: str) -> str | None:
     return m.group(0) if m else None
 
 
-def parse_chain(steps: list[str], answer: str, question: str, body: str, math: bool = False) -> list[tuple[str, str]]:
+def parse_chain(steps: list[str], answer: str, question: str, body: str, math: bool = False,
+                titles: list[str] | None = None) -> list[tuple[str, str]]:
     """Read a written chain back into (step, output) pairs by a rule on the text alone.
     - Equations: a step's output is the number after its '='; the last step's is the answer.
     - Sentences: the step that contains the answer moves to the end (if any does); a step's output is the run of
-      words it shares with the next step (`_shared_run`); the last step's output is the answer.
+      words it shares with the next step (`_shared_run`), the next step read together with the title of its
+      paragraph when `titles` are given (a later fact often names its subject only by the title above it, or by a
+      pronoun); the last step's output is the answer.
     Returns [] when a step has no output (e.g. comparison questions); the answer target alone then remains."""
-    steps = [s.strip().rstrip(".") for s in steps if s.strip()]
+    pairs = [(s.strip().rstrip("."), (titles[i] if titles and i < len(titles) else "")) for i, s in enumerate(steps)
+             if s.strip()]
+    steps = [s for s, _ in pairs]
     if not steps:
         return []
     if math:
@@ -191,7 +199,8 @@ def parse_chain(steps: list[str], answer: str, question: str, body: str, math: b
     with_ans = [i for i, s in enumerate(steps) if _find_ci(s, ans) >= 0]
     if with_ans:
         i = with_ans[-1]
-        steps = steps[:i] + steps[i + 1:] + [steps[i]]
+        pairs = pairs[:i] + pairs[i + 1:] + [pairs[i]]
+        steps = [s for s, _ in pairs]
     qwords = {w.lower() for w, _, _ in _words(question)}
     body_low = body.lower()
     out = []
@@ -199,7 +208,8 @@ def parse_chain(steps: list[str], answer: str, question: str, body: str, math: b
         if r == len(steps) - 1:
             word = s[_find_ci(s, ans):_find_ci(s, ans) + len(ans)] if _find_ci(s, ans) >= 0 else ans
         else:
-            word = _shared_run(s, steps[r + 1], qwords, body_low)
+            nxt = (pairs[r + 1][1] + " " + steps[r + 1]).strip()
+            word = _shared_run(s, nxt, qwords, body_low)
             if not word:
                 return []
         out.append((s, word))

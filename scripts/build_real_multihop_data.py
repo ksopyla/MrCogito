@@ -54,7 +54,8 @@ def _body(it: QAItem) -> str:
 
 
 def derive(it: QAItem) -> list[tuple[str, str]]:
-    return parse_chain(it.steps, it.answer, it.question, _body(it) or it.question, math=it.kind == "math")
+    return parse_chain(it.steps, it.answer, it.question, _body(it) or it.question, math=it.kind == "math",
+                       titles=it.step_titles or None)
 
 
 # ------------------------------------------------------------------ P0

@@ -118,3 +118,12 @@ def test_scoring_normalisation():
     assert f1_score("Steve Hillage", ["steve hillage"]) == 1.0
     assert 0 < f1_score("Steve", ["Steve Hillage"]) < 1
     assert f1_score("nothing", ["Steve Hillage", "nothing"]) == 1.0
+
+
+def test_rule_reads_a_bridge_named_only_by_the_next_paragraphs_title():
+    s1 = "Glass Harbour is the second album by the folk singer Ada Renn"
+    s2 = "She has been married to the sound engineer Joel Marsh since 1983"
+    q = "Who is the spouse of the singer of Glass Harbour?"
+    assert parse_chain([s1, s2], "Joel Marsh", q, s1 + " " + s2) == []  # the second fact says "She"
+    got = parse_chain([s1, s2], "Joel Marsh", q, s1 + " " + s2, titles=["Glass Harbour", "Ada Renn"])
+    assert got == [(s1, "Ada Renn"), (s2, "Joel Marsh")]
