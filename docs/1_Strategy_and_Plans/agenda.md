@@ -46,7 +46,11 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   - **19 Oct — the improved writer:** reconstruction-first training at growing spans (64 → 512) makes entries
     carry 114–145 bits (from 32–48). Continuation recovered rises to 24.5 / 16.7 %. SQuAD from the own memory
     is 11 % vs 6.4 % from another document's. Attention pooling adds nothing. Still below the 50 % pass mark.
-  - Next: teacher matching (S2) on passages with questions, on top of the curriculum writer.
+  - **21 Oct — S2 teacher matching** (KL to the reader with the raw text in context; SQuAD + SYNTH +
+    book/PDF rows): SQuAD from memory 12.6 % vs 5.0 % from another document's (8.8 % with none, 51.6 % with
+    the text). Continuation is unchanged (24.7 / 15.8 %). The student plateaus at KL 0.29: one ~130-bit entry
+    per passage cannot hold what the teacher uses.
+  - Next: more entries per passage, or refining entries at write time.
   - Spec: [E36_frozen_reader_writer.md](../experiments_specs/ahead/E36_frozen_reader_writer.md) · note:
     [e36_frozen_reader_writer_20261018.md](../4_Research_Notes/e36_frozen_reader_writer_20261018.md).
 - **2026-10-17 — Agent to agent through the notebook works (E33f, E33 trained as two agents).** Agent A keeps an

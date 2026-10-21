@@ -150,6 +150,40 @@ SQuAD: 8.8 % with no passage, 51.6 % with the passage in context.
   4,000 (held-out loss 2.741 → 2.740), so extra continuation steps alone are unlikely to explain a 3–4× change in
   bits rebuilt.
 
+### S2 — teacher matching from the curriculum writer (Polonez GPUs 0–1, 21 Oct, 20:05–21:31 UTC)
+- **Setup:** warm start from round 4's curriculum writer (attention pooling, key/value way, 512 tokens per entry).
+  Loss: KL(teacher ‖ student) on the target tokens, where the teacher is the same frozen reader with the raw
+  memory text in context. 10 % of steps rebuild a span. Learning rate 1e-4, 4,000 steps × 32 rows, batches
+  grouped by length.
+- **Data** (`scripts/build_e36_s2_data.py`, no hand-made labels):
+  - SQuAD train passages → "Question / Answer" (87,099 rows);
+  - SYNTH English Wikipedia passages → "Question / Answer" (221,046 rows);
+  - book / PDF rows → the next 512 tokens (59,500 rows);
+  - sampled one-third each.
+- W&B: `frozen_reader_SmolLM2-360M_w3_s512m8_kv_attn_s2_20261021_200559`.
+
+| measure | before S2 (curriculum writer) | after S2 |
+|---|---|---|
+| books / PDFs, share of the raw-text gain recovered | 24.4 / 16.5 % | 24.7 / 15.8 % |
+| own span rebuilt from its entry (bits, books / PDFs) | 145 / 128 | 128 / 114 |
+| SQuAD, passage only in memory (contains) | 11.0 % | **12.6 %** |
+| SQuAD, another passage in memory (contains) | 6.4 % | **5.0 %** |
+| held-out KL to the teacher (S2 mix, nats per token) | — | 0.299 → 0.290 (steps 500 → 4,000) |
+
+SQuAD: 8.8 % with no passage, 51.6 % with the passage in context (500 items; one standard error ≈ 1.5 points).
+
+- **Facts move a little, continuation does not.**
+  - The gap between the own and another document's memory on SQuAD widens from 4.6 to 7.6 points.
+  - Memory against no memory, 12.6 vs 8.8 %, is a real but small gain; it remains far from the 51.6 % ceiling.
+  - Continuation is unchanged.
+- **The student cannot follow the teacher.** The held-out KL barely moves after the first 500 steps (0.299 →
+  0.290). With about 120–130 bits per entry and one entry per SQuAD passage, the writer cannot hold what the
+  teacher uses.
+- **What this points to:** capacity per passage. Bits per entry stayed about constant from 512 down to 128 tokens
+  per entry (S1 ladder). So a passage gets more bits only from more entries, i.e. a shorter span for passages.
+  Alternatively, a refinement of each entry at write time towards the format's 781-bit ceiling (S1 capacity
+  diagnostic).
+
 ### Capacity diagnostic (Polonez GPU3, 21:38–21:44 UTC)
 8 held-out texts of 512 tokens (4 books, 4 PDFs). The table gives the bits one entry adds about its own span when
 the reader rebuilds it (`Cache/e36/subspace_probe.json`):
