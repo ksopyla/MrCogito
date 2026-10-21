@@ -28,9 +28,12 @@ from transformers import AutoTokenizer  # noqa: E402
 
 
 def _qa_rows(ds, tok, passage_col, q_col, a_fn, max_mem, max_tgt, num_proc):
+    cap_mem, cap_tgt = max_mem * 8, max_tgt * 8  # characters: very long texts are cut before tokenizing
+
     def enc(batch):
-        mem = tok([p.strip() for p in batch[passage_col]], add_special_tokens=False)["input_ids"]
-        tgt_text = [f"Question: {q.strip()}\nAnswer: {a_fn(batch, i).strip()}\n" for i, q in enumerate(batch[q_col])]
+        mem = tok([p.strip()[:cap_mem] for p in batch[passage_col]], add_special_tokens=False)["input_ids"]
+        tgt_text = [f"Question: {q.strip()[:cap_tgt]}\nAnswer: {a_fn(batch, i).strip()[:cap_tgt]}\n"
+                    for i, q in enumerate(batch[q_col])]
         tgt = tok(tgt_text, add_special_tokens=False)["input_ids"]
         ids, ml = [], []
         for m, t in zip(mem, tgt):
@@ -39,7 +42,7 @@ def _qa_rows(ds, tok, passage_col, q_col, a_fn, max_mem, max_tgt, num_proc):
             ml.append(len(m))
         return {"input_ids": ids, "mem_len": ml}
 
-    return ds.map(enc, batched=True, num_proc=num_proc, remove_columns=ds.column_names)
+    return ds.map(enc, batched=True, batch_size=256, num_proc=num_proc, remove_columns=ds.column_names)
 
 
 def main():
