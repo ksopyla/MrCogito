@@ -271,7 +271,9 @@ FR_RECON_FRAC="${FR_RECON_FRAC:-0.2}"                       # share of steps reb
 FR_ENTRY_POSITIONS="${FR_ENTRY_POSITIONS:-span_mid}"        # span_mid | compact
 FR_PROJ_HIDDEN="${FR_PROJ_HIDDEN:-2048}"
 FR_WRITER_POOL="${FR_WRITER_POOL:-mean}"                    # mean | attn
-FR_CURRICULUM="${FR_CURRICULUM:-}"                          # reconstruction-first phases, e.g. 64:750,128:750,256:750,512:750
+FR_CURRICULUM="${FR_CURRICULUM:-}"
+FR_OBJECTIVE="${FR_OBJECTIVE:-continuation}"                # continuation | distill (S2 teacher matching)
+FR_INIT_CHECKPOINT="${FR_INIT_CHECKPOINT:-}"                # warm start writer + adapter from an E36 checkpoint                          # reconstruction-first phases, e.g. 64:750,128:750,256:750,512:750
 PAR_LOOP_ROUNDS="${PAR_LOOP_ROUNDS:-1}"                    # E33a loop on text: 4
 PAR_LOOP_EXIT_AUX="${PAR_LOOP_EXIT_AUX:-0.0}"              # E33a: 0.3
 PAR_LOOP_EXIT_TARGETS="${PAR_LOOP_EXIT_TARGETS:-answer}"
@@ -504,6 +506,8 @@ if [ "$MODEL_FAMILY" = "frozen_reader" ]; then
         --fr_proj_hidden "$FR_PROJ_HIDDEN"
         --fr_writer_pool "$FR_WRITER_POOL"
         --fr_curriculum "$FR_CURRICULUM"
+        --fr_objective "$FR_OBJECTIVE"
+        --fr_init_checkpoint "$FR_INIT_CHECKPOINT"
     )
 fi
 if [ "$MODEL_FAMILY" = "perceiver_ar" ] || [ "$MODEL_FAMILY" = "a2a" ]; then

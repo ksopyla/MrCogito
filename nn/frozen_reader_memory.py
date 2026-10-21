@@ -40,6 +40,7 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
 
 WAYS = ("input", "kv")
 POOLS = ("mean", "attn")
+OBJECTIVES = ("continuation", "distill")
 
 
 def parse_curriculum(spec: str, span: int) -> list[tuple[int, int]]:
@@ -76,6 +77,7 @@ class FrozenReaderMemoryConfig(PretrainedConfig):
         writer_pool: str = "mean",
         curriculum: str = "",
         grad_accum: int = 1,
+        objective: str = "continuation",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -88,11 +90,14 @@ class FrozenReaderMemoryConfig(PretrainedConfig):
         if writer_pool not in POOLS:
             raise ValueError(f"writer_pool must be one of {POOLS}, got {writer_pool!r}")
         parse_curriculum(curriculum, span)  # validates
+        if objective not in OBJECTIVES:
+            raise ValueError(f"objective must be one of {OBJECTIVES}, got {objective!r}")
         self.reader_name, self.writer_init, self.writer_layers = reader_name, writer_init, int(writer_layers)
         self.span, self.mem_spans, self.way = int(span), int(mem_spans), way
         self.recon_frac, self.entry_positions = float(recon_frac), entry_positions
         self.proj_hidden, self.reader_dtype, self.vocab_size = int(proj_hidden), reader_dtype, int(vocab_size)
         self.writer_pool, self.curriculum, self.grad_accum = writer_pool, curriculum, int(grad_accum)
+        self.objective = objective
         self.checkpoint_family = "frozen_reader"
         self.pretraining_objective = "causal_lm"
 
@@ -114,11 +119,13 @@ class AttnPool(nn.Module):
         nn.init.eye_(self.v.weight)
         nn.init.eye_(self.o.weight)
 
-    def forward(self, h: torch.Tensor) -> torch.Tensor:
+    def forward(self, h: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         n, s, d = h.shape
         k = self.k(h).view(n, s, self.heads, self.dh)
         v = self.v(h).view(n, s, self.heads, self.dh)
         att = torch.einsum("hd,nshd->nhs", self.q.to(k.dtype), k) / math.sqrt(self.dh)
+        if mask is not None:
+            att = att.masked_fill(~mask[:, None, :], float("-inf"))
         return self.o(torch.einsum("nhs,nshd->nhd", att.softmax(-1), v).reshape(n, d))
 
 
@@ -126,7 +133,8 @@ class SpanWriter(nn.Module):
     """Lower layers of a pretrained decoder, bidirectional within a span, pooled to one entry (mean, or attention
     pooling with one learned query per head).
 
-    forward: span ids (N, S) -> entries (N, D)."""
+    forward: span ids (N, S) [+ token mask (N, S), True = real; padded tokens are neither attended nor pooled]
+             -> entries (N, D)."""
 
     def __init__(self, base, n_layers: int, pool: str = "mean"):
         super().__init__()
@@ -142,15 +150,23 @@ class SpanWriter(nn.Module):
         self.hidden_size = base.config.hidden_size
         self.pool = AttnPool(base.config.hidden_size, base.config.num_attention_heads) if pool == "attn" else None
 
-    def forward(self, ids: torch.Tensor) -> torch.Tensor:
+    def forward(self, ids: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         n, s = ids.shape
         h = self.embed_tokens(ids).to(self.norm.weight.dtype)
         pos = torch.arange(s, device=ids.device).unsqueeze(0).expand(n, -1)
         pe = self.rotary_emb(h, pos)
+        if mask is not None:
+            mask = mask.bool() | ~mask.bool().any(1, keepdim=True)  # an all-padding span reads itself (masked later)
+        att_mask = None if mask is None else mask[:, None, None, :]
         for layer in self.layers:
-            out = layer(h, attention_mask=None, position_ids=pos, position_embeddings=pe)
+            out = layer(h, attention_mask=att_mask, position_ids=pos, position_embeddings=pe)
             h = out[0] if isinstance(out, tuple) else out
-        return self.norm(h.mean(dim=1) if self.pool is None else self.pool(h))
+        if self.pool is not None:
+            return self.norm(self.pool(h, mask))
+        if mask is None:
+            return self.norm(h.mean(dim=1))
+        w = mask.to(h.dtype).unsqueeze(-1)
+        return self.norm((h * w).sum(1) / w.sum(1))
 
 
 class InputProjector(nn.Module):
@@ -286,29 +302,32 @@ class FrozenReaderMemory(PreTrainedModel):
 
     def read_logits(self, entries: Optional[torch.Tensor], tgt: torch.Tensor, tgt_pos: torch.Tensor,
                     entry_pos: Optional[torch.Tensor] = None, raw_prefix: Optional[torch.Tensor] = None,
-                    raw_pos: Optional[torch.Tensor] = None) -> torch.Tensor:
+                    raw_pos: Optional[torch.Tensor] = None, entry_mask: Optional[torch.Tensor] = None,
+                    tgt_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """The frozen reader over `tgt` (B, T), given entries (B, M, D) or raw prefix tokens or nothing.
+        tgt_pos is (T,) or per row (B, T); entry_mask (B, M) / tgt_mask (B, T) hide padding (True / 1 = real).
         Returns logits (B, T, V): logits[:, t] predicts tgt[:, t + 1]."""
         r, (b, t) = self.reader, tgt.shape
+        tgt_pos = tgt_pos.expand(b, -1) if tgt_pos.dim() == 1 else tgt_pos
+        tmask = torch.ones(b, t, dtype=torch.long, device=tgt.device) if tgt_mask is None else tgt_mask.long()
         if raw_prefix is not None:
             ids = torch.cat([raw_prefix, tgt], 1)
-            pos = torch.cat([raw_pos, tgt_pos], 0)
-            return r(input_ids=ids, position_ids=pos.expand(b, -1), attention_mask=torch.ones_like(ids),
+            pos = torch.cat([raw_pos.expand(b, -1), tgt_pos], 1)
+            return r(input_ids=ids, position_ids=pos, attention_mask=torch.ones_like(ids),
                      use_cache=False).logits[:, raw_prefix.shape[1]:]
         if entries is None or entries.shape[1] == 0:
-            return r(input_ids=tgt, position_ids=tgt_pos.expand(b, -1), attention_mask=torch.ones_like(tgt),
-                     use_cache=False).logits
+            return r(input_ids=tgt, position_ids=tgt_pos, attention_mask=tmask, use_cache=False).logits
         m = entries.shape[1]
+        emask = torch.ones(b, m, dtype=torch.long, device=tgt.device) if entry_mask is None else entry_mask.long()
+        # an explicit mask always: without one transformers reads non-contiguous positions as packed rows
+        mask = torch.cat([emask, tmask], 1)
         if self.config.way == "input":
             x = torch.cat([self.adapter(entries).to(r.dtype), r.get_input_embeddings()(tgt)], 1)
-            pos = torch.cat([entry_pos, tgt_pos], 0).expand(b, -1)
-            # an explicit all-ones mask: without it transformers reads the non-contiguous positions as packed rows
-            mask = torch.ones(b, m + t, dtype=torch.long, device=tgt.device)
+            pos = torch.cat([entry_pos.expand(b, -1), tgt_pos], 1)
             return r(inputs_embeds=x, position_ids=pos, attention_mask=mask, use_cache=False).logits[:, m:]
         cache = self.kv_cache(entries, entry_pos)
-        mask = torch.ones(b, m + t, dtype=torch.long, device=tgt.device)
         cache_position = torch.arange(m, m + t, device=tgt.device)
-        return r(input_ids=tgt, position_ids=tgt_pos.expand(b, -1), past_key_values=cache,
+        return r(input_ids=tgt, position_ids=tgt_pos, past_key_values=cache,
                  cache_position=cache_position, attention_mask=mask, use_cache=True).logits
 
     # -- training ---------------------------------------------------------------------------------------------
@@ -345,8 +364,60 @@ class FrozenReaderMemory(PreTrainedModel):
         logits = self.read_logits(entries, spans, tpos, epos)
         return F.cross_entropy(logits[:, :-1].float().reshape(-1, logits.shape[-1]), spans[:, 1:].reshape(-1))
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None,
-                labels: Optional[torch.Tensor] = None, **_) -> CausalLMOutput:
+    def _distill_loss(self, mem_ids, mem_mask, tgt_ids, tgt_mask, teacher_ids, teacher_mask, mem_len):
+        """S2 teacher matching: KL(teacher || student) on target tokens 1..T-1. The teacher is the same frozen reader
+        with the raw memory text in context; the student reads the writer's entries of it."""
+        s, (b, ks), t = self.config.span, mem_ids.shape, tgt_ids.shape[1]
+        k, dev = ks // s, mem_ids.device
+        entries = self.writer(mem_ids.view(b * k, s), mem_mask.view(b * k, s)).view(b, k, -1)
+        valid = mem_mask.view(b, k, s).bool().any(-1)
+        n_ent = valid.sum(1, keepdim=True)  # entries fill spans from the first one
+        base = n_ent * s if self.config.entry_positions == "span_mid" else n_ent
+        tpos = base + torch.arange(t, device=dev)
+        student = self.read_logits(entries, tgt_ids, tpos, self.entry_pos(0, k, dev), entry_mask=valid,
+                                   tgt_mask=tgt_mask)[:, :-1].float().log_softmax(-1)
+        teacher = self._teacher_logprobs(teacher_ids, teacher_mask, mem_len, t)
+        kl = F.kl_div(student, teacher, log_target=True, reduction="none").sum(-1)  # (B, T-1)
+        w = tgt_mask[:, 1:].float()
+        return (kl * w).sum() / w.sum().clamp_min(1.0)
+
+    @torch.no_grad()
+    def _teacher_logprobs(self, teacher_ids, teacher_mask, mem_len, t: int) -> torch.Tensor:
+        """The frozen reader over raw memory + target; log-probs at the positions that predict target tokens
+        1..t-1 -> (B, t-1, V). Only those positions go through the LM head."""
+        h = self.reader.model(input_ids=teacher_ids, attention_mask=teacher_mask, use_cache=False).last_hidden_state
+        idx = (mem_len.view(-1, 1) + torch.arange(t - 1, device=h.device)).clamp(max=h.shape[1] - 1)
+        h = torch.gather(h, 1, idx.unsqueeze(-1).expand(-1, -1, h.shape[-1]))
+        return self.reader.lm_head(h).float().log_softmax(-1)
+
+    def _masked_recon_loss(self, span_ids, span_mask):
+        """Rebuild each row's first memory span (B, S) from its own entry; padding is not scored."""
+        n, s = span_ids.shape
+        dev = span_ids.device
+        entries = self.writer(span_ids, span_mask).unsqueeze(1)
+        if self.config.entry_positions == "span_mid":
+            epos, tpos = torch.tensor([s // 2], device=dev), torch.arange(s, device=dev)
+        else:
+            epos, tpos = torch.zeros(1, dtype=torch.long, device=dev), torch.arange(s, device=dev) + 1
+        logits = self.read_logits(entries, span_ids, tpos, epos, tgt_mask=span_mask)
+        ce = F.cross_entropy(logits[:, :-1].float().transpose(1, 2), span_ids[:, 1:], reduction="none")
+        w = span_mask[:, 1:].float()
+        return (ce * w).sum() / w.sum().clamp_min(1.0)
+
+    def forward(self, input_ids: Optional[torch.Tensor] = None, attention_mask: Optional[torch.Tensor] = None,
+                labels: Optional[torch.Tensor] = None, mem_len: Optional[torch.Tensor] = None,
+                mem_ids: Optional[torch.Tensor] = None, mem_mask: Optional[torch.Tensor] = None,
+                tgt_ids: Optional[torch.Tensor] = None, tgt_mask: Optional[torch.Tensor] = None,
+                teacher_ids: Optional[torch.Tensor] = None, teacher_mask: Optional[torch.Tensor] = None,
+                **_) -> CausalLMOutput:
+        if mem_ids is not None:  # S2 rows (data/data_collators.py:DataCollatorForMemoryRows)
+            if self.training:
+                self._fwd += 1
+                if self._draw()[0]:
+                    s = self.config.span
+                    return CausalLMOutput(loss=self._masked_recon_loss(mem_ids[:, :s], mem_mask[:, :s]), logits=None)
+            return CausalLMOutput(loss=self._distill_loss(mem_ids, mem_mask, tgt_ids, tgt_mask, teacher_ids,
+                                                          teacher_mask, mem_len), logits=None)
         s, m = self.config.span, self.config.mem_spans
         need = (m + 1) * s
         ids = input_ids[:, 1:1 + need]  # drop BOS

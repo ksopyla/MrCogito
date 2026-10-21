@@ -633,3 +633,45 @@ class DataCollatorForPrefixGeneration:
             "suffix_attention_mask": suffix_attention_mask,
             "labels": labels,
         }
+
+
+class DataCollatorForMemoryRows:
+    """E36 S2 rows (`input_ids` = memory tokens + target tokens, `mem_len`) -> student and teacher tensors.
+
+    Returns
+        mem_ids, mem_mask         : [B, K*span] memory right-padded to whole spans (K = most spans in the batch,
+                                    at most max_mem_spans); 1 = real token
+        tgt_ids, tgt_mask         : [B, T] targets (at most max_target tokens), right-padded
+        teacher_ids, teacher_mask : [B, L] memory + target as raw text, right-padded (the frozen teacher's input)
+        mem_len                   : [B] where each row's target starts in teacher_ids
+        attention_mask            : tgt_mask (for the trainer's padding metrics)
+        labels                    : tgt_ids (unused by the model; makes the trainer report eval_loss)
+    """
+
+    def __init__(self, pad_token_id: int, span: int, max_mem_spans: int = 8, max_target: int = 512):
+        self.pad, self.span, self.max_mem_spans, self.max_target = pad_token_id, span, max_mem_spans, max_target
+
+    def _pad(self, seqs: List[List[int]], length: int):
+        ids = torch.full((len(seqs), length), self.pad, dtype=torch.long)
+        mask = torch.zeros((len(seqs), length), dtype=torch.long)
+        for i, s in enumerate(seqs):
+            ids[i, :len(s)] = torch.tensor(s, dtype=torch.long)
+            mask[i, :len(s)] = 1
+        return ids, mask
+
+    def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
+        mems, tgts = [], []
+        for f in features:
+            ids, ml = list(f["input_ids"]), int(f["mem_len"])
+            mems.append(ids[:ml][: self.max_mem_spans * self.span])
+            tgts.append(ids[ml:][: self.max_target])
+        k = max(1, max((len(m) + self.span - 1) // self.span for m in mems))
+        mem_ids, mem_mask = self._pad(mems, k * self.span)
+        tgt_ids, tgt_mask = self._pad(tgts, max(len(t) for t in tgts))
+        teacher_ids, teacher_mask = self._pad([m + t for m, t in zip(mems, tgts)], max(len(m) + len(t) for m, t in zip(mems, tgts)))
+        return {
+            "mem_ids": mem_ids, "mem_mask": mem_mask, "tgt_ids": tgt_ids, "tgt_mask": tgt_mask,
+            "teacher_ids": teacher_ids, "teacher_mask": teacher_mask,
+            "mem_len": torch.tensor([len(m) for m in mems], dtype=torch.long), "attention_mask": tgt_mask,
+            "labels": tgt_ids,  # unused by the model; the HF Trainer computes an eval loss only when labels exist
+        }

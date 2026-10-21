@@ -139,3 +139,65 @@ def test_curriculum_runs_reconstruction_phases_by_optimizer_step():
 def test_curriculum_spec_is_validated():
     with pytest.raises(ValueError):
         FrozenReaderMemoryConfig(span=8, curriculum="16:10")
+
+
+@pytest.mark.parametrize("pool", ["mean", "attn"])
+def test_padding_does_not_change_an_entry(pool):
+    model = _build("kv", writer_pool=pool).eval()
+    if pool == "attn":
+        with torch.no_grad():
+            model.writer.pool.q.normal_()  # away from the uniform start
+    ids = _rows(1)[:, 1:1 + S]
+    n = 5
+    padded = ids.clone()
+    padded[:, n:] = 0
+    mask = torch.zeros_like(ids)
+    mask[:, :n] = 1
+    with torch.no_grad():
+        assert torch.allclose(model.writer(ids[:, :n]), model.writer(padded, mask), atol=1e-5)
+
+
+def _s2_batch(model, b=2):
+    from data.data_collators import DataCollatorForMemoryRows
+
+    g = torch.Generator().manual_seed(3)
+    feats = []
+    for i, ml in enumerate([S + 3, 5][:b]):
+        ids = torch.randint(3, V, (ml + 6 + i,), generator=g).tolist()
+        feats.append({"input_ids": ids, "mem_len": ml})
+    return DataCollatorForMemoryRows(0, span=S, max_mem_spans=M)(feats), feats
+
+
+def test_memory_rows_collator_lines_up_memory_target_and_teacher():
+    batch, feats = _s2_batch(_build("kv"))
+    assert batch["mem_ids"].shape == (2, 2 * S)
+    assert batch["mem_mask"][1].sum() == 5 and batch["mem_len"].tolist() == [S + 3, 5]
+    for i, f in enumerate(feats):
+        n = int(batch["teacher_mask"][i].sum())
+        assert batch["teacher_ids"][i, :n].tolist() == f["input_ids"]
+        tl = int(batch["tgt_mask"][i].sum())
+        assert batch["tgt_ids"][i, :tl].tolist() == f["input_ids"][f["mem_len"]:]
+
+
+def test_teacher_logprobs_are_the_reader_on_the_raw_text():
+    model = _build("kv").eval()
+    batch, feats = _s2_batch(model)
+    t = batch["tgt_ids"].shape[1]
+    got = model._teacher_logprobs(batch["teacher_ids"], batch["teacher_mask"], batch["mem_len"], t)
+    for i, f in enumerate(feats):
+        ids = torch.tensor([f["input_ids"]])
+        ml = f["mem_len"]
+        ref = model.reader(input_ids=ids).logits[0].float().log_softmax(-1)
+        tl = len(f["input_ids"]) - ml
+        assert torch.allclose(got[i, :tl - 1], ref[ml:ml + tl - 1], atol=1e-4)
+
+
+@pytest.mark.parametrize("way", ["input", "kv"])
+def test_distill_loss_trains_only_writer_and_adapter(way):
+    model = _build(way, objective="distill").train()
+    batch, _ = _s2_batch(model)
+    out = model(**batch)
+    assert torch.isfinite(out.loss) and out.loss >= 0
+    out.loss.backward()
+    assert all(p.grad is None for p in model.reader.parameters())
+    assert model.writer.layers[0].self_attn.q_proj.weight.grad.abs().sum() > 0
