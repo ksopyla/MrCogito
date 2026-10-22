@@ -52,8 +52,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
     per passage cannot hold what the teacher uses.
   - **22 Oct — 128 tokens per passage entry** (up to 8 entries per passage): SQuAD from memory 13.0 % (5.0 %
     from another passage's), KL 0.287. More entries per passage do not help.
-  - Next: an oracle check, i.e. optimise the entries of each passage directly and score SQuAD from them.
-    Writer limit or way-in limit?
+  - **22 Oct — oracle check: the way in is the limit.** Entries optimised so the frozen reader rebuilds a passage
+    word for word answer 9.4 % of new SQuAD questions (the trained writer 11.9 %, the passage as text 50 %).
+    Entries fitted to the teacher on the other questions reach 13 %. The reader can recite from key/value
+    entries of 128 tokens but cannot consult them.
+  - Next (author's call): an oracle at finer entries (16 / 32 / 64 tokens), or a small reader adapter trained
+    to consult entries.
   - Spec: [E36_frozen_reader_writer.md](../experiments_specs/ahead/E36_frozen_reader_writer.md) · note:
     [e36_frozen_reader_writer_20261018.md](../4_Research_Notes/e36_frozen_reader_writer_20261018.md).
 - **2026-10-17 — Agent to agent through the notebook works (E33f, E33 trained as two agents).** Agent A keeps an
