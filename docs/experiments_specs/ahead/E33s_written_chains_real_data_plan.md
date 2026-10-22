@@ -222,3 +222,36 @@ def chain_targets(text, offsets, question, derived, after_answer=False) -> list[
 - **Reading:** at 30M and 0.35B tokens of real text, real multi-hop QA is far out of reach. The main run's gates are
   absolute and have no measured ceiling yet (design rule 4). Before spending ~280 GPU-h, a ceiling at the 100M class
   is needed: a pretrained ~100M model fine-tuned on the same written-chain data.
+
+### Ceiling probe — SmolLM2-135M (22 Oct 2026, 13:20–16:32 UTC, Polonez GPUs 2–3)
+
+- **Setup:** a pretrained ~100M-class model (SmolLM2-135M, 2T pretraining tokens) is fine-tuned on the same
+  written-chain stages: all → drop1 → none, 0.05B tokens each, with SmolLM2's tokenizer
+  (`scripts/hf_ceiling_finetune.py`).
+- **Exams:** the pilot's frozen exams at 4k, 300 items per dataset.
+- **Scoring:** stages 1–2 in chain mode (the answer after "So"); stage 3 answer-only, with the evidence-removed
+  floor.
+
+| exam at 4k | untuned, greedy F1 | stage 3: exact | evidence removed | stage 3: greedy F1 | chain mode after stage 1 / stage 2: greedy F1 |
+|---|---|---|---|---|---|
+| MuSiQue | 6.4 % | 4.7 % | 1.0 % | 11.0 % | 4.5 / 6.5 % |
+| HotpotQA | 17.0 % | 18.3 % | 7.0 % | 29.0 % | 13.6 / 16.6 % |
+| 2WikiMultiHopQA | 19.8 % | 22.0 % | 23.7 % | 26.9 % | 25.2 / 26.1 % |
+| GSM8K | 1.0 % | 3.0 % | — | 3.2 % | 0.6 / 1.1 % |
+
+**Stage 3 by question type:**
+- **HotpotQA bridge** (n = 240): exact 16.2 % against a 2.9 % floor, F1 27.2 %. This is the only exam with clear
+  evidence use.
+- **HotpotQA comparison:** 26.7 % against 23.3 %.
+- **2Wiki comparison / bridge-comparison:** 47.5 / 43.2 % exact against 60.7 / 43.2 %. This is the yes/no prior.
+- **2Wiki compositional:** 4.1 % against 1.6 %. **2Wiki inference:** 0 %.
+- **MuSiQue 2 / 3 / 4 hops:** 4.6 / 5.8 / 2.4 % against 1.7 / 0 / 0 %.
+
+**Reading:**
+- At the 100M class, real multi-hop QA is near the floor even with 2T tokens of pretraining. Only HotpotQA
+  bridge questions show a usable signal: +13 points of exact over the floor.
+- Writing the chain out does not help at this size. The chain-mode answers are below the answer-only stage 3.
+- The from-scratch E33s main run gets 2B tokens, three orders of magnitude fewer than the ceiling model. Its MuSiQue
+  gates (S1–S3) cannot be met, or even resolved from noise (300 items: SE ≈ 1–2.5 points).
+- **As specced, E33s would not be informative.** Decision for the author: re-scope or put on hold before the 100M
+  run.
