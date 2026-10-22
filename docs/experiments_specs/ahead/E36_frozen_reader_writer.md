@@ -184,6 +184,26 @@ SQuAD: 8.8 % with no passage, 51.6 % with the passage in context (500 items; one
   Alternatively, a refinement of each entry at write time towards the format's 781-bit ceiling (S1 capacity
   diagnostic).
 
+### S2 at 128 tokens per passage entry (Polonez GPUs 0–1, 22 Oct, 07:48–09:15 UTC)
+- **Setup:** as S2, warm-started from the S2 writer. Passages (SQuAD, SYNTH) are written at 128 tokens per entry,
+  up to 8 entries per passage; long documents stay at 512. The SQuAD evaluation writes passages the same way.
+- W&B: `frozen_reader_SmolLM2-360M_w3_s512m8_kv_attn_s2p128_20261022_074844`.
+
+| measure | S2 (one entry per passage) | **S2, 128 tokens per passage entry** |
+|---|---|---|
+| SQuAD from memory / another passage (contains) | 12.6 / 5.0 % | 13.0 / 5.0 % |
+| held-out KL to the teacher (nats per token) | 0.290 | 0.287 |
+| books / PDFs recovered | 24.7 / 15.8 % | 24.9 / 15.8 % |
+| own span rebuilt (bits, books / PDFs) | 128 / 114 | 123 / 112 |
+
+- **More entries per passage do not help:** SQuAD +0.4 points (noise at 500 items), KL −0.003. The
+  capacity-per-passage hypothesis is not supported.
+- **Remaining question:** can the frozen reader answer from *any* key/value entries of a passage? Or does this way
+  in carry text the reader can recite (S0: 99.98 % rebuilt) but not consult? The decisive check needs no writer:
+  optimise the entries of each SQuAD passage directly on the teacher-matching loss, then score SQuAD from them.
+  - Near 51.6 %: the writer is the limit.
+  - Near 13 %: the way in is the limit.
+
 ### Capacity diagnostic (Polonez GPU3, 21:38–21:44 UTC)
 8 held-out texts of 512 tokens (4 books, 4 PDFs). The table gives the bits one entry adds about its own span when
 the reader rebuilds it (`Cache/e36/subspace_probe.json`):

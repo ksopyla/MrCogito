@@ -50,7 +50,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
     book/PDF rows): SQuAD from memory 12.6 % vs 5.0 % from another document's (8.8 % with none, 51.6 % with
     the text). Continuation is unchanged (24.7 / 15.8 %). The student plateaus at KL 0.29: one ~130-bit entry
     per passage cannot hold what the teacher uses.
-  - Next: more entries per passage, or refining entries at write time.
+  - **22 Oct — 128 tokens per passage entry** (up to 8 entries per passage): SQuAD from memory 13.0 % (5.0 %
+    from another passage's), KL 0.287. More entries per passage do not help.
+  - Next: an oracle check, i.e. optimise the entries of each passage directly and score SQuAD from them.
+    Writer limit or way-in limit?
   - Spec: [E36_frozen_reader_writer.md](../experiments_specs/ahead/E36_frozen_reader_writer.md) · note:
     [e36_frozen_reader_writer_20261018.md](../4_Research_Notes/e36_frozen_reader_writer_20261018.md).
 - **2026-10-17 — Agent to agent through the notebook works (E33f, E33 trained as two agents).** Agent A keeps an
