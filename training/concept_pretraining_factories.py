@@ -450,7 +450,7 @@ def _build_frozen_reader_model(tokenizer, model_args, data_args, training_args):
         way=model_args.fr_way, recon_frac=model_args.fr_recon_frac, entry_positions=model_args.fr_entry_positions,
         proj_hidden=model_args.fr_proj_hidden, writer_pool=model_args.fr_writer_pool,
         curriculum=model_args.fr_curriculum, grad_accum=training_args.gradient_accumulation_steps,
-        objective=model_args.fr_objective,
+        objective=model_args.fr_objective, passage_span=model_args.fr_passage_span,
     )
     model = FrozenReaderMemory(config)
     if model_args.fr_init_checkpoint:  # warm start writer + adapter (the reader and borrowed embedding are not saved)
@@ -667,7 +667,8 @@ def build_training_wandb_identity(
                            f"m{model_args.fr_mem_spans}_{model_args.fr_way}"
                            + ("_attn" if model_args.fr_writer_pool == "attn" else "")
                            + ("_cur" if model_args.fr_curriculum else "")
-                           + ("_s2" if model_args.fr_objective == "distill" else ""))
+                           + ("_s2" if model_args.fr_objective == "distill" else "")
+                           + (f"p{model_args.fr_passage_span}" if model_args.fr_passage_span else ""))
         return WandbRunIdentity(
             experiment_id=resolved_experiment,
             model_family="frozen_reader",
@@ -793,7 +794,9 @@ def build_pretraining_collators(
         from data.data_collators import DataCollatorForMemoryRows
 
         collator = DataCollatorForMemoryRows(tokenizer.pad_token_id, span=model_args.fr_span,
-                                             max_mem_spans=model_args.fr_mem_spans)
+                                             max_mem_spans=model_args.fr_mem_spans,
+                                             passage_span=model_args.fr_passage_span,
+                                             span_mid=model_args.fr_entry_positions == "span_mid")
         return collator, collator
     if model_args.objective_variant == OBJECTIVE_CAUSAL_LM:
         vocab_owner = model.backbone if hasattr(model, "backbone") else model

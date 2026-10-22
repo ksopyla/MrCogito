@@ -638,18 +638,27 @@ class DataCollatorForPrefixGeneration:
 class DataCollatorForMemoryRows:
     """E36 S2 rows (`input_ids` = memory tokens + target tokens, `mem_len`) -> student and teacher tensors.
 
+    A row whose memory is shorter than max_mem_spans * span is a passage (SQuAD / SYNTH); with passage_span > 0 its
+    memory is written at passage_span tokens per entry (several entries per passage). Long-document rows keep
+    `span` tokens per entry. Each entry's tokens sit in its own slot, padded to `span`.
+
     Returns
-        mem_ids, mem_mask         : [B, K*span] memory right-padded to whole spans (K = most spans in the batch,
-                                    at most max_mem_spans); 1 = real token
+        mem_ids, mem_mask         : [B, K, span] one memory chunk per entry slot, right-padded; 1 = real token
+                                    (K = most entries in the batch, at most max_mem_spans)
+        entry_pos                 : [B, K] each entry's reader position (its chunk's middle with span_mid, else
+                                    its index); 0 for empty slots
         tgt_ids, tgt_mask         : [B, T] targets (at most max_target tokens), right-padded
+        tgt_pos                   : [B, T] the student's target positions (right after the row's entries)
         teacher_ids, teacher_mask : [B, L] memory + target as raw text, right-padded (the frozen teacher's input)
         mem_len                   : [B] where each row's target starts in teacher_ids
         attention_mask            : tgt_mask (for the trainer's padding metrics)
         labels                    : tgt_ids (unused by the model; makes the trainer report eval_loss)
     """
 
-    def __init__(self, pad_token_id: int, span: int, max_mem_spans: int = 8, max_target: int = 512):
+    def __init__(self, pad_token_id: int, span: int, max_mem_spans: int = 8, max_target: int = 512,
+                 passage_span: int = 0, span_mid: bool = True):
         self.pad, self.span, self.max_mem_spans, self.max_target = pad_token_id, span, max_mem_spans, max_target
+        self.passage_span, self.span_mid = passage_span or span, span_mid
 
     def _pad(self, seqs: List[List[int]], length: int):
         ids = torch.full((len(seqs), length), self.pad, dtype=torch.long)
@@ -660,17 +669,34 @@ class DataCollatorForMemoryRows:
         return ids, mask
 
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
-        mems, tgts = [], []
+        mems, tgts, chunks, sizes = [], [], [], []
+        full = self.max_mem_spans * self.span
         for f in features:
             ids, ml = list(f["input_ids"]), int(f["mem_len"])
-            mems.append(ids[:ml][: self.max_mem_spans * self.span])
+            size = self.span if ml >= full else self.passage_span
+            mem = ids[:ml][: min(full, self.max_mem_spans * size)]
+            mems.append(mem)
             tgts.append(ids[ml:][: self.max_target])
-        k = max(1, max((len(m) + self.span - 1) // self.span for m in mems))
-        mem_ids, mem_mask = self._pad(mems, k * self.span)
+            chunks.append([mem[j:j + size] for j in range(0, max(len(mem), 1), size)] or [[]])
+            sizes.append(size)
+        b, k = len(features), max(len(c) for c in chunks)
+        mem_ids = torch.full((b, k, self.span), self.pad, dtype=torch.long)
+        mem_mask = torch.zeros((b, k, self.span), dtype=torch.long)
+        entry_pos = torch.zeros((b, k), dtype=torch.long)
+        base = []
+        for i, (cs, size) in enumerate(zip(chunks, sizes)):
+            for j, c in enumerate(cs):
+                mem_ids[i, j, :len(c)] = torch.tensor(c, dtype=torch.long)
+                mem_mask[i, j, :len(c)] = 1
+                entry_pos[i, j] = j * size + size // 2 if self.span_mid else j
+            base.append(len(cs) * size if self.span_mid else len(cs))
         tgt_ids, tgt_mask = self._pad(tgts, max(len(t) for t in tgts))
-        teacher_ids, teacher_mask = self._pad([m + t for m, t in zip(mems, tgts)], max(len(m) + len(t) for m, t in zip(mems, tgts)))
+        tgt_pos = torch.tensor(base, dtype=torch.long)[:, None] + torch.arange(tgt_ids.shape[1])
+        teacher_ids, teacher_mask = self._pad([m + t for m, t in zip(mems, tgts)],
+                                              max(len(m) + len(t) for m, t in zip(mems, tgts)))
         return {
-            "mem_ids": mem_ids, "mem_mask": mem_mask, "tgt_ids": tgt_ids, "tgt_mask": tgt_mask,
+            "mem_ids": mem_ids, "mem_mask": mem_mask, "entry_pos": entry_pos,
+            "tgt_ids": tgt_ids, "tgt_mask": tgt_mask, "tgt_pos": tgt_pos,
             "teacher_ids": teacher_ids, "teacher_mask": teacher_mask,
             "mem_len": torch.tensor([len(m) for m in mems], dtype=torch.long), "attention_mask": tgt_mask,
             "labels": tgt_ids,  # unused by the model; the HF Trainer computes an eval loss only when labels exist

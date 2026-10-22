@@ -78,6 +78,7 @@ class FrozenReaderMemoryConfig(PretrainedConfig):
         curriculum: str = "",
         grad_accum: int = 1,
         objective: str = "continuation",
+        passage_span: int = 0,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -97,7 +98,7 @@ class FrozenReaderMemoryConfig(PretrainedConfig):
         self.recon_frac, self.entry_positions = float(recon_frac), entry_positions
         self.proj_hidden, self.reader_dtype, self.vocab_size = int(proj_hidden), reader_dtype, int(vocab_size)
         self.writer_pool, self.curriculum, self.grad_accum = writer_pool, curriculum, int(grad_accum)
-        self.objective = objective
+        self.objective, self.passage_span = objective, int(passage_span)  # 0: passages use `span` too
         self.checkpoint_family = "frozen_reader"
         self.pretraining_objective = "causal_lm"
 
@@ -291,7 +292,8 @@ class FrozenReaderMemory(PreTrainedModel):
         x = self.adapter(entries)  # (B, M, L, 2, h, hd)
         b, m = x.shape[:2]
         dt = self.reader.dtype
-        cos, sin = self.reader.model.rotary_emb(x[:, :, 0, 0, 0, :].to(dt), entry_pos.expand(b, -1))
+        pos = entry_pos.expand(b, -1) if entry_pos.dim() == 1 else entry_pos
+        cos, sin = self.reader.model.rotary_emb(x[:, :, 0, 0, 0, :].to(dt), pos)
         cache = DynamicCache()
         for i in range(x.shape[2]):
             k = x[:, :, i, 0].transpose(1, 2).to(dt)  # (B, h, M, hd)
@@ -323,7 +325,8 @@ class FrozenReaderMemory(PreTrainedModel):
         mask = torch.cat([emask, tmask], 1)
         if self.config.way == "input":
             x = torch.cat([self.adapter(entries).to(r.dtype), r.get_input_embeddings()(tgt)], 1)
-            pos = torch.cat([entry_pos.expand(b, -1), tgt_pos], 1)
+            epos = entry_pos.expand(b, -1) if entry_pos.dim() == 1 else entry_pos
+            pos = torch.cat([epos, tgt_pos], 1)
             return r(inputs_embeds=x, position_ids=pos, attention_mask=mask, use_cache=False).logits[:, m:]
         cache = self.kv_cache(entries, entry_pos)
         cache_position = torch.arange(m, m + t, device=tgt.device)
@@ -364,17 +367,15 @@ class FrozenReaderMemory(PreTrainedModel):
         logits = self.read_logits(entries, spans, tpos, epos)
         return F.cross_entropy(logits[:, :-1].float().reshape(-1, logits.shape[-1]), spans[:, 1:].reshape(-1))
 
-    def _distill_loss(self, mem_ids, mem_mask, tgt_ids, tgt_mask, teacher_ids, teacher_mask, mem_len):
+    def _distill_loss(self, mem_ids, mem_mask, entry_pos, tgt_ids, tgt_mask, tgt_pos, teacher_ids, teacher_mask,
+                      mem_len):
         """S2 teacher matching: KL(teacher || student) on target tokens 1..T-1. The teacher is the same frozen reader
-        with the raw memory text in context; the student reads the writer's entries of it."""
-        s, (b, ks), t = self.config.span, mem_ids.shape, tgt_ids.shape[1]
-        k, dev = ks // s, mem_ids.device
+        with the raw memory text in context; the student reads the writer's entries of it. mem_ids (B, K, S): one
+        chunk per entry slot (passages may use shorter chunks, padded); entry_pos (B, K); tgt_pos (B, T)."""
+        (b, k, s), t = mem_ids.shape, tgt_ids.shape[1]
         entries = self.writer(mem_ids.view(b * k, s), mem_mask.view(b * k, s)).view(b, k, -1)
-        valid = mem_mask.view(b, k, s).bool().any(-1)
-        n_ent = valid.sum(1, keepdim=True)  # entries fill spans from the first one
-        base = n_ent * s if self.config.entry_positions == "span_mid" else n_ent
-        tpos = base + torch.arange(t, device=dev)
-        student = self.read_logits(entries, tgt_ids, tpos, self.entry_pos(0, k, dev), entry_mask=valid,
+        valid = mem_mask.bool().any(-1)
+        student = self.read_logits(entries, tgt_ids, tgt_pos, entry_pos, entry_mask=valid,
                                    tgt_mask=tgt_mask)[:, :-1].float().log_softmax(-1)
         teacher = self._teacher_logprobs(teacher_ids, teacher_mask, mem_len, t)
         kl = F.kl_div(student, teacher, log_target=True, reduction="none").sum(-1)  # (B, T-1)
@@ -391,12 +392,12 @@ class FrozenReaderMemory(PreTrainedModel):
         return self.reader.lm_head(h).float().log_softmax(-1)
 
     def _masked_recon_loss(self, span_ids, span_mask):
-        """Rebuild each row's first memory span (B, S) from its own entry; padding is not scored."""
+        """Rebuild each row's first memory chunk (B, S, right-padded) from its own entry; padding is not scored."""
         n, s = span_ids.shape
         dev = span_ids.device
         entries = self.writer(span_ids, span_mask).unsqueeze(1)
-        if self.config.entry_positions == "span_mid":
-            epos, tpos = torch.tensor([s // 2], device=dev), torch.arange(s, device=dev)
+        if self.config.entry_positions == "span_mid":  # the entry sits at its own chunk's middle
+            epos, tpos = (span_mask.sum(1, keepdim=True) // 2), torch.arange(s, device=dev)
         else:
             epos, tpos = torch.zeros(1, dtype=torch.long, device=dev), torch.arange(s, device=dev) + 1
         logits = self.read_logits(entries, span_ids, tpos, epos, tgt_mask=span_mask)
@@ -407,17 +408,17 @@ class FrozenReaderMemory(PreTrainedModel):
     def forward(self, input_ids: Optional[torch.Tensor] = None, attention_mask: Optional[torch.Tensor] = None,
                 labels: Optional[torch.Tensor] = None, mem_len: Optional[torch.Tensor] = None,
                 mem_ids: Optional[torch.Tensor] = None, mem_mask: Optional[torch.Tensor] = None,
+                entry_pos: Optional[torch.Tensor] = None, tgt_pos: Optional[torch.Tensor] = None,
                 tgt_ids: Optional[torch.Tensor] = None, tgt_mask: Optional[torch.Tensor] = None,
                 teacher_ids: Optional[torch.Tensor] = None, teacher_mask: Optional[torch.Tensor] = None,
                 **_) -> CausalLMOutput:
         if mem_ids is not None:  # S2 rows (data/data_collators.py:DataCollatorForMemoryRows)
             if self.training:
                 self._fwd += 1
-                if self._draw()[0]:
-                    s = self.config.span
-                    return CausalLMOutput(loss=self._masked_recon_loss(mem_ids[:, :s], mem_mask[:, :s]), logits=None)
-            return CausalLMOutput(loss=self._distill_loss(mem_ids, mem_mask, tgt_ids, tgt_mask, teacher_ids,
-                                                          teacher_mask, mem_len), logits=None)
+                if self._draw()[0]:  # rebuild each row's first memory chunk from its own entry
+                    return CausalLMOutput(loss=self._masked_recon_loss(mem_ids[:, 0], mem_mask[:, 0]), logits=None)
+            return CausalLMOutput(loss=self._distill_loss(mem_ids, mem_mask, entry_pos, tgt_ids, tgt_mask, tgt_pos,
+                                                          teacher_ids, teacher_mask, mem_len), logits=None)
         s, m = self.config.span, self.config.mem_spans
         need = (m + 1) * s
         ids = input_ids[:, 1:1 + need]  # drop BOS

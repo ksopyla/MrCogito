@@ -397,6 +397,7 @@ class ModelArguments:
     fr_proj_hidden: int = field(default=2048, metadata={"help": "E36: hidden width of the input-way projector."})
     fr_writer_pool: str = field(default="mean", metadata={"help": "E36: mean | attn (one learned query per head, starts as the mean)."})
     fr_objective: str = field(default="continuation", metadata={"help": "E36: continuation (S1 rows) | distill (S2 teacher matching on memory+target rows with mem_len)."})
+    fr_passage_span: int = field(default=0, metadata={"help": "E36 S2: tokens per entry for passage rows (memory shorter than mem_spans*span); 0 = fr_span."})
     fr_init_checkpoint: str = field(default="", metadata={"help": "E36: warm start the writer and adapter from this E36 checkpoint (e.g. the curriculum writer)."})
     fr_curriculum: str = field(default="", metadata={"help": "E36: reconstruction-only phases before the main training, 'tokens:steps,...' e.g. 64:750,128:750,256:750,512:750."})
     lm_note_rank_sharp: float = field(default=2.0, metadata={"help": "E33e: steepness of the match gate."})

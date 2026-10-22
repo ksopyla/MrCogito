@@ -157,21 +157,23 @@ def test_padding_does_not_change_an_entry(pool):
         assert torch.allclose(model.writer(ids[:, :n]), model.writer(padded, mask), atol=1e-5)
 
 
-def _s2_batch(model, b=2):
+def _s2_batch(model, b=2, passage_span=0, lens=(S + 3, 5)):
     from data.data_collators import DataCollatorForMemoryRows
 
     g = torch.Generator().manual_seed(3)
     feats = []
-    for i, ml in enumerate([S + 3, 5][:b]):
+    for i, ml in enumerate(list(lens)[:b]):
         ids = torch.randint(3, V, (ml + 6 + i,), generator=g).tolist()
         feats.append({"input_ids": ids, "mem_len": ml})
-    return DataCollatorForMemoryRows(0, span=S, max_mem_spans=M)(feats), feats
+    return DataCollatorForMemoryRows(0, span=S, max_mem_spans=M, passage_span=passage_span)(feats), feats
 
 
 def test_memory_rows_collator_lines_up_memory_target_and_teacher():
     batch, feats = _s2_batch(_build("kv"))
-    assert batch["mem_ids"].shape == (2, 2 * S)
+    assert batch["mem_ids"].shape == (2, 2, S)
     assert batch["mem_mask"][1].sum() == 5 and batch["mem_len"].tolist() == [S + 3, 5]
+    assert batch["entry_pos"].tolist() == [[S // 2, S + S // 2], [S // 2, 0]]
+    assert batch["tgt_pos"][:, 0].tolist() == [2 * S, S]
     for i, f in enumerate(feats):
         n = int(batch["teacher_mask"][i].sum())
         assert batch["teacher_ids"][i, :n].tolist() == f["input_ids"]
@@ -201,3 +203,15 @@ def test_distill_loss_trains_only_writer_and_adapter(way):
     out.loss.backward()
     assert all(p.grad is None for p in model.reader.parameters())
     assert model.writer.layers[0].self_attn.q_proj.weight.grad.abs().sum() > 0
+
+
+def test_passages_get_shorter_chunks_and_long_documents_keep_the_span():
+    # memory of M*S tokens is a long document (S per entry); shorter memory is a passage (passage_span per entry)
+    batch, _ = _s2_batch(_build("kv"), passage_span=2, lens=(M * S, 5))
+    assert batch["mem_ids"].shape == (2, M, S)
+    assert batch["mem_mask"][0].sum(-1).tolist() == [S] * M  # long document: M full chunks
+    assert batch["mem_mask"][1].sum(-1).tolist()[:3] == [2, 2, 1]  # passage of 5 tokens: chunks of 2, 2, 1
+    assert batch["entry_pos"][1, :3].tolist() == [1, 3, 5] and batch["tgt_pos"][1, 0] == 6
+    model = _build("kv", objective="distill").train()
+    out = model(**batch)
+    assert torch.isfinite(out.loss)

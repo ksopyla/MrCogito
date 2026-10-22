@@ -151,14 +151,15 @@ def squad(reader, fm, tok, n_items: int, dev: str, conditions: list[str]) -> dic
                 prompt = torch.tensor([ctx + q], device=dev)
                 fn = lambda cur: reader(input_ids=cur, use_cache=False).logits  # noqa: E731
             else:  # memory / other: the passage only through the writer's entries
-                s = fm.config.span
+                s = getattr(fm.config, "passage_span", 0) or fm.config.span  # passages: tokens per entry
                 src = ctx if c == "memory" else tok.encode(ds[(idx + 1) % n_items]["context"], add_special_tokens=False)
                 chunks = [src[i:i + s] for i in range(0, len(src), s)]
                 with torch.autocast("cuda", dtype=torch.bfloat16, enabled=dev.startswith("cuda")):
                     e = torch.cat([fm.writer(torch.tensor([ch], device=dev)) for ch in chunks]).unsqueeze(0)
                 k = e.shape[1]
                 span_mid = fm.config.entry_positions == "span_mid"
-                epos = fm.entry_pos(0, k, dev)
+                idx_k = torch.arange(k, device=dev)
+                epos = idx_k * s + s // 2 if span_mid else idx_k  # as data/data_collators.py:DataCollatorForMemoryRows
                 base = k * s if span_mid else k
                 prompt = torch.tensor([q], device=dev)
 
