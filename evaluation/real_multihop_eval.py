@@ -52,8 +52,16 @@ def tf_exact(model, tok, prompt: str, answers: list[str], device) -> tuple[bool,
 
 
 @torch.no_grad()
-def greedy(model, tok, prompt: str, device, max_new: int) -> str:
+def greedy(model, tok, prompt: str, device, max_new: int, chain: bool = False) -> str:
+    """Greedy answer. Default: up to the first period or newline. `chain`: the model may write its reasoning first
+    ("<step>. <step>. So <answer>."); generation runs to a newline and the answer is the text after the last "So"."""
     ids = [tok.bos_token_id] + tok.encode(prompt, add_special_tokens=False)
+    if getattr(model, "_is_hf", False):  # Hub models: cached generation
+        x = torch.tensor([ids], device=device)
+        g = model.generate(x, attention_mask=torch.ones_like(x), max_new_tokens=max_new, do_sample=False,
+                           eos_token_id=tok.eos_token_id, pad_token_id=tok.pad_token_id or tok.eos_token_id)
+        text = tok.decode(g[0, len(ids):].tolist(), skip_special_tokens=True).split("\n")[0].strip()
+        return _answer_of(text, chain)
     out_ids = []
     for _ in range(max_new):
         o = model(input_ids=torch.tensor([ids + out_ids], device=device))
@@ -63,9 +71,15 @@ def greedy(model, tok, prompt: str, device, max_new: int) -> str:
             break
         out_ids.append(nxt)
         text = tok.decode(out_ids)
-        if "\n" in text or text.rstrip().endswith("."):
+        if "\n" in text or (not chain and text.rstrip().endswith(".")):
             break
-    text = tok.decode(out_ids).split("\n")[0].strip()
+    return _answer_of(tok.decode(out_ids).split("\n")[0].strip(), chain)
+
+
+def _answer_of(text: str, chain: bool) -> str:
+    if chain and " So " in f" {text}":
+        text = f" {text}".rsplit(" So ", 1)[1]
+    text = text.split(". ")[0].strip() if not chain else text.strip()
     return text[:-1] if text.endswith(".") else text
 
 
@@ -111,6 +125,9 @@ def main():
     p.add_argument("--gen_items", type=int, default=100, help="greedy-generation F1 on this many items per cell")
     p.add_argument("--gen_max_length", type=int, default=4096, help="generate only in cells up to this length")
     p.add_argument("--gen_tokens", type=int, default=24)
+    p.add_argument("--chain", action="store_true",
+                   help="the model writes its reasoning before the answer: score the text after the last 'So' "
+                        "(greedy, --gen_tokens should allow the steps, e.g. 192); teacher-forced exact is skipped")
     args = p.parse_args()
 
     from transformers import AutoTokenizer
@@ -119,9 +136,20 @@ def main():
 
     device = args.device or ("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     backend = args.attn_backend or ("flex" if str(device).startswith("cuda") else "sdpa")
-    model = load_perceiver_lm(args.checkpoint, device, backend)
+    cfg = json.load(open(os.path.join(args.checkpoint, "config.json"))) if os.path.isdir(args.checkpoint) else {}
+    if cfg.get("model_type") in ("llama", "qwen2", "mistral", "gpt2", "gemma", "phi3") or not os.path.isdir(args.checkpoint):
+        from transformers import AutoModelForCausalLM
+
+        model = AutoModelForCausalLM.from_pretrained(
+            args.checkpoint, torch_dtype=torch.bfloat16 if str(device).startswith("cuda") else torch.float32,
+            attn_implementation="sdpa").to(device)
+        model._is_hf = True
+    else:
+        model = load_perceiver_lm(args.checkpoint, device, backend)
     model.eval()
     tok = AutoTokenizer.from_pretrained(args.tokenizer or args.checkpoint)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
     msg = model.message_override(args.message_override) if hasattr(model, "message_override") else nullcontext()
 
     items = []
@@ -147,15 +175,15 @@ def main():
     with msg:
         for i, r in enumerate(items):
             answers = [r["answer"]] + [a for a in r.get("aliases") or [] if a and a != r["answer"]]
-            ex, nll = tf_exact(model, tok, r["prompt"], answers, device)
+            ex, nll = (False, float("nan")) if args.chain else tf_exact(model, tok, r["prompt"], answers, device)
             row = {"id": r["id"], "dataset": r["dataset"], "length": r["length"], "depth": r.get("depth"),
                    "exact": bool(ex), "answer_nll": nll, "n_tokens": r.get("n_tokens")}
-            if not args.no_removed and r.get("removed_prompt"):
+            if not args.no_removed and not args.chain and r.get("removed_prompt"):
                 row["removed_exact"] = bool(tf_exact(model, tok, r["removed_prompt"], [r["answer"]], device)[0])
             k = (r["dataset"], r["length"])
             if args.gen_items and r["length"] <= args.gen_max_length and gen_seen[k] < args.gen_items:
                 gen_seen[k] += 1
-                pred = greedy(model, tok, r["prompt"], device, args.gen_tokens)
+                pred = greedy(model, tok, r["prompt"], device, args.gen_tokens, chain=args.chain)
                 row.update(pred=pred, gen_em=float(normalize_answer(pred) in {normalize_answer(a) for a in answers}),
                            gen_f1=f1_score(pred, answers))
             rows.append(row)
@@ -164,6 +192,7 @@ def main():
 
     cells = summarize(rows)
     res = {"checkpoint": args.checkpoint, "message_override": args.message_override, "items": args.items,
+           "chain": bool(args.chain),
            "n_items": len(rows), "seconds": round(time.time() - t0, 1), "cells": cells}
     with open(args.out, "w") as fh:
         json.dump(res, fh, indent=2)

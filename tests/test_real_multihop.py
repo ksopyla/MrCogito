@@ -127,3 +127,11 @@ def test_rule_reads_a_bridge_named_only_by_the_next_paragraphs_title():
     assert parse_chain([s1, s2], "Joel Marsh", q, s1 + " " + s2) == []  # the second fact says "She"
     got = parse_chain([s1, s2], "Joel Marsh", q, s1 + " " + s2, titles=["Glass Harbour", "Ada Renn"])
     assert got == [(s1, "Ada Renn"), (s2, "Joel Marsh")]
+
+
+def test_exam_reads_the_answer_after_so():
+    from evaluation.real_multihop_eval import _answer_of
+
+    assert _answer_of("Green is by Steve Hillage. Giraudy is his partner. So Miquette Giraudy.", True) == "Miquette Giraudy"
+    assert _answer_of("Miquette Giraudy. Then more text", False) == "Miquette Giraudy"
+    assert _answer_of("no chain at all.", True) == "no chain at all"
