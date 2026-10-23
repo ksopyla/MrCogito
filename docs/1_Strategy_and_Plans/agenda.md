@@ -20,8 +20,17 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-10-21 — E33s, multi-hop on real text taught by written reasoning, at 100M. Spec drafted, awaiting
-  alignment.**
+- **2026-10-23 — Where the E33 line stands before the 100M decision.**
+  - **Written reasoning also teaches latest** (19 Oct, Odra; pulled 23 Oct). From R2, with latest answers written as
+    the person's last move and the steps removed in stages: latest 78 / 92 % at 4k / 16k with no generator labels.
+    In the same model, compose is 93 / 98 % and deduce 100 / 100 %. Count stays at 17 %. One warm-started run.
+  - **Still open on the synthetic world:** count; 3-hop compose (0 %); new sentence shapes (compose 5 %); far
+    quotes (lost in the reasoning line). Nothing of the reasoning line has been trained from scratch yet.
+  - **E33s (real multi-hop QA at 100M) is on hold.** Its pre-flight showed that a pretrained SmolLM2-135M sits near
+    the floor on MuSiQue, so the run's gates cannot be resolved.
+  - Board: text capability board (status and decisions updated 23 Oct).
+- **2026-10-21 — E33s, multi-hop on real text taught by written reasoning, at 100M. Spec drafted; on hold after
+  the 22 Oct pre-flight (see above).**
   - **The 30M pilot (R2, 19 Oct)** used no generator labels:
     - answers wrote their chain out, and a rule read each hop's word and location off that text;
     - the written steps were removed in three stages;

@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>E33s Alignment</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -79,6 +80,8 @@ th { font-family: var(--f-mono); font-size: 11.5px; letter-spacing: .05em; text-
 .bar { height: 8px; border-radius: 4px; background: var(--base-bg); overflow: hidden; margin-top: 4px; }
 .bar > i { display: block; height: 100%; background: var(--new); }
 .note { font-size: 13px; color: var(--muted); }
+.status { border: 1px solid var(--prop); background: var(--prop-bg); border-radius: 8px; padding: 10px 14px; font-size: 14px; margin-top: 12px; }
+.status ul { margin: 6px 0; padding-left: 20px; }
 .check { display: flex; flex-direction: column; gap: 10px; }
 .crow { display: grid; grid-template-columns: 1fr auto; gap: 8px 14px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
 .crow .q { min-width: 0; }
@@ -109,6 +112,18 @@ svg text { font-family: var(--f-mono); fill: var(--ink); }
       cannot see the evidence.</p>
     <p class="note">The 30M synthetic pilot (R2) reached compose 92 % and deduce 99 % at 4k this way, with no
       generator labels. Spec: <code>docs/experiments_specs/ahead/E33s_written_chains_real_data.md</code>.</p>
+    <div class="status" role="note">
+      <b>Status 23 Oct 2026: on hold, re-scope before any 100M run.</b> The pre-flight (21–22 Oct, Polonez) found:
+      <ul>
+        <li>The rule finds the written steps in 71 % of MuSiQue + HotpotQA bridge questions (kill line 60 %).</li>
+        <li>A 30M pilot ran end to end, but every real-QA score sat on its no-evidence floor.</li>
+        <li>A pretrained SmolLM2-135M (2T tokens) fine-tuned on the same stages reaches only MuSiQue 4.7 % exact
+          (floor 1 %) and HotpotQA 18 % (floor 7 %). Only HotpotQA bridge questions show real evidence use.</li>
+      </ul>
+      At the 100M size, real multi-hop QA sits near the floor, so the gates below cannot be met or told apart from
+      noise. Also open: the exam does not yet limit the dense model to its last 4k tokens at 16k–64k, which gate S3
+      assumes. Details: the spec's plan, section 10.
+    </div>
   </header>
 
   <div class="controls">
@@ -121,7 +136,8 @@ svg text { font-family: var(--f-mono); fill: var(--ink); }
   <section aria-labelledby="pipe-h">
     <h2 id="pipe-h">The pipeline, step by step</h2>
     <p class="note">Shapes are per GPU at the claim scale: 100M main tier, 16,384-token vocabulary, rows of 4,096
-      tokens, 4 rows per device. Tags: <span class="tag t-new">new</span> <span class="tag t-same">unchanged</span>
+      tokens, shown with 4 rows per device (the E33 arms run 2 per device with twice the accumulation; the global batch is
+      the same). Tags: <span class="tag t-new">new</span> <span class="tag t-same">unchanged</span>
       <span class="tag t-prop">proposed</span> <span class="tag t-base">baseline</span> <span class="tag t-off">off in this arm</span>.</p>
     <div class="stepper" id="stepper" role="tablist" aria-label="Pipeline stages"></div>
     <div class="panel" id="detail" role="tabpanel" aria-live="polite"></div>
@@ -192,7 +208,7 @@ svg text { font-family: var(--f-mono); fill: var(--ink); }
       <thead><tr><th>stage</th><th>units at 4k (16k · 64k)</th><th>capacity</th><th>what the answer needs</th></tr></thead>
       <tbody>
         <tr><td>context tokens</td><td>4,096 (16,384 · 65,536)</td><td>≤ 57 kbit</td><td>2–4 supporting sentences ≈ 60–200 tokens</td></tr>
-        <tr><td>notes (32 per page)</td><td>672 (2,688 · 10,912)</td><td>≈ 85 bits each, ≈ 6 tokens per note</td><td>one entity per hop ≈ 2–5 tokens ≈ 30–70 bits: fits in one note</td></tr>
+        <tr><td>notes (32 per page)</td><td>672 (2,720 · 10,912)</td><td>≈ 85 bits each, ≈ 6 tokens per note</td><td>one entity per hop ≈ 2–5 tokens ≈ 30–70 bits: fits in one note</td></tr>
         <tr><td>one loop round's read</td><td>14 heads × 64 values</td><td>one softmax mixture over raw window + notes</td><td>pick the step's note out of 672–10,912</td></tr>
         <tr><td>answer</td><td>≤ 24 tokens</td><td>—</td><td>the last hop's entity</td></tr>
       </tbody>
@@ -265,7 +281,7 @@ svg text { font-family: var(--f-mono); fill: var(--ink); }
       keeps: { all: "local phrase context", dense: "everything in the window" } },
     { key: "writer", title: "Notebook writer", tag: { all: "same", dense: "off" },
       what: { all: "Every 256-token page (a new one each 192 tokens) is encoded both ways inside the page, and 32 latents read it twice. Each latent leaves one note: a 64-d key and a 64-d value.", dense: "Not present: the dense model has no notes." },
-      shape: { all: "21 pages × 32 = 672 notes at 4k (2,688 at 16k, 10,912 at 64k), each key [64] + value [64]", dense: "—" },
+      shape: { all: "21 pages × 32 = 672 notes at 4k (2,720 at 16k, 10,912 at 64k), each key [64] + value [64]", dense: "—" },
       keeps: { all: "about 6 tokens per note. Per the pilot, names, places and (once a loss asks) properties stay decodable from the notes (probe 63–92 %).", dense: "—" } },
     { key: "loop", title: "Loop: 4 tied rounds", tag: { all: "same", dense: "off" },
       what: { all: "Each round: one global read over the raw window (256 tokens) and every closed note in one softmax, then one local layer. The same weights in every round.", dense: "Not present: the dense model has one pass of 12 layers." },
