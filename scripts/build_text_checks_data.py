@@ -166,7 +166,14 @@ def _row(ids: list[int], bos: int, eos: int, read_targets: list | None = None) -
 _QA = re.compile(r"\n\nQuestion: (.*?)\nAnswer:")
 
 
-def read_targets(text: str, offsets: list, chains: list, span: str = "fact") -> list[int]:
+def _count_base(question: str):
+    """A count question with no visits: its chain is empty, so the base comes from the question's shape."""
+    from data.text_world import COUNT_ROUND
+
+    return COUNT_ROUND if question.startswith("How many times") else None
+
+
+def read_targets(text: str, offsets: list, chains: list, span: str = "fact", count_naming: bool = False) -> list[int]:
     """Flat (answer position, round, first token, last token) quadruples in row positions (BOS = 0), 2026-10-17.
     Every question gives (pos, 0, -1, -1): `pos` is the "Answer:" colon, the position that predicts the first answer
     token. A question whose chain is known (`chains`: question → (fact sentence, hop output word) in hop order) also
@@ -184,9 +191,48 @@ def read_targets(text: str, offsets: list, chains: list, span: str = "fact") -> 
         pos = tok_of(m.end() - 1) + 1
         out += [pos, 0, -1, -1]
         body_end = m.start()
-        for r, step in enumerate(chain_of.get(m.group(1), []), 1):
-            fact, word = step if isinstance(step, (tuple, list)) else (step, None)
-            c0 = text.find(fact, 0, body_end)
+        steps = chain_of.get(m.group(1), [])
+        # count (18 Oct): steps (fact, word, base) — every visit is its own occurrence of a possibly repeated sentence,
+        # rounds base + 1, base + 2 …, and (pos, base, -1, -1) marks the question even with zero visits
+        base = next((st[2] for st in steps if isinstance(st, (tuple, list)) and len(st) > 2), None)
+        if base is None and m.group(1) in chain_of and not steps:
+            base = _count_base(m.group(1))
+        if base is not None:
+            out += [pos, base, -1, -1]
+            if count_naming:  # rounds 1-3 name the count word itself (its tokens after "Answer:"), for the naming lens
+                a0 = m.end()
+                line_end = text.find("\n", a0)
+                line_end = len(text) if line_end < 0 else line_end
+                so = text.rfind(" So ", a0, line_end)  # a written tally: the number follows its last "So"
+                if so >= 0:
+                    a0 = so + len(" So") 
+                stop = text.find(".", a0)
+                if 0 <= stop - a0 <= 12:
+                    for r in (1, 2, 3):
+                        out += [pos, r, tok_of(a0) + 1, tok_of(stop - 1) + 1]
+        seen: dict = {}
+        if base is not None:  # longer sentences first, so a shorter template never claims a visit inside a longer one
+            steps = sorted(steps, key=lambda st: -len(st[0]))
+        for r, step in enumerate(steps, 1):
+            fact, word = (step[0], step[1]) if isinstance(step, (tuple, list)) else (step, None)
+            if base is not None:
+                # every visit its own occurrence: a whole-word match, in order, never inside a region an earlier visit
+                # of this question took (one template's sentence can sit inside another's longer sentence)
+                pat, c0, at = re.compile(r"(?<!\w)" + re.escape(fact)), -1, seen.get(fact, 0)
+                while True:
+                    mm = pat.search(text, at, body_end)
+                    if not mm:
+                        break
+                    if not any(mm.start() < e and s0 < mm.end() for s0, e in seen.get("_taken", [])):
+                        c0 = mm.start()
+                        break
+                    at = mm.start() + 1
+                seen[fact] = c0 + len(fact) if c0 >= 0 else body_end
+                if c0 >= 0:
+                    seen.setdefault("_taken", []).append((c0, c0 + len(fact)))
+                r = base + r
+            else:
+                c0 = text.find(fact, 0, body_end)
             if c0 < 0:
                 continue
             a, b = c0, c0 + len(fact)
@@ -256,6 +302,15 @@ def parse_written_chain(written: str, question: str, body: str) -> list[tuple[st
     return out
 
 
+def parse_written_tally(written: str) -> list[str]:
+    """Count's written reasoning (19 Oct): "<visit>. <visit>. … So <number>." read back by a rule on the text alone:
+    every sentence before "So" is one counted event (the number of them is the count the read must reach)."""
+    head, sep, _ = written.strip().rpartition(" So ")
+    if not sep:
+        head = "" if written.strip().startswith("So ") else head
+    return [s.strip().rstrip(".") + "." for s in head.split(". ") if s.strip().rstrip(".")] if head.strip() else []
+
+
 def write_chains(text: str, chains: list, keep: str) -> tuple[str, list, list]:
     """Rewrite every answer whose chain is known as written reasoning (`keep` = all | drop1 | none of its steps
     visible), and return (text, rule-derived chains for the read and naming targets, (rule word, generator word)
@@ -271,7 +326,16 @@ def write_chains(text: str, chains: list, keep: str) -> tuple[str, list, list]:
         if j < 0:
             continue
         answer = text[i + len(block):j].strip()
-        facts = [f for f, _ in steps]
+        if _count_base(q) is not None:  # count (19 Oct): the visits listed one by one, then the number
+            facts = [st[0] for st in steps]
+            shown = {"all": facts, "drop1": facts[1:], "none": []}[keep]
+            new = (" " + " ".join(shown) + f" So {answer}.") if shown else f" {answer}."
+            text = text[: i + len(block)] + new + text[j + 1:]
+            listed = parse_written_tally(" ".join(facts) + f" So {answer}.")
+            derived.append((q, [(s, None, _count_base(q)) for s in listed]))
+            pairs.append((str(len(listed)), str(len(steps))))
+            continue
+        facts = [st[0] for st in steps]
         written = " ".join(facts) + f" So {answer}."
         shown = {"all": facts, "drop1": facts[1:], "none": []}[keep]
         new = (" " + " ".join(shown) + f" So {answer}.") if shown else f" {answer}."
@@ -320,7 +384,8 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
                     enc = _TOKREF["tok"](text, add_special_tokens=False, return_offsets_mapping=True)
                     if list(enc["input_ids"]) != list(ids):
                         raise RuntimeError("read targets: offset tokenization differs from encode()")
-                    rt = read_targets(text, enc["offset_mapping"], chains, span=_VERSION["read_targets"])
+                    rt = read_targets(text, enc["offset_mapping"], chains, span=_VERSION["read_targets"],
+                                      count_naming=bool(_VERSION.get("count_naming")))
                 rows.append(_row(ids, bos, eos, rt))
                 break
         k += 1
@@ -462,6 +527,9 @@ def main():
                    help="every row gets a read_targets column: per question its answer position and, where the chain "
                         "is known, per read round the token span of fact r (fact) or of that hop's output word inside "
                         "it (output); 2026-10-17; stories get an empty list")
+    p.add_argument("--train_count_naming", action="store_true",
+                   help="with --train_read_targets: count questions also name their answer word on read rounds 1-3 "
+                        "(the naming lens decodes the count heads' sum into the number word; 2026-10-18)")
     p.add_argument("--task_free_boundary", default=None,
                    help="task-free split rows (2026-10-18): world documents lose their questions, and every row "
                         "(stories too) gets up to --task_free_cuts copies of this single-token boundary at random "
@@ -483,6 +551,7 @@ def main():
     _VERSION["bridge"] = args.train_bridge
     _VERSION["bridge_only"] = bool(args.train_bridge_only)
     _VERSION["read_targets"] = args.train_read_targets or False
+    _VERSION["count_naming"] = bool(args.train_count_naming)
     _VERSION["a2a"] = bool(args.a2a)
     _VERSION["written"] = args.written_chains
     if args.written_chains and not args.train_read_targets:

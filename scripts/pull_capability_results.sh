@@ -3,7 +3,7 @@
 # archive the full raw folder (logs, rung JSONs, ladders, checkpoints) to the NAS.
 # Process: docs/engineering_specs/capability_checks.md (skill `capability-checks`).
 #
-#   bash scripts/pull_capability_results.sh odra  ~/dev/MrCogito-e31/Cache/study/e30_vs_e31
+#   bash scripts/pull_capability_results.sh odra  ~/dev/MrCogito/Cache/study/e30_vs_e31
 #   bash scripts/pull_capability_results.sh odra  ~/dev/MrCogito/Cache/capability/e33a_full_30m
 #   bash scripts/pull_capability_results.sh polonez ~/dev/MrCogito/Cache/capability/li_full_30m --no-archive
 #

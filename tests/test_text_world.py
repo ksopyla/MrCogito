@@ -493,6 +493,53 @@ def test_read_targets_tensor_pads_and_cuts():
     assert (t[1] == -1).all() and (t[2] == -1).all()  # row 3's answer sits past the cut
 
 
+def test_count_questions_mark_every_visit_once():
+    """18 Oct: a count question's read targets carry (pos, COUNT_ROUND, -1, -1) and one quad per visit of the asked
+    person to the place, each a different occurrence; the number of visit quads equals the answer."""
+    from data.text_world import COUNT_ROUND, NUMBER_WORDS
+    from scripts.build_text_checks_data import read_targets
+
+    for k in range(6):
+        s = _seed_for("count", 100 * k)
+        chains = []
+        doc = make_train_document(s, STORIES, 1500, ntok, version="v2", questions=8, chains=chains)
+        offs = _word_offsets(doc)
+        q = read_targets(doc, offs, chains, span="output")
+        quads = [q[i:i + 4] for i in range(0, len(q), 4)]
+        marks = [x for x in quads if x[1] == COUNT_ROUND]
+        assert marks and len(marks) == doc.count("\nAnswer:")
+        for pos, _, _, _ in marks:
+            a, b = offs[pos - 1]
+            answer = doc[b:].split("\n")[0].strip().rstrip(".")
+            visits = [x for x in quads if x[0] == pos and COUNT_ROUND < x[1] < 2 * COUNT_ROUND]
+            assert len(visits) == NUMBER_WORDS.index(answer) if answer in NUMBER_WORDS else True
+            assert len({(x[2], x[3]) for x in visits}) == len(visits)  # every visit its own occurrence
+            assert not [x for x in quads if x[0] == pos and 0 < x[1] < COUNT_ROUND]  # rounds 1-4 untouched
+
+
+def test_count_naming_quads_point_at_the_answer_word():
+    """--train_count_naming: rounds 1-3 of a count question name its answer word (tokens after "Answer:")."""
+    from data.text_world import COUNT_ROUND, NUMBER_WORDS_V2
+    from scripts.build_text_checks_data import read_targets
+
+    s = _seed_for("count", 7)
+    chains = []
+    doc = make_train_document(s, STORIES, 1500, ntok, version="v2", questions=8, chains=chains)
+    offs = _word_offsets(doc)
+    quads = [x for x in (lambda q: [q[i:i + 4] for i in range(0, len(q), 4)])(
+        read_targets(doc, offs, chains, span="output", count_naming=True))]
+    marks = [x[0] for x in quads if x[1] == COUNT_ROUND]
+    assert marks
+    for pos in marks:
+        named = [x for x in quads if x[0] == pos and 1 <= x[1] <= 3]
+        assert [x[1] for x in named] == [1, 2, 3] and len({(x[2], x[3]) for x in named}) == 1
+        _, t0, t1 = named[0][1:]
+        word = doc[offs[t0 - 1][0]: offs[t1 - 1][1]].strip().rstrip(".")  # test tokens are whole words
+        assert word in NUMBER_WORDS_V2
+    plain = read_targets(doc, offs, chains, span="output")
+    assert not [x for x in (plain[i:i + 4] for i in range(0, len(plain), 4)) if 1 <= x[1] <= 3 and x[0] in marks]
+
+
 def test_task_free_cuts_keep_length_and_are_deterministic():
     """--task_free_boundary (stage-W writer, 18 Oct): up to k boundaries, none in the first 128 tokens, length kept."""
     import importlib.util
@@ -546,3 +593,30 @@ def test_written_chains_rule_matches_the_generator():
     assert b.parse_written_chain("Lumo is a kavi. Every kavi is shiny. So shiny.", "What is Lumo like?",
                                  "Lumo is a kavi. Every kavi is shiny.") == [("Lumo is a kavi.", "kavi"),
                                                                              ("Every kavi is shiny.", "shiny")]
+
+
+def test_written_tallies_mark_every_visit_and_name_the_number():
+    """19 Oct: with --written_chains, a count answer is written as its visits then "So <number>"; the rule reads the
+    visits back (one counted event per sentence) and the count word is named on rounds 1-3, also when steps are hidden."""
+    from data.text_world import COUNT_ROUND, NUMBER_WORDS_V2
+    from scripts.build_text_checks_data import parse_written_tally, read_targets, write_chains
+
+    assert parse_written_tally("Ana visited the pond. Ana visited the pond. So two.") == \
+        ["Ana visited the pond.", "Ana visited the pond."]
+    assert parse_written_tally("So zero.") == []
+    for keep in ("all", "drop1", "none"):
+        s = _seed_for("count", 11)
+        chains = []
+        doc = make_train_document(s, STORIES, 1500, ntok, version="v2", questions=8, chains=chains)
+        text, derived, pairs = write_chains(doc, chains, keep)
+        assert all(a == b for a, b in pairs)
+        offs = _word_offsets(text)
+        q = read_targets(text, offs, derived, span="output", count_naming=True)
+        quads = [q[i:i + 4] for i in range(0, len(q), 4)]
+        marks = [x[0] for x in quads if x[1] == COUNT_ROUND]
+        assert marks
+        for pos in marks:
+            visits = [x for x in quads if x[0] == pos and COUNT_ROUND < x[1] < 2 * COUNT_ROUND]
+            named = [x for x in quads if x[0] == pos and x[1] == 1]
+            word = text[offs[named[0][2] - 1][0]: offs[named[0][3] - 1][1]].strip().rstrip(".")
+            assert word in NUMBER_WORDS_V2 and NUMBER_WORDS_V2.index(word) == len(visits)

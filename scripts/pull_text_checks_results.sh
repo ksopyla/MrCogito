@@ -5,7 +5,7 @@
 #   bash scripts/pull_text_checks_results.sh polonez r1_smoke r1_screen [--no-archive]
 #
 # Results only (JSON over ssh) — code reaches servers through git, never this script.
-# REMOTE_REPO: the server checkout running the text checks (default ~/dev/MrCogito-text).
+# REMOTE_REPO: the server checkout running the text checks (default ~/dev/MrCogito).
 set -euo pipefail
 HOST="${1:?host (odra|polonez)}"
 shift
@@ -15,7 +15,7 @@ for a in "$@"; do
     if [[ "$a" == "--no-archive" ]]; then ARCHIVE=0; else RUNS+=("$a"); fi
 done
 [[ ${#RUNS[@]} -gt 0 ]] || { echo "name at least one run folder under Cache/text_checks/" >&2; exit 2; }
-REMOTE_REPO="${REMOTE_REPO:-~/dev/MrCogito-text}"
+REMOTE_REPO="${REMOTE_REPO:-~/dev/MrCogito}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LEDGER="$REPO/docs/2_Experiments_Registry/results/capability/text"
 NAS=/nas/ml_data/mrcogito/results/text_checks

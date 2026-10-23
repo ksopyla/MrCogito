@@ -456,21 +456,32 @@ def _compose_v1(rng, tsplit, hops, n, cast, letters: bool = False) -> WorldItem:
                      meta={"hops": hops}, qa=qa, bridge=bridge, steps=steps)
 
 
+# Count supervision (18 Oct): a count question's visits carry this round base in the read targets — one quad
+# (pos, COUNT_ROUND, -1, -1) marks the question, one (pos, COUNT_ROUND + j, span) per visit j — so the training read
+# target and hop naming (rounds 1-4) ignore them and a count head can be told the true number.
+COUNT_ROUND = 100
+
+
 def _count_v1(rng, tsplit, cast, where, k, numbers: tuple = tuple(NUMBER_WORDS)) -> WorldItem:
     """Everyone visits the asked place 0-6 times (v2: 0-10) and other places 0-2 times, so neither
     "all visits to the place" nor "all visits by the person" gives the count."""
     NUMBER_WORDS = list(numbers)  # noqa: N806  (v2 passes the 0-10 list)
     others = [p for p in VISIT_PLACES if p != where]
     facts = [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=where), evidence=True) for _ in range(k)]
+    # count supervision (18 Oct): the visits that answer, marked COUNT_ROUND (+1, +2 …) so read targets and hop naming
+    # (rounds 1-4) leave them alone; an empty list still marks the question as a count with zero visits
+    steps = {QUESTIONS["count"].format(p=cast[0], v=where): [(j, where, COUNT_ROUND) for j in range(k)]}
     facts += [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=rng.choice(others))) for _ in range(rng.randint(1, 2))]
     qa = [(QUESTIONS["count"].format(p=cast[0], v=where), NUMBER_WORDS[k])]
     for c in cast[1:]:
         kc = rng.randrange(len(NUMBER_WORDS))
+        o = len(facts)
         facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=where)) for _ in range(kc)]
+        steps[QUESTIONS["count"].format(p=c, v=where)] = [(o + j, where, COUNT_ROUND) for j in range(kc)]
         facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=rng.choice(others))) for _ in range(rng.randint(0, 2))]
         qa.append((QUESTIONS["count"].format(p=c, v=where), NUMBER_WORDS[kc]))
     return WorldItem("count", QUESTIONS["count"].format(p=cast[0], v=where), NUMBER_WORDS[k], list(NUMBER_WORDS),
-                     1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k}, qa=qa)
+                     1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k}, qa=qa, steps=steps)
 
 
 def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
@@ -808,4 +819,4 @@ def _fill_chains(chains: Optional[list], item: WorldItem, questions: list) -> No
         return
     for q in questions:
         if q in item.steps:
-            chains.append((q, [(item.facts[i].text, out) for i, out in item.steps[q]]))
+            chains.append((q, [(item.facts[st[0]].text, *st[1:]) for st in item.steps[q]]))

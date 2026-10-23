@@ -172,15 +172,21 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                     continue
                 # v4 runs built from the task definition itself (`task_job`): `{conf|v4}_{C1_edge-1k}_{arch}_s{seed}`
                 # the variant comes from the name: a variant may be an arch plus flags (e33a_loop = e31_li_m1 + loop)
-                m = re.match(r"^(?:confp?|v4|recA)_(C\d)_(.+?-\d+k)(?:_h(\d))?_(.+)_s(\d+)$", j["job"])
+                # `cmp_`: fairness controls (2026-10-13): dense / E31 at matched compute differ in budget (settings-differ);
+                # an architecture variant on the written recipe (e33a_noexit) is a result of its own
+                m = re.match(r"^(confp?|v4|recA|cmp)_(C\d)_(.+?-\d+k?)(?:_h(\d))?_(.+)_s(\d+)$", j["job"])
+                if m:
+                    pre, m = m[1], re.match(r"^(C\d)_(.+?-\d+k?)(?:_h(\d))?_(.+)_s(\d+)$", j["job"].split("_", 1)[1])
                 hops = re.search(r"(?:pchain|path)(\d)-", m[2]) if m else None
                 final = m and (m[3] is None or (hops and int(m[3]) == int(hops[1])))  # curriculum: last stage only
                 if m and final and f"{m[1]}.{m[2]}" in TASK_BY_ID:
                     task = f"{m[1]}.{m[2]}"
                     lad, kind = _ladder(task, j)
-                    out.append({"task": task, "model": m[4], "label": "same", "seed": int(m[5]),
-                                "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
-                                "ladder": lad, "ladder_kind": kind, "source": j["source"], "collected": "", "via": "v4 task recipe"})
+                    budget = pre == "cmp" and m[4] in ("dense", "e31_li_m1")
+                    out.append({"task": task, "model": m[4], "label": "settings-differ" if budget else "same",
+                                "seed": int(m[5]), "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
+                                "ladder": lad, "ladder_kind": kind, "source": j["source"], "collected": "",
+                                "via": "matched-compute control (3× steps)" if budget else "v4 task recipe"})
                     continue
                 if m:  # an earlier curriculum stage of a v4 run: not a result of the task itself
                     continue
@@ -303,6 +309,8 @@ def table(ev: list[dict]) -> dict:
                 "label": label, "score": _med([r["score"] for r in rs]), "mean": _med([r["mean"] for r in rs]),
                 "seeds": sorted({r["seed"] for r in rs if r["seed"] is not None}), "ladder": ladder,
                 "per_seed": {str(r["seed"]): r["score"] for r in rs if r["seed"] is not None},
+                "extra_seeds": {str(r["seed"]): r["score"] for r in labels[label]
+                                if r["seed"] is not None and r["seed"] not in SEEDS},
                 "ladder_kind": (lambda ks: ks.pop() if len(ks) == 1 else "mixed" if ks else None)(
                     {r.get("ladder_kind") or "first" for r in rs if r["ladder"]}),
                 "via": sorted({r["via"] for r in rs}), "sources": sorted({r["source"] for r in rs}),

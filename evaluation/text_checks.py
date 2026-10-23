@@ -316,6 +316,45 @@ ARCHES = {
                   "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
                   "lm_note_age_init": "4", "lm_note_age_learn": "false", "lm_note_order_gate": "true"},
                  has_notebook=True),
+    # E33k (2026-10-18): E33h's count heads told the true number. E33h (answer loss only) stayed at 23 % at 4k. The data
+    # now marks each count question's visits (read-target quads, round base 100), and each count head's sum at the
+    # decision position must equal the number of visits (Huber, weight 0.1). Warm-started from E33h.
+    "e33k": Arch("e33k", "E33h + the count heads' sum supervised with the true number of visits",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_count_heads": 2, "lm_count_aux": 0.1}, has_notebook=True),
+    # E33jf (2026-10-18): E33j with the order term always on (no per-question switch). E33i's switch never opened
+    # (bias −2.03 after 0.3B tokens); here every question reads with order, and the latest supervision (read target +
+    # naming on the last move) plus the other tasks' supervision teach the reader to live with it.
+    "e33jf": Arch("e33jf", "E33j with the order term always on (no switch)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
+                   "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
+                   "lm_note_age_init": "4", "lm_note_age_learn": "false"}, has_notebook=True),
+    # E33jd (2026-10-18): the page-distance alternative to E33jf's rank term, same latest supervision. Four heads lower
+    # older notes by s·log(1 + pages back) at fixed s = 1, 2, 4, 8; five heads stay order-free for lookup. A recency
+    # head alone reads the newest page (someone else's move, E33d's fixed-slope check); with the last move as the read
+    # target the reader can learn to combine an order-free match with a recency head.
+    "e33jd": Arch("e33jd", "E33q + four fixed page-distance heads (log pages back; 1, 2, 4, 8), latest supervised",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
+                   "lm_note_age": "log", "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"},
+                  has_notebook=True),
+    # E33k2 (2026-10-18): E33k's count heads already count (sum within 0.66 of the truth, rounded exact 49 % on count
+    # exams) but the answer stayed at 26 %: the sum is not decoded into the number word (several of which share a first
+    # token: " f"our / " f"ive). So the count loss weight goes to 1.0 and the rounds' naming lens (E33q) names the count
+    # word itself (data built with --train_count_naming: rounds 1-3 of a count question name its answer tokens).
+    "e33k2": Arch("e33k2", "E33k + count loss 1.0 + rounds name the count word (naming lens)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "lm_count_heads": 2, "lm_count_aux": 1.0, "message_loop_name_lens": 0.3}, has_notebook=True),
+    # E33m (2026-10-18): the combined model for the T4-T7 goal — E33j (hop naming, order on demand, latest told its last
+    # move) + E33k2's count heads told the true number and the rounds naming the count word. Warm-started from E33j on the
+    # data with the latest chain, the count visits and the count naming (text_checks_v2reason_count2).
+    "e33m": Arch("e33m", "E33j + count heads told the true number (one model for latest, compose, count, deduce)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
+                  "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
+                  "lm_note_age_init": "4", "lm_note_age_learn": "false", "lm_note_order_gate": "true",
+                  "lm_count_heads": 2, "lm_count_aux": 1.0}, has_notebook=True),
     "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
                   "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
@@ -342,7 +381,8 @@ ARCHES = {
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
 for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
-           "e33g", "e33h", "e33q", "e33i", "e33j", "e33gk", "e33ak", "e33gak", "e33qn", "e33qn0", "e33w", "e33c"):
+           "e33g", "e33h", "e33q", "e33i", "e33j", "e33jf", "e33jd", "e33k", "e33k2", "e33m", "e33gk", "e33ak", "e33gak",
+           "e33qn", "e33qn0", "e33w", "e33c"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -365,7 +405,7 @@ ENV_OF = {
     "lm_addr": "PAR_LM_ADDR", "lm_slot_pos": "PAR_LM_SLOT_POS", "lm_note_age": "PAR_LM_NOTE_AGE", "lm_note_rank_margin": "PAR_LM_NOTE_RANK_MARGIN",
     "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "lm_note_age_init": "PAR_LM_NOTE_AGE_INIT",
     "lm_note_age_learn": "PAR_LM_NOTE_AGE_LEARN", "lm_count_heads": "PAR_LM_COUNT_HEADS",
-    "lm_count_max": "PAR_LM_COUNT_MAX", "message_loop_name_lens": "PAR_LOOP_NAME_LENS",
+    "lm_count_max": "PAR_LM_COUNT_MAX", "lm_count_aux": "PAR_LM_COUNT_AUX", "message_loop_name_lens": "PAR_LOOP_NAME_LENS",
     "message_loop_feedback": "PAR_LOOP_FEEDBACK", "message_loop_feedback_temp": "PAR_LOOP_FEEDBACK_TEMP",
     "lm_writer_input": "PAR_LM_WRITER_INPUT", "lm_note_rank_gate": "PAR_LM_NOTE_RANK_GATE",
     "lm_note_order_gate": "PAR_LM_NOTE_ORDER_GATE", "message_loop_control": "PAR_LOOP_CONTROL",

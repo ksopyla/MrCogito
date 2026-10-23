@@ -10,7 +10,7 @@ Process: docs/engineering_specs/capability_checks.md (skill `capability-checks`)
 Standard library only (Python ≥ 3.8): it runs on any server checkout without syncing code,
 fed through ssh stdin by `scripts/pull_capability_results.sh`:
 
-    ssh odra 'python3 - collect ~/dev/MrCogito-e31/Cache/study/e30_vs_e31 --host odra' \
+    ssh odra 'python3 - collect ~/dev/MrCogito/Cache/study/e30_vs_e31 --host odra' \
         < analysis/capability_ledger.py > docs/2_Experiments_Registry/results/capability/study/e30_vs_e31.odra.json
 
 Library use (scorecard, board): `load_ledgers()`, `suite_rows()`, `study_jobs()`.
