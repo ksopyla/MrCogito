@@ -15,6 +15,16 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-10-23] - Server runs from the main checkout; e31 branches archived
+
+- `e31-latent-memory` and `e31-text-memory` are merged into `dev` and archived as tags `archive/e31-latent-memory`
+  and `archive/e31-text-memory`. Their worktrees are gone, locally and on Odra / Polonez; the servers' run data
+  (`Cache/text_checks`, `Cache/study`, `Cache/capability`, `Cache/length_ladder`) now sits in `~/dev/MrCogito/Cache`,
+  and that checkout is on `dev`.
+- `scripts/pull_text_checks_results.sh`: `REMOTE_REPO` defaults to `~/dev/MrCogito` (was `~/dev/MrCogito-text`). The
+  usage examples in `scripts/pull_capability_results.sh` and `analysis/capability_ledger.py`, the `text-checks` skill
+  and the text checks handbook name the same folder.
+
 ## [2026-10-14] - E33d: a page distance on the notebook read (opt-in)
 
 - `nn/perceiver_ar_lm.py`: `lm_note_age` ("none" | "log" | "linear", default "none") and `lm_note_age_unit` (0 = the

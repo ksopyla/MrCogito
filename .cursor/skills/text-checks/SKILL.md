@@ -25,7 +25,7 @@ fast, and does it still work on texts far longer than it was trained on?
 - **Published data (shared with other researchers):** https://huggingface.co/datasets/ksopyla/cogito-text-world
   (`text-world-v2`, older revision `text-world-v0`; republish with `scripts/publish_text_checks_dataset.py`, card only:
   `--card_only`). Ask the author before every upload; the card must state the seed spread and the reading rules.
-- **Server checkout:** Polonez `~/dev/MrCogito-text` (its own worktree; other sessions own the others)
+- **Server checkout:** `~/dev/MrCogito` on `dev`, on both servers (runs under `Cache/text_checks/`)
 
 **Boundary.** An architecture enters these checks only after passing the DNA **screen** package
 (`capability-checks`). Server facts → `remote-servers`; recording → `experiment-track`; how to tell the
