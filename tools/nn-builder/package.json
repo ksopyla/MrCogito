@@ -1,0 +1,32 @@
+{
+  "name": "nn-builder",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Compose a neural network from layer slots and see its parameters, compute, GPU memory and training time live.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "dev": "vite",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "ajv": "8.20.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  }
+}
