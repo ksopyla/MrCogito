@@ -176,8 +176,8 @@ STATUS = {
     ],
     "next": [
         "Nothing is running. Both servers are free.",
-        "Proposed: confirm the written-reasoning recipe from scratch at 30M (written chains for every task in the data "
-        "from step 0, loop exit losses off, 3 seeds), with a dense run on the same data.",
+        "Planned, waiting for the author's go-ahead (E33s re-scoped, 24 Oct): code fixes and the read-order check, then "
+        "the 30M from-scratch confirmation (3 E33 seeds + dense, written chains from step 0), then 100M E33 vs dense.",
         "Before any 100M or AWS run: the changes in section 14 of the E33 page (exit-loss cost, far-recall data from "
         "step 0, a switch-on detector, a compute-matched loop check).",
         "Open for the author: the notebook-proportions sweep; count (no route works yet).",
@@ -1398,12 +1398,9 @@ GOAL = {"set": "2026-10-17", "target": 0.70, "tasks": ["latest", "compose", "cou
 
 # Decisions waiting for the author: shown at the top of the board. Remove an item when it is decided.
 DECISIONS = [
-    "Latest now passes the written way too (78 / 92 %). Make written reasoning the base of the label-free line and run "
-    "its from-scratch confirmation at 30M: 3 seeds at 1.5B tokens, with a dense run on the same data (about a day on "
-    "both servers)?",
-    "The 100M run: E33s on real multi-hop QA cannot resolve its gates (a pretrained 135M model is near the floor). Run "
-    "the planned 100M text-checks comparison instead (dense vs E33, written chains from step 0), after the 30M "
-    "confirmation?",
+    "Approve the re-scoped E33s plan (24 Oct): first code fixes and one cheap check; then 3 E33 seeds and a dense run "
+    "from scratch at 30M with written chains from step 0 (about 15 h on both servers); then 100M E33 vs dense (about "
+    "1.5 days). About 225 GPU-hours on our servers in all; the plan's gates decide each step.",
     "3 hops: both labelled and written recipes stop after two. Add 3-hop chains to the written data (in-distribution), "
     "or keep 3 hops as the held-out test?",
 ]

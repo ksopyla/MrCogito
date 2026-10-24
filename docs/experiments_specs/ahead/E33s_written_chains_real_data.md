@@ -1,12 +1,165 @@
-# E33s — Multi-hop on real text, taught by written reasoning, at 100M
+# E33s — Written reasoning from scratch: a 30M confirmation, then 100M against dense (real data deferred)
 
-- **Status:** draft (awaiting the author's alignment and go-ahead)
+- **Status:** re-scoped 2026-10-24, draft awaiting the author's go-ahead. Asked for by the author on 24 Oct: "plan
+  the 30M from-scratch confirmation (written chains for every task from step 0, exit losses off, 3 seeds + dense on
+  the same data) plus the small code fixes, then the 100M comparison. Show me the plan and cost before launching
+  anything." The real-data design of 21 Oct is kept below as Phase C, deferred.
 - **Serves:** the Vision (reason in latent space over compressed memory) and the author's 18 Oct direction:
   methods that need no generator labels, only available text, instruction and reasoning data.
-- **Implementation plan:** [E33s_written_chains_real_data_plan.md](E33s_written_chains_real_data_plan.md)
-  *(follows alignment)*
-- **Alignment page:** [e33s_architecture.html](../../3_Evaluations_and_Baselines/e33s_architecture.html)
-- **Owner / dates:** ksopyla · opened 2026-10-21
+- **Implementation plan:** [E33s_written_chains_real_data_plan.md](E33s_written_chains_real_data_plan.md) (section 11
+  is the re-scope plan; sections 1–10 the real-data design and its pre-flight)
+- **Alignment page:** [e33s_architecture.html](../../3_Evaluations_and_Baselines/e33s_architecture.html) (real-data
+  version, with the 23 Oct hold notice)
+- **Owner / dates:** ksopyla · opened 2026-10-21 · re-scoped 2026-10-24
+
+## Re-scope, 24 Oct 2026: the text world first, from scratch
+
+### Why
+- **Real multi-hop QA cannot resolve the 100M gates.** In the 22 Oct ceiling probe, a pretrained SmolLM2-135M
+  (2T tokens) was fine-tuned on the same written-chain stages. It reached only MuSiQue 4.7 % exact (floor 1.0 %) and
+  HotpotQA 18.3 % (floor 7.0 %); plan section 10 has the details.
+- **The synthetic world does resolve them, but only for warm starts so far.** Every result at the goal comes from
+  0.1–0.3B-token continuations of one from-scratch E33 run (E33 on the bridge data, 1.35B tokens). That run's
+  notebook switches on in 2 of 3 seeds from scratch.
+- **The best label-free result.** The written route (19 Oct, Odra): latest 78 / 92 %, compose 93 / 98 %, deduce
+  100 / 100 % at 4k / 16k; count 17 %.
+- **Nothing scales before this holds from scratch.** No 100M or AWS run should start until the recipe is shown
+  to work from random weights.
+
+### The claim (one bet, two scales)
+Train the E33 notebook model from random weights on the text world, with every training answer written as
+reasoning from the first step, and remove the written steps in stages at the end (iCoT). Train the dense model on
+the same data and schedule.
+
+- **The 30M claim.** The model reaches the T4–T7 goal on latest, compose and deduce at 4k without generator labels.
+  Its notebook switches on in every seed, it keeps the scores at 16k, and its language is no worse than dense.
+- **The 100M claim.** Scale keeps all of that, and it beats dense where dense cannot read (past 4k) or cannot join
+  facts (compose, deduce).
+
+What 100M changes for the held-out tests is measured, with no pass mark set in advance: new sentence shapes, a third
+hop, count. These numbers decide what the AWS run must add.
+
+### Phase 0 — code fixes and one cheap check (laptop + 1 GPU-hour scale)
+Details in plan section 11. Each fix is config-selectable, and its default keeps old runs bit-identical.
+
+1. **The read target sees the order term** (`message_loop_read_order`: `content` = today | `full`).
+   - Today `read_target_loss` and `capture_note_mass` (`nn/perceiver_ar_lm.py`) score a softmax without the E33d /
+     E33e note terms. For the order-on-demand versions (E33j, E33m, the written route) the latest target therefore
+     trains a read the model does not use.
+   - **Check:** rerun stage 3 of the written route (0.1B tokens from its stage-2 checkpoint on Odra) with `full`.
+   - **Adopt** for Phase A if latest at 4k reaches ≥ 83 % (written route 78 %; 400 items, SE ≈ 2 points) with
+     compose and deduce within 2 points. Otherwise Phase A runs with `content`.
+2. **Dense limited to its last 4,096 tokens** in `evaluation/real_multihop_eval.py`. Gate S3 of Phase C assumes it.
+   Needed only when Phase C returns.
+3. **`message_loop_span` as a trainer argument** (env var and launcher), so the AWS plan's "reading layer + 2 layers
+   looped" can be launched. Default 1, as today.
+4. **String flags parsed as booleans** in `PerceiverARConfig`. Today `bool("false")` is True for
+   `lm_note_age_learn` when a config is built directly (`count_params`, the laptop bench). Server runs are not
+   affected.
+5. **100M pre-flight.** 50 steps each of `e33m_plain` and `dense_plain` at the main-tier shape on one 3090: memory
+   at the planned micro-batch, and measured tokens per second. These replace the estimates below.
+
+### Phase A — 30M from scratch (Polonez + Odra, about 15 h wall)
+- **Arms:**
+  - `e33m_plain`, seeds 0, 1, 2. It is the written route's architecture: hop naming 0.3, per-round read target 0.5,
+    order on demand, count heads. Its loop exit losses are already off (`message_loop_exit_aux` 0).
+  - `dense_plain`, seed 0, on the same data and schedule.
+- **Data:** the written route's mix, frozen exams `text_checks_v2q8` (exams v2 + v2.1):
+  - every task written as reasoning: compose ×3, deduce ×3, lookup, keyed, quote, latest, count;
+  - 8 questions and 4 bridge questions per world document, 30 % story tokens;
+  - read and naming targets read off the written text by the rule.
+
+  One new build per schedule stage, all with seed 7:
+  - stage 1, `all` steps written, 1.6B tokens (Phase B reads it all, Phase A the first 1.2B);
+  - stage 2, `drop1`, 0.2B tokens;
+  - stage 3, `none`, 0.2B tokens.
+- **Schedule** (1.5B tokens, the screen-tier budget):
+  - stage 1: 1.2B tokens from random weights, step size 1e-3, cosine;
+  - stages 2 and 3: 0.15B tokens each from the previous final, step size 3.3e-4 (as R2 and the written route).
+- **Exams:**
+  - stage-3 finals at 1k / 4k / 16k, with the evidence-removed twin, notebook off, harder, paraphrase, crowded,
+    paraphrase2 and steps splits;
+  - stage-1 learning-curve checkpoints at 10 % steps, 4k only, as the switch-on detector.
+
+### Phase A gates (median of 3 seeds, 4k, id split, stage-3 finals; set before running)
+The ceilings measured for these gates:
+- **Our warm-started written route** (same architecture, same data family): latest 78 %, compose 93 %, deduce 100 %,
+  far lookup 99 % at 4k.
+- **Dense on the bridge data:** latest 92 %, far lookup 81 % at 4k. On compose and deduce dense has no ceiling (it
+  stays at guessing).
+
+Gates:
+- **A-S1, the recipe holds from scratch:** compose ≥ 70 %, deduce ≥ 70 %, latest ≥ 60 % (≈ 77 % of its warm-start
+  ceiling). The evidence-removed twin must sit at its floor.
+- **A-S2, the notebook switches on every time:** far lookup at 4k ≥ 60 % in 3 of 3 seeds (from-scratch E33
+  today: 2 of 3).
+- **A-S3, length:** at 16k, compose and latest each keep ≥ 80 % of the seed's own 4k score.
+- **A-S4, no harm to language:** story loss within 2 % of dense on the same data.
+- **Reported, no gate:** count, 3-hop compose, new sentence shapes, crowded facts, far quotes; dense's stage-3 scores.
+
+Kill rules:
+- **A-K1:** at 60 % of stage 1 (0.72B tokens), far lookup at 4k is under floor + 10 in all 3 seeds. Read targets
+  from step 0 do not switch the notebook on. Stop. Phase B then uses the two-phase recipe (plain pretraining, then
+  the written stages), the route all warm-start results took.
+- **A-K2:** after stage 3, median compose < 30 % or median deduce < 30 %. The recipe does not work from scratch: no
+  from-scratch 100M, and Phase B uses the two-phase recipe.
+
+Go to Phase B: A-S1 and A-S2 pass, or A-S1 passes in 2 of 3 seeds and the third seed's failure is understood from
+its curve.
+
+### Phase B — 100M against dense (main tier, about 1.5 days wall)
+- **Arms:** `e33m_plain` and `dense_plain` at the main tier (100M, rows of 4,096, 96 rows per step), seed 0 each.
+  The recipe is Phase A's; if Phase A failed, it is the two-phase recipe.
+- **Step sizes:** tuned per arch at the main tier as the protocol requires (3 runs × 0.1B tokens, held-out loss
+  only).
+- **Schedule** (2B tokens, the main-tier budget): stage 1 1.6B, stages 2 and 3 0.2B each.
+- **Exams:** 1k / 4k / 16k, plus 64k for E33; the same splits and controls as Phase A.
+
+### Phase B gates (set before running)
+The ceilings are our Phase A medians and dense at 4k.
+
+- **B-S1, no regression with scale:** E33 100M ≥ the Phase A median − 5 points on far lookup, latest, compose and
+  deduce at 4k.
+- **B-S2, dense compared where it can read:** at 4k, E33 is within 5 points of dense on far lookup and latest, and
+  above it on compose and deduce. At 16k, E33 keeps ≥ 80 % of its 4k score; dense is not compared past 4k.
+- **B-S3, switch-on:** far lookup ≥ 60 % at 4k by 25 % of stage 1.
+- **B-K1:** at 25 % and again at 50 % of stage 1, far lookup at guessing. Stop and diagnose before spending the rest.
+- **Measured, no gate (the scale question):** new sentence shapes (compose at 30M: 5 %), 3-hop compose (0 %), count
+  (17 %).
+  - If they move at 100M, the AWS 500M run keeps this recipe and adds natural text.
+  - If they stay flat, the next step is architecture or data for those three (for example, the question-reading
+    loop control, or varied phrasings), not size.
+
+### Compute (estimates from measured 30M throughput; the Phase 0 pre-flight replaces the 100M figures)
+Measured rates: `e33m_plain` ≈ 20k tokens/s per 3090 (written route, 19 Oct: 19.8–22.2k); `dense_plain` ≈ 60k.
+Assumed at 100M: ≈ 6.5k and ≈ 20k (three times slower; dense 50M measured 41.5k).
+
+| item | GPU-hours (3090) | wall |
+|---|---|---|
+| Phase 0: read-order check (0.1B tokens + exams) and 100M pre-flight | ≈ 5 | ≈ 3 h, with the data builds (CPU) in parallel |
+| Phase A: 3 × E33 30M (≈ 21 training + 3 exams each) | ≈ 72 | ≈ 14–16 h on 6 GPUs |
+| Phase A: dense 30M (≈ 7 + 1.5) | ≈ 8.5 | on the 7th GPU, inside the same window |
+| Phase B: tuning (E33 3 × 4.3, dense 3 × 1.4) | ≈ 17 | ≈ 4 h |
+| Phase B: E33 100M, 2B tokens (cap 120) + exams | ≈ 85 + 8 | ≈ 24 h on Polonez's 4 GPUs (heat bursts included) |
+| Phase B: dense 100M, 2B tokens + exams | ≈ 28 + 3 | ≈ 11 h on Odra's 3 GPUs |
+| **total** | **≈ 225** | **about 3–4 days of machine time, a week with reviews** |
+
+On AWS (one p5.48xlarge, 8 × H100, about $55 per hour, an H100 taken as about 3 × a 3090), Phase B would be about
+$350 and save about a day. The infrastructure for it does not exist yet, so Phases A and B run on our servers and the
+AWS credits stay for the ~500M run.
+
+### Out of scope for this re-scope
+- New architecture parts (question-reading loop control, two key/value heads, note proportions).
+- Real data (Phase C).
+- A notebook-free control, and an E33 run without targets on the same data (R1 / R2 already measured the targets at
+  30M).
+- More dense seeds: dense has never composed at 30M (5 runs). Add two dense seeds (≈ 17 GPU-h) only if dense's
+  stage-3 compose is above 20 %.
+
+## Phase C (deferred) — the 21 Oct real-data design
+
+Kept as written. It returns only with a ceiling that can be resolved, for example a pretrained reader at a larger
+size, or HotpotQA bridge questions only.
 
 ## Hypothesis
 

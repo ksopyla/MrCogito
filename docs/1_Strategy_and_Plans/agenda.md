@@ -28,6 +28,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
     quotes (lost in the reasoning line). Nothing of the reasoning line has been trained from scratch yet.
   - **E33s (real multi-hop QA at 100M) is on hold.** Its pre-flight showed that a pretrained SmolLM2-135M sits near
     the floor on MuSiQue, so the run's gates cannot be resolved.
+  - **24 Oct: E33s re-scoped (draft, awaiting go-ahead).**
+    - Phase 0: code fixes and one cheap check.
+    - Phase A: 30M from scratch, written chains from step 0, 3 seeds plus dense.
+    - Phase B: 100M E33 against dense.
+    - About 225 GPU-hours on our servers. Real data deferred.
+    - Spec: [E33s](../experiments_specs/ahead/E33s_written_chains_real_data.md), re-scope section; plan section 11.
   - Board: text capability board (status and decisions updated 23 Oct).
 - **2026-10-21 — E33s, multi-hop on real text taught by written reasoning, at 100M. Spec drafted; on hold after
   the 22 Oct pre-flight (see above).**
