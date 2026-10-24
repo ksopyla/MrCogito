@@ -1,0 +1,964 @@
+{
+  "schema": "nn-builder/graph",
+  "version": 1,
+  "name": "e33m_plain 30M",
+  "description": "MrCogito E33 notebook text model: a page writer makes 32 notes per page; one read layer (+ the next) loops 4 rounds with shared weights. Width 576, 8 layers, FFN 1152.",
+  "stacks": [
+    {
+      "id": "main",
+      "name": "Decoder",
+      "role": "decoder",
+      "width": 576,
+      "seq": {
+        "kind": "tokens"
+      },
+      "rows": [
+        {
+          "id": "main.input",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "embedding",
+              "vocab": 4096,
+              "dim": 256,
+              "ngram_tables": 0,
+              "ngram_buckets": 8192,
+              "proj": "gated_mlp",
+              "out_norm": "rmsnorm",
+              "id": "main.input.emb",
+              "label": "token table + input MLP"
+            },
+            {
+              "type": "positional",
+              "kind": "rope",
+              "theta": 500000,
+              "max_len": 4096,
+              "id": "main.input.pos"
+            }
+          ],
+          "label": "input"
+        },
+        {
+          "id": "main.L0",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L0.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1152,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L0.ffn"
+            }
+          ],
+          "label": "L0"
+        },
+        {
+          "id": "main.L1",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L1.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1152,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L1.ffn"
+            }
+          ],
+          "label": "L1"
+        },
+        {
+          "id": "main.L2",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 256,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": true,
+              "dual_key": true,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": true,
+                "count_heads": 2,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L2.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1152,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L2.ffn"
+            }
+          ],
+          "label": "read"
+        },
+        {
+          "id": "main.L3",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L3.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1152,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L3.ffn"
+            }
+          ],
+          "label": "L3"
+        },
+        {
+          "id": "main.L4",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L4.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1152,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L4.ffn"
+            }
+          ],
+          "label": "L4"
+        },
+        {
+          "id": "main.L5",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L5.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1152,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L5.ffn"
+            }
+          ],
+          "label": "L5"
+        },
+        {
+          "id": "main.L6",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L6.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1152,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L6.ffn"
+            }
+          ],
+          "label": "L6"
+        },
+        {
+          "id": "main.L7",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L7.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1152,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L7.ffn"
+            }
+          ],
+          "label": "L7"
+        },
+        {
+          "id": "main.head",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "lm_head",
+              "vocab": 4096,
+              "tied": false,
+              "bias": false,
+              "final_norm": "rmsnorm",
+              "z_loss": 0.0001,
+              "softcap": 30,
+              "chunked": true,
+              "id": "main.head.lm"
+            }
+          ],
+          "label": "head"
+        }
+      ]
+    },
+    {
+      "id": "pages",
+      "name": "Pages",
+      "role": "writer",
+      "width": 256,
+      "seq": {
+        "kind": "pages",
+        "of": "main",
+        "window": 256,
+        "stride": 192
+      },
+      "rows": [
+        {
+          "id": "pages.in",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "linear",
+              "out": 256,
+              "bias": false,
+              "out_norm": "rmsnorm",
+              "id": "pages.in.proj",
+              "label": "table → writer width"
+            },
+            {
+              "type": "positional",
+              "kind": "rope",
+              "theta": 10000,
+              "max_len": 256,
+              "id": "pages.in.pos"
+            }
+          ],
+          "label": "in"
+        },
+        {
+          "id": "pages.enc0",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 4,
+              "head_dim": 64,
+              "kv_heads": 4,
+              "causal": false,
+              "window": 0,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "pages.enc0.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 512,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "pages.enc0.ffn"
+            }
+          ],
+          "label": "page layer 0"
+        },
+        {
+          "id": "pages.enc1",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 4,
+              "head_dim": 64,
+              "kv_heads": 4,
+              "causal": false,
+              "window": 0,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "pages.enc1.attn"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 512,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "pages.enc1.ffn"
+            }
+          ],
+          "label": "page layer 1"
+        }
+      ]
+    },
+    {
+      "id": "notes",
+      "name": "Notes",
+      "role": "latent",
+      "width": 512,
+      "seq": {
+        "kind": "slots",
+        "of": "pages",
+        "per_page": 32
+      },
+      "rows": [
+        {
+          "id": "notes.init",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "latent_init",
+              "address_feats": 64,
+              "norm": "rmsnorm",
+              "id": "notes.init.q",
+              "label": "32 slots per page"
+            }
+          ],
+          "label": "slots"
+        },
+        {
+          "id": "notes.read",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "cross",
+              "heads": 8,
+              "head_dim": 64,
+              "kv_heads": 8,
+              "causal": false,
+              "window": 0,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "eager",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": true,
+                "logit_scale": false
+              },
+              "id": "notes.read.attn",
+              "label": "read the page"
+            }
+          ],
+          "label": "read page"
+        },
+        {
+          "id": "notes.ffn",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1024,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "notes.ffn.ffn"
+            }
+          ],
+          "label": "think"
+        },
+        {
+          "id": "notes.out",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "kv_out",
+              "entries": 1,
+              "kv_heads": 1,
+              "head_dim": 64,
+              "projections": 4,
+              "in_norms": 2,
+              "key_norm": true,
+              "id": "notes.out.kv",
+              "label": "notes (keys, values)"
+            }
+          ],
+          "label": "notes"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "main.skip0",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L3"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L4"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip1",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L2"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L5"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip2",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L1"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L6"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip3",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L0"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L7"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "wire.table",
+      "kind": "input",
+      "from": {
+        "stack": "main",
+        "cell": "main.input.emb",
+        "port": "table"
+      },
+      "to": {
+        "stack": "pages"
+      }
+    },
+    {
+      "id": "wire.pages",
+      "kind": "source",
+      "from": {
+        "stack": "pages"
+      },
+      "to": {
+        "stack": "notes",
+        "cell": "notes.read.attn"
+      }
+    },
+    {
+      "id": "wire.notes",
+      "kind": "source",
+      "from": {
+        "stack": "notes"
+      },
+      "to": {
+        "stack": "main",
+        "cell": "main.L2.attn"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "loop.read",
+      "kind": "loop",
+      "stack": "main",
+      "rows": [
+        "main.L2",
+        "main.L3"
+      ],
+      "count": 4,
+      "round_embedding": true,
+      "feedback": "soft"
+    },
+    {
+      "id": "loop.writer",
+      "kind": "loop",
+      "stack": "notes",
+      "rows": [
+        "notes.read",
+        "notes.ffn"
+      ],
+      "count": 2,
+      "round_embedding": false,
+      "feedback": "none"
+    }
+  ],
+  "run": {
+    "row_length": 4096,
+    "rows_per_step": 96,
+    "micro_batch": 0,
+    "precision": "amp_bf16",
+    "optimizer": "adamw",
+    "weight_decay": 0.1,
+    "zero_stage": 0,
+    "checkpointing": false,
+    "gpu": "rtx3090",
+    "gpu_count": 3,
+    "token_budget": 1500000000,
+    "deadline_hours": 0,
+    "mfu": 0,
+    "irregular_ratio": 0,
+    "dp_efficiency": 0.95
+  },
+  "derived": {
+    "exported_at": "2026-10-24T09:48:59.368Z",
+    "row_length": 4096,
+    "params_total": 29946402,
+    "params_by_stack": {
+      "main": 25960546,
+      "pages": 1377792,
+      "notes": 2608064
+    },
+    "train_flops_per_token": 349823931,
+    "cells": {
+      "main.input.emb": {
+        "params": 1675840,
+        "width_in": 0,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.input.pos": {
+        "params": 0,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L0.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L0.ffn": {
+        "params": 1991232,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L1.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L1.ffn": {
+        "params": 1991232,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L2.attn": {
+        "params": 826190,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L2.ffn": {
+        "params": 1991232,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L3.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L3.ffn": {
+        "params": 1991232,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L4.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L4.ffn": {
+        "params": 1991232,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L5.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L5.ffn": {
+        "params": 1991232,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L6.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L6.ffn": {
+        "params": 1991232,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L7.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L7.ffn": {
+        "params": 1991232,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.head.lm": {
+        "params": 2359872,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "pages.in.proj": {
+        "params": 65792,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.in.pos": {
+        "params": 0,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc0.attn": {
+        "params": 262528,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc0.ffn": {
+        "params": 393472,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc1.attn": {
+        "params": 262528,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc1.ffn": {
+        "params": 393472,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "notes.init.q": {
+        "params": 49664,
+        "width_in": 0,
+        "width_out": 512,
+        "runs_per_row": 1
+      },
+      "notes.read.attn": {
+        "params": 852864,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 2
+      },
+      "notes.ffn.ffn": {
+        "params": 1573376,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 2
+      },
+      "notes.out.kv": {
+        "params": 132160,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 1
+      }
+    }
+  }
+}
