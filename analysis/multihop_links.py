@@ -136,7 +136,7 @@ class Recorder:
     layers once per round)."""
 
     def __init__(self, model):
-        self.calls, self.q = [], None
+        self.calls, self.q, self.slot_pos = [], None, None
         self.handles = [layer.register_forward_hook(self._hook(i)) for i, layer in enumerate(model.layers)]
 
     def _hook(self, i):
@@ -155,6 +155,8 @@ def forward(model, rec: Recorder, ids: list[int], q: int, device, capture: bool)
     out = model(input_ids=torch.tensor([ids], device=device))
     logits = (out.logits if hasattr(out, "logits") else out[0])[0].float()
     mass = [m[0, 0].float().cpu() for m in model._note_capture.get("mass", [])] if model._note_capture else []
+    if model._note_capture is not None and getattr(model, "_last_notes", None) is not None:
+        rec.slot_pos = model._last_notes[2][0].cpu()  # each note's expected token position
     model._note_capture, rec.q = None, None
     return logits, mass, list(rec.calls)
 
@@ -187,6 +189,43 @@ def whole_scores(model, rec, tok, prompt: str, p_ids, cands: list[str], gold: st
 
 
 # ------------------------------------------------------------------------------------------ note mass
+def output_spans(tok, prompt: str, fact_texts: list[str], words: list[str]) -> list[list[int] | None]:
+    """Row positions of each hop's output word inside its fact (None when not found)."""
+    enc = tok(prompt, add_special_tokens=False, return_offsets_mapping=True)
+    offs = enc["offset_mapping"]
+    out = []
+    for t, w in zip(fact_texts, words):
+        c0 = prompt.find(t)
+        m = re.search(rf"(?<!\w){re.escape(w)}(?!\w)", prompt[c0:c0 + len(t)]) if c0 >= 0 else None
+        if not m:
+            out.append(None)
+            continue
+        a, b = c0 + m.start(), c0 + m.end()
+        out.append([j + 1 for j, (x, y) in enumerate(offs) if x < b and y > a])
+    return out
+
+
+def mass_on_notes(mass: list, slot_pos: torch.Tensor, spans: list, heads: int) -> list[dict]:
+    """Per round: share (mean over heads) on the notes whose latent read each output word (expected position within
+    2 tokens of it), and what a uniform read over the visible notes would give."""
+    out = []
+    for m in mass:
+        vis = m > 0
+        n_vis = int(vis.sum())
+        tot = float(m.sum()) / heads
+        row = {"out": [], "uniform": []}
+        for sp in spans:
+            if not sp:
+                row["out"].append(None)
+                row["uniform"].append(None)
+                continue
+            sel = vis & (slot_pos >= min(sp) - 2) & (slot_pos <= max(sp) + 2)
+            row["out"].append(float(m[sel].sum()) / heads)
+            row["uniform"].append(tot * int(sel.sum()) / max(1, n_vis))
+        out.append(row)
+    return out
+
+
 def pages_of(positions: list[int] | None, starts, W: int) -> set:
     if not positions:
         return set()
@@ -349,6 +388,10 @@ def main():
             psets = [pages_of(s_, geo.starts, geo.window) for s_ in spans]
             row["d1"] = mass_on(mass, psets, per_page, heads)
             row["fact_pages"] = [sorted(ps) for ps in psets]
+            if getattr(rec, "slot_pos", None) is not None:
+                words = list(ch["bridges"]) + [ch["answer"]]
+                osp = output_spans(tok, prompt, [item.facts[i].text for i in ch["facts"]], words)
+                row["d1_out"] = mass_on_notes(mass, rec.slot_pos, osp, heads)
             gnames = list(ch.get("groups", {}))
             if gnames:
                 gsp = [token_spans(tok, prompt, [item.facts[i].text for i in ch["groups"][g]]) for g in gnames]
@@ -425,6 +468,11 @@ def main():
                         "chance": [mean([x["d1"][k]["chance"][j] for x in rs]) for j in range(nf)],
                         "top": [mean([float(x["d1"][k]["top"] == j) for x in rs]) for j in range(nf)]}
                        for k in range(nr)]
+        if memory and rs and rs[0].get("d1_out"):
+            nr, nf = len(rs[0]["d1_out"]), len(rs[0]["d1_out"][0]["out"])
+            c["d1_out"] = [{"out": [mean([x["d1_out"][k]["out"][j] for x in rs]) for j in range(nf)],
+                            "uniform": [mean([x["d1_out"][k]["uniform"][j] for x in rs]) for j in range(nf)]}
+                           for k in range(nr)]
         if memory and rs and rs[0].get("d1_groups"):
             c["d1_groups"] = {g: [{"mass": mean([x["d1_groups"][g][k]["mass"] for x in rs]),
                                    "uniform": mean([x["d1_groups"][g][k]["uniform"] for x in rs])}
@@ -488,6 +536,9 @@ def _print(res):
             print(f"   D1 round {k + 1}: notes {f(d['notes'])} | " + " | ".join(
                 f"fact{j + 1} {f(d['facts'][j])} (uniform {f(d['chance'][j])}, top {f(d['top'][j])})"
                 for j in range(len(d["facts"]))))
+        for k, d in enumerate(c.get("d1_out") or []):
+            print(f"   D1 output-word notes, round {k + 1}: " + " | ".join(
+                f"hop{j + 1} {f(d['out'][j])} (uniform {f(d['uniform'][j])})" for j in range(len(d["out"]))))
         for g, ds in (c.get("d1_groups") or {}).items():
             print(f"   D1 {g}: " + " | ".join(f"r{k + 1} {f(d['mass'])} (uniform {f(d['uniform'])})" for k, d in enumerate(ds)))
         for j, d in enumerate(c.get("d3") or []):

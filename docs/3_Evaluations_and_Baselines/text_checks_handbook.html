@@ -48,7 +48,7 @@ td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space
 
   <h2 id="state">Current state</h2>
   <ul>
-    <li><b>Branch:</b> <code>e31-text-memory</code> (worktree <code>MrCogito-e31text</code>), merged into <code>dev</code>. Odra checkout: <code>~/dev/MrCogito-text</code>, byobu session <code>textchk</code>.</li>
+    <li><b>Branch:</b> <code>dev</code> (<code>e31-text-memory</code> merged and archived on 2026-10-23 as tag <code>archive/e31-text-memory</code>). Server checkout: <code>~/dev/MrCogito</code> on both servers, byobu session <code>textchk</code>.</li>
     <li><b>Protocol:</b> <code>text-v1-draft</code> on data <code>text-world-v2</code> (every guessing rate below 10 %).</li>
     <li><b>Headline:</b> at 30M / 1.5B tokens the dense reference learns retrieval only in some seeds (2 of 4). The E33 loop (plain input, seed 0) reads lookup 82 % and keyed 77 % at 16k where dense reads 0 %, but is one seed.</li>
     <li><b>Running on Odra:</b> E31c notebook, plain input (from 2026-10-11 08:44 UTC), then the no-memory control (~15:30) and dense plain on 8-questions-per-document data (~18:15). Queue script: <code>Cache/text_checks/start_cal5_v2.sh</code>.</li>
@@ -106,7 +106,7 @@ td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; white-space
   </table></div>
 
   <h2 id="run">How to run a calibration or round job</h2>
-  <pre><code># on Odra, after git pull in ~/dev/MrCogito-text
+  <pre><code># on Odra, after git pull in ~/dev/MrCogito
 export PATH="$HOME/.local/bin:$PATH" PYTHONPATH=.; source scripts/remote_paths.sh
 uv run python scripts/run_text_checks.py plan --phase train --tier screen --arches e31c_loop_plain \
   --host odra --gpus 0 1 2 --data $DATASETS_TOK_DIR/text_checks_v2 --out Cache/text_checks/&lt;run&gt; \

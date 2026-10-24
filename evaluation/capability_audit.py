@@ -36,25 +36,14 @@ class Issue:
 
 ISSUES: tuple[Issue, ...] = (
     # ---- open: results shown with a caution mark until the named run lands
-    Issue("recipeA-compute", "2026-10-13", "The loop had about 3× the compute per training step on 2-hop reasoning",
-          "high", "rerun running", "caution", ("C5.pchain2-1k",), ("dense", "e31_li_m1"),
-          "The E33 loop's pass is real. Dense and E31 failing may be under-training, not inability: the loop does 13 "
-          "layer passes per step against 4, and learned at 6k–10k steps, which is 20k–33k steps of the others' compute; "
-          "they were stopped at 19.2k.",
-          "Compare architectures at matched compute, not matched steps, before saying one cannot learn something.",
-          "Dense and E31 rerun with 57.6k steps on the second stage (matched compute, no extension).",
-          ("v4_fix_a", "v4_fix_b")),
-    Issue("recipeA-exits", "2026-10-13", "The loop also gets the answer loss after every round of re-reading",
-          "medium", "rerun running", "caution", ("C5.pchain2-1k",), ("e33a_loop",),
-          "Within the written rule (final answer only, no node targets), but it is extra training signal the other "
-          "models do not get. Part of the loop's advantage may come from it.",
-          "Training aids specific to one architecture need their own ablation before the comparison is fair.",
-          "The loop without answer exits, seeds 0–2.", ("v4_fix_b", "v4_fix_c")),
-    Issue("recipeA-seeds", "2026-10-13", "One of the loop's three seeds never learned 2-hop reasoning",
-          "medium", "rerun running", "caution", ("C5.pchain2-1k",), ("e33a_loop",),
-          "Seeds 0 and 1: 94 %; seed 2: 4 %. The median passes; how reliably the loop learns it is unknown.",
+    Issue("recipeA-seeds", "2026-10-13", "With answer exits, the loop learns 2-hop reasoning on 3 of 5 seeds",
+          "medium", "open", "caution", ("C5.pchain2-1k",), ("e33a_loop",),
+          "Picked candidate per seed with answer exits: 94 / 94 / 4 / 94 / 10 % (seeds 0–4); without exits 98 / 95 / 93 % "
+          "(seeds 0–2, Polonez 2026-10-14). The median passes, but the registered variant fails 2 seeds in 5; the "
+          "no-exit loop has not failed yet.",
           "A median over 3 seeds hides a 1-in-3 failure; headline claims need more seeds and the per-seed scores.",
-          "Seeds 3 and 4 on the written recipe.", ("v4_fix_c",)),
+          "Author's decision: make the no-exit loop the registered E33 variant on recipe A (and run its seeds 3–4).",
+          ("v4_fix_c",)),
     Issue("dense-lr-lookup", "2026-10-13", "Dense fails the 2k lookup only at our standard step size",
           "high", "open", "caution", ("C1.lookup-2k", "C1.lookup-16k"), ("dense",),
           "Dense scores 24–29 % at step 1e-4 but passes at 5e-5 (the step E31's 2k runs use). 'Dense cannot do long "
@@ -100,11 +89,33 @@ ISSUES: tuple[Issue, ...] = (
           "Card sources live in the repo next to the generator they describe.",
           "Merge the v2 card source and update the template before any re-publish."),
     # ---- resolved: the history of what was wrong and what changed
+    Issue("recipeA-compute", "2026-10-13", "The loop had about 3× the compute per training step on 2-hop reasoning",
+          "high", "resolved", "note", ("C5.pchain2-1k",), ("dense", "e31_li_m1"),
+          "Settled 2026-10-14 (Polonez): with 3× the steps (57.6k, the loop's compute) dense stays at guessing (14 / 21 / "
+          "15 %, floor 25 %); E31 rises above guessing on 2 seeds but fails (37 / 49 / 8 %, median 37 %). The loop "
+          "passes at a third of their steps: its advantage is not extra compute.",
+          "Compare architectures at matched compute, not matched steps, before saying one cannot learn something.",
+          "Dense and E31 reran with 57.6k second-stage steps (matched compute, no extension).",
+          ("v4_fix_a", "v4_fix_b")),
+    Issue("recipeA-exits", "2026-10-13", "The loop also got the answer loss after every round of re-reading",
+          "medium", "resolved", "note", ("C5.pchain2-1k",), ("e33a_loop",),
+          "Settled 2026-10-14 (Polonez): without answer exits the loop passes on all 3 seeds (98 / 95 / 93 %). The "
+          "extra signal is not the source of its advantage; if anything the exits made it less reliable.",
+          "Training aids specific to one architecture need their own ablation before the comparison is fair.",
+          "The loop without answer exits, seeds 0–2 (shown as 'E33 loop, no answer exits').", ("v4_fix_b", "v4_fix_c")),
+    Issue("unique-memory", "2026-10-14", "On the fixed unique-fact exam, the memory models fail",
+          "medium", "open", "note", ("C6.unique-256",), ("e31_li_m1", "e33a_loop"),
+          "With the blocks shuffled, dense passes (98–100 %) but E31 (34–46 %) and the E33 loop (39–47 %) fail on every "
+          "seed; their old 'pass' was the first-block shortcut. Finding the one fact that appears once (aggregation) "
+          "is a real gap of the memory models at 256 tokens.",
+          "A shortcut can hide a missing capability, not only fake one.",
+          "None needed for the board; a candidate research question (aggregation over the notebook)."),
     Issue("first-block", "2026-10-13", "Look-alike, decoy and unique-fact exams always put the answer first",
-          "critical", "rerun running", "invalid",
+          "critical", "resolved", "invalid",
           ("X.lookalike-128-v3", "X.lookalike-1k-v3", "X.decoy8-1k-v1", "X.unique-256-v3", "X.unique-1k-v1"), (),
           "Every recorded C2 and C6.unique result is invalid: copying the first block answered 400 of 400 rows. They "
-          "are kept as flawed tasks; the fixed exams are rerunning.",
+          "are kept as flawed tasks. Reruns on the fixed exams (Polonez, 2026-10-13): look-alikes still pass for every "
+          "model (1k: one E31 and one E33 seed failed); the unique fact separates dense from the memory models.",
           "Before an exam goes live, check where its answer sits (position statistics over generated rows).",
           "The generator shuffles the blocks (--shuffle_blocks); C2 / C6 rerun for dense, E31, E33, seeds 0–2.",
           ("v4_fix_a",)),
@@ -172,14 +183,14 @@ class Run:
     jobs: int
 
 
-RUNS: tuple[Run, ...] = (
-    Run("v4_fix_a", "polonez", "2026-10-13 08:38", "~2026-10-13 16:10",
+RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch replaces them
+    Run("v4_fix_a", "polonez", "2026-10-13 08:38", "finished 2026-10-13 17:39",
         "C2 / C6 on the fixed exams (dense, E31, E33, seeds 0–2); dense 2-hop reasoning at matched compute",
         ("first-block", "recipeA-compute"), 33),
-    Run("v4_fix_b", "polonez", "queued (after a 20-min cooldown)", "~2026-10-13 23:50",
+    Run("v4_fix_b", "polonez", "2026-10-13 17:59", "finished 2026-10-14 01:35",
         "E31 2-hop reasoning at matched compute; the loop without answer exits, seed 0",
         ("recipeA-compute", "recipeA-exits"), 8),
-    Run("v4_fix_c", "polonez", "queued (after a 20-min cooldown)", "~2026-10-14 08:50",
+    Run("v4_fix_c", "polonez", "2026-10-14 01:55", "finished 2026-10-14 13:12",
         "the loop without answer exits, seeds 1–2; the loop on the written recipe, seeds 3–4",
         ("recipeA-exits", "recipeA-seeds"), 8),
 )

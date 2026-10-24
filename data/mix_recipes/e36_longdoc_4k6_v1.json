@@ -1,0 +1,37 @@
+{
+  "mix_id": "e36_longdoc_4k6_v1",
+  "description": "E36 (trained writer, frozen reader) stage-1 rows: whole long documents tokenized with the reader's tokenizer (SmolLM2) and CHUNKED into consecutive rows of exactly 4,610 tokens ([BOS] 4,608 tokens [EOS]); shorter tails are dropped (min_tokens), so every row holds 9 spans of 512 (8 written into memory + 1 continued by the reader) or 17 spans of 256. Books (PG-19 train) and long PDFs (FinePDFs). Spec: docs/4_Research_Notes/e36_frozen_reader_writer_20261018.md.",
+  "objective_compatibility": ["causal_lm"],
+  "seq_len_target": 4610,
+  "sources": [
+    {
+      "name": "pg19_chunked",
+      "hf_id": "emozilla/pg19",
+      "subset": "default",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.5,
+      "max_shards": 6,
+      "file_glob": "data/train-*.parquet",
+      "chunk_long_docs": true,
+      "max_chars": 4000000,
+      "min_tokens": 4610,
+      "notes": "Book-length narrative; 6 of the train shards. PG-19 test/validation stay out."
+    },
+    {
+      "name": "finepdfs_long",
+      "hf_id": "HuggingFaceFW/finepdfs_100BT",
+      "subset": "default",
+      "split": "train",
+      "text_columns": ["text"],
+      "weight": 0.5,
+      "max_shards": 4,
+      "file_glob": "data/*.parquet",
+      "chunk_long_docs": true,
+      "max_chars": 2000000,
+      "min_tokens": 4610,
+      "eval_sample_cap": 2000,
+      "notes": "Long coherent PDFs (reports, papers, manuals): fact-dense text."
+    }
+  ]
+}

@@ -324,6 +324,7 @@ const NAMES = {
   e33a_loop: "E33a re-read loop", e33a_wide: "E33a wide loop", dense: "Dense model (ceiling)",
   e33a_r1: "E33a single-read control", e33a_loopft: "E33a loop, fine-tuned from E31", e33a_loopans: "E33a loop, answer exits",
   e33a_loopfrz: "E33a loop, writer frozen", e33a_loopinj: "E33a loop, prelude re-injected",
+  e33a_noexit: "E33 loop, no answer exits",
   e30: "E30 (first build)", e30_ctx: "E30 with wider first layer", e31_page: "E31 page memory (first build)",
   e31_bixt: "E31 two-way memory (first build)", e31_mix_m1: "E31 + split slot RoPE", e30_mix: "E30 + split slot RoPE",
   e31_ord_m1: "E31 + order code", e30_ord: "E30 + order code",
@@ -434,7 +435,8 @@ const taskLinks = ts => ts.map(x => `<a href="#task-${esc(x)}" class="mono" styl
 const stChip = st => `<span class="st2 ${st === "rerun running" ? "running" : st === "resolved" ? "resolved" : ""}">${esc(st)}</span>`;
 document.getElementById("runs").innerHTML = (D.runs || []).map(r => {
   const pctDone = r.done != null ? Math.round(100 * r.done / Math.max(1, r.jobs)) : 0;
-  return `<div class="card"><div class="top"><span class="t mono">${esc(r.folder)}</span><span class="st2 ${/^queued/.test(r.started) ? "" : "running"}">${/^queued/.test(r.started) ? "queued" : "training"}</span>
+  const fin = r.done != null && r.done >= r.jobs;
+  return `<div class="card"><div class="top"><span class="t mono">${esc(r.folder)}</span><span class="st2 ${fin ? "resolved" : /^queued/.test(r.started) ? "" : "running"}">${fin ? "finished, pulled" : /^queued/.test(r.started) ? "queued" : "training"}</span>
     <span class="meta">${esc(r.host)}</span></div>
     <div class="m">${esc(r.what)}</div>
     <div class="progress" title="${r.done != null ? `${r.done} of ${r.jobs} jobs done (pulled ${esc(r.collected)})` : "not pulled yet"}"><span style="width:${pctDone}%"></span></div>
@@ -594,6 +596,7 @@ document.querySelectorAll("table.ttable").forEach(tbl => {
         <div class="row"><span>${scoreName(t)} at ${kLen(t.train_len)}</span><span class="num">${pct(e.score)} %</span></div>
         <div class="row"><span>mean over answer letters</span><span class="num">${pct(e.mean)} %</span></div>
         <div class="row"><span>per seed</span><span class="num">${Object.entries(e.per_seed || {}).map(([k, v]) => `${k}: ${pct(v)}`).join(" · ") || e.seeds.join(", ") || "–"}</span></div>
+        ${Object.keys(e.extra_seeds || {}).length ? `<div class="row"><span>extra seeds (not in the median)</span><span class="num">${Object.entries(e.extra_seeds).map(([k, v]) => `${k}: ${pct(v)}`).join(" · ")}</span></div>` : ""}
         ${lad ? `<div class="small">length ladder (${e.ladder_kind === "candidate" ? "picked candidate" : e.ladder_kind === "mixed" ? "picked candidate where read, else first letter" : "first letter"}): ${esc(lad)}</div>` : ""}
         <div class="small">${esc(e.label)}: ${esc(LABEL[e.label].t)}</div>
         <div class="small"><b>trust: ${esc(cellTrust(t.id, cell.dataset.m) || "–")}</b></div>

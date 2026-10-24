@@ -73,7 +73,7 @@ from __future__ import annotations
 import random
 import re
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Optional
 
 TEXT_WORLD_VERSION = "text-world-v2"
@@ -364,6 +364,11 @@ class WorldItem:
     # "What is a wump like?" → "shiny". Exams never use them; never serialized. Drawing them uses no random
     # numbers, so the document itself is unchanged.
     bridge: list = field(default_factory=list)
+    # Read targets (training only, 2026-10-17): question → (index into `facts`, that hop's output word) for every fact
+    # its answer chains through, in hop order (compose: teacher facts, output the teacher, then the home, output the
+    # place; deduce: the class fact, the class links, the property). Drawing them uses no random numbers; never
+    # serialized.
+    steps: dict = field(default_factory=dict)
 
 
 def _tmpl(rng: random.Random, rel: str, split: str, **kw) -> str:
@@ -397,7 +402,7 @@ def _latest_v1(rng, tsplit, k, n, cast, letters: bool = False) -> WorldItem:
     places = (sample_places(rng, n * (k + 1), distinct_letters=k + 1) if letters
               else sample_places(rng, n * (k + 1), distinct_first=True))
     facts, target = [], places[: k + 1]
-    last, qa = {}, []
+    last, qa, steps = {}, [], {}
     for i, c in enumerate(cast):
         mine = places[i * (k + 1): (i + 1) * (k + 1)]
         qa.append((QUESTIONS["latest"].format(p=c), mine[-1]))
@@ -405,11 +410,13 @@ def _latest_v1(rng, tsplit, k, n, cast, letters: bool = False) -> WorldItem:
         facts.append(Fact(_tmpl(rng, "home", tsplit, p=c, v=mine[0]), evidence=(i == 0), order=rng.uniform(0.0, 0.15)))
         facts += [Fact(_tmpl(rng, "move", tsplit, p=c, v=v), evidence=(i == 0), order=o) for v, o in zip(mine[1:], pos)]
         last[i] = (len(facts) - 1, pos[-1])
+        # the read target / hop naming (text multi-hop, 18 Oct): the one fact that answers is the person's LAST move
+        steps[QUESTIONS["latest"].format(p=c)] = [(len(facts) - 1, mine[-1])] if k > 0 else [(len(facts) - 1, mine[0])]
     if n > 1 and k > 0 and all(last[i][1] < last[0][1] for i in range(1, n)):
         j = rng.randrange(1, n)
         facts[last[j][0]].order = rng.uniform(last[0][1], 0.97)
     return WorldItem("latest", QUESTIONS["latest"].format(p=cast[0]), target[-1], list(reversed(target)),
-                     1.0 / (k + 1), facts, cast, meta={"moves": k}, qa=qa)
+                     1.0 / (k + 1), facts, cast, meta={"moves": k}, qa=qa, steps=steps)
 
 
 def _compose_v1(rng, tsplit, hops, n, cast, letters: bool = False) -> WorldItem:
@@ -437,8 +444,22 @@ def _compose_v1(rng, tsplit, hops, n, cast, letters: bool = False) -> WorldItem:
             j = teacher[j]
         qa.append((QUESTIONS[f"teach{hops}"].format(p=cast[i]), places[j]))
     bridge = [(QUESTIONS["bridge_teacher"].format(p=cast[i]), cast[teacher[i]]) for i in range(n)]
+    steps = {}  # facts[2i] = cast[i]'s teacher, facts[2i + 1] = cast[i]'s home
+    for i in range(n):
+        j, idx = i, []
+        for _ in range(hops):
+            idx.append((2 * j, cast[teacher[j]]))
+            j = teacher[j]
+        steps[QUESTIONS[f"teach{hops}"].format(p=cast[i])] = idx + [(2 * j + 1, places[j])]
+        steps[QUESTIONS["bridge_teacher"].format(p=cast[i])] = [(2 * i, cast[teacher[i]])]
     return WorldItem("compose", QUESTIONS[f"teach{hops}"].format(p=cast[0]), ans, cands, 1.0 / n, facts, cast,
-                     meta={"hops": hops}, qa=qa, bridge=bridge)
+                     meta={"hops": hops}, qa=qa, bridge=bridge, steps=steps)
+
+
+# Count supervision (18 Oct): a count question's visits carry this round base in the read targets — one quad
+# (pos, COUNT_ROUND, -1, -1) marks the question, one (pos, COUNT_ROUND + j, span) per visit j — so the training read
+# target and hop naming (rounds 1-4) ignore them and a count head can be told the true number.
+COUNT_ROUND = 100
 
 
 def _count_v1(rng, tsplit, cast, where, k, numbers: tuple = tuple(NUMBER_WORDS)) -> WorldItem:
@@ -447,15 +468,20 @@ def _count_v1(rng, tsplit, cast, where, k, numbers: tuple = tuple(NUMBER_WORDS))
     NUMBER_WORDS = list(numbers)  # noqa: N806  (v2 passes the 0-10 list)
     others = [p for p in VISIT_PLACES if p != where]
     facts = [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=where), evidence=True) for _ in range(k)]
+    # count supervision (18 Oct): the visits that answer, marked COUNT_ROUND (+1, +2 …) so read targets and hop naming
+    # (rounds 1-4) leave them alone; an empty list still marks the question as a count with zero visits
+    steps = {QUESTIONS["count"].format(p=cast[0], v=where): [(j, where, COUNT_ROUND) for j in range(k)]}
     facts += [Fact(_tmpl(rng, "visit", tsplit, p=cast[0], v=rng.choice(others))) for _ in range(rng.randint(1, 2))]
     qa = [(QUESTIONS["count"].format(p=cast[0], v=where), NUMBER_WORDS[k])]
     for c in cast[1:]:
         kc = rng.randrange(len(NUMBER_WORDS))
+        o = len(facts)
         facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=where)) for _ in range(kc)]
+        steps[QUESTIONS["count"].format(p=c, v=where)] = [(o + j, where, COUNT_ROUND) for j in range(kc)]
         facts += [Fact(_tmpl(rng, "visit", tsplit, p=c, v=rng.choice(others))) for _ in range(rng.randint(0, 2))]
         qa.append((QUESTIONS["count"].format(p=c, v=where), NUMBER_WORDS[kc]))
     return WorldItem("count", QUESTIONS["count"].format(p=cast[0], v=where), NUMBER_WORDS[k], list(NUMBER_WORDS),
-                     1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k}, qa=qa)
+                     1.0 / len(NUMBER_WORDS), facts, cast, meta={"count": k}, qa=qa, steps=steps)
 
 
 def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
@@ -464,10 +490,17 @@ def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
     guessing rate is 1 / cast size and every other chain is a same-shaped decoy."""
     props = rng.sample(PROPERTIES_V2, n)
     cats = [w.lower() for w in sample_names(rng, n * depth, cat_split, taken=set(cast))]
-    facts, qa, bridge = [], [], []
+    facts, qa, bridge, steps = [], [], [], {}
     for i, c in enumerate(cast):
         chain = cats[i * depth:(i + 1) * depth]
         ev = i == 0
+        o = len(facts)  # this chain's facts: o (class), o + 1 … (links), o + depth (property)
+        outs = list(chain) + [props[i]]
+        steps[QUESTIONS["deduce2"].format(p=c)] = [(o + k, outs[k]) for k in range(depth + 1)]
+        steps[QUESTIONS["bridge_isa"].format(p=c)] = [(o, chain[0])]
+        for k, a in enumerate(chain[:-1]):
+            steps[QUESTIONS["bridge_cat"].format(p=a)] = [(o + 1 + k, chain[k + 1])]
+        steps[QUESTIONS["bridge_prop"].format(p=chain[-1])] = [(o + depth, props[i])]
         facts.append(Fact(f"{c} is a {chain[0]}.", evidence=ev))
         facts += [Fact(f"Every {a} is a {b}.", evidence=ev) for a, b in zip(chain, chain[1:])]
         facts.append(Fact(f"Every {chain[-1]} is {props[i]}.", evidence=ev))
@@ -476,7 +509,7 @@ def _deduce_v2(rng, depth, n, cast, cat_split) -> WorldItem:
         bridge += [(QUESTIONS["bridge_cat"].format(p=a), f"a {b}") for a, b in zip(chain, chain[1:])]
         bridge.append((QUESTIONS["bridge_prop"].format(p=chain[-1]), props[i]))
     return WorldItem("deduce", QUESTIONS["deduce2"].format(p=cast[0]), props[0], list(props), 1.0 / n, facts, cast,
-                     meta={"depth": depth}, qa=qa, bridge=bridge)
+                     meta={"depth": depth}, qa=qa, bridge=bridge, steps=steps)
 
 
 def build_item(task: str, rng: random.Random, split: str = "train", version: str = TEXT_WORLD_VERSION) -> WorldItem:
@@ -502,7 +535,8 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
                     break
         facts = [Fact(_tmpl(rng, "sign", tsplit, p=c, v=s), evidence=(i == 0)) for i, (c, s) in enumerate(zip(cast, signs))]
         qa = [(QUESTIONS["quote"].format(p=c), x) for c, x in zip(cast, signs)] if v1 else []
-        return WorldItem(task, QUESTIONS["quote"].format(p=cast[0]), signs[0], signs, 1.0 / n, facts, cast, qa=qa)
+        return WorldItem(task, QUESTIONS["quote"].format(p=cast[0]), signs[0], signs, 1.0 / n, facts, cast, qa=qa,
+                         steps={QUESTIONS["quote"].format(p=c): [(i, x)] for i, (c, x) in enumerate(zip(cast, signs))})
 
     if task in ("lookup", "keyed"):
         n = _dial(task, split, rng, "cast", version)
@@ -516,7 +550,8 @@ def build_item(task: str, rng: random.Random, split: str = "train", version: str
         # keyed, and lookup from v1: every person's home is stated (lookup: few people, no look-alikes)
         facts = [Fact(_tmpl(rng, "home", tsplit, p=c, v=v), evidence=(i == 0)) for i, (c, v) in enumerate(zip(cast, places))]
         qa = [(QUESTIONS[task].format(p=c), v) for c, v in zip(cast, places)] if v1 else []
-        return WorldItem(task, QUESTIONS[task].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast, qa=qa)
+        return WorldItem(task, QUESTIONS[task].format(p=cast[0]), places[0], places, 1.0 / n, facts, cast, qa=qa,
+                         steps={QUESTIONS[task].format(p=c): [(i, v)] for i, (c, v) in enumerate(zip(cast, places))})
 
     if task == "latest":
         k = _dial(task, split, rng, "moves", version)
@@ -733,7 +768,7 @@ def make_eval_record(task: str, seed: int, split: str, length: int, depth_bin: O
 
 def make_train_document(seed: int, stories: list[str], length: int, ntok: Callable[[str], int],
                         tasks: tuple = TASKS, version: str = TEXT_WORLD_VERSION, questions: int = 1,
-                        bridge: int = 0) -> str:
+                        bridge: int = 0, bridge_only: bool = False, chains: Optional[list] = None) -> str:
     """One training world document: a random task at ID dials, question and answer included.
 
     `questions` > 1 (v1): the document ends with up to that many questions about different cast
@@ -744,10 +779,25 @@ def make_train_document(seed: int, stories: list[str], length: int, ntok: Callab
     `bridge` > 0 (v2 compose / deduce, 2026-10-16): up to that many bridge questions follow the task's own
     questions — the single steps of the chain asked on their own ("Who is the teacher of Lumo?"), placed
     after every multi-step question so none of them can read its bridge from an answer above it. Other
-    tasks, and `bridge` = 0, give the same bytes as before."""
+    tasks, and `bridge` = 0, give the same bytes as before.
+
+    `bridge_only` (2026-10-17, the two-name gate of the multi-hop diagnosis): a compose / deduce document asks ONLY
+    its bridge questions (up to `bridge`, at least one), none of the task's own; other tasks are unchanged.
+
+    `chains` (a list, 2026-10-17): filled with (question, [(fact sentence, that hop's output word) in hop order]) for
+    every question placed whose chain the item knows (`WorldItem.steps`); the text is the same with or without it."""
     rng = random.Random(seed)
     task = rng.choice(tasks)
     item = build_item(task, rng, "train", version)
+    if bridge_only and item.bridge:
+        pool = list(item.bridge)
+        random.Random(seed ^ 0xB81D6E).shuffle(pool)
+        pool = pool[: max(1, bridge)]
+        item = replace(item, question=pool[0][0], answer=pool[0][1])
+        extra = "".join(f"{qa_suffix(q)} {a}." for q, a in pool[1:])
+        prompt, _ = assemble(item, stories, max(64, length - (ntok(extra) if extra else 0)), ntok, rng, version=version)
+        _fill_chains(chains, item, [q for q, _ in pool])
+        return prompt + answer_text(item) + extra
     extra = ""
     if questions > 1 and item.qa:
         more = item.qa[1:]
@@ -759,4 +809,14 @@ def make_train_document(seed: int, stories: list[str], length: int, ntok: Callab
         random.Random(seed ^ 0xB81D6E).shuffle(pool)  # separate stream again
         extra += "".join(f"{qa_suffix(q)} {a}." for q, a in pool[:bridge])
     prompt, _ = assemble(item, stories, max(64, length - (ntok(extra) if extra else 0)), ntok, rng, version=version)
+    if chains is not None:
+        _fill_chains(chains, item, [item.question] + re.findall(r"\n\nQuestion: (.*?)\nAnswer:", extra))
     return prompt + answer_text(item) + extra
+
+
+def _fill_chains(chains: Optional[list], item: WorldItem, questions: list) -> None:
+    if chains is None:
+        return
+    for q in questions:
+        if q in item.steps:
+            chains.append((q, [(item.facts[st[0]].text, *st[1:]) for st in item.steps[q]]))

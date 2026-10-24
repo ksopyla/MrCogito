@@ -349,7 +349,27 @@ class DataCollatorForCausalLM:
         }
         if packed:
             batch["doc_ids"] = doc_ids
+        if any("read_targets" in f for f in features):
+            batch["read_targets"] = read_targets_tensor(features, max_len)
         return batch
+
+
+def read_targets_tensor(features: List[Dict[str, Any]], max_len: int) -> torch.Tensor:
+    """Text checks (2026-10-17): each row's flat (answer position, round, first token, last token) list → [B, T, 4]
+    long, padded with −1; entries whose answer position falls past the cut (`max_len`) are dropped."""
+    rows = []
+    for f in features:
+        q = f.get("read_targets") or []
+        if isinstance(q, torch.Tensor):
+            q = q.tolist()
+        quads = [q[i:i + 4] for i in range(0, len(q) - len(q) % 4, 4)]
+        rows.append([x for x in quads if 0 <= x[0] < max_len - 1 and x[3] < max_len])
+    T = max(1, max(len(r) for r in rows))
+    out = torch.full((len(rows), T, 4), -1, dtype=torch.long)
+    for i, r in enumerate(rows):
+        if r:
+            out[i, : len(r)] = torch.tensor(r, dtype=torch.long)
+    return out
 
 
 class DataCollatorForPrefixGeneration:

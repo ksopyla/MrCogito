@@ -21,6 +21,7 @@ One forward pass per item over  BOS + prompt + answer  (teacher forcing):
 
 Exam-time probes on a trained model (nothing retrained; recorded in the output):
   --loop_rounds r        a looped model (E33) stops after r rounds and decodes through its coda (rounds 1-4 exams)
+  --loop_control off     a looped model with the E33c question control runs without it (does the control carry it?)
   --note_order rank --note_strength s [--note_margin m --note_sharp k]
                          the notes' order among matching notes (E33e) with a fixed strength s for every head, put on a
                          model trained without it (E33, E33d: replaces E33d's page distance)
@@ -129,10 +130,13 @@ def story_ce(model, path: str, n_rows: int, device) -> float:
     return tot / max(1, cnt)
 
 
-def apply_note_order(model, mode: str, strength: float, margin: float, sharp: float) -> dict:
-    """Exam-time E33e probe: switch the global read's note term to the rank count with one fixed strength for every
-    head (an E33d model's learned page-distance slopes are replaced; an E33 model gets the term added)."""
+def apply_note_order(model, mode: str, strength, margin: float, sharp: float, gate: str = "own") -> dict:
+    """Exam-time E33e probe: switch the global read's note term to the rank count with fixed strengths (an E33d model's
+    learned page-distance slopes are replaced; an E33 model gets the term added). `strength` is one number for every
+    head or an "a,b,…" string with one value per head (E33g's order heads)."""
     import torch.nn as nn
+
+    from nn.perceiver_ar_lm import note_age_init
 
     done = {}
     if getattr(model.config, "message_write", None) != "latent_memory":
@@ -148,9 +152,10 @@ def apply_note_order(model, mode: str, strength: float, margin: float, sharp: fl
         mod.note_age_mode = mode
         mod.note_rank_rep = int(cfg.lm_latents) * int(cfg.lm_reader_tokens)
         mod.note_rank_margin, mod.note_rank_sharp = float(margin), float(sharp)
+        mod.note_rank_gate = str(gate)
         with torch.no_grad():
-            mod.note_age_slope.fill_(float(strength))
-        done[name] = {"mode": mode, "strength": strength, "margin": margin, "sharp": sharp}
+            mod.note_age_slope.copy_(note_age_init(str(strength), mod.h).to(mod.note_age_slope.device))
+        done[name] = {"mode": mode, "strength": strength, "margin": margin, "sharp": sharp, "gate": gate}
     if not done:
         raise SystemExit("--note_order: no latent-memory global read found in this model")
     return done
@@ -219,7 +224,16 @@ def main():
                    help="E35 model: the document agent A reads — the item's own, none, or the next item's of the same "
                         "task and length (mismatched-message control)")
     p.add_argument("--note_order", default=None, choices=("rank",), help="exam-time E33e probe (see the docstring)")
-    p.add_argument("--note_strength", type=float, default=0.0)
+    p.add_argument("--note_strength", default="0", help="one strength for every head, or a,b,… one per head")
+    p.add_argument("--loop_feedback", default="as_trained", choices=("as_trained", "off"),
+                   help="E33q probe: 'off' removes the round-to-round name feedback (gate) at exam time")
+    p.add_argument("--loop_control", default="as_trained", choices=("as_trained", "off"),
+                   help="E33c probe: 'off' removes the rounds' question control at exam time (the model without it)")
+    p.add_argument("--note_gate", default="own", choices=("own", "content"),
+                   help="E33g2: count matches by each head's own score, or by the strength-0 heads' mean score")
+    p.add_argument("--loop_emb_map", default="as_trained",
+                   help="looped-model probe (18 Oct): which trained round embedding each round uses, e.g. 0,1,1,2 "
+                        "(round 3 acts as a bridge round, round 4 as the answer round), or 'zero' for none")
     p.add_argument("--note_margin", type=float, default=1.0)
     p.add_argument("--note_sharp", type=float, default=2.0)
     args = p.parse_args()
@@ -238,9 +252,32 @@ def main():
             raise SystemExit("--loop_rounds needs a looped model")
         model._loop_rounds_override = int(args.loop_rounds)
         probes["loop_rounds"] = int(args.loop_rounds)
+    if args.loop_emb_map != "as_trained":
+        emb = getattr(model, "loop_emb", None)
+        if emb is None:
+            raise SystemExit("--loop_emb_map needs a looped model")
+        with torch.no_grad():
+            if args.loop_emb_map == "zero":
+                emb.zero_()
+            else:
+                idx = [int(i) for i in args.loop_emb_map.split(",")]
+                if len(idx) != emb.shape[0] or not all(0 <= i < emb.shape[0] for i in idx):
+                    raise SystemExit(f"--loop_emb_map needs {emb.shape[0]} indices in 0..{emb.shape[0] - 1}")
+                emb.copy_(emb[idx].clone())
+        probes["loop_emb_map"] = args.loop_emb_map
+    if args.loop_feedback == "off":
+        if getattr(model, "loop_feedback_gate", None) is None:
+            raise SystemExit("--loop_feedback off: this model has no round feedback")
+        model.loop_feedback_gate = None
+        probes["loop_feedback"] = "off"
+    if args.loop_control == "off":
+        if getattr(model, "loop_control", None) is None:
+            raise SystemExit("--loop_control off: this model has no question control")
+        model.loop_control = None
+        probes["loop_control"] = "off"
     if args.note_order:
         probes["note_order"] = apply_note_order(model, args.note_order, args.note_strength, args.note_margin,
-                                                args.note_sharp)
+                                                args.note_sharp, args.note_gate)
     if probes:
         print("exam-time probes:", json.dumps(probes), flush=True)
     # E33d: the per-head page-distance slopes of the note read, logged with every exam (curve checkpoints included)

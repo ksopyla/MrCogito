@@ -80,6 +80,23 @@ def build_argument_parser() -> HfArgumentParser:
     )
 
 
+
+def freeze_all_but(model, prefixes: str) -> None:
+    """`--train_only_params a.,b.` (2026-10-18, the stage-W writer of the multi-hop review): only parameters whose
+    name starts with one of the prefixes train; the rest are frozen (the optimizer skips them). Empty: no change."""
+    keep = [t.strip() for t in str(prefixes or "").split(",") if t.strip()]
+    if not keep:
+        return
+    on = 0
+    for name, prm in model.named_parameters():
+        train = any(name.startswith(t) for t in keep)
+        prm.requires_grad_(train)
+        on += prm.numel() if train else 0
+    if on == 0:
+        raise ValueError(f"--train_only_params {prefixes!r} matches no parameter")
+    total = sum(p.numel() for p in model.parameters())
+    print(f"train_only_params {keep}: {on:,} of {total:,} parameters train", flush=True)
+
 def main():
     setup_distributed()
 
@@ -198,6 +215,7 @@ def main():
         is_causal_ar=is_causal_ar,
         is_backbone=is_backbone,
     )
+    freeze_all_but(model, getattr(model_args, "train_only_params", ""))
 
     if data_args.batch_packing_mode == "pack":
         import inspect
@@ -241,7 +259,8 @@ def main():
         model_description="BiXT perceiver denoising pretraining",
     )
 
-    is_perceiver_ar = getattr(model_args, "model_family", "auto") in {"perceiver_ar", "perceiver_concept", "a2a"}
+    is_perceiver_ar = getattr(model_args, "model_family", "auto") in {"perceiver_ar", "perceiver_concept", "a2a",
+                                                                       "frozen_reader"}
     if torch.cuda.is_available() and is_main_process() and not is_backbone and not is_perceiver_ar:
         num_heads = config.num_attention_heads
         head_dim = config.hidden_size // num_heads

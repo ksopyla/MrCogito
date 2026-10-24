@@ -385,11 +385,68 @@ class ModelArguments:
     a2a_tx_request: str = field(default="none", metadata={"help": "E35: none (broadcast) | question (B's question steers A's message)."})
     a2a_loss_on: str = field(default="all", metadata={"help": "E35: loss on all receiver tokens | answers only."})
     a2a_freeze_receiver: bool = field(default=False, metadata={"help": "E35: keep agent B frozen (only A learns)."})
+    # E36 (model_family='frozen_reader'): a trained span writer read by a frozen pretrained decoder
+    fr_reader: str = field(default="HuggingFaceTB/SmolLM2-360M", metadata={"help": "E36: frozen reader (Hub id)."})
+    fr_writer_init: str = field(default="HuggingFaceTB/SmolLM2-135M", metadata={"help": "E36: the writer starts from this model's lower layers (same tokenizer as the reader)."})
+    fr_writer_layers: int = field(default=3, metadata={"help": "E36: writer layers (SmolLM2-135M: 3 / 8 / 28 = 10.6M / 28.3M / 99.1M)."})
+    fr_span: int = field(default=512, metadata={"help": "E36: tokens per memory entry (one vector)."})
+    fr_mem_spans: int = field(default=8, metadata={"help": "E36: entries of earlier spans per continuation row."})
+    fr_way: str = field(default="input", metadata={"help": "E36: input (one reader input position per entry) | kv (a key and value per reader layer)."})
+    fr_recon_frac: float = field(default=0.2, metadata={"help": "E36: share of training steps that rebuild a span from its own entry."})
+    fr_entry_positions: str = field(default="span_mid", metadata={"help": "E36: span_mid (entry at its span's middle position) | compact."})
+    fr_proj_hidden: int = field(default=2048, metadata={"help": "E36: hidden width of the input-way projector."})
+    fr_writer_pool: str = field(default="mean", metadata={"help": "E36: mean | attn (one learned query per head, starts as the mean)."})
+    fr_curriculum: str = field(default="", metadata={"help": "E36: reconstruction-only phases before the main training, 'tokens:steps,...' e.g. 64:750,128:750,256:750,512:750."})
     lm_note_rank_sharp: float = field(default=2.0, metadata={"help": "E33e: steepness of the match gate."})
+    lm_note_age_init: str = field(default="", metadata={"help": "E33g: per-head starting strengths of the note-order "
+                                                                 "term, comma-separated (one value = every head)."})
+    lm_note_age_learn: bool = field(default=True, metadata={"help": "E33g: False keeps the note-order strengths fixed."})
+    message_loop_name_lens: float = field(default=0.0, metadata={"help": "E33q: weight of round r naming hop r's "
+                                                                         "output word through the LM head (training)."})
+    message_loop_feedback: str = field(default="none", metadata={"help": "E33q: none | soft (re-embed round r's "
+                                                                          "LM-head distribution into round r+1)."})
+    message_loop_feedback_temp: float = field(default=1.0, metadata={"help": "E33q: softmax temperature of the feedback."})
+    message_loop_control: str = field(default="none", metadata={"help": "E33c: none | question (each loop round reads "
+                                                                         "its next relation from the question; gate from 0)."})
+    message_loop_control_window: int = field(default=48, metadata={"help": "E33c: tokens the control reads (up to t)."})
+    message_loop_control_dim: int = field(default=128, metadata={"help": "E33c: control state width."})
+    message_loop_control_heads: int = field(default=4, metadata={"help": "E33c: control heads (one pointer each)."})
+    message_loop_control_words: str = field(default="embed", metadata={"help": "E33c: embed (input layer) | prelude "
+                                                                                "(the words the control reads)."})
+    lm_note_order_gate: bool = field(default=False, metadata={"help": "E33i: the order term × a learned per-position "
+                                                                       "switch σ(w·x + b), w = 0, b = −2 at the start."})
+    warm_start_skip: str = field(default="", metadata={"help": "Comma-separated name fragments of checkpoint weights NOT "
+                                                                "loaded in a warm start (they keep their fresh init)."})
+    train_only_params: str = field(default="", metadata={"help": "Comma-separated parameter-name prefixes that train; "
+                                                                  "every other weight is frozen (2026-10-18 stage-W "
+                                                                  "writer: memory_writer.). Empty = all train."})
+    lm_note_rank_gate: str = field(default="own", metadata={"help": "E33g2: own | content (count matches by the "
+                                                                     "strength-0 heads' mean score, for every head)."})
+    lm_writer_input: str = field(default="table", metadata={"help": "Notebook writer input: table (shared token "
+                                                                     "table) | embed (the decoder's whole input layer)."})
+    lm_count_heads: int = field(default=0, metadata={"help": "E33h: count heads (summing read) on the global read; 0 = off."})
+    lm_count_aux: float = field(default=0.0, metadata={"help": "E33k: weight of the count heads' sum matching the "
+                                                               "true number of visits (count questions)."})
+    lm_count_max: int = field(default=10, metadata={"help": "E33h: counts coded as a soft one-hot over 0..max."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(
         default="answer", metadata={"help": "E33a: answer (= next token in text) | progress (exam scaffold)."}
+    )
+    message_loop_exit_mask: str = field(
+        default="all", metadata={"help": "Text multi-hop: loop exits score all labels | answers (first answer tokens)."}
+    )
+    message_loop_read_aux: float = field(
+        default=0.0, metadata={"help": "Text multi-hop: weight of the per-round read target (needs read_targets data)."}
+    )
+    lm_readback_aux: float = field(
+        default=0.0, metadata={"help": "Text multi-hop: weight of the note read-back (each note's value names its tokens)."}
+    )
+    lm_key_grad: str = field(
+        default="full", metadata={"help": "Text multi-hop: full | detach (key-side losses do not move what a latent reads) | address (detach + the key's own read)."}
+    )
+    message_loop_read_target: str = field(
+        default="page", metadata={"help": "Text multi-hop: read target on a page's notes | the span's own notes (note)."}
     )
 
 
@@ -611,13 +668,14 @@ def validate_training_configuration(
     is_causal_ar = model_args.decoder_type == DECODER_CAUSAL_AR
     is_backbone = model_args.backbone_model is not None
     model_family = getattr(model_args, "model_family", "auto")
-    if model_family not in {"auto", "perceiver_ar", "perceiver_concept", "a2a"}:
+    if model_family not in {"auto", "perceiver_ar", "perceiver_concept", "a2a", "frozen_reader"}:
         raise ValueError(
-            f"Unknown model_family: {model_family!r} (expected 'auto', 'perceiver_ar', 'perceiver_concept' or 'a2a')."
+            f"Unknown model_family: {model_family!r} (expected 'auto', 'perceiver_ar', 'perceiver_concept', 'a2a' "
+            "or 'frozen_reader')."
         )
     if model_family == "a2a" and not (model_args.a2a_sender_init and model_args.a2a_receiver_init):
         raise ValueError("model_family='a2a' needs --a2a_sender_init and --a2a_receiver_init (warm-started agents).")
-    if model_family in {"perceiver_ar", "perceiver_concept", "a2a"}:
+    if model_family in {"perceiver_ar", "perceiver_concept", "a2a", "frozen_reader"}:
         if model_args.objective_variant != OBJECTIVE_CAUSAL_LM:
             raise ValueError(f"model_family={model_family!r} requires objective_variant='causal_lm'.")
         if is_backbone:

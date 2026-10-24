@@ -107,5 +107,5 @@ def test_every_issue_and_run_points_at_real_tasks_and_issues():
         assert all(r in {run.folder for run in RUNS} for r in i.runs), i.id
     for r in RUNS:
         assert r.settles and all(x in ISSUE_BY_ID for x in r.settles), r.folder
-    assert issues_for("C5.pchain2-1k", "dense") == ["recipeA-compute"]
+    assert issues_for("C1.lookup-2k", "dense") == ["dense-lr-lookup"] and issues_for("C5.pchain2-1k", "dense") == []
     assert issues_for("C3.recall8-1k", "dense") == []

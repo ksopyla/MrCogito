@@ -180,6 +180,23 @@ class PerceiverARConfig(PretrainedConfig):
         message_loop_exit_targets: str = "progress",  # E33a — "progress" (round targets) | "answer" (labels)
         message_loop_name_aux: float = 0.0,  # E33 — weight: each loop state names its whole node at the decision position
         message_loop_name_len: int = 0,  # E33 — letters per node name for the name head (the chain's key_len)
+        message_loop_read_aux: float = 0.0,  # text multi-hop (2026-10-17) — weight of the per-round read target
+        message_loop_exit_mask: str = "all",  # text multi-hop — loop exits score "all" labels or only "answers"
+        message_loop_read_target: str = "page",  # text multi-hop — read target on a page's notes or the span's "note"s
+        message_loop_name_lens: float = 0.0,  # E33q — weight: round r names hop r's output word (its tokens) at the
+                                              #   question's decision position, read through the shared LM head
+        message_loop_feedback: str = "none",  # E33q — "soft": round r's LM-head distribution, re-embedded with the
+                                              #   shared token table and input layer, is added to round r+1 (gate from 0)
+        message_loop_feedback_temp: float = 1.0,  # E33q — softmax temperature of that re-embedding
+        message_loop_control: str = "none",  # E33c — "question": each round reads its next relation from the question
+                                             #   (MAC control unit over the last `window` tokens, gate from 0)
+        message_loop_control_window: int = 48,  # E33c — tokens before (and at) each position the control reads
+        message_loop_control_dim: int = 128,  # E33c — control state width (split over the control heads)
+        message_loop_control_heads: int = 4,  # E33c — control heads, each with its own pointer into the question
+        message_loop_control_words: str = "embed",  # E33c — what the control reads: "embed" (the input layer: one
+                                                    #   vector per word, the same at every "teacher of") | "prelude"
+        lm_writer_input: str = "table",   # notebook writer input: "table" (the shared token table, E31-E33) | "embed"
+                                          #   (the decoder's whole input layer: the writer and reader share one encoding)
         message_update_slot_kv: bool = False,  # E21 — rewrite exclusive slot K/V between extra hops
         message_global_anchors: str = "none",  # E21 — sparse raw keys joining exclusive slot K/V
         message_anchor_token_ids: tuple[int, ...] = (),  # type-mark / keymark ids
@@ -208,6 +225,9 @@ class PerceiverARConfig(PretrainedConfig):
         lm_rounds: int = 2,               # latent read rounds (bixt: latent⇄token rounds)
         lm_competition: bool = True,      # softmax over latents per token, then renormalise
         lm_null_latent: bool = False,     # one latent the reader never sees
+        lm_readback_aux: float = 0.0,     # text multi-hop (2026-10-17): each note's value names the tokens it read
+        lm_key_grad: str = "full",        # text multi-hop: "detach" = key-side losses do not move what a latent reads;
+                                          # "address" = detach + the key's own read of the page
         lm_reader_tokens: int = 5,        # reader K/V entries per latent (m)
         lm_pos_prior: bool = True,        # per-latent sub-page prior at init
         lm_addr: str = "window_start",    # latent address: "window_start" sinusoid | "none" (length-invariant)
@@ -224,6 +244,18 @@ class PerceiverARConfig(PretrainedConfig):
                                           #   query about as well as its best note), so a lone fact pays nothing at any length
         lm_note_rank_margin: float = 1.0, # E33e — a note "matches" when its score is within ~margin of the best note's
         lm_note_rank_sharp: float = 2.0,  # E33e — steepness of that match gate: σ(sharp · (score − best + margin))
+        lm_note_age_init: str = "",       # E33g — per-head starting strengths, comma-separated (one value = every head,
+                                          #   fewer than the heads = the last heads); "" = 0 on every head (E33d / E33e)
+        lm_note_age_learn: bool = True,   # E33g — False keeps those strengths fixed (order heads that cannot fade)
+        lm_note_order_gate: bool = False,  # E33i — order on demand: the order term × σ(w·x_t + b) per reader position
+                                           #   (w = 0, b = −2 at the start), so a question can turn order up while story
+                                           #   text keeps it off; one learned switch instead of one scalar per head
+        lm_note_rank_gate: str = "own",   # E33g2 — "own": each head counts matches by its own score; "content": by the
+                                          #   mean score of the strength-0 heads (the asked person's notes), for all heads
+        lm_count_heads: int = 0,          # E33h — count heads beside the global read (summing read; 0 = off)
+        lm_count_max: int = 10,           # E33h — the counts coded as a soft one-hot over 0..lm_count_max
+        lm_count_aux: float = 0.0,        # E33k — weight: each count head's sum at a count question's decision position
+                                          #   must equal the true number of visits (read-target quads, round base 100)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -290,6 +322,20 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_loop_exit_targets = str(message_loop_exit_targets or "progress")
         self.message_loop_name_aux = float(message_loop_name_aux)
         self.message_loop_name_len = int(message_loop_name_len)
+        self.message_loop_read_aux = float(message_loop_read_aux)
+        self.message_loop_exit_mask = str(message_loop_exit_mask or "all")
+        self.message_loop_read_target = str(message_loop_read_target or "page")
+        self.message_loop_name_lens = float(message_loop_name_lens or 0.0)
+        self.message_loop_feedback = str(message_loop_feedback or "none")
+        self.message_loop_feedback_temp = float(message_loop_feedback_temp or 1.0)
+        self.message_loop_control = str(message_loop_control or "none")
+        self.message_loop_control_window = int(message_loop_control_window or 48)
+        self.message_loop_control_dim = int(message_loop_control_dim or 128)
+        self.message_loop_control_heads = int(message_loop_control_heads or 4)
+        self.message_loop_control_words = str(message_loop_control_words or "embed")
+        self.lm_writer_input = str(lm_writer_input or "table")
+        if self.lm_writer_input not in ("table", "embed"):
+            raise ValueError("lm_writer_input must be 'table' or 'embed'")
         self.message_update_slot_kv = bool(message_update_slot_kv)
         self.message_global_anchors = str(message_global_anchors or "none")
         self.message_anchor_token_ids = tuple(int(x) for x in (message_anchor_token_ids or ()))
@@ -318,6 +364,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_competition = bool(lm_competition)
         self.lm_null_latent = bool(lm_null_latent)
         self.lm_reader_tokens = int(lm_reader_tokens)
+        self.lm_readback_aux = float(lm_readback_aux)
+        self.lm_key_grad = str(lm_key_grad)
         self.lm_pos_prior = bool(lm_pos_prior)
         self.lm_addr = str(lm_addr)
         self.lm_slot_pos = str(lm_slot_pos)
@@ -329,6 +377,13 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_note_age_unit = int(lm_note_age_unit or 0)
         self.lm_note_rank_margin = float(lm_note_rank_margin)
         self.lm_note_rank_sharp = float(lm_note_rank_sharp)
+        self.lm_note_age_init = str(lm_note_age_init or "")
+        self.lm_note_age_learn = bool(lm_note_age_learn)
+        self.lm_note_rank_gate = str(lm_note_rank_gate or "own")
+        self.lm_note_order_gate = bool(lm_note_order_gate)
+        self.lm_count_heads = int(lm_count_heads or 0)
+        self.lm_count_max = int(lm_count_max)
+        self.lm_count_aux = float(lm_count_aux or 0.0)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -380,6 +435,21 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError("message_loop_inject must be 'none' or 'prelude'")
         if self.message_loop_exit_targets not in ("progress", "answer"):
             raise ValueError("message_loop_exit_targets must be 'progress' or 'answer'")
+        if self.message_loop_exit_mask not in ("all", "answers"):
+            raise ValueError("message_loop_exit_mask must be 'all' or 'answers'")
+        if self.message_loop_read_target not in ("page", "note"):
+            raise ValueError("message_loop_read_target must be 'page' or 'note'")
+        if self.message_loop_control not in ("none", "question"):
+            raise ValueError("message_loop_control must be 'none' or 'question'")
+        if self.message_loop_control != "none":
+            if self.message_loop_rounds < 2:
+                raise ValueError("message_loop_control needs message_loop_rounds >= 2")
+            if self.message_loop_control_words not in ("embed", "prelude"):
+                raise ValueError("message_loop_control_words must be 'embed' or 'prelude'")
+            if self.message_loop_control_window < 2:
+                raise ValueError("message_loop_control_window must be >= 2")
+            if self.message_loop_control_heads < 1 or self.message_loop_control_dim % self.message_loop_control_heads:
+                raise ValueError("message_loop_control_dim must be a multiple of message_loop_control_heads")
         if self.message_loop_rounds > 1:
             if self.message_read_rounds > 1:
                 raise ValueError("message_loop_rounds and message_read_rounds (E33) are exclusive")
@@ -914,6 +984,15 @@ class MessageCtx:
     slot_nope: bool = False       # E31c "reader": slot keys are un-rotated and met by the un-rotated query
     capture: Optional[dict] = None  # exam probe: {"q_pos": [B,P]} → appends each read's attention mass per note,
                                     # [B,P,nb] summed over heads, to capture["mass"] (`capture_note_mass`)
+    # text multi-hop (2026-10-17), training only: per-round read targets [B,T,4] (answer position, round, first and
+    # last token of the fact; −1 = padding), the round being read, the losses gathered, and the page geometry
+    read_targets: Optional[torch.Tensor] = None
+    read_round: int = 0
+    read_losses: Optional[list] = None
+    page_starts: Optional[torch.Tensor] = None  # [n_w] first token of each page
+    page_window: int = 0
+    notes_per_page: int = 0
+    read_target: str = "page"  # "page": any note of a page covering the span; "note": notes whose position is in it
 
     @property
     def n_slots(self) -> int:
@@ -1523,7 +1602,8 @@ def note_age_bias(pos: torch.Tensor, slot_pos: torch.Tensor, slope: torch.Tensor
 
 
 def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageCtx", *, scale: float, rep: int,
-                       margin: float, sharp: float, chunk: int = 1024) -> torch.Tensor:
+                       margin: float, sharp: float, chunk: int = 1024,
+                       gate_heads: Optional[list] = None) -> torch.Tensor:
     """E33e: how many NEWER notes match the reader about as well as its best note, per page, [B,h,S,n_w] fp32.
 
     For reader t, head h and visible note c (same document, page closed at or before t — the closed read),
@@ -1533,7 +1613,9 @@ def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageC
     keeps its score at any length; among several matches (Anna's ten moves) the newest gets 0, the one
     before it ≈ log 2, … — an order that does not grow with the document. Computed without gradient (the
     read's scores are trained by the read itself); only the per-head strength in front of it learns.
-    `rep` = notes per page (latents × reader tokens): the pages are the n_w = C / rep groups of the slot axis."""
+    `rep` = notes per page (latents × reader tokens): the pages are the n_w = C / rep groups of the slot axis.
+    `gate_heads` (E33g2): the match is the MEAN score of these heads (the content heads that find the asked person's
+    facts) and every head gets that one count — so the order heads rank the asked person's notes, not anyone's."""
     B, S, h, dh = q_slot.shape
     C, g = k_bar.shape[1], k_bar.shape[2]
     n_w = C // rep
@@ -1550,11 +1632,14 @@ def note_rank_logcount(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: "MessageC
                    & (sc[:, None, :] >= 0) & (sc[:, None, :] <= tpos[None, s0:s1, None]))  # [B,s,C]
             l = torch.einsum("bshd,bchd->bhsc", q_slot[:, s0:s1].float(), kbh) * scale
             l = l.masked_fill(~vis[:, None], float("-inf"))
+            if gate_heads:
+                l = l[:, gate_heads].masked_fill(~vis[:, None], 0.0).mean(1, keepdim=True)
+                l = l.masked_fill(~vis[:, None], float("-inf"))
             m = l.amax(-1, keepdim=True)
             m = torch.where(torch.isfinite(m), m, torch.zeros_like(m))
             gate = torch.sigmoid(sharp * (l - m + margin))  # exactly 0 on invisible notes
-            gw = gate.view(B, h, s1 - s0, n_w, rep).sum(-1)
-            out[:, :, s0:s1] = torch.log1p(torch.einsum("bhsk,bkw->bhsw", gw, newer))
+            gw = gate.view(B, l.shape[1], s1 - s0, n_w, rep).sum(-1)
+            out[:, :, s0:s1] = torch.log1p(torch.einsum("bhsk,bkw->bhsw", gw, newer))  # one gate head broadcasts
     return out
 
 
@@ -1607,6 +1692,61 @@ def capture_note_mass(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) -
     cap.setdefault("queries", []).append((qs, torch.logsumexp(rl, -1)))
 
 
+def read_target_loss(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) -> None:
+    """Text multi-hop (2026-10-17): round r of a question's read should land on fact r of its chain.
+
+    For this round's targets (`ctx.read_targets` rows with round == `ctx.read_round`) the share of the read's own
+    softmax (raw window ‖ the notes this query may see, logits q·k and q_slot·k̄ at 1/√dh, mean over heads) that falls
+    on the fact — its raw tokens where they sit in the window, the notes of every page covering it otherwise — is
+    turned into −log(share) and appended to `ctx.read_losses`. Differentiable; the E33d / E33e note terms are not
+    included (as in `capture_note_mass`)."""
+    rt = ctx.read_targets
+    sel = (rt[..., 1] == int(ctx.read_round)) & (rt[..., 0] >= 0)
+    if not bool(sel.any()):
+        return
+    bi, ti = sel.nonzero(as_tuple=True)
+    qp, t0, t1 = rt[bi, ti, 0], rt[bi, ti, 2], rt[bi, ti, 3]
+    B, S, h, dh = q.shape
+    g, nb = k.shape[2], k_bar.shape[1]
+    rep = h // g
+    dev = q.device
+    pred = make_message_mask_pred(S, ctx, key_valid)
+    kv = S + torch.arange(nb, device=dev)[None]
+    vis = pred(bi[:, None], None, qp[:, None], kv)                       # [N,nb]
+    W = min(int(ctx.raw_window or 0) or S, S)
+    j = qp[:, None] - torch.arange(W, device=dev)[None]                  # [N,W] raw positions, newest first
+    jc = j.clamp(min=0)
+    ok = pred(bi[:, None], None, qp[:, None], jc) & (j >= 0)
+    raw_t = ok & (j >= t0[:, None]) & (j <= t1[:, None])
+    page = torch.arange(nb, device=dev) // max(1, int(ctx.notes_per_page))
+    st = ctx.page_starts.to(dev)[page.clamp(max=ctx.page_starts.numel() - 1)]
+    note_t = vis & (st[None] <= t1[:, None]) & (st[None] + int(ctx.page_window) > t0[:, None])
+    if ctx.read_target == "note" and ctx.slot_pos is not None:
+        # the notes whose latent read the span (its expected position within 2 tokens of it); the page if none does
+        sp = ctx.slot_pos.to(dev)[bi]                                     # [N,nb]
+        near = vis & (sp >= t0[:, None] - 2) & (sp <= t1[:, None] + 2)
+        note_t = torch.where(near.any(-1, keepdim=True), near, note_t)
+    has = raw_t.any(-1) | note_t.any(-1)
+    if not bool(has.any()):
+        return
+    bi, qp, vis, ok, jc, raw_t, note_t = bi[has], qp[has], vis[has], ok[has], jc[has], raw_t[has], note_t[has]
+    N = bi.shape[0]
+    sc = dh ** -0.5
+    with torch.autocast(device_type=dev.type, enabled=False):  # fp32 throughout (autocast would make einsum bf16)
+        qq = q[bi, qp].float().view(N, g, rep, dh)
+        qs = (q_slot if q_slot is not None else q)[bi, qp].float().view(N, g, rep, dh)
+        sl = torch.einsum("ngrd,ncgd->ngrc", qs, k_bar[bi].float()).reshape(N, h, nb) * sc
+        rl = torch.einsum("ngrd,nwgd->ngrw", qq, k[bi[:, None], jc].float()).reshape(N, h, W) * sc
+        neg = torch.finfo(torch.float32).min
+        rl = rl.masked_fill(~ok[:, None], neg)
+        sl = sl.masked_fill(~vis[:, None], neg)
+        lse = torch.logsumexp(torch.cat([rl, sl], -1), -1)
+        hit = torch.logsumexp(torch.cat([rl.masked_fill(~raw_t[:, None], neg),
+                                         sl.masked_fill(~note_t[:, None], neg)], -1), -1)
+        share = torch.exp(hit - lse).mean(-1)                             # [N] mean over heads
+        ctx.read_losses.append(-torch.log(share.clamp(min=1e-6)))
+
+
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,
                    q_slot=None, note_bias=None):
     """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh].
@@ -1626,6 +1766,8 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
         raise NotImplementedError("message boundary needs flex or sdpa")
     if getattr(ctx, "capture", None) is not None:
         capture_note_mass(q, k, k_bar, ctx, key_valid, q_slot=q_slot)
+    if getattr(ctx, "read_losses", None) is not None and ctx.read_targets is not None:
+        read_target_loss(q, k, k_bar, ctx, key_valid, q_slot=q_slot)
     scale = None
     if q_slot is not None:
         q = torch.cat([q, q_slot.to(q.dtype)], dim=-1)
@@ -1743,6 +1885,92 @@ def hashed_ngram_ids(
     return acc % buckets
 
 
+def note_age_init(spec: str, h: int) -> torch.Tensor:
+    """E33g: per-head starting strengths of the note-order term. "a" = every head; "a,b,…" with fewer values than
+    heads = the LAST heads (the first ones stay at 0), so one pattern keeps the same order heads at every size."""
+    if not str(spec or "").strip():
+        return torch.zeros(h)
+    vals = [float(x) for x in str(spec).split(",")]
+    if len(vals) == 1:
+        vals = vals * h
+    if len(vals) > h:
+        raise ValueError(f"lm_note_age_init has {len(vals)} values for {h} query heads")
+    vals = [0.0] * (h - len(vals)) + vals
+    return torch.tensor(vals, dtype=torch.float32)
+
+
+def note_count(qc: torch.Tensor, k_bar: torch.Tensor, k_raw: torch.Tensor, ctx: "MessageCtx", *, scale: float,
+               window: int, stride: int, a: torch.Tensor, b: torch.Tensor, chunk: int = 512) -> torch.Tensor:
+    """E33h: a summing read — how many things match the count query, [B,S,nc] fp32 (with gradient).
+
+    A softmax read returns an average, so it cannot tell three matching visits from five. Here each count head h
+    adds up σ(a_h · q·k · scale + b_h) over everything the reader at t may see, each token of the document once:
+    - notes of closed pages of the same document, but only the notes whose read position lies in the first `stride`
+      tokens of their page (pages are `window` tokens long and overlap by window − stride; a token in the overlap
+      belongs to the later page, so no event is counted twice);
+    - the raw keys k_raw of the tokens no closed page owns yet: after (newest close − (window − stride)), up to t.
+    `k_bar` [B,C,g,dh] and `k_raw` [B,S,g,dh] use their first key head; `qc` [B,S,nc,dh]."""
+    B, S, nc, dh = qc.shape
+    sd, sc, sp = ctx.slot_doc, ctx.slot_close, ctx.slot_pos
+    ok = (sd >= 0) & (sc >= 0)
+    own = ok & ((sp - (sc - window + 1)) < stride)  # [B,C]
+    kb, kr = k_bar[:, :, 0].float(), k_raw[:, :, 0].float()
+    aa, bb = a.float()[None, :, None, None], b.float()[None, :, None, None]
+    out = []
+    for s0 in range(0, S, chunk):
+        s1 = min(S, s0 + chunk)
+        t = torch.arange(s0, s1, device=qc.device)
+        doc_t = ctx.doc[:, s0:s1]
+        q = qc[:, s0:s1].float()
+        seen = ok[:, None, :] & (sd[:, None, :] == doc_t[:, :, None]) & (sc[:, None, :] <= t[None, :, None])  # [B,s,C]
+        last = torch.where(seen, sc[:, None, :], torch.full_like(sc[:, None, :], -(10 ** 9))).amax(-1)  # [B,s]
+        ln = torch.einsum("bshd,bcd->bhsc", q, kb) * scale
+        cnt = (torch.sigmoid(aa * ln + bb) * (seen & own[:, None, :])[:, None]).sum(-1)  # [B,nc,s]
+        r0 = max(0, s0 - window)
+        r = torch.arange(r0, s1, device=qc.device)
+        lr = torch.einsum("bshd,brd->bhsr", q, kr[:, r0:s1]) * scale
+        rvis = ((r[None, None, :] <= t[None, :, None]) & (r[None, None, :] > t[None, :, None] - window)
+                & (ctx.doc[:, None, r0:s1] == doc_t[:, :, None]) & (doc_t[:, :, None] >= 0)
+                & (r[None, None, :] > (last - (window - stride))[:, :, None]))
+        cnt = cnt + (torch.sigmoid(aa * lr + bb) * rvis[:, None]).sum(-1)
+        out.append(cnt)
+    return torch.cat(out, dim=-1).transpose(1, 2)
+
+
+class NoteCounter(nn.Module):
+    """E33h: count heads beside the global read. Own query from the layer input; keys = the notes' keys and the
+    layer's raw keys; the summed gates (note_count) are coded as a soft one-hot over 0..count_max plus log(1 + n)
+    and added to the read's output through a zero-initialised projection, so at step 0 the model is unchanged."""
+
+    def __init__(self, cfg, d: int, dh: int):
+        super().__init__()
+        self.nc, self.dh = int(cfg.lm_count_heads), dh
+        self.kmax = int(getattr(cfg, "lm_count_max", 10))
+        self.window, self.stride = int(cfg.lm_window), int(cfg.lm_stride)
+        self.wq = nn.Linear(d, self.nc * dh, bias=False)
+        self.qn = nn.RMSNorm(dh)
+        # gate σ(a·l + b): with unit-RMS queries and keys l ≈ ±√dh; a = 2, b = −10 keeps unrelated keys near 0
+        # (σ(−10) ≈ 5e-5, so ~1,000 visible keys add ≈ 0.05) while a strong match (l ≈ 8) counts ≈ 1
+        self.log_a = nn.Parameter(torch.full((self.nc,), math.log(2.0)))
+        self.b = nn.Parameter(torch.full((self.nc,), -10.0))
+        self.out = nn.Linear(self.nc * (self.kmax + 2), d, bias=False)
+        nn.init.zeros_(self.out.weight)
+        self.register_buffer("levels", torch.arange(self.kmax + 1, dtype=torch.float32), persistent=False)
+        self.last_count = None
+
+    def forward(self, x, k_bar, k_raw, ctx) -> torch.Tensor:
+        B, S, _ = x.shape
+        qc = self.qn(self.wq(x).view(B, S, self.nc, self.dh))
+        n = note_count(qc, k_bar, k_raw, ctx, scale=self.dh ** -0.5, window=self.window, stride=self.stride,
+                       a=self.log_a.exp(), b=self.b)  # [B,S,nc]
+        self.last_count = n.detach()
+        self.last_n = n if self.training else None  # E33k: the count loss reads the summed gates with gradient
+        rbf = torch.exp(-2.0 * (n[..., None] - self.levels) ** 2)  # [B,S,nc,K+1], width 0.5
+        feats = torch.cat([rbf, torch.log1p(n)[..., None]], dim=-1).reshape(B, S, -1)
+        return self.out(feats.to(self.out.weight.dtype))
+
+
+
 class TinyHashedEmbedding(nn.Module):
     """token table [V,e] + Σ n-gram tables [buckets,e] → MLP up-projection to d → RMSNorm."""
 
@@ -1848,12 +2076,23 @@ class Attention(nn.Module):
         self.note_age_mode = str(getattr(cfg, "lm_note_age", "none") or "none")
         if (self.note_age_mode != "none" and pattern == "full" and write == "latent_memory"
                 and getattr(cfg, "message_enabled", False)):
-            self.note_age_slope = nn.Parameter(torch.zeros(h))
+            self.note_age_slope = nn.Parameter(note_age_init(getattr(cfg, "lm_note_age_init", ""), h),
+                                               requires_grad=bool(getattr(cfg, "lm_note_age_learn", True)))
             self.note_age_unit = float(getattr(cfg, "lm_note_age_unit", 0) or cfg.lm_stride)
             # E33e (rank): the same per-head strength, in front of the count of newer matching notes
             self.note_rank_rep = int(cfg.lm_latents) * int(cfg.lm_reader_tokens)
             self.note_rank_margin = float(getattr(cfg, "lm_note_rank_margin", 1.0))
             self.note_rank_sharp = float(getattr(cfg, "lm_note_rank_sharp", 2.0))
+            # E33g2: "content" = the match is judged by the heads with strength 0 (the content heads), for every head
+            self.note_rank_gate = str(getattr(cfg, "lm_note_rank_gate", "own") or "own")
+            # E33i: a per-position switch on the order term (initialised in the model, after post_init)
+            self.note_order_gate = (nn.Linear(cfg.hidden_size, 1) if bool(getattr(cfg, "lm_note_order_gate", False))
+                                    and self.note_age_mode == "rank" else None)
+        # E33h: count heads (a summing read) on the latent-memory global read
+        self.note_counter = None
+        if (int(getattr(cfg, "lm_count_heads", 0) or 0) > 0 and pattern == "full" and write == "latent_memory"
+                and getattr(cfg, "message_enabled", False)):
+            self.note_counter = NoteCounter(cfg, cfg.hidden_size, self.dh)
 
     def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
         """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor."""
@@ -2013,9 +2252,17 @@ class Attention(nn.Module):
             if self.note_age_slope is not None and message.slot_pos is not None and pos is not None:
                 if self.note_age_mode == "rank":
                     if message.override not in ("none", "raw"):
+                        gh = None
+                        if getattr(self, "note_rank_gate", "own") == "content":
+                            gh = (self.note_age_slope.detach() == 0).nonzero().flatten().tolist() or None
                         lc = note_rank_logcount(q_slot if q_slot is not None else q, k_bar, message,
                                                 scale=self.dh ** -0.5, rep=self.note_rank_rep,
-                                                margin=self.note_rank_margin, sharp=self.note_rank_sharp)
+                                                margin=self.note_rank_margin, sharp=self.note_rank_sharp,
+                                                gate_heads=gh)
+                        if getattr(self, "note_order_gate", None) is not None:
+                            # E33i: [B,S,1] → [B,1,S,1]; the gradient reaches the switch through the bias buffer
+                            gam = torch.sigmoid(self.note_order_gate(x).float()).transpose(1, 2)[..., None]
+                            lc = lc * gam
                         note_bias = (self.note_age_slope, lc, None, self.note_rank_rep, "rank")
                 else:
                     note_bias = (self.note_age_slope, pos, message.slot_pos, self.note_age_unit, self.note_age_mode)
@@ -2024,6 +2271,11 @@ class Attention(nn.Module):
             out = self.wo(o.reshape(B, S, self.h * self.dh))
             if self.note_age_slope is not None and note_bias is None:
                 out = out + 0.0 * self.note_age_slope.sum().to(out.dtype)
+            if self.note_counter is not None:
+                if message.override not in ("none", "raw") and message.slot_close is not None:
+                    out = out + self.note_counter(x, k_bar, k_un, message).to(out.dtype)
+                else:
+                    out = out + 0.0 * sum(p.sum() for p in self.note_counter.parameters()).to(out.dtype)
 
             def _rewrite_concat(h):
                 k_raw2, v2 = self.kv_raw(h, ids)
@@ -2191,6 +2443,93 @@ def _liger_flce():
     return LigerFusedLinearCrossEntropyLoss
 
 
+class LoopControl(nn.Module):
+    """E33c (2026-10-18): each loop round reads its next relation from the question — a MAC control unit (Hudson &
+    Manning 2018, arXiv 1803.03067) on the tied read loop.
+
+    Why: rounds share weights, and on E33q / E33qn the only round-specific input was the per-round embedding (~2 % of the
+    state; remapping or zeroing it at exam time changed nothing). Trained on 1–2 teacher hops, the loop learned "after at
+    most two teacher reads, read the home": on 3-hop compose it picks bridge 2's home 80–89 % of the time. Here, at every
+    position t, round r attends over the last W words (t − W + 1 … t, own document), queried by the previous control and
+    the question summary at t:
+
+        s_{r,h,i} = q_{r,h} · k_{h,i} / √dh + b_h(i − P_{r−1,h})     P_{r−1}: the previous round's pointer (t at round 1)
+        α = softmax_i(s);   c_r = Σ_i α_i v_i;   P_r = Σ_i α_i i;   u_r = gate ⊙ rmsnorm(W_o c_r)
+
+    - b_h is learned over the key's offset from the previous pointer (linearly interpolated), so "the next relation word
+      to the left of the one just read" is one rule at any hop count: a third "teacher of" applies it once more.
+    - Words are the input layer's vectors by default, identical at every "teacher of", so c_r cannot count hops either.
+    - u_r is added to round r's input and taken out again after the round: the instruction is that round's alone (a sum
+      over rounds would grow with the hop count).
+    - The gate starts at 0: a warm start from E33q / E33qn is unchanged at step 0.
+    Shapes: words, summary [B,S,d] → per round u [B,S,d]; control c [B,S,dc]; pointer (distance left of t) [B,S,H].
+    """
+
+    def __init__(self, cfg: PerceiverARConfig):
+        super().__init__()
+        d, dc, H = cfg.hidden_size, int(cfg.message_loop_control_dim), int(cfg.message_loop_control_heads)
+        self.W, self.H, self.dh = int(cfg.message_loop_control_window), H, dc // H
+        self.to_k = nn.Linear(d, dc, bias=False)
+        self.to_v = nn.Linear(d, dc, bias=False)
+        self.q_from_c = nn.Linear(dc, dc, bias=False)
+        self.q_from_x = nn.Linear(d, dc, bias=False)
+        self.out = nn.Linear(dc, d, bias=False)
+        self.c0 = nn.Parameter(torch.randn(dc))  # the control before round 1 (rms-normed before use)
+        # b_h(δ) for δ = key − pointer ∈ [−(W−1), W−1], stored at δ + W − 1 (+ one entry for the interpolation's edge)
+        self.ptr_bias = nn.Parameter(torch.zeros(H, 2 * self.W))
+        self.gate = nn.Parameter(torch.zeros(d))
+
+    def start(self, words: torch.Tensor, summary: torch.Tensor, doc: Optional[torch.Tensor]) -> dict:
+        """Once per forward: keys / values of every word (left-padded by W − 1), the window mask, the summary's query
+        part, c_0 and the round-1 pointer (at t). doc [B,S] (−1 = padding) or None (one document per row)."""
+        B, S, _ = words.shape
+        W, H, dh = self.W, self.H, self.dh
+        w = F.rms_norm(words, (words.shape[-1],))
+        k = F.pad(self.to_k(w).view(B, S, H, dh), (0, 0, 0, 0, W - 1, 0))                    # [B,S+W−1,H,dh]
+        v = F.pad(self.to_v(w).view(B, S, H, dh), (0, 0, 0, 0, W - 1, 0))
+        if doc is None:
+            doc = torch.zeros(B, S, dtype=torch.long, device=words.device)
+        dp = F.pad(doc, (W - 1, 0), value=-2)
+        ok = torch.stack([dp[:, j:j + S] == doc for j in range(W)], -1)                      # [B,S,W]; slot W−1 = t
+        qx = self.q_from_x(F.rms_norm(summary, (summary.shape[-1],))).view(B, S, H, dh)
+        return {"k": k, "v": v, "ok": ok, "qx": qx, "c": self.c0.to(qx.dtype).expand(B, S, -1),
+                "ptr": torch.zeros(B, S, H, device=words.device)}
+
+    def step(self, st: dict, capture: Optional[dict] = None) -> torch.Tensor:
+        """One round: read the window, move the pointer, return u_r [B,S,d] (updates st["c"], st["ptr"])."""
+        W, H, dh = self.W, self.H, self.dh
+        B, S = st["ok"].shape[:2]
+        k, v, c, ptr = st["k"], st["v"], st["c"], st["ptr"]
+        q = self.q_from_c(F.rms_norm(c, (c.shape[-1],))).view(B, S, H, dh) + st["qx"]
+        s = torch.stack([(q * k[:, j:j + S]).sum(-1) for j in range(W)], -1).float() / math.sqrt(dh)  # [B,S,H,W]
+        # slot j holds key t − (W − 1) + j; its offset from the pointer t − ptr is δ = j − (W − 1) + ptr, i.e. table
+        # index j + ptr: rows n = ⌊ptr⌋ and n + 1 of the table's length-W windows, mixed by the fraction
+        n = ptr.detach().floor().clamp(0, W - 1)
+        f = (ptr - n).unsqueeze(-1)
+        n = n.long()
+        tab = self.ptr_bias.float().unfold(1, W, 1)                                          # [H, W+1, W]
+        hh = torch.arange(H, device=ptr.device)
+        s = s + tab[hh, n] * (1 - f) + tab[hh, n + 1] * f
+        a = torch.softmax(s.masked_fill(~st["ok"][:, :, None, :], float("-inf")), -1)        # [B,S,H,W]
+        av = a.to(v.dtype)
+        c = sum(av[..., j, None] * v[:, j:j + S] for j in range(W)).reshape(B, S, H * dh)    # [B,S,dc]
+        st["c"] = c
+        st["ptr"] = (a * torch.arange(W - 1, -1, -1, device=a.device, dtype=a.dtype)).sum(-1)
+        if capture is not None and "q_pos" in capture:  # exam probe: where each round's control looks
+            qp = capture["q_pos"].to(a.device)
+            rows = torch.arange(B, device=a.device)[:, None]
+            capture.setdefault("control_attn", []).append(a[rows, qp].detach())          # [B,P,H,W]
+            capture.setdefault("control_ptr", []).append(st["ptr"][rows, qp].detach())   # [B,P,H]
+        u = F.rms_norm(self.out(c), (self.out.out_features,))
+        return self.gate.to(u.dtype) * u
+
+
+def loop_control_param_count(cfg: PerceiverARConfig) -> int:
+    d, dc = cfg.hidden_size, int(cfg.message_loop_control_dim)
+    W, H = int(cfg.message_loop_control_window), int(cfg.message_loop_control_heads)
+    return 3 * d * dc + dc * dc + dc * d + dc + H * 2 * W + d
+
+
 # --------------------------------------------------------------------------------------
 # Model
 # --------------------------------------------------------------------------------------
@@ -2232,6 +2571,15 @@ class PerceiverARLM(PreTrainedModel):
         if cfg.write_back_hook:
             g, dh = cfg.num_kv_heads, cfg.head_dim
             self.write_back_proj = nn.Linear(cfg.hidden_size, 2 * g * dh, bias=False)
+        # Text multi-hop (2026-10-17): note read-back, training only. From each note's value v̄ (what the reader gets) a
+        # linear head names the tokens at the note's expected position −1, 0, +1. On the bridge data the writer kept
+        # names and places but dropped common words: the notes on "shiny" in "Every kavi is shiny." did not say which
+        # property it was (probe 11 %, guessing 8 %), so deduce could not be answered however well the read aimed.
+        self.note_readback = (
+            nn.Linear(int(cfg.lm_reader_tokens) * cfg.num_kv_heads * cfg.head_dim, 3 * cfg.vocab_size, bias=False)
+            if self.memory_writer is not None and float(getattr(cfg, "lm_readback_aux", 0.0) or 0.0) > 0 else None
+        )
+        self._readback_inputs = None
         # E33a: tied loop over [global read + span layers]. Zero-init loop marker → R = 1 is today's stack.
         self.loop_rounds = int(getattr(cfg, "message_loop_rounds", 1) or 1)
         self.loop_emb = nn.Parameter(torch.zeros(self.loop_rounds, cfg.hidden_size)) if self.loop_rounds > 1 else None
@@ -2240,6 +2588,24 @@ class PerceiverARLM(PreTrainedModel):
             if self.loop_rounds > 1 and getattr(cfg, "message_loop_inject", "none") == "prelude" else None
         )
         self._loop_rounds_override: Optional[int] = None  # eval: run r loops (exit r == the R = r forward)
+        # E33q: the loop asks its next question with the name it found. Round r's state is read through the shared LM
+        # head (final norm → lm_head); the distribution, re-embedded with the shared token table and the input layer's
+        # up-projection, joins round r+1's input through a per-channel gate that starts at 0 (step 0 = E33r). The
+        # oracle of 17 Oct: E33r composes 58 % at 4k, 81 % with the bridge written into the question.
+        if str(getattr(cfg, "message_loop_feedback", "none") or "none") not in ("none", "soft"):
+            raise ValueError("message_loop_feedback must be 'none' or 'soft'")
+        self.loop_feedback_gate = (
+            nn.Parameter(torch.zeros(cfg.hidden_size))
+            if self.loop_rounds > 1 and getattr(cfg, "message_loop_feedback", "none") == "soft" else None
+        )
+        self._name_lens_losses: Optional[list] = None
+        # E33c: each round reads its next relation from the question (LoopControl; gate from 0, step 0 = E33qn).
+        # `_control_capture` = {"q_pos": [B,P]} records each round's control attention and pointer there (exam probe).
+        self.loop_control = (
+            LoopControl(cfg)
+            if self.loop_rounds > 1 and getattr(cfg, "message_loop_control", "none") == "question" else None
+        )
+        self._control_capture: Optional[dict] = None
         # Notes-budget exam (latent memory, nothing retrained): `_notes_override` = (k̄, v̄, slot_pos) replaces what the
         # writer would write (another forward's notes: B reads A's notebook over its own text); `_note_keep` [B,nb]
         # hides every other note; `_note_capture` = {"q_pos": [B,P]} records how much each read looks at each note.
@@ -2262,6 +2628,7 @@ class PerceiverARLM(PreTrainedModel):
         )
         self._collect_name_states = False
         self._loop_core_states = None
+        self._read_targets: Optional[torch.Tensor] = None
         self._loop_states: Optional[list] = None
         self._collect_loop_states = False
         self.gradient_checkpointing = False
@@ -2292,6 +2659,18 @@ class PerceiverARLM(PreTrainedModel):
                 nn.init.zeros_(layer.attn.compressor.delta.weight)   # post_init re-inits Linears
         if self.memory_writer is not None:
             nn.init.zeros_(self.memory_writer.to_v_state.weight)   # E31: values start as content
+            if getattr(self.memory_writer, "keyread_out", None) is not None:
+                nn.init.zeros_(self.memory_writer.keyread_out.weight)  # the address read adds nothing at step 0
+        if self.note_readback is not None:
+            # a zero head sends no gradient into the notes at step 0, so a warm-started reader keeps its decoding while the
+            # head learns (a random head scrambled the values: E33b run 1 at half its run, 17 Oct, compose 60 → 12 %)
+            nn.init.zeros_(self.note_readback.weight)
+        for layer in self.layers:
+            if getattr(layer.attn, "note_counter", None) is not None:  # E33h: the count adds nothing at step 0
+                nn.init.zeros_(layer.attn.note_counter.out.weight)
+            if getattr(layer.attn, "note_order_gate", None) is not None:  # E33i: switch nearly off (σ(−2) ≈ 0.12)
+                nn.init.zeros_(layer.attn.note_order_gate.weight)
+                nn.init.constant_(layer.attn.note_order_gate.bias, -2.0)
 
     # -- HF plumbing ----------------------------------------------------------------
     def _init_weights(self, module):
@@ -2649,10 +3028,13 @@ class PerceiverARLM(PreTrainedModel):
                     msg.slots, msg.slot_pos = (k_o, v_o), sp_o
                 else:
                     out = self.memory_writer(
-                        self.embed.tok(input_ids), msg.side, msg.doc, key_valid, pos, cfg.rope_theta
+                        self._writer_input(input_ids, msg.local_doc_ids), msg.side, msg.doc, key_valid, pos,
+                        cfg.rope_theta,
                     )
                     msg.slots = (out["k"], out["v"])
                     msg.slot_pos = out["slot_pos"]
+                    if self.note_readback is not None and self.training:
+                        self._readback_inputs = (out["v"], out["slot_pos"], msg.slot_doc)
                 if self._note_capture is not None or self._notes_override is not None:
                     self._last_notes = (msg.slots[0], msg.slots[1], msg.slot_pos)
                 if self._note_capture is not None:  # requests score A's whole notebook, hidden notes included
@@ -2662,6 +3044,14 @@ class PerceiverARLM(PreTrainedModel):
                 msg.capture = self._note_capture
             else:
                 x0 = x0 + self.memory_writer.participation().to(x0.dtype)  # DDP: no QUERY in batch
+        if (msg is not None and msg.external is None and self.training and self._read_targets is not None
+                and self.memory_writer is not None and float(getattr(cfg, "message_loop_read_aux", 0.0) or 0.0) > 0):
+            geo = self.memory_writer.geometry(S)
+            msg.read_targets = self._read_targets.to(input_ids.device)
+            msg.read_round, msg.read_losses = 1, []
+            msg.page_starts = torch.tensor(geo.starts, device=input_ids.device, dtype=torch.long)
+            msg.page_window, msg.notes_per_page = geo.window, geo.latents * geo.reader_tokens
+            msg.read_target = str(getattr(cfg, "message_loop_read_target", "page") or "page")
         cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, x0.dtype)
         x = x0
         n = len(self.layers)
@@ -2700,15 +3090,31 @@ class PerceiverARLM(PreTrainedModel):
             for i in range(gi):
                 x = run_layer(i, x, skips)
             prelude, skips0 = x, list(skips)
+            ctrl, cst = self.loop_control, None
+            if ctrl is not None:  # E33c: the words the control reads, and their documents (−1 = padding)
+                cdoc = local_doc
+                if key_valid is not None:
+                    cdoc = (key_valid.long() - 1) if cdoc is None else cdoc.masked_fill(~key_valid, -1)
+                words = prelude if cfg.message_loop_control_words == "prelude" else x0
+                cst = ctrl.start(words, prelude, cdoc)
             states = []
             for r in range(R):
+                if msg is not None:
+                    msg.read_round = r + 1
                 x = x + self.loop_emb[min(r, self.loop_emb.shape[0] - 1)].to(x.dtype)
                 if r and self.loop_gate is not None:
                     x = x + self.loop_gate.to(x.dtype) * prelude
+                u = ctrl.step(cst, self._control_capture).to(x.dtype) if cst is not None else None
+                if u is not None:
+                    x = x + u
                 s = list(skips0)
                 for i in core:
                     x = run_layer(i, x, s)
+                if u is not None:
+                    x = x - u  # round r's instruction is its own; the next round gets the next one
                 states.append((x, s))
+                if r < R - 1 and (self.loop_feedback_gate is not None or self._name_lens_losses is not None):
+                    x = self._loop_lens(x, r, input_ids)
             if self._collect_name_states:
                 self._loop_core_states = [xs for xs, _ in states]
             if self._collect_loop_states:  # exits: each earlier loop's state through the answer layer
@@ -2746,7 +3152,8 @@ class PerceiverARLM(PreTrainedModel):
             side = torch.zeros_like(ids)
             pos = torch.arange(ids.shape[1], device=ids.device)[None].expand(B, -1) + off
             msg = self._message_context(ids, None, None, pos)
-            out = self.memory_writer(self.embed.tok(ids), msg.side, msg.doc, None, pos, cfg.rope_theta)
+            out = self.memory_writer(self._writer_input(ids, msg.local_doc_ids), msg.side, msg.doc, None, pos,
+                                     cfg.rope_theta)
             return out["k"], out["v"], out["slot_pos"]
 
         if not chunk_pages or B != 1 or S <= 2 * chunk_pages * st:
@@ -2794,6 +3201,7 @@ class PerceiverARLM(PreTrainedModel):
         message_kv: Optional[tuple] = None,
         position_offset: int = 0,
         prefix_embeds: Optional[torch.Tensor] = None,
+        read_targets: Optional[torch.Tensor] = None,
     ):
         # NOTE: no **kwargs here on purpose. HF Trainer treats any VAR_KEYWORD forward as a
         # model that normalizes its own loss by num_items_in_batch and then skips the division
@@ -2806,6 +3214,12 @@ class PerceiverARLM(PreTrainedModel):
         cfg = self.config
         round_tgt = getattr(self, "_round_targets", None)
         self._round_targets = None
+        # text multi-hop (2026-10-17): per-question read targets from the collator, used in training only
+        self._read_targets = read_targets if self.training else None
+        # E33q: hop-naming losses collected by the loop rounds (training with read targets only)
+        self._name_lens_losses = ([] if (self.training and read_targets is not None and labels is not None
+                                         and float(getattr(cfg, "message_loop_name_lens", 0.0) or 0.0) > 0
+                                         and self.loop_emb is not None) else None)
         # Text (closed read): the exit aux is a training signal only, so eval loss stays the plain
         # next-token CE that every text-checks arm is compared on. Exam mode (exclusive) unchanged.
         self._collect_loop_states = bool(
@@ -2892,8 +3306,111 @@ class PerceiverARLM(PreTrainedModel):
             loss = loss + cfg.message_loop_name_aux * self._loop_name_loss(self._loop_core_states, labels, round_tgt)
         self._loop_core_states = None
         self._collect_name_states = False
+        if self._readback_inputs is not None:
+            loss = loss + cfg.lm_readback_aux * self._readback_loss(input_ids, attention_mask)
+            self._readback_inputs = None
+        if float(getattr(cfg, "lm_count_aux", 0.0) or 0.0) > 0 and self.training and read_targets is not None:
+            loss = loss + cfg.lm_count_aux * self._count_loss(read_targets)
+        if self._name_lens_losses:
+            loss = loss + cfg.message_loop_name_lens * torch.cat(self._name_lens_losses).mean()
+        self._name_lens_losses = None
+        mctx = self._last_message_ctx
+        rls = getattr(mctx, "read_losses", None) if mctx is not None else None
+        if rls:
+            loss = loss + cfg.message_loop_read_aux * torch.cat(rls).mean()
+        if mctx is not None:
+            mctx.read_losses, mctx.read_targets = None, None
+        self._read_targets = None
         loss = self._maybe_add_prefix_ae(loss, input_ids)
         return CausalLMOutput(loss=loss, logits=(logits if return_logits else None))
+
+    def _count_loss(self, read_targets: torch.Tensor) -> torch.Tensor:
+        """E33k: at each count question's decision position (a quad with round == COUNT_ROUND marks it) every count
+        head's sum n (the last loop round's read) must equal the true number of visits (quads with rounds
+        COUNT_ROUND + 1 …): Huber(n − k), mean over heads and questions. 0 if the batch has no count question."""
+        from data.text_world import COUNT_ROUND
+
+        att = self.layers[self.config.global_layer_index].attn
+        n = getattr(getattr(att, "note_counter", None), "last_n", None)
+        rt = read_targets.to(n.device) if n is not None else None
+        if n is None or rt is None or not bool((rt[..., 1] == COUNT_ROUND).any()):
+            return (n.sum() * 0.0) if n is not None else torch.zeros((), device=read_targets.device)
+        bi, ti = (rt[..., 1] == COUNT_ROUND).nonzero(as_tuple=True)
+        qp = rt[bi, ti, 0]
+        visits = ((rt[..., 1] > COUNT_ROUND) & (rt[..., 1] < 2 * COUNT_ROUND))                 # [B,T]
+        same = (rt[bi, :, 0] == qp[:, None]) & visits[bi]                                       # [N,T]
+        k = same.sum(-1).float()                                                                # [N]
+        got = n[bi, qp]                                                                         # [N,nc]
+        return F.smooth_l1_loss(got.float(), k[:, None].expand_as(got))
+
+    def _writer_input(self, ids: torch.Tensor, local_doc: Optional[torch.Tensor]) -> torch.Tensor:
+        """What the notebook writer reads: the shared token table [B,S,e], or with lm_writer_input="embed" the decoder's
+        whole input layer [B,S,d] (the same encoding the reader's tokens start from)."""
+        if getattr(self.config, "lm_writer_input", "table") == "embed":
+            return self.embed(ids, local_doc)
+        return self.embed.tok(ids)
+
+    def _loop_lens(self, x: torch.Tensor, r: int, input_ids: torch.Tensor) -> torch.Tensor:
+        """E33q, after loop round r (0-based, not the last): the round's state through the shared LM head, with the
+        decoder weights DETACHED (final norm, LM head, token table, input up-projection), so neither the naming loss nor
+        the feedback trains the output head or the encoding the writer reads; only the loop's state and the gate learn.
+        - Training with read targets (`message_loop_name_lens` > 0): at each question's decision position the
+          distribution must name hop r+1's output word — the tokens of its span (quads with round == r + 1: answer
+          position, round, first token, last token), −mean log p; spans longer than 4 tokens (quote's signs, the
+          builder's whole-sentence fallback) are skipped. All the word's pieces, not just the first: a name's first piece
+          is its capital letter, which a dozen cast members share. Appended to `_name_lens_losses`.
+        - `message_loop_feedback="soft"`: softmax(logits / T) @ token table → the input layer's up-projection and norm
+          → × the per-channel gate (starts at 0) → added to the state that enters round r + 1. [B,S,d] → [B,S,d]."""
+        cfg = self.config
+        fn = self.final_norm
+        h = F.rms_norm(x, fn.normalized_shape, fn.weight.detach() if fn.weight is not None else None, fn.eps)
+        W_out = self.lm_head.weight.detach()
+        sc = float(cfg.logit_softcap or 0.0)
+        cap = (lambda z: sc * torch.tanh(z / sc)) if sc > 0 else (lambda z: z)
+        rt = self._read_targets
+        if self._name_lens_losses is not None and rt is not None:
+            rt = rt.to(x.device)
+            sel = ((rt[..., 1] == r + 1) & (rt[..., 0] >= 0) & (rt[..., 2] >= 0)
+                   & (rt[..., 3] - rt[..., 2] + 1 <= 4) & (rt[..., 3] >= rt[..., 2]))
+            if bool(sel.any()):
+                bi, ti = sel.nonzero(as_tuple=True)
+                qp, t0, t1 = rt[bi, ti, 0], rt[bi, ti, 2], rt[bi, ti, 3]
+                logp = F.log_softmax(cap(F.linear(h[bi, qp], W_out).float()), -1)                 # [N,V]
+                off = torch.arange(4, device=x.device)
+                tp = t0[:, None] + off[None]                                                     # [N,4]
+                ok = tp <= t1[:, None]
+                tok = input_ids[bi[:, None], tp.clamp(max=input_ids.shape[1] - 1)]
+                nll = -(logp.gather(1, tok) * ok).sum(-1) / ok.sum(-1).clamp(min=1)
+                self._name_lens_losses.append(nll)
+        if self.loop_feedback_gate is None:
+            return x
+        p = torch.softmax(cap(F.linear(h, W_out)).float() / cfg.message_loop_feedback_temp, -1)
+        E = self.embed
+        e = p.to(E.tok.weight.dtype) @ E.tok.weight.detach()                                      # [B,S,e]
+        up = F.linear(e, E.up0.weight.detach()) + F.linear(F.silu(F.linear(e, E.up1.weight.detach())),
+                                                             E.up2.weight.detach())
+        fb = F.rms_norm(up, E.norm.normalized_shape, E.norm.weight.detach() if E.norm.weight is not None else None,
+                        E.norm.eps)
+        return x + self.loop_feedback_gate.to(x.dtype) * fb.to(x.dtype)
+
+    def _readback_loss(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor]) -> torch.Tensor:
+        """Mean CE of naming, from each live note's value, the tokens at its expected position −1, 0, +1."""
+        v, sp, sd = self._readback_inputs
+        B, C = sp.shape
+        V = int(self.config.vocab_size)
+        S = input_ids.shape[1]
+        p = self.note_readback.weight.shape[0] // V
+        logits = self.note_readback(v.reshape(B, C, -1)).view(B, C, p, V)
+        off = torch.arange(p, device=sp.device) - (p // 2)
+        pos = sp[:, :, None] + off[None, None]                               # [B,C,p]
+        ok = (sd[:, :, None] >= 0) & (pos >= 0) & (pos < S)
+        pc = pos.clamp(0, S - 1)
+        tgt = input_ids.gather(1, pc.reshape(B, -1)).view(B, C, p)
+        if attention_mask is not None:
+            ok = ok & attention_mask.bool().gather(1, pc.reshape(B, -1)).view(B, C, p)
+        if not bool(ok.any()):
+            return logits.sum() * 0.0
+        return F.cross_entropy(logits[ok].float(), tgt[ok])
 
     def _loop_exit_loss(self, exits: list, labels: torch.Tensor, round_tgt: Optional[torch.Tensor]) -> torch.Tensor:
         """E33a: Σ over non-final loop exits of the token-mean CE. Exit r's targets are the round targets
@@ -2901,8 +3418,18 @@ class PerceiverARLM(PreTrainedModel):
         the labels."""
         cfg = self.config
         total = labels.new_zeros((), dtype=torch.float32)
+        base = labels
+        if getattr(cfg, "message_loop_exit_mask", "all") == "answers":
+            # text multi-hop (2026-10-17): exits score only the first answer token of every question (the decision)
+            base = torch.full_like(labels, -100)
+            rt = self._read_targets
+            if rt is not None:
+                rt = rt.to(labels.device)
+                b, t = ((rt[..., 1] == 0) & (rt[..., 0] >= 0) & (rt[..., 0] + 1 < labels.shape[1])).nonzero(as_tuple=True)
+                pos = rt[b, t, 0] + 1
+                base[b, pos] = labels[b, pos]
         for r, xr in enumerate(exits):
-            tr = labels
+            tr = base
             if cfg.message_loop_exit_targets == "progress" and round_tgt is not None and r < round_tgt.shape[0]:
                 tr = round_tgt[r]
                 if tr.shape[1] < labels.shape[1]:
@@ -3134,6 +3661,8 @@ def analytic_param_count(cfg: PerceiverARConfig) -> ParamBreakdown:
                 dense += sum(p.numel() for p in LatentMemoryWriter(cfg).parameters())
         else:
             dense += n_full * (g * d + d * 2 * g * dh)                             # KVCompressor: u + delta
+    if int(getattr(cfg, "message_loop_rounds", 1) or 1) > 1 and getattr(cfg, "message_loop_control", "none") != "none":
+        dense += loop_control_param_count(cfg)      # E33c: the loop's question control
     sparse = len(cfg.ngram_orders) * cfg.ngram_buckets * e
     n_ve = sum(1 for i in range(L) if i in cfg.value_embed_layers)
     sparse += n_ve * (V * cfg.value_embed_dim)

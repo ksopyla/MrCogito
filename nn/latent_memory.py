@@ -237,9 +237,26 @@ class LatentMemoryWriter(nn.Module):
         self.addr_mode = str(getattr(cfg, "lm_addr", "window_start"))
         self.slot_pos_mode = str(getattr(cfg, "lm_slot_pos", "read"))
         self.slot_pos_ref = int(getattr(cfg, "slot_pos_ref", 2048) or 2048)
+        # "detach" (text multi-hop, 2026-10-17): the key is built from the latent's state and read with the
+        # gradient stopped, so a loss on where reads land (read targets, the LM through attention) trains only
+        # the key projections; what a latent reads is shaped by its value alone. With one shared read, E33o's
+        # note-level read target pulled the latent at a place name toward the person asked about, and the place
+        # dropped out of its value (probe 68 → 14 %).
+        self.key_grad = str(getattr(cfg, "lm_key_grad", "full") or "full")
+        # "address" (2026-10-18): "detach" plus a separate address read — each latent reads the page a second time,
+        # with its own query and position prior, for its key alone. E33ok's stop kept the notes' content, but its keys
+        # could only reuse the content read, so a note on a place name could no longer carry the person's name in its
+        # key (compose 61 → 42 %, lookup at 16k 89 → 52 %). The address read sees the token states and the shared
+        # projections with the gradient stopped, so nothing it learns moves the content read; its output joins the
+        # key through `keyread_out`, zero at init (a warm start from a "detach" model is unchanged at step 0).
+        if self.key_grad not in ("full", "detach", "address"):
+            raise ValueError(f"lm_key_grad must be full | detach | address, got {self.key_grad!r}")
         std = float(cfg.init_std)
 
-        self.in_proj = nn.Linear(e, dw, bias=False)
+        # "table": the shared token table only (E31-E33); "embed": the decoder's whole input layer (table + up-projection
+        # + norm, [.., hidden]) — the writer and the reader start from the same encoding (roadmap 17 Oct, idea 1)
+        in_dim = int(cfg.hidden_size) if str(getattr(cfg, "lm_writer_input", "table") or "table") == "embed" else e
+        self.in_proj = nn.Linear(in_dim, dw, bias=False)
         # unit-scale token states: without it tok (0.02) × in_proj (0.02) ≈ 0.002, and the first
         # residual update (≈ window average, ~0.3) wipes each token's identity before any pick
         self.in_norm = nn.RMSNorm(dw)
@@ -269,6 +286,10 @@ class LatentMemoryWriter(nn.Module):
                 c = (k + 0.5) * self.W / self.K
                 prior[k] = (-0.5 * ((t - c) / sigma) ** 2).clamp(min=-4.0)
         self.prior = nn.Parameter(prior)
+        if self.key_grad == "address":
+            self.keyread_q = nn.Linear(D, D, bias=False)
+            self.keyread_prior = nn.Parameter(prior[: self.K].clone())
+            self.keyread_norm = nn.RMSNorm(D)
         self.z_ffn_norm = nn.RMSNorm(D)
         self.z_ffn = _SwiGLU(D, 2 * D)
 
@@ -293,6 +314,8 @@ class LatentMemoryWriter(nn.Module):
         self.to_k_read = nn.Linear(D, self.m * self.g * self.dh, bias=False)
         self.to_v = nn.Linear(D, self.m * self.g * self.dh, bias=False)
         self.to_v_state = nn.Linear(D, self.m * self.g * self.dh, bias=False)
+        if self.key_grad == "address":
+            self.keyread_out = nn.Linear(D, self.m * self.g * self.dh, bias=False)
         self.k_out_norm = nn.RMSNorm(self.dh)
         self.last_diag: dict = {}
         self._last_k_bar = None
@@ -325,6 +348,25 @@ class LatentMemoryWriter(nn.Module):
         read = torch.einsum("bhkw,bwhd->bkhd", w, v).reshape(Bn, Kp, self.D)
         self._last_read = read  # per-head read-out (content), used for the reader's values/keys
         return w, self.wo(read)
+
+    def _address_read(self, z, x, mask, W):
+        """The key's own read (lm_key_grad="address"). z [Bn,K,D], x [Bn,W,dw] → [Bn,K,D]. Token states, latent states
+        and every shared module enter with the gradient stopped; only the keyread_* parameters learn here."""
+        Bn, K, _ = z.shape
+
+        def rms(mod, t):
+            w = mod.weight.detach() if mod.weight is not None else None
+            return F.rms_norm(t, mod.normalized_shape, w, mod.eps)
+
+        q = rms(self.qn, self.keyread_q(rms(self.z_norm, z.detach())).view(Bn, K, self.hl, self.dhl))
+        xn = rms(self.x_norm, x.detach())
+        k = rms(self.kn, F.linear(xn, self.wk.weight.detach()).view(Bn, W, self.hl, self.dhl))
+        v = F.linear(xn, self.wv.weight.detach()).view(Bn, W, self.hl, self.dhl)
+        logits = torch.einsum("bkhd,bwhd->bhkw", q, k) / math.sqrt(self.dhl)
+        logits = logits + self.keyread_prior[:K, :, :W].permute(1, 0, 2)[None].to(logits.dtype)
+        w = torch.softmax(logits.float().masked_fill(~mask[:, None, None, :], float("-inf")), dim=-1)
+        w = torch.nan_to_num(w, nan=0.0).to(v.dtype)
+        return self.keyread_norm(torch.einsum("bhkw,bwhd->bkhd", w, v).reshape(Bn, K, self.D))
 
     def _token_read(self, x, z):
         """BiXT back-step: tokens read the latents. x [Bn,W,dw], z [Bn,Kp,D] → Δx."""
@@ -380,7 +422,11 @@ class LatentMemoryWriter(nn.Module):
         p_abs = start_pos.reshape(Bn, 1) + p_rel  # [Bn, K]
 
         zo = self.out_norm(z)
-        kk = self.k_out_norm((self.to_k(zo) + self.to_k_read(read)).view(Bn, K, m, self.g, self.dh))
+        zk, rk = (zo, read) if self.key_grad == "full" else (zo.detach(), read.detach())
+        kpre = self.to_k(zk) + self.to_k_read(rk)
+        if self.key_grad == "address":
+            kpre = kpre + self.keyread_out(self._address_read(z, x, mask, W))
+        kk = self.k_out_norm(kpre.view(Bn, K, m, self.g, self.dh))
         vv = (self.to_v(read) + self.to_v_state(zo)).view(Bn, K, m, self.g, self.dh)
         C = n_w * K * m
         kk = kk.reshape(B, C, self.g, self.dh)

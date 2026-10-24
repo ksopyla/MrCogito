@@ -182,3 +182,103 @@ def test_exam_time_probe_puts_the_rank_read_on_an_e33_model():
         assert not torch.allclose(m(ids).logits, base, atol=1e-3)
         m._loop_rounds_override = 1  # rounds probe: one round decodes through the coda
         assert torch.isfinite(m(ids).logits).all()
+
+
+# ------------------------------------------------------------------ E33g: fixed order heads
+def test_order_heads_start_at_the_given_strengths_and_can_be_fixed():
+    """E33g: lm_note_age_init sets each head's starting strength (one value = every head); lm_note_age_learn=False
+    keeps them out of training. Defaults keep E33e exactly (zeros, trainable)."""
+    from nn.perceiver_ar_lm import note_age_init
+
+    assert torch.equal(note_age_init("", 9), torch.zeros(9))
+    assert torch.equal(note_age_init("2", 3), torch.tensor([2.0, 2.0, 2.0]))
+    assert note_age_init("1,2", 4).tolist() == [0.0, 0.0, 1.0, 2.0]
+    with pytest.raises(ValueError):
+        note_age_init("1,2,3", 2)
+    h = lm_cfg(**TEXT, **RANK).num_attention_heads
+    spec = ",".join(str(float(i % 3)) for i in range(h))
+    m = make(**TEXT, **LOOP, **WIDE, **RANK, lm_note_age_init=spec, lm_note_age_learn=False)
+    (_, s), = _slopes(m)
+    assert torch.equal(s.detach().cpu(), note_age_init(spec, h)) and not s.requires_grad
+    assert all(p.requires_grad for n, p in m.named_parameters() if "note_age_slope" not in n)
+    (_, s0), = _slopes(make(**TEXT, **LOOP, **WIDE, **RANK))
+    assert s0.requires_grad and not s0.detach().any()
+    ids = text_row(S=48).to(DEV)
+    out = m.to(DEV)(ids, labels=ids)
+    out.loss.backward()
+    assert s.grad is None and torch.isfinite(out.loss)
+
+
+def test_text_checks_arch_e33g_is_e33r_plus_fixed_order_heads():
+    from evaluation.text_checks import ARCHES, count_params, model_args
+
+    r = model_args("e33r_plain", "screen", 1152)
+    g = model_args("e33g_plain", "screen", 1152)
+    assert {k for k in g if g[k] != r.get(k)} == {"lm_note_age", "lm_note_rank_margin", "lm_note_rank_sharp",
+                                                  "lm_note_age_init", "lm_note_age_learn"}
+    assert ARCHES["e33g_plain"].has_notebook and g["message_loop_exit_aux"] == 0.0
+    assert count_params(g) <= count_params(r) + 16
+
+
+def test_exam_time_probe_takes_one_strength_per_head():
+    from evaluation.text_checks_eval import apply_note_order
+
+    m = make(seed=4, **TEXT, **LOOP, **WIDE, message_raw_window=8).to(DEV).eval()
+    h = m.config.num_attention_heads
+    spec = ",".join(["0"] * (h - 1) + ["4"])
+    apply_note_order(m, "rank", spec, 0.5, 4.0)
+    (_, s), = _slopes(m)
+    assert s.detach().cpu().tolist() == [0.0] * (h - 1) + [4.0]
+
+
+def test_content_gate_counts_by_the_content_heads_and_broadcasts():
+    """E33g2: with gate_heads the count comes from the mean score of those heads, the same for every head."""
+    ctx, t, pos, (B, S, h, g, dh, nb) = _read_setup(S=40)
+    m = make(**TEXT, **WIDE, message_raw_window=8)
+    rep = m.config.lm_latents * m.config.lm_reader_tokens
+    q, kb = t["q_un"], t["kb"]
+    lc = note_rank_logcount(q, kb, ctx, scale=dh ** -0.5, rep=rep, margin=1.0, sharp=2.0, gate_heads=[0, 1])
+    assert torch.allclose(lc[:, 0], lc[:, h - 1])
+    # the same as the own-score count of a model whose every head scores like the mean of heads 0 and 1
+    kbh = kb.repeat_interleave(h // g, dim=2)
+    qm = (q[:, :, :2] * kbh.new_ones(1)).clone()
+    # mean of the two heads' scores = score of the mean query against a shared key when the heads share their key
+    if g == 1 or h // g >= 2:
+        qmean = q[:, :, :2].mean(2, keepdim=True).expand(B, S, h, dh)
+        ref = note_rank_logcount(qmean, kb, ctx, scale=dh ** -0.5, rep=rep, margin=1.0, sharp=2.0)
+        assert torch.allclose(lc[:, 0], ref[:, 0], atol=1e-5)
+    del qm
+
+
+# ------------------------------------------------------------------ E33i: order on demand
+def test_order_switch_starts_nearly_off_and_learns():
+    """E33i: the rank term × σ(w·x + b) per reader position, w = 0 and b = −2 at the start: the model equals the
+    same model with the rank count scaled by σ(−2); the switch's weights receive gradient."""
+    torch.manual_seed(6)
+    kw = dict(**TEXT, **LOOP, **WIDE, **RANK, message_raw_window=8, lm_note_age_init="4", lm_note_age_learn=False)
+    m = make(**kw, lm_note_order_gate=True).to(DEV)
+    att = m.layers[m.config.global_layer_index].attn
+    assert att.note_order_gate is not None and not att.note_order_gate.weight.any()
+    assert torch.allclose(att.note_order_gate.bias, torch.tensor([-2.0], device=att.note_order_gate.bias.device))
+    ids = text_row(S=48).to(DEV)
+    out = m(ids, labels=ids)
+    out.loss.backward()
+    assert torch.isfinite(out.loss) and att.note_order_gate.weight.grad is not None
+    assert att.note_order_gate.bias.grad.abs().sum() > 0
+    # a fully closed switch is the model without an order term
+    m.eval()
+    with torch.no_grad():
+        att.note_order_gate.bias.fill_(-50.0)
+        closed = m(ids).logits
+        att.note_age_slope.zero_()
+        assert torch.allclose(m(ids).logits, closed, atol=1e-4)
+
+
+def test_text_checks_arch_e33i_orders_every_head_on_demand():
+    from evaluation.text_checks import ARCHES, model_args
+
+    g = model_args("e33g_plain", "screen", 1152)
+    i = model_args("e33i_plain", "screen", 1152)
+    assert {k for k in i if i[k] != g.get(k)} == {"lm_note_rank_margin", "lm_note_rank_sharp", "lm_note_age_init",
+                                                  "lm_note_order_gate"}
+    assert ARCHES["e33i_plain"].has_notebook

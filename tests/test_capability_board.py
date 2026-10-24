@@ -80,3 +80,13 @@ def test_no_harm_does_not_compare_ladders_scored_differently():
     var = {"label": "same", "score": 0.95, "ladder": {"131072": 0.80}, "ladder_kind": "candidate"}
     r = no_harm({"T": {"c": champ, "v": var}}, "c", ["v"])["v"]
     assert r["lost"] == [] and r["kept"] == 1 and r["missing"] == 1
+
+
+def test_short_task_ids_map_like_1k_ones():
+    def led(name):
+        return {"kind": "study", "name": "t", "host": "h", "collected": "2026-10-14",
+                "jobs": [{"name": name, "status": "done", "results": {"dense": {"p0": 0.99}}, "ladders": {}}]}
+    ev = evidence([led("v4_C2_lookalike-128_dense_s0")])[0]
+    assert [(e["task"], e["model"], e["label"]) for e in ev] == [("C2.lookalike-128", "dense", "same")]
+    ev = evidence([led("cmp_C5_pchain2-1k_h2_dense_s1")])[0]
+    assert [(e["task"], e["label"]) for e in ev] == [("C5.pchain2-1k", "settings-differ")]

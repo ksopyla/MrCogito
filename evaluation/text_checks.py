@@ -203,13 +203,186 @@ ARCHES = {
     "e33f": Arch("e33f", "E33 in split mode: each question reads its document only through the notes",
                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
                   "message_loop_exit_targets": "answer", "message_boundary_token": "Question"}, has_notebook=True),
+    # Text multi-hop fixes (2026-10-17; note e33_text_multihop_diagnosis_20261017.md).
+    # E33x: E33 with the loop's exit losses off. Every round's exit asked for the final answer (on every token), which
+    # makes the rounds interchangeable and, on a two-step question, asks round 1 for an answer it cannot have read yet.
+    "e33x": Arch("e33x", "E33 with the loop's exit losses off",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0}, has_notebook=True),
+    # E33r: E33x + a per-round read target (needs data built with --train_read_targets): round r of a compose / deduce
+    # answer is pushed to read fact r (its raw tokens or the notes of its pages); single-step questions (bridges,
+    # lookup, keyed, quote) on round 1.
+    "e33r": Arch("e33r", "E33 with exits off and a per-round read target",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5},
+                 has_notebook=True),
+    # E33o: E33r aimed at the hop's output word (data built with --train_read_targets output): round r is pushed onto
+    # the notes whose latent read that word (the teacher's name, the place, the class word, the property), not any
+    # note of its page. E33r reached the right page of "Every kavi is shiny." 95 % of the time and answered 12 %.
+    "e33o": Arch("e33o", "E33 with exits off and a per-round read target on the hop's output word",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_read_target": "note"}, has_notebook=True),
+    # E33b: E33o + note read-back — each note's value must name the tokens it read (training-only head, zero-init).
+    # E33r's notes on a property word did not encode which property it was (probe 11 %; on a place name 68 %).
+    # Run 1 (17 Oct) used a random-init head at 0.2 and scrambled the warm-started values; from run 2: zero-init, 0.1.
+    # E33g (2026-10-17, roadmap text_t4_t7_roadmap_20261017.md §4.1): E33r + order heads — E33e's rank among matching
+    # notes at FIXED per-head strengths (five heads 0 for lookup / keyed / quote, four at 1, 2, 4, 8 for order) with the
+    # tighter match gate. E33e's strengths, learned from 0, rose to 0.15 and fell back: story text never pays for order,
+    # so one learned scalar per head stays near 0. Warm-started from E33r on the reasoning data.
+    "e33g": Arch("e33g", "E33r + four fixed order heads (rank among matching notes at 1, 2, 4, 8; the other heads 0)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_note_age": "rank", "lm_note_rank_margin": 0.5, "lm_note_rank_sharp": 4.0,
+                  "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"}, has_notebook=True),
+    # E33h (2026-10-17, roadmap §4.5): E33r + two count heads — a summing read beside the global read. A softmax read
+    # averages, so count shows only as a saturating share; here each head adds σ(a·q·k + b) over the notes (each token
+    # of the document once: a page owns its first `stride` tokens) and the raw tokens no closed page owns yet, codes the
+    # sum as a soft one-hot over 0..10, and adds it to the read through a zero-initialised projection.
+    # E33gk (2026-10-17): E33g's fixed order heads + E33ok (note-level read target with the writer's key gradient
+    # stopped). E33g's order term gave compose +8 / +6 and deduce +7 over its matched control (E33rb); E33ok's stop
+    # kept the note content under the note-level target (place probe 80 %) and wrote the property word (33 %).
+    "e33gk": Arch("e33gk", "E33g's order heads + E33ok's note-level read target with key-side losses off the writer",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_read_target": "note", "lm_key_grad": "detach",
+                   "lm_note_age": "rank", "lm_note_rank_margin": 0.5, "lm_note_rank_sharp": 4.0,
+                   "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"}, has_notebook=True),
+    # E33ak / E33gak (2026-10-18): E33ok / E33gk with the key's own read of the page (lm_key_grad="address"). With
+    # the plain stop, keys could only reuse the content read: E33ok wrote the property (deduce 13 → 36 % at 4k) but lost
+    # compose (61 → 42 %) and long lookup (89 → 52 % at 16k), where a note's key must carry a name read elsewhere.
+    # E33qn (2026-10-18): E33q with the round-to-round feedback off — the naming lens alone. Removing the feedback at
+    # exam time left E33q's scores unchanged (compose 93 / 99 %, deduce 99 / 99 % at 4k / 16k; its gate stayed at
+    # |mean| 0.009), so the simpler recipe is trained on its own.
+    "e33qn": Arch("e33qn", "E33r + rounds name their hop through the shared LM head (no feedback)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_name_lens": 0.3, "message_loop_feedback": "none"}, has_notebook=True),
+    # E33c (2026-10-18; note e33_text_multihop_diagnosis_20261017.md §8, "Why 3-hop compose fails"): E33qn + each round
+    # reads its next relation from the question (nn/perceiver_ar_lm.py LoopControl, a MAC control unit). On 3-hop compose
+    # (beyond the training dials) E33q / e33ok pick bridge 2's home 80–89 %: the routine stops after the two teacher reads
+    # it was trained on. A per-round attention over the last 48 words, queried by the previous control, with a learned
+    # bias on the offset from the previous pointer, adds the round's instruction ("teacher of" / "live") to its input
+    # through a gate from 0, so "read a teacher fact" vs "read the home" can come from the question, not the round count.
+    "e33c": Arch("e33c", "E33qn + each loop round reads its next relation from the question (control attention)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_name_lens": 0.3, "message_loop_feedback": "none", "message_loop_control": "question",
+                  "message_loop_control_window": 48, "message_loop_control_dim": 128,
+                  "message_loop_control_heads": 4, "message_loop_control_words": "embed"}, has_notebook=True),
+    # Label-free runs of the multi-hop review (2026-10-18, e33_multihop_review_label_free_20261018.md §5).
+    # R1 — E33qn0: the naming lens without the per-round read target (warm start from E33x, which never had one). Are
+    # read targets needed once each hop is named?
+    "e33qn0": Arch("e33qn0", "E33r's loop with rounds naming their hop, no read target",
+                   {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.0,
+                    "message_loop_name_lens": 0.3, "message_loop_feedback": "none"}, has_notebook=True),
+    # R3 — E33w: the stage-W writer. E33f's split read (each side after a boundary reads what came before only through
+    # the notes) on task-free text — stories and world documents without their questions, cut at random points
+    # (build_text_checks_data.py --task_free_boundary Question) — with only the writer training (TRAIN_ONLY_PARAMS=
+    # memory_writer.). Exits off: the plain language-model loss after each cut is the whole objective.
+    "e33w": Arch("e33w", "E33f's split read, writer-only training on task-free cut text",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0,
+                  "message_boundary_token": "Question"}, has_notebook=True),
+    "e33ak": Arch("e33ak", "E33ok with the key's own read of the page",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_read_target": "note", "lm_key_grad": "address"}, has_notebook=True),
+    "e33gak": Arch("e33gak", "E33gk with the key's own read of the page",
+                   {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                    "message_loop_read_target": "note", "lm_key_grad": "address",
+                    "lm_note_age": "rank", "lm_note_rank_margin": 0.5, "lm_note_rank_sharp": 4.0,
+                    "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"}, has_notebook=True),
+    "e33h": Arch("e33h", "E33r + two count heads (a summing read over notes and recent tokens)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_count_heads": 2}, has_notebook=True),
+    # E33q (2026-10-17, roadmap §4.3; the decode-and-append oracle): E33r + the loop asks its next question with the name
+    # it found. Round r names hop r's output word through the shared LM head at the decision position (weight 0.3; data
+    # built with --train_read_targets output, whose spans also serve the page-level read target), and its LM-head
+    # distribution, re-embedded with the shared token table and input layer, joins round r+1 through a gate from 0.
+    # Oracle: E33r composes 58 % at 4k, 81 % with the gold bridge written into the question.
+    "e33q": Arch("e33q", "E33r + rounds name their hop and pass the name to the next round's question",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_name_lens": 0.3, "message_loop_feedback": "soft"}, has_notebook=True),
+    # E33i (2026-10-18, roadmap §4.1): order on demand. E33g's fixed order heads left latest at 22 % at 4k; probes on its
+    # weights: ordering every head with a wider match (margin 2) lifts the newest pick 29 → 50 % at 4k but costs lookup
+    # 80 → 54 % and compose 68 → 44 %. So every head gets strength 4 on the rank term, the match margin is 2, and a
+    # learned per-position switch σ(w·x + b) (w = 0, b = −2) scales it: a "now" question can turn order up, story text
+    # and other questions keep it off. Warm-started from E33g with its order strengths reset (WARM_START_SKIP).
+    "e33i": Arch("e33i", "E33g with order on demand: every head ranked, scaled by a learned per-question switch",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
+                  "lm_note_age_init": "4", "lm_note_age_learn": "false", "lm_note_order_gate": "true"},
+                 has_notebook=True),
+    # E33j (2026-10-18): E33q (rounds name their hop through the LM head) + E33i's order on demand, trained on data whose
+    # latest questions carry a one-step chain: the asked person's LAST move (built with the 18 Oct generator, read
+    # targets "output"). Round 1 must read that move's page and name its place, so the read target and the naming
+    # supervise exactly the order choice that the rank term + per-question switch can make. E33q's naming took compose
+    # 60 → 94 % and deduce 13 → 99 % at 4k (id split) with no order term.
+    "e33j": Arch("e33j", "E33q + order on demand, trained with the latest question's last move as its read target",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
+                  "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
+                  "lm_note_age_init": "4", "lm_note_age_learn": "false", "lm_note_order_gate": "true"},
+                 has_notebook=True),
+    # E33k (2026-10-18): E33h's count heads told the true number. E33h (answer loss only) stayed at 23 % at 4k. The data
+    # now marks each count question's visits (read-target quads, round base 100), and each count head's sum at the
+    # decision position must equal the number of visits (Huber, weight 0.1). Warm-started from E33h.
+    "e33k": Arch("e33k", "E33h + the count heads' sum supervised with the true number of visits",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "lm_count_heads": 2, "lm_count_aux": 0.1}, has_notebook=True),
+    # E33jf (2026-10-18): E33j with the order term always on (no per-question switch). E33i's switch never opened
+    # (bias −2.03 after 0.3B tokens); here every question reads with order, and the latest supervision (read target +
+    # naming on the last move) plus the other tasks' supervision teach the reader to live with it.
+    "e33jf": Arch("e33jf", "E33j with the order term always on (no switch)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
+                   "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
+                   "lm_note_age_init": "4", "lm_note_age_learn": "false"}, has_notebook=True),
+    # E33jd (2026-10-18): the page-distance alternative to E33jf's rank term, same latest supervision. Four heads lower
+    # older notes by s·log(1 + pages back) at fixed s = 1, 2, 4, 8; five heads stay order-free for lookup. A recency
+    # head alone reads the newest page (someone else's move, E33d's fixed-slope check); with the last move as the read
+    # target the reader can learn to combine an order-free match with a recency head.
+    "e33jd": Arch("e33jd", "E33q + four fixed page-distance heads (log pages back; 1, 2, 4, 8), latest supervised",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
+                   "lm_note_age": "log", "lm_note_age_init": "1,2,4,8", "lm_note_age_learn": "false"},
+                  has_notebook=True),
+    # E33k2 (2026-10-18): E33k's count heads already count (sum within 0.66 of the truth, rounded exact 49 % on count
+    # exams) but the answer stayed at 26 %: the sum is not decoded into the number word (several of which share a first
+    # token: " f"our / " f"ive). So the count loss weight goes to 1.0 and the rounds' naming lens (E33q) names the count
+    # word itself (data built with --train_count_naming: rounds 1-3 of a count question name its answer tokens).
+    "e33k2": Arch("e33k2", "E33k + count loss 1.0 + rounds name the count word (naming lens)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "lm_count_heads": 2, "lm_count_aux": 1.0, "message_loop_name_lens": 0.3}, has_notebook=True),
+    # E33m (2026-10-18): the combined model for the T4-T7 goal — E33j (hop naming, order on demand, latest told its last
+    # move) + E33k2's count heads told the true number and the rounds naming the count word. Warm-started from E33j on the
+    # data with the latest chain, the count visits and the count naming (text_checks_v2reason_count2).
+    "e33m": Arch("e33m", "E33j + count heads told the true number (one model for latest, compose, count, deduce)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_name_lens": 0.3, "message_loop_feedback": "soft",
+                  "lm_note_age": "rank", "lm_note_rank_margin": 2.0, "lm_note_rank_sharp": 2.0,
+                  "lm_note_age_init": "4", "lm_note_age_learn": "false", "lm_note_order_gate": "true",
+                  "lm_count_heads": 2, "lm_count_aux": 1.0}, has_notebook=True),
+    "e33b": Arch("e33b", "E33o + note read-back (each note's value names its tokens)",
+                 {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                  "message_loop_read_target": "note", "lm_readback_aux": 0.1}, has_notebook=True),
+    # E33rb: E33r (page-level read target) + note read-back. The note-level target of E33o / E33b emptied the notes
+    # (a probe recovers the place from a note at the place name 14 % / 12 %, E33r 68 %, guessing 8 %; lookup at 16k
+    # 87 → 0 / 18 %), so read-back is tested again on E33r's page target alone.
+    "e33rb": Arch("e33rb", "E33r + note read-back (each note's value names its tokens)",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "lm_readback_aux": 0.1}, has_notebook=True),
+    # E33ok / E33bk: E33o / E33b with the writer's key gradient stopped (lm_key_grad="detach"). A note's key and
+    # value came from one latent read, so the note-level target pulled the latent at a place name toward the person
+    # asked about and the place dropped out of its value; with the stop, read targets train the key projections only.
+    "e33ok": Arch("e33ok", "E33o with key-side losses kept off the writer's read",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_read_target": "note", "lm_key_grad": "detach"}, has_notebook=True),
+    "e33bk": Arch("e33bk", "E33b with key-side losses kept off the writer's read",
+                  {**_E31C, "message_loop_rounds": 4, "message_loop_exit_aux": 0.0, "message_loop_read_aux": 0.5,
+                   "message_loop_read_target": "note", "lm_readback_aux": 0.1, "lm_key_grad": "detach"},
+                  has_notebook=True),
 }
 # Plain-input variants (2026-10-10): the same models without the word-pair/triple hash tables and value
 # embeddings. Dense with plain input learned quote, lookup, keyed and latest at 30M / 1.5B tokens on v2, where
 # dense with the tables learned at most one (spec §16.1), so the architecture round runs on plain input. FFN width
 # is refitted, so each stays in the parameter band.
 _PLAIN = {"par_ngram_orders": "", "par_value_embed_layers": ""}
-for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f"):
+for _k in ("local", "e31c", "e31c_loop", "e33d", "e33e", "e33f", "e33x", "e33r", "e33o", "e33b", "e33rb", "e33ok", "e33bk",
+           "e33g", "e33h", "e33q", "e33i", "e33j", "e33jf", "e33jd", "e33k", "e33k2", "e33m", "e33gk", "e33ak", "e33gak",
+           "e33qn", "e33qn0", "e33w", "e33c"):
     _a = ARCHES[_k]
     ARCHES[f"{_k}_plain"] = Arch(f"{_k}_plain", _a.role + "; plain input (no n-gram tables, no value embeddings)",
                                  {**_a.args, **_PLAIN}, has_notebook=_a.has_notebook)
@@ -230,8 +403,19 @@ ENV_OF = {
     "lm_latent_dim": "PAR_LM_LATENT_DIM", "lm_heads": "PAR_LM_HEADS", "lm_writer_dim": "PAR_LM_WRITER_DIM",
     "lm_enc_layers": "PAR_LM_ENC_LAYERS", "lm_rounds": "PAR_LM_ROUNDS", "lm_reader_tokens": "PAR_LM_READER_TOKENS",
     "lm_addr": "PAR_LM_ADDR", "lm_slot_pos": "PAR_LM_SLOT_POS", "lm_note_age": "PAR_LM_NOTE_AGE", "lm_note_rank_margin": "PAR_LM_NOTE_RANK_MARGIN",
-    "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "message_loop_rounds": "PAR_LOOP_ROUNDS",
+    "lm_note_rank_sharp": "PAR_LM_NOTE_RANK_SHARP", "lm_note_age_init": "PAR_LM_NOTE_AGE_INIT",
+    "lm_note_age_learn": "PAR_LM_NOTE_AGE_LEARN", "lm_count_heads": "PAR_LM_COUNT_HEADS",
+    "lm_count_max": "PAR_LM_COUNT_MAX", "lm_count_aux": "PAR_LM_COUNT_AUX", "message_loop_name_lens": "PAR_LOOP_NAME_LENS",
+    "message_loop_feedback": "PAR_LOOP_FEEDBACK", "message_loop_feedback_temp": "PAR_LOOP_FEEDBACK_TEMP",
+    "lm_writer_input": "PAR_LM_WRITER_INPUT", "lm_note_rank_gate": "PAR_LM_NOTE_RANK_GATE",
+    "lm_note_order_gate": "PAR_LM_NOTE_ORDER_GATE", "message_loop_control": "PAR_LOOP_CONTROL",
+    "message_loop_control_window": "PAR_LOOP_CONTROL_WINDOW", "message_loop_control_dim": "PAR_LOOP_CONTROL_DIM",
+    "message_loop_control_heads": "PAR_LOOP_CONTROL_HEADS", "message_loop_control_words": "PAR_LOOP_CONTROL_WORDS",
+    "message_loop_rounds": "PAR_LOOP_ROUNDS",
     "message_loop_exit_aux": "PAR_LOOP_EXIT_AUX", "message_loop_exit_targets": "PAR_LOOP_EXIT_TARGETS",
+    "message_loop_exit_mask": "PAR_LOOP_EXIT_MASK", "message_loop_read_aux": "PAR_LOOP_READ_AUX",
+    "message_loop_read_target": "PAR_LOOP_READ_TARGET", "lm_readback_aux": "PAR_LM_READBACK_AUX",
+    "lm_key_grad": "PAR_LM_KEY_GRAD",
     "message_boundary_token_id": "PAR_MESSAGE_BOUNDARY_TOKEN_ID",
 }
 
@@ -281,7 +465,11 @@ def count_params(args: dict, vocab: int = VOCAB) -> int:
     tok = type("T", (), {"pad_token_id": 0, "bos_token_id": 1, "eos_token_id": 2, "__len__": lambda self: vocab})()
     with torch.device("meta"):
         model, _, _ = _build_perceiver_ar_model(tok, ma, SimpleNamespace(max_seq_length=4096, tokenizer_name="text-checks"))
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # training-only heads that the trained model never runs (the note read-back) are not part of its size
+    return sum(p.numel() for n, p in model.named_parameters() if p.requires_grad and not n.startswith(TRAIN_ONLY))
+
+
+TRAIN_ONLY = ("note_readback.",)
 
 
 def fit_params(arch: str, tier: str, vocab: int = VOCAB) -> tuple[dict, int]:

@@ -20,6 +20,22 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
+  ladder failed its pass mark.**
+  - The frozen reader can take a whole 512-token span through one optimised key/value entry: 99.98 % of tokens,
+    about 2,000 bits. One input vector carries only about 250 bits.
+  - A 10.6M writer, trained task-free with continuation + 20 % reconstruction (0.59B row tokens per run), recovers
+    18 / 22 / 27 % of the raw-text gain on books at 512 / 256 / 128 tokens per entry. The input way recovers 3 %.
+  - An 8-layer 28.3M writer changes nothing. Facts do not cross: SQuAD with the passage only in memory is 9 %
+    (8.8 % with no passage, 51.6 % with it in context).
+  - **The writer is the limit:** its entries carry ~36–54 bits; an entry optimised within the same format
+    carries 781.
+  - **19 Oct — the improved writer:** reconstruction-first training at growing spans (64 → 512) makes entries
+    carry 114–145 bits (from 32–48). Continuation recovered rises to 24.5 / 16.7 %. SQuAD from the own memory
+    is 11 % vs 6.4 % from another document's. Attention pooling adds nothing. Still below the 50 % pass mark.
+  - Next: teacher matching (S2) on passages with questions, on top of the curriculum writer.
+  - Spec: [E36_frozen_reader_writer.md](../experiments_specs/ahead/E36_frozen_reader_writer.md) · note:
+    [e36_frozen_reader_writer_20261018.md](../4_Research_Notes/e36_frozen_reader_writer_20261018.md).
 - **2026-10-17 — Agent to agent through the notebook works (E33f, E33 trained as two agents).** Agent A keeps an
   E33 notebook of a document. Agent B never sees the document: it holds only its question and fetches A's best 4
   notes per read of its loop, for every answer token.

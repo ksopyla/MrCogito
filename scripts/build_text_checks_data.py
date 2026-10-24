@@ -27,11 +27,13 @@ Add exams to an existing build (v2.1 splits; tokenizer, training mix and existin
 from __future__ import annotations
 
 import argparse
+import bisect
 import hashlib
 import json
 import math
 import os
 import random
+import re
 import shutil
 import sys
 import time
@@ -47,6 +49,7 @@ from data.text_world import (  # noqa: E402
     clean_story,
     make_eval_record,
     make_train_document,
+    qa_suffix,
 )
 
 STORY_FILES = {
@@ -131,10 +134,114 @@ def train_tokenizer(texts, vocab: int, out: Path):
     return fast
 
 
-def _row(ids: list[int], bos: int, eos: int) -> dict:
+def task_free_cuts(ids: list[int], boundary: int, k: int) -> list[int]:
+    """Task-free split rows (2026-10-18, the stage-W writer of the multi-hop review): up to `k` boundary tokens at
+    seeded random positions (none in the first 128 tokens or the last 32), the row's end trimmed so its length is
+    unchanged. Each boundary starts a new side, which reads everything before it only through the notes, so the
+    plain language-model loss after it asks the writer for what continuing the text needs."""
+    n = min(k, max(0, (len(ids) - 160) // 192))
+    if n == 0:
+        return ids
+    rng = random.Random(zlib.crc32(bytes(str(ids[:32]), "ascii")) ^ len(ids))
+    body = ids[: len(ids) - n]
+    cuts = sorted(rng.sample(range(128, len(body) - 32), n))
+    out, prev = [], 0
+    for c in cuts:
+        out += body[prev:c] + [boundary]
+        prev = c
+    return out + body[prev:]
+
+
+def _row(ids: list[int], bos: int, eos: int, read_targets: list | None = None) -> dict:
+    if _VERSION["task_free"]:
+        ids = task_free_cuts(ids, _VERSION["task_free"][0], _VERSION["task_free"][1])
     full = [bos] + ids + [eos]
-    return {"input_ids": full, "attention_mask": [1] * len(full),
-            "special_tokens_mask": [1] + [0] * len(ids) + [1]}
+    row = {"input_ids": full, "attention_mask": [1] * len(full),
+           "special_tokens_mask": [1] + [0] * len(ids) + [1]}
+    if _VERSION["read_targets"]:
+        row["read_targets"] = list(read_targets or [])
+    return row
+
+
+_QA = re.compile(r"\n\nQuestion: (.*?)\nAnswer:")
+
+
+def _count_base(question: str):
+    """A count question with no visits: its chain is empty, so the base comes from the question's shape."""
+    from data.text_world import COUNT_ROUND
+
+    return COUNT_ROUND if question.startswith("How many times") else None
+
+
+def read_targets(text: str, offsets: list, chains: list, span: str = "fact", count_naming: bool = False) -> list[int]:
+    """Flat (answer position, round, first token, last token) quadruples in row positions (BOS = 0), 2026-10-17.
+    Every question gives (pos, 0, -1, -1): `pos` is the "Answer:" colon, the position that predicts the first answer
+    token. A question whose chain is known (`chains`: question → (fact sentence, hop output word) in hop order) also
+    gives one quadruple per fact: round r of the answer's read should land on fact r — the whole sentence
+    (`span="fact"`) or only that hop's output word inside it (`span="output"`: the teacher's name, the place, the
+    class word, the property; the sentence when the word is not found)."""
+    starts = [a for a, _ in offsets]
+
+    def tok_of(c: int) -> int:  # the token holding character c
+        return max(0, bisect.bisect_right(starts, c) - 1)
+
+    chain_of = dict(chains)
+    out: list[int] = []
+    for m in _QA.finditer(text):
+        pos = tok_of(m.end() - 1) + 1
+        out += [pos, 0, -1, -1]
+        body_end = m.start()
+        steps = chain_of.get(m.group(1), [])
+        # count (18 Oct): steps (fact, word, base) — every visit is its own occurrence of a possibly repeated sentence,
+        # rounds base + 1, base + 2 …, and (pos, base, -1, -1) marks the question even with zero visits
+        base = next((st[2] for st in steps if isinstance(st, (tuple, list)) and len(st) > 2), None)
+        if base is None and m.group(1) in chain_of and not steps:
+            base = _count_base(m.group(1))
+        if base is not None:
+            out += [pos, base, -1, -1]
+            if count_naming:  # rounds 1-3 name the count word itself (its tokens after "Answer:"), for the naming lens
+                a0 = m.end()
+                line_end = text.find("\n", a0)
+                line_end = len(text) if line_end < 0 else line_end
+                so = text.rfind(" So ", a0, line_end)  # a written tally: the number follows its last "So"
+                if so >= 0:
+                    a0 = so + len(" So") 
+                stop = text.find(".", a0)
+                if 0 <= stop - a0 <= 12:
+                    for r in (1, 2, 3):
+                        out += [pos, r, tok_of(a0) + 1, tok_of(stop - 1) + 1]
+        seen: dict = {}
+        if base is not None:  # longer sentences first, so a shorter template never claims a visit inside a longer one
+            steps = sorted(steps, key=lambda st: -len(st[0]))
+        for r, step in enumerate(steps, 1):
+            fact, word = (step[0], step[1]) if isinstance(step, (tuple, list)) else (step, None)
+            if base is not None:
+                # every visit its own occurrence: a whole-word match, in order, never inside a region an earlier visit
+                # of this question took (one template's sentence can sit inside another's longer sentence)
+                pat, c0, at = re.compile(r"(?<!\w)" + re.escape(fact)), -1, seen.get(fact, 0)
+                while True:
+                    mm = pat.search(text, at, body_end)
+                    if not mm:
+                        break
+                    if not any(mm.start() < e and s0 < mm.end() for s0, e in seen.get("_taken", [])):
+                        c0 = mm.start()
+                        break
+                    at = mm.start() + 1
+                seen[fact] = c0 + len(fact) if c0 >= 0 else body_end
+                if c0 >= 0:
+                    seen.setdefault("_taken", []).append((c0, c0 + len(fact)))
+                r = base + r
+            else:
+                c0 = text.find(fact, 0, body_end)
+            if c0 < 0:
+                continue
+            a, b = c0, c0 + len(fact)
+            if span == "output" and word:
+                w = re.search(rf"(?<!\w){re.escape(word)}(?!\w)", text[c0:c0 + len(fact)])
+                if w:
+                    a, b = c0 + w.start(), c0 + w.end()
+            out += [pos, r, tok_of(a) + 1, tok_of(b - 1) + 1]
+    return out
 
 
 def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int):
@@ -147,12 +254,97 @@ def language_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eo
         i += 1
         cur = cur + (sep if cur else []) + ids
         if len(cur) >= seq_len - 2:
-            yield _row(cur[: seq_len - 2], bos, eos)
+            yield _row(cur[: seq_len - 2], bos, eos, [])
             made += 1
             cur = []
 
 
-_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "a2a": False, "vocab": 0}  # set from the arguments before workers fork
+_VERSION = {"world": TEXT_WORLD_VERSION, "questions": 1, "tasks": TASKS, "bridge": 0, "bridge_only": False, "a2a": False,
+            "vocab": 0, "read_targets": False, "task_free": None, "written": None}
+_AGREE = [0, 0]  # written chains: rule-derived output words that match the generator's, of all derived
+_TOKREF: dict = {"tok": None}  # the tokenizer, for read-target offsets (set before workers fork)  # set from the arguments before workers fork
+
+
+_STOP = {"a", "an", "the", "is", "are", "of", "in", "s", "every", "to", "and", "at", "on", "so", "was", "who"}
+
+
+def _words(s: str) -> list[str]:
+    return re.findall(r"[A-Za-z]+", s)
+
+
+def parse_written_chain(written: str, question: str, body: str) -> list[tuple[str, str]]:
+    """Read a written reasoning chain back into (step sentence, output word) pairs by a rule on the text alone
+    (R2 of the multi-hop review, 2026-10-18). `written` is "<step>. <step>. … So <answer>.".
+    - A step's output word is the word it shares with the next step, excluding the question's words and function
+      words; ties go to the rarest word in the document `body` (entities are rare, relation words common).
+    - The last step's output word is the answer after "So" (a leading article dropped).
+    The generator's own labels are not used; `written_chain_agreement` measures how often the rule agrees with them."""
+    head, sep, tail = written.strip().rpartition(" So ")
+    if not sep:
+        return []
+    steps = [s.strip() + "." for s in head.split(". ") if s.strip()]
+    steps = [s[:-1] if s.endswith("..") else s for s in steps]
+    answer = re.sub(r"^(a|an|the) ", "", tail.strip().rstrip("."))
+    qw = {w.lower() for w in _words(question)}
+    low_body = [w.lower() for w in _words(body)]
+    out = []
+    for r, step in enumerate(steps):
+        if r == len(steps) - 1:
+            word = answer
+        else:
+            nxt = {w.lower() for w in _words(steps[r + 1])}
+            cands = [w for w in dict.fromkeys(_words(step)) if w.lower() in nxt and w.lower() not in qw
+                     and w.lower() not in _STOP]
+            if not cands:
+                return []
+            word = min(cands, key=lambda w: low_body.count(w.lower()))
+        out.append((step, word))
+    return out
+
+
+def parse_written_tally(written: str) -> list[str]:
+    """Count's written reasoning (19 Oct): "<visit>. <visit>. … So <number>." read back by a rule on the text alone:
+    every sentence before "So" is one counted event (the number of them is the count the read must reach)."""
+    head, sep, _ = written.strip().rpartition(" So ")
+    if not sep:
+        head = "" if written.strip().startswith("So ") else head
+    return [s.strip().rstrip(".") + "." for s in head.split(". ") if s.strip().rstrip(".")] if head.strip() else []
+
+
+def write_chains(text: str, chains: list, keep: str) -> tuple[str, list, list]:
+    """Rewrite every answer whose chain is known as written reasoning (`keep` = all | drop1 | none of its steps
+    visible), and return (text, rule-derived chains for the read and naming targets, (rule word, generator word)
+    pairs for the agreement check). The full written chain is always parsed, visible or not: a reasoning dataset
+    holds the text even where the schedule hides it from the input."""
+    derived, pairs = [], []
+    for q, steps in chains:
+        block = qa_suffix(q)
+        i = text.find(block)
+        if i < 0:
+            continue
+        j = text.find(".", i + len(block))
+        if j < 0:
+            continue
+        answer = text[i + len(block):j].strip()
+        if _count_base(q) is not None:  # count (19 Oct): the visits listed one by one, then the number
+            facts = [st[0] for st in steps]
+            shown = {"all": facts, "drop1": facts[1:], "none": []}[keep]
+            new = (" " + " ".join(shown) + f" So {answer}.") if shown else f" {answer}."
+            text = text[: i + len(block)] + new + text[j + 1:]
+            listed = parse_written_tally(" ".join(facts) + f" So {answer}.")
+            derived.append((q, [(s, None, _count_base(q)) for s in listed]))
+            pairs.append((str(len(listed)), str(len(steps))))
+            continue
+        facts = [st[0] for st in steps]
+        written = " ".join(facts) + f" So {answer}."
+        shown = {"all": facts, "drop1": facts[1:], "none": []}[keep]
+        new = (" " + " ".join(shown) + f" So {answer}.") if shown else f" {answer}."
+        text = text[: i + len(block)] + new + text[j + 1:]
+        parsed = parse_written_chain(written, q, text[:i])
+        if parsed:
+            derived.append((q, parsed))
+            pairs += [(w, g) for (_, w), (_, g) in zip(parsed, steps)]
+    return text, derived, pairs
 
 
 def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: int, seed: int,
@@ -164,9 +356,17 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
     while len(rows) < n:
         target = int(math.exp(rng.uniform(math.log(min_len), math.log(seq_len - 2))))
         for shrink in (1.0, 0.9, 0.8, 0.6):
+            chains = [] if (_VERSION["read_targets"] or _VERSION["written"]) else None
             text = make_train_document(seed * 1_000_003 + k, stories, int(target * shrink), ntok,
                                        tasks=tuple(_VERSION["tasks"]), version=_VERSION["world"],
-                                       questions=_VERSION["questions"], bridge=_VERSION["bridge"])
+                                       questions=_VERSION["questions"], bridge=_VERSION["bridge"],
+                                       bridge_only=_VERSION["bridge_only"], chains=chains)
+            if _VERSION["task_free"]:
+                text = text.partition("\n\nQuestion:")[0]  # facts and filler only: no question, no answer
+            if _VERSION["written"]:
+                text, chains, pairs = write_chains(text, chains, _VERSION["written"])
+                _AGREE[0] += sum(a.lower() == b.lower() or b.lower().endswith(a.lower()) for a, b in pairs)
+                _AGREE[1] += len(pairs)
             if _VERSION["a2a"]:
                 # E35: agent A gets the document, agent B the questions: BOS document EOS BOS questions EOS
                 body, _, rest = text.partition("\n\nQuestion:")
@@ -179,7 +379,14 @@ def world_rows(stories: list[str], n: int, seq_len: int, encode, bos: int, eos: 
                 print(f"warning: invalid token id in world row (seed {seed}, k {k}); skipped", flush=True)
                 break
             if len(ids) <= seq_len - 2:
-                rows.append(_row(ids, bos, eos))
+                rt = None
+                if _VERSION["read_targets"] and not _VERSION["a2a"]:
+                    enc = _TOKREF["tok"](text, add_special_tokens=False, return_offsets_mapping=True)
+                    if list(enc["input_ids"]) != list(ids):
+                        raise RuntimeError("read targets: offset tokenization differs from encode()")
+                    rt = read_targets(text, enc["offset_mapping"], chains, span=_VERSION["read_targets"],
+                                      count_naming=bool(_VERSION.get("count_naming")))
+                rows.append(_row(ids, bos, eos, rt))
                 break
         k += 1
     return rows
@@ -191,8 +398,11 @@ FEATURES = None
 def _features():
     from datasets import Features, Sequence, Value
 
-    return Features({"input_ids": Sequence(Value("int32")), "attention_mask": Sequence(Value("int8")),
-                     "special_tokens_mask": Sequence(Value("int8"))})
+    cols = {"input_ids": Sequence(Value("int32")), "attention_mask": Sequence(Value("int8")),
+            "special_tokens_mask": Sequence(Value("int8"))}
+    if _VERSION["read_targets"]:
+        cols["read_targets"] = Sequence(Value("int32"))
+    return Features(cols)
 
 
 def _save(rows, path: Path, chunk: int = 5000):
@@ -208,7 +418,7 @@ def _save(rows, path: Path, chunk: int = 5000):
     parts, buf = [], []
 
     def flush():
-        cols = {k: [r[k] for r in buf] for k in ("input_ids", "attention_mask", "special_tokens_mask")}
+        cols = {k: [r[k] for r in buf] for k in _features()}
         p = tmp / f"part_{len(parts):05d}"
         Dataset.from_dict(cols, features=_features()).save_to_disk(str(p))
         parts.append(str(p))
@@ -310,6 +520,26 @@ def main():
     p.add_argument("--train_bridge", type=int, default=0,
                    help="bridge questions per compose / deduce training document (the single steps of the chain, "
                         "asked after the task's own questions); 0 = none (earlier builds)")
+    p.add_argument("--train_bridge_only", action="store_true",
+                   help="compose / deduce training documents ask only their bridge questions (up to --train_bridge), "
+                        "none of the task's own (the two-name gate, 2026-10-17)")
+    p.add_argument("--train_read_targets", nargs="?", const="fact", default=None, choices=("fact", "output"),
+                   help="every row gets a read_targets column: per question its answer position and, where the chain "
+                        "is known, per read round the token span of fact r (fact) or of that hop's output word inside "
+                        "it (output); 2026-10-17; stories get an empty list")
+    p.add_argument("--train_count_naming", action="store_true",
+                   help="with --train_read_targets: count questions also name their answer word on read rounds 1-3 "
+                        "(the naming lens decodes the count heads' sum into the number word; 2026-10-18)")
+    p.add_argument("--task_free_boundary", default=None,
+                   help="task-free split rows (2026-10-18): world documents lose their questions, and every row "
+                        "(stories too) gets up to --task_free_cuts copies of this single-token boundary at random "
+                        "points, after which earlier text is readable only through the notes")
+    p.add_argument("--task_free_cuts", type=int, default=3)
+    p.add_argument("--written_chains", default=None, choices=("all", "drop1", "none"),
+                   help="R2 (2026-10-18): answers with a known chain are written as reasoning ('<fact>. <fact>. So "
+                        "<answer>.'), with all, all but the first, or none of the steps visible; the read and naming "
+                        "targets come from the written chain by a rule (parse_written_chain), not from the generator. "
+                        "Needs --train_read_targets (output spans for the naming lens)")
     p.add_argument("--a2a", action="store_true",
                    help="E35: world rows become BOS document EOS BOS questions EOS (sender | receiver); stories unchanged")
     p.add_argument("--tokenizer", default=None,
@@ -319,7 +549,15 @@ def main():
     _VERSION["questions"] = args.train_questions
     _VERSION["tasks"] = tuple(args.train_tasks)
     _VERSION["bridge"] = args.train_bridge
+    _VERSION["bridge_only"] = bool(args.train_bridge_only)
+    _VERSION["read_targets"] = args.train_read_targets or False
+    _VERSION["count_naming"] = bool(args.train_count_naming)
     _VERSION["a2a"] = bool(args.a2a)
+    _VERSION["written"] = args.written_chains
+    if args.written_chains and not args.train_read_targets:
+        raise SystemExit("--written_chains needs --train_read_targets (output)")
+    if args.task_free_boundary and (args.train_read_targets or args.a2a):
+        raise SystemExit("--task_free_boundary takes no read targets and no --a2a")
     if args.eval_from and args.eval_splits:
         # eval/ becomes a link to the source build: writing a split here would overwrite that build's frozen exams
         p.error("--eval_from links the source exams; pass --eval_splits with no values")
@@ -349,6 +587,7 @@ def main():
         ]
         tok = train_tokenizer(tok_texts, args.vocab, out / "tokenizer")
     bos, eos = tok.bos_token_id, tok.eos_token_id
+    _TOKREF["tok"] = tok
     cache: dict[str, list[int]] = {}
 
     def encode(s: str) -> list[int]:
@@ -362,6 +601,11 @@ def main():
         return r
 
     _VERSION["vocab"] = len(tok)
+    if args.task_free_boundary:
+        b_ids = tok.encode(args.task_free_boundary, add_special_tokens=False)
+        if len(b_ids) != 1:
+            raise SystemExit(f"--task_free_boundary {args.task_free_boundary!r} is {len(b_ids)} tokens; it must be one")
+        _VERSION["task_free"] = (b_ids[0], int(args.task_free_cuts))
     print(f"tokenizer: {len(tok)} tokens ({time.time() - t0:.0f}s)")
 
     # training mix
@@ -448,6 +692,8 @@ def main():
                 "mean_world_row_tokens": m_world, "row_weights": [w_lang, w_world],
                 "mean_row_tokens": w_lang * m_lang + w_world * m_world,
                 "lang_token_share": f, "train_questions": args.train_questions, "train_bridge": args.train_bridge, "a2a": bool(args.a2a),
+                "task_free": ({"boundary": args.task_free_boundary, "cuts": args.task_free_cuts}
+                              if args.task_free_boundary else None),
                 "train_tasks": list(args.train_tasks)},
         "eval_from": args.eval_from,
         "built_s": round(time.time() - t0, 1),

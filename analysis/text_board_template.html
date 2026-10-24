@@ -67,6 +67,25 @@ section { display: grid; gap: 14px; min-width: 0; }
 /* overview */
 .lead { font-size: 20px; line-height: 1.4; font-weight: 600; max-width: 62ch; text-wrap: pretty; }
 .asof { font-size: 13px; color: var(--ink-3); }
+table.rcp { min-width: 1040px; } table.rcp td.v { text-align: center; font-variant-numeric: tabular-nums; }
+table.rcp td.v b { font-size: 16px; } table.rcp td.v .rg { display: block; font-size: 11px; color: var(--ink-3); }
+table.rcp td.v.goalmet { background: var(--good-bg); } table.rcp td.v.low { color: var(--ink-3); }
+table.rcp th.held { color: var(--ink-3); } table.rcp td.held { border-left: 1px solid var(--rule); }
+.sig { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 999px; margin: 2px 4px 0 0; border: 1px solid var(--rule); color: var(--ink-2); }
+.sig.s-privileged { border-color: var(--warning); color: var(--warning); } .sig.s-data { border-color: var(--info); color: var(--info); }
+table.rcp td.rname { min-width: 230px; max-width: 280px; } table.rcp td.rname .sigs { margin-top: 4px; line-height: 1.6; }
+.rname b { display: block; } .rname .small { display: block; }
+.goal { padding: 14px 16px; }
+.morechg > summary { cursor: pointer; padding: 12px 16px; font-weight: 600; color: var(--ink-2); }
+#runsTable td.res .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#runsTable tr.r.open td.res .clamp { -webkit-line-clamp: unset; display: block; } .goal h3 { margin: 0 0 2px; font-size: 15px; } .goal .gsub { font-size: 13px; color: var(--ink-3); margin: 0 0 10px; }
+.goal .grow { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) minmax(0, 1fr); gap: 6px 16px; align-items: center; padding: 5px 0; border-top: 1px solid var(--grid); }
+.goal .grow.head { border-top: 0; padding: 0; font-size: 12px; color: var(--ink-3); }
+.goal .gname { font-weight: 600; font-size: 14px; } .goal .gname span { display: block; font-weight: 400; font-size: 12px; color: var(--ink-3); }
+.goal .gcell { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.goal .gcell b { font-size: 15px; } .goal .gcell .gw { color: var(--ink-3); overflow-wrap: anywhere; }
+.goal .gkey { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--ink-3); margin-top: 8px; }
+@media (max-width: 640px) { .goal .grow { grid-template-columns: 1fr; } .goal .grow.head { display: none; } .goal .gcell::before { content: attr(data-l); font-size: 11px; color: var(--ink-3); grid-column: 1 / -1; } }
 .now { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
 .now .card { padding: 14px 16px; display: grid; gap: 10px; align-content: start; }
 .now h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-3); display: flex; align-items: center; gap: 8px; }
@@ -256,7 +275,7 @@ table.cmp th:first-child, table.cmp td:first-child { position: sticky; left: 0; 
 <header class="top"><div class="in">
   <div class="brand"><span class="eyebrow">MrCogito · text capability checks</span><h1>Text Capability Board</h1></div>
   <nav class="tabs" aria-label="Sections">
-    <a href="#overview">Now</a><a href="#compare">Compare</a><a href="#changes">What changed</a><a href="#findings">What we know</a>
+    <a href="#overview">Now</a><a href="#recipes">Recipes</a><a href="#compare">Architectures</a><a href="#changes">What changed</a><a href="#findings">What we know</a>
     <a href="#tasks">Tasks &amp; exams</a><a href="#curves">Curves</a><a href="#runs">Runs</a><a href="#archive">Archive</a>
   </nav>
 </div></header>
@@ -265,12 +284,23 @@ table.cmp th:first-child, table.cmp td:first-child { position: sticky; left: 0; 
   <section id="overview">
     <p class="asof" id="asof"></p>
     <p class="lead" id="lead"></p>
+    <div class="card goal" id="goal"></div>
     <div class="now" id="now"></div>
     <details class="updates"><summary id="updSum">Latest updates</summary><ul id="updates"></ul></details>
   </section>
 
+  <section id="recipes">
+    <div class="sechead"><h2>Which recipe is closest to the goal?</h2>
+      <p class="q">One row per trained recipe: the architecture, what it was told in training, and where it started. Cells: % exact,
+        the middle of its runs (range underneath when there are several). Green: at or above the 70 % goal. The last columns test
+        what training never showed: new sentence shapes and one more hop.</p></div>
+    <div class="bar"><span class="seg" id="recipeLen" role="group" aria-label="Document length"></span></div>
+    <div class="card tablebox"><table class="cmp rcp" id="rcp"></table></div>
+    <div class="legend" id="rcpLegend"></div>
+  </section>
+
   <section id="compare">
-    <div class="sechead"><h2>Which architecture is best?</h2>
+    <div class="sechead"><h2>Which architecture is best when trained from scratch?</h2>
       <p class="q">Each cell: the middle of the runs (big number) and the range across runs, % of exact answers. Blue: learned in every run;
         light blue: in some runs; grey: never (not clearly above guessing). Ring: the best architecture in that column.</p></div>
     <div class="bar"><span class="seg" id="measureSeg" role="group" aria-label="Measure"></span><span class="seg" id="recipeSeg" role="group" aria-label="Training recipe"></span></div>
@@ -370,6 +400,83 @@ function seg(id, options, value, onChange) {
 }
 
 // ---- now: status, what runs, what is next, what needs the author ------------------------------------------
+function goalTrack(nb, dn, floor, target) {
+  const W = 120, H = 16, X = v => 4 + v * (W - 8);
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`); svg.setAttribute("width", W); svg.setAttribute("height", H);
+  const mk = (t, a) => { const e = document.createElementNS(ns, t); for (const [k, v] of Object.entries(a)) e.setAttribute(k, v); return e; };
+  svg.append(mk("line", { x1: X(0), x2: X(1), y1: 8, y2: 8, stroke: css("--rule"), "stroke-width": 3, "stroke-linecap": "round" }));
+  if (nb) svg.append(mk("line", { x1: X(0), x2: X(nb.score), y1: 8, y2: 8, stroke: css("--accent"), "stroke-width": 3, "stroke-linecap": "round" }));
+  if (floor != null) svg.append(mk("line", { x1: X(floor), x2: X(floor), y1: 3, y2: 13, stroke: css("--critical"), "stroke-width": 1, opacity: .6 }));
+  svg.append(mk("line", { x1: X(target), x2: X(target), y1: 1, y2: 15, stroke: css("--ink"), "stroke-width": 1.5 }));
+  if (dn) svg.append(mk("rect", { x: X(dn.score) - 3.5, y: 4.5, width: 7, height: 7, transform: `rotate(45 ${X(dn.score)} 8)`, fill: css("--surface"), stroke: css("--ink-3"), "stroke-width": 1.5 }));
+  if (nb) svg.append(mk("circle", { cx: X(nb.score), cy: 8, r: 4, fill: css("--accent"), stroke: css("--surface"), "stroke-width": 1.5 }));
+  return svg;
+}
+function goal() {
+  const G = D.goal, box = document.getElementById("goal");
+  if (!G) { box.hidden = true; return; }
+  const pct = v => v == null ? "—" : Math.round(100 * v) + " %";
+  box.append(el("h3", {}, `Goal: ${Math.round(100 * G.target)} % on T4-T7`),
+    el("p", { class: "gsub" }, `${G.text} Set ${G.set}. Best run so far on the current exams; a single run counts until a second confirms it.`));
+  const lens = G.lengths.map(L => L >= 1024 ? (L / 1024) + "k" : String(L));
+  box.append(el("div", { class: "grow head" }, el("span", {}, "Task"), ...lens.map(l => el("span", {}, `Document ${l} tokens`))));
+  for (const task of G.tasks) {
+    const g = D.guide[task] || [task, ""];
+    const row = el("div", { class: "grow" }, el("div", { class: "gname" }, g[0], el("span", {}, g[1].replace("Can it ", "").replace("?", ""))));
+    G.lengths.forEach((L, i) => {
+      const b = G.best[`${task}|${L}`] || {}, nb = b.notebook, dn = b.dense;
+      const words = el("span", { class: "gw" }, el("b", {}, pct(nb && nb.score)), nb ? ` ${nb.name}` : " no notebook run",
+        dn && L <= 4096 ? ` · dense ${pct(dn.score)}` : "");
+      const c = el("div", { class: "gcell", "data-l": `Document ${lens[i]} tokens` }, goalTrack(nb, L <= 4096 ? dn : null, (nb || dn || {}).floor, G.target), words);
+      c.title = nb ? `Best notebook run: ${nb.run}` : "";
+      row.append(c);
+    });
+    box.append(row);
+  }
+  box.append(el("div", { class: "gkey" }, el("span", {}, "● best notebook model"), el("span", {}, "◇ best dense model (has no method past 4k)"),
+    el("span", {}, "| black: the goal"), el("span", {}, "| red: guessing (effective floor)")));
+}
+let RL = store.get("recipeLen", 4096);
+function recipes() {
+  const t = document.getElementById("rcp"); t.innerHTML = "";
+  const seg = document.getElementById("recipeLen"); seg.innerHTML = "";
+  for (const [L, lab] of [[4096, "4k documents (training length)"], [16384, "16k documents (4× longer)"]]) {
+    const b = el("button", { type: "button", "aria-pressed": String(RL === L) }, lab);
+    b.addEventListener("click", () => { RL = L; store.set("recipeLen", L); recipes(); });
+    seg.append(b);
+  }
+  const pct = v => v == null ? "—" : Math.round(100 * v);
+  const head = el("tr", {}, el("th", {}, "Recipe"));
+  for (const task of D.tasks) { const g = D.guide[task]; head.append(el("th", { class: "t" }, g[0], el("span", { class: "tq" }, g[1].replace("Can it ", "").replace("?", "")))); }
+  head.append(el("th", { class: "t held" }, "Compose, new shapes"), el("th", { class: "t held" }, "Compose, 3 hops"),
+    el("th", { class: "t held" }, "Deduce, 3 steps"), el("th", { class: "t" }, "Notebook off", el("span", { class: "tq" }, "compose 4k")),
+    el("th", { class: "t" }, "Story loss", el("span", { class: "tq" }, "lower is better")));
+  t.append(el("thead", {}, head));
+  const tb = el("tbody");
+  const cell = (c, extraCls) => {
+    if (!c) return el("td", { class: "v " + (extraCls || "") }, "—");
+    const cls = ["v", extraCls || "", c.mid >= D.goal.target ? "goalmet" : "", (c.floor != null && c.mid <= c.floor + 0.1) ? "low" : ""].join(" ");
+    return el("td", { class: cls, title: `${c.n} run(s): ${pct(c.lo)}–${pct(c.hi)} %` }, el("b", {}, pct(c.mid)),
+      c.n > 1 && Math.round(100 * c.hi) !== Math.round(100 * c.lo) ? el("span", { class: "rg" }, `${pct(c.lo)}–${pct(c.hi)}`) : null);
+  };
+  for (const r of D.recipes || []) {
+    const sigs = el("div", { class: "sigs" }, ...(r.signals || []).map(k => { const s = (D.signals || {})[k] || [k, "arch", ""]; return el("span", { class: "sig s-" + s[1], title: s[2] }, s[0]); }));
+    const runsTxt = `${r.n_runs} run${r.n_runs === 1 ? "" : "s"}` + (r.pending.length ? ` · ${r.pending.length} pending` : "");
+    const tr = el("tr", {}, el("td", { class: "rname" }, el("b", {}, r.name), el("span", { class: "small" }, r.what),
+      el("span", { class: "small" }, r.from + " · " + runsTxt), sigs));
+    for (const task of D.tasks) tr.append(cell(r.cells[`id|${task}|${RL}`]));
+    tr.append(cell(r.cells["paraphrase|compose|4096"], "held"), cell(r.cells["harder|compose|4096"], "held"), cell(r.cells["harder|deduce|4096"], "held"),
+      el("td", { class: "v" }, r.off_compose == null ? "—" : String(Math.round(100 * r.off_compose))),
+      el("td", { class: "v" }, r.story == null ? "—" : r.story.toFixed(3)));
+    tb.append(tr);
+  }
+  t.append(tb);
+  const lg = document.getElementById("rcpLegend"); lg.innerHTML = "";
+  lg.append(el("span", {}, "Training signals: "), el("span", { class: "sig" }, "architecture or start"),
+    el("span", { class: "sig s-data" }, "training data"), el("span", { class: "sig s-privileged" }, "privileged: an annotation only the data generator has"),
+    el("span", { class: "small" }, " · held-out columns at 4k; notebook off = the same model with its notes removed (should fall to guessing)."));
+}
 function overview() {
   document.getElementById("asof").textContent = `Status ${D.status.as_of} · exams v2.1 · reading rules of 13 Oct · page built ${D.generated}`;
   document.getElementById("lead").textContent = D.status.headline;
@@ -512,7 +619,11 @@ function dumbbell(before, after, eff) {
 }
 function changes() {
   const box = document.getElementById("chg");
-  for (const c of D.changes || []) {
+  const all = D.changes || [], SHOWN = 8;
+  let more = null;
+  all.forEach((c, i) => {
+    if (i === SHOWN) { more = el("details", { class: "morechg" }, el("summary", {}, `Earlier changes (${all.length - SHOWN})`)); box.append(more); }
+    const target = more || box;
     const mets = el("div", { class: "mets" });
     for (const [label, b, a, unit] of c.metrics) {
       let vis = null, txt;
@@ -521,11 +632,11 @@ function changes() {
       else txt = `${b} → ${a} ${unit}`;
       mets.append(el("div", { class: "met" }, el("span", { class: "lbl" }, label), el("div", { class: "row" }, vis || el("span"), el("span", { class: "ba" }, txt))));
     }
-    box.append(el("div", { class: "chg" },
+    target.append(el("div", { class: "chg" },
       el("div", { class: "when" }, c.date, el("span", { class: "kind" }, c.kind)),
       el("div", { class: "what" }, el("b", {}, c.change), el("div", { class: "cmpd" }, c.compared), el("div", { class: "note" }, c.note)),
       mets, el("div", { class: "eff" }, el("span", { class: "chip " + (EFFECT[c.effect] || "muted") }, c.effect))));
-  }
+  });
 }
 
 // ---- what we know -----------------------------------------------------------------------------------------
@@ -677,7 +788,7 @@ function runs() {
     const tr = el("tr", { class: "r", "data-standing": r.standing, "data-data": r.data || "", "data-start": r.start || "", title: "Click for details" },
       el("td", { class: "num", style: "text-align:left" }, r.start || ""), el("td", {}, el("b", {}, r.run)),
       el("td", {}, el("span", { class: "chip " + (STANDING_CLASS[r.standing] || "muted") }, r.standing)),
-      el("td", { class: "small" }, r.model), el("td", { class: "res" }, r.result));
+      el("td", { class: "small" }, r.model), el("td", { class: "res" }, el("div", { class: "clamp" }, r.result)));
     const x = el("tr", { class: "x", hidden: "" }, el("td", { colspan: 5 }, el("dl", {},
       el("dt", {}, "Why this standing"), el("dd", {}, r.why || "–"), el("dt", {}, "Training"), el("dd", {}, r.tokens || "–"),
       el("dt", {}, "Exams"), el("dd", {}, r.exams || "–"), el("dt", {}, "When (UTC)"), el("dd", {}, r.when || "–"),
@@ -685,7 +796,7 @@ function runs() {
       r.id && document.getElementById("round-" + r.id) ? el("dd", {}, (() => { const a = el("a", { href: "#archive" }, "Full run details →");
         a.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); const d = document.getElementById("round-" + r.id).closest("details");
           d.closest("section").querySelectorAll(":scope > details")[1].open = true; d.hidden = false; d.open = true; d.scrollIntoView({ behavior: "smooth", block: "start" }); }); return a; })()) : null)));
-    tr.addEventListener("click", () => { x.hidden = !x.hidden; });
+    tr.addEventListener("click", () => { x.hidden = !x.hidden; tr.classList.toggle("open", !x.hidden); });
     tb.append(tr, x);
   }
   t.append(tb);
@@ -922,5 +1033,5 @@ function sources() {
   t.append(body);
 }
 
-overview(); compareControls(); compare(); changes(); findings(); tasksAndVersions(); results(); runs(); filterBar(); applyFilters(); protocolLog(); curveControls(); curves(); calibration(); sources();
+overview(); goal(); recipes(); compareControls(); compare(); changes(); findings(); tasksAndVersions(); results(); runs(); filterBar(); applyFilters(); protocolLog(); curveControls(); curves(); calibration(); sources();
 </script>
