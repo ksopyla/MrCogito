@@ -276,6 +276,13 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     const tokens = $$<HTMLLabelElement>(".panel .field").find((f) => f.textContent?.startsWith("Training tokens"))!;
     await setInput($<HTMLInputElement>("input.num-input", tokens)!, "3e9");
     check("typing a number switches to a custom budget", graph().run.token_rule === "custom" && analyze(graph()).tokens.budget === 3e9, `${graph().run.token_rule} ${analyze(graph()).tokens.budget}`);
+    await setInput($<HTMLInputElement>("input.num-input", tokens)!, "1.5");
+    check("typing 1.5 means 1.5B tokens and reads back as 1.5B", analyze(graph()).tokens.budget === 1.5e9 && $<HTMLInputElement>("input.num-input", tokens)!.value === "1.5B");
+    const slider = $<HTMLInputElement>('input[type="range"]', tokens)!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(slider, String(Number(slider.value) + 1));
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+    await sleep(150);
+    check("one slider step up from 1.5B is 2B", analyze(graph()).tokens.budget === 2e9, String(analyze(graph()).tokens.budget));
     await tab("Row length");
     const charts = $$("figure.chart");
     check("row length shows three charts and a table of 11 lengths", charts.length === 3 && $$(".breakdown tbody tr").length === 11);

@@ -6,7 +6,7 @@ import { CAL, GPUS, GiB, MEMORY_CAL, OPTIMIZERS, PRECISIONS, gpuById } from "../
 import { TOKEN_RULES, ruleSpec, ruleTokens } from "../engine/tokens";
 import type { Graph, RunSetup } from "../engine/types";
 import { LineChart, StackBar, compact } from "./Charts";
-import { NumberField, Select, Toggle } from "./controls";
+import { NumberField, Select, Toggle, TokenField } from "./controls";
 import { cellTitle } from "./describe";
 import type { Sel } from "./Frame";
 import * as F from "./format";
@@ -149,7 +149,7 @@ function TokensSection({ graph: g, analysis: a, set }: { graph: Graph; analysis:
           <span className="tok-val">{rule === "custom" ? F.tokens(t.budget) : "your number"}</span>
         </button>
       </div>
-      <NumberField label="Training tokens" value={t.budget} min={1e6} max={1e14} log step={1e6} int help="typing a number switches to Custom" onChange={(v) => set({ token_rule: "custom", token_budget: v }, "run:token_budget")} />
+      <TokenField label="Training tokens" value={t.budget} help="slide through round budgets, or type 1.5, 1.5B, 500M or 2T; changing it switches to Custom" onChange={(v) => set({ token_rule: "custom", token_budget: v }, "run:token_budget")} />
       <p className="small">
         <strong>{F.tokens(t.budget)}</strong> tokens = {t.perParam >= 100 ? F.exact(t.perParam) : t.perParam.toFixed(1)} per parameter ·{" "}
         {t.chinchillaMultiple >= 10 ? Math.round(t.chinchillaMultiple) : t.chinchillaMultiple.toFixed(2)}× Chinchilla-optimal · {F.flops(a.flops.perRun)} of training compute

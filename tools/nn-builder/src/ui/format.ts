@@ -31,12 +31,46 @@ export function hours(h: number): string {
   return `${(h / 24).toFixed(h < 240 ? 1 : 0)} days`;
 }
 
+const trimmed = (x: number, digits: number) => String(+x.toFixed(digits));
+
+/** Token counts in billions (trillions from 1T): 0.6B, 1.5B, 56.1B, 444B, 2T. */
 export function tokens(n: number): string {
-  if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
-  if (n >= 1e9) return `${(n / 1e9).toFixed(n % 1e9 ? 1 : 0)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(0)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}k`;
-  return exact(n);
+  if (n >= 1e12) {
+    const t = n / 1e12;
+    return `${trimmed(t, t < 10 ? 2 : t < 100 ? 1 : 0)}T`;
+  }
+  const b = n / 1e9;
+  return `${trimmed(b, b < 0.1 ? 3 : b < 10 ? 2 : b < 100 ? 1 : 0)}B`;
+}
+
+/** A typed token count: "1.5" or "1.5B" = 1.5 billion, "500M", "2T", "1,5" (decimal comma), or a raw count. */
+export function parseTokens(raw: string): number | null {
+  let s = raw.trim().toLowerCase().replace(/[_\s]/g, "");
+  if (!s) return null;
+  const unit = /[kmbt]$/.exec(s)?.[0];
+  if (unit) s = s.slice(0, -1);
+  const commas = (s.match(/,/g) ?? []).length;
+  s = commas === 1 && !s.includes(".") && !/,\d{3}$/.test(s) ? s.replace(",", ".") : s.replace(/,/g, "");
+  const v = Number(s);
+  if (!s || !Number.isFinite(v) || v <= 0) return null;
+  const mult = unit === "k" ? 1e3 : unit === "m" ? 1e6 : unit === "b" ? 1e9 : unit === "t" ? 1e12 : v >= 1e5 ? 1 : 1e9;
+  return Math.round(v * mult);
+}
+
+/** Round token budgets for the slider: 10M … 20T in 1-1.2-1.5-2-2.5-3-4-5-6-8 steps. */
+export const TOKEN_STEPS: number[] = [];
+for (let e = 7; e <= 13; e++)
+  for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8]) {
+    const v = Math.round(m * 10 ** e);
+    if (v <= 2e13) TOKEN_STEPS.push(v);
+  }
+
+/** The slider step closest to a budget (on a log scale). */
+export function nearestTokenStep(n: number): number {
+  let best = 0;
+  for (let i = 1; i < TOKEN_STEPS.length; i++)
+    if (Math.abs(Math.log(TOKEN_STEPS[i] / n)) < Math.abs(Math.log(TOKEN_STEPS[best] / n))) best = i;
+  return best;
 }
 
 export function rate(n: number): string {
