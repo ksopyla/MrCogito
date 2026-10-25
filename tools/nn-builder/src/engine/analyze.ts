@@ -2,6 +2,7 @@
 import { cellCost, embeddingProjFlops, type Bytes, type CellCost, type NotesInfo, type Part, type SeqInfo, type SourceInfo } from "./cells";
 import { pageGeometry } from "./geometry";
 import { CAL, GiB, MEMORY_CAL, OPTIMIZERS, PRECISIONS, gpuById } from "./hardware";
+import { CHINCHILLA_PER_PARAM, trainingTokens } from "./tokens";
 import type { Cell, EmbeddingCell, Endpoint, Graph, Group, KvOutCell, LmHeadCell, Row, Stack } from "./types";
 
 export interface Issue {
@@ -98,6 +99,12 @@ export interface Analysis {
     irregularTrainPerToken: number;
   };
   memory: MemoryResult;
+  tokens: {
+    budget: number; // training tokens this run uses
+    rule: string; // "custom" or the preset that set it
+    perParam: number;
+    chinchillaMultiple: number; // budget / (20 × parameters)
+  };
   time: {
     tokensPerSecondPerGpu: number;
     tokensPerSecond: number;
@@ -473,7 +480,8 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
   const tpsGpu = secPerToken > 0 ? 1 / secPerToken : 0;
   const dp = N > 1 ? run.dp_efficiency : 1;
   const tps = N * tpsGpu * dp;
-  const hours = tps > 0 ? run.token_budget / tps / 3600 : Infinity;
+  const budget = trainingTokens(run, total);
+  const hours = tps > 0 ? budget / tps / 3600 : Infinity;
   let minForMemory = Infinity;
   for (const n of [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 256, 512, 1024]) {
     if (n > 1 && run.zero_stage === 0) break;
@@ -482,7 +490,7 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
       break;
     }
   }
-  const gpuSeconds = run.deadline_hours > 0 && tpsGpu > 0 ? run.token_budget / (run.deadline_hours * 3600 * tpsGpu) : 0;
+  const gpuSeconds = run.deadline_hours > 0 && tpsGpu > 0 ? budget / (run.deadline_hours * 3600 * tpsGpu) : 0;
   const forDeadline = gpuSeconds === 0 ? 0 : gpuSeconds <= 1 ? 1 : Math.ceil(gpuSeconds / run.dp_efficiency);
 
   return {
@@ -498,16 +506,22 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
       trainPerToken: trainT,
       keysFwdPerToken: keysFwd / S,
       perStep: trainT * run.rows_per_step * S,
-      perRun: trainT * run.token_budget,
+      perRun: trainT * budget,
       irregularTrainPerToken: irrT,
     },
     memory,
+    tokens: {
+      budget,
+      rule: run.token_rule ?? "custom",
+      perParam: total > 0 ? budget / total : 0,
+      chinchillaMultiple: total > 0 ? budget / (CHINCHILLA_PER_PARAM * total) : 0,
+    },
     time: {
       tokensPerSecondPerGpu: tpsGpu,
       tokensPerSecond: tps,
       hours,
       gpuHours: hours * N,
-      steps: run.token_budget / (run.rows_per_step * S),
+      steps: budget / (run.rows_per_step * S),
       accumulation: Math.ceil(run.rows_per_step / (N * micro)),
       mfu,
     },

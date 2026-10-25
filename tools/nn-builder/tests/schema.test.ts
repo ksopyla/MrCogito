@@ -36,6 +36,12 @@ describe("export and import", () => {
     expect(parseGraph("not json").error).toMatch(/JSON/);
   });
 
+  test("a token-budget preset is part of a valid file", () => {
+    const g = buildPreset("dense_plain_30m");
+    g.run.token_rule = "chinchilla";
+    expect(validate(toExport(g))).toBe(true);
+  });
+
   test("the schema refuses a cell with a misspelled setting", () => {
     const g = toExport(buildPreset("blank")) as unknown as { stacks: { rows: { cells: Record<string, unknown>[] }[] }[] };
     g.stacks[0].rows[1].cells[0].haeds = 8;

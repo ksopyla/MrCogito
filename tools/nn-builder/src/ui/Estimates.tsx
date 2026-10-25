@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { analyze, type Analysis } from "../engine/analyze";
 import * as E from "../engine/edit";
 import { CAL, GPUS, GiB, MEMORY_CAL, OPTIMIZERS, PRECISIONS, gpuById } from "../engine/hardware";
+import { TOKEN_RULES, ruleSpec, ruleTokens } from "../engine/tokens";
 import type { Graph, RunSetup } from "../engine/types";
 import { LineChart, StackBar, compact } from "./Charts";
 import { NumberField, Select, Toggle } from "./controls";
@@ -48,7 +49,7 @@ export function SummaryStrip({ analysis: a, graph: g, onOpen }: { analysis: Anal
         </span>
       </button>
       <button className="stat" onClick={() => onOpen("train")}>
-        <span className="k">Time for {F.tokens(g.run.token_budget)} tokens</span>
+        <span className="k">Time for {F.tokens(a.tokens.budget)} tokens</span>
         <span className="v">{F.hours(a.time.hours)} <small>on {g.run.gpu_count} × {gpu.label.split(" ·")[0]}</small></span>
       </button>
       <button className="stat" onClick={() => onOpen("train")}>
@@ -79,7 +80,7 @@ export function CostPanel({ graph: g, analysis: a, setSel }: Props) {
         <div><dt>Training / token</dt><dd><strong>{F.flops(f.trainPerToken)}</strong></dd></div>
         <div><dt>Attention reads (share of forward)</dt><dd>{((100 * f.keysFwdPerToken) / Math.max(1, f.fwdPerToken)).toFixed(0)} %</dd></div>
         <div><dt>Per optimizer step ({g.run.rows_per_step} × {F.len(a.S)})</dt><dd>{F.flops(f.perStep)}</dd></div>
-        <div><dt>Whole run ({F.tokens(g.run.token_budget)} tokens)</dt><dd>{F.flops(f.perRun)}</dd></div>
+        <div><dt>Whole run ({F.tokens(a.tokens.budget)} tokens)</dt><dd>{F.flops(f.perRun)}</dd></div>
       </dl>
       <h3>GPU memory, per GPU</h3>
       <StackBar segments={memSegments(m)} capacity={m.capacity} format={F.bytes} />
@@ -128,6 +129,36 @@ export function CostPanel({ graph: g, analysis: a, setSel }: Props) {
   );
 }
 
+function TokensSection({ graph: g, analysis: a, set }: { graph: Graph; analysis: Analysis; set: (patch: Partial<RunSetup>, key?: string) => void }) {
+  const rule = g.run.token_rule ?? "custom";
+  const n = a.params.total;
+  const spec = ruleSpec(rule);
+  const t = a.tokens;
+  return (
+    <>
+      <h3>Training tokens</h3>
+      <div className="tok-picker" role="radiogroup" aria-label="Training-token budget">
+        {TOKEN_RULES.map((r) => (
+          <button key={r.id} role="radio" aria-checked={rule === r.id} className={`tok-btn ${rule === r.id ? "on" : ""}`} title={`${r.label}. ${r.source}.`} onClick={() => set({ token_rule: r.id })}>
+            <span className="tok-name">{r.short}</span>
+            <span className="tok-val">{F.tokens(ruleTokens(r.id, n))}</span>
+          </button>
+        ))}
+        <button role="radio" aria-checked={rule === "custom"} className={`tok-btn ${rule === "custom" ? "on" : ""}`} title="type your own number below" onClick={() => set({ token_rule: "custom", token_budget: t.budget })}>
+          <span className="tok-name">Custom</span>
+          <span className="tok-val">{rule === "custom" ? F.tokens(t.budget) : "your number"}</span>
+        </button>
+      </div>
+      <NumberField label="Training tokens" value={t.budget} min={1e6} max={1e14} log step={1e6} int help="typing a number switches to Custom" onChange={(v) => set({ token_rule: "custom", token_budget: v }, "run:token_budget")} />
+      <p className="small">
+        <strong>{F.tokens(t.budget)}</strong> tokens = {t.perParam >= 100 ? F.exact(t.perParam) : t.perParam.toFixed(1)} per parameter ·{" "}
+        {t.chinchillaMultiple >= 10 ? Math.round(t.chinchillaMultiple) : t.chinchillaMultiple.toFixed(2)}× Chinchilla-optimal · {F.flops(a.flops.perRun)} of training compute
+      </p>
+      <p className="small muted">{spec ? `${spec.label}; it follows the model's size (${spec.source}).` : "Custom: your number, kept when the model changes."}</p>
+    </>
+  );
+}
+
 export function TrainingPanel({ graph: g, analysis: a, apply }: Props) {
   const run = g.run;
   const set = (patch: Partial<RunSetup>, key?: string) => apply((x) => E.updateRun(x, patch), key ?? `run:${Object.keys(patch).join(",")}`);
@@ -148,8 +179,8 @@ export function TrainingPanel({ graph: g, analysis: a, apply }: Props) {
       <p className="small muted">
         {gpu.label} · {gpu.peakTflops} TFLOPS bf16 peak · {gpu.note}.
       </p>
+      <TokensSection graph={g} analysis={a} set={set} />
       <h3>Run</h3>
-      <NumberField label="Token budget" value={run.token_budget} min={1e6} max={1e13} log step={1e6} int onChange={(v) => set({ token_budget: v })} />
       <NumberField label="Row length (tokens)" value={run.row_length} min={64} max={1048576} log step={64} int onChange={(v) => set({ row_length: v })} />
       <NumberField label="Rows per optimizer step" value={run.rows_per_step} min={1} max={4096} log int onChange={(v) => set({ rows_per_step: v })} />
       <NumberField label="Micro-batch per GPU (0 = largest that fits)" value={run.micro_batch} min={0} max={512} int onChange={(v) => set({ micro_batch: v })} />
@@ -171,7 +202,7 @@ export function TrainingPanel({ graph: g, analysis: a, apply }: Props) {
       <h3>Plan</h3>
       <dl className="costs">
         <div><dt>Speed</dt><dd>{F.rate(t.tokensPerSecondPerGpu)} tokens/s per GPU · {F.rate(t.tokensPerSecond)} total</dd></div>
-        <div><dt>Time for {F.tokens(run.token_budget)} tokens</dt><dd><strong>{F.hours(t.hours)}</strong> on {run.gpu_count} GPU{run.gpu_count > 1 ? "s" : ""} · {F.hours(t.gpuHours)} GPU-time</dd></div>
+        <div><dt>Time for {F.tokens(a.tokens.budget)} tokens</dt><dd><strong>{F.hours(t.hours)}</strong> on {run.gpu_count} GPU{run.gpu_count > 1 ? "s" : ""} · {F.hours(t.gpuHours)} GPU-time</dd></div>
         <div><dt>Optimizer steps</dt><dd>{F.exact(t.steps)} of {run.rows_per_step} rows · {t.accumulation} accumulation step{t.accumulation > 1 ? "s" : ""} of {a.memory.microBatch} rows per GPU</dd></div>
         <div><dt>GPUs needed to fit</dt><dd>{Number.isFinite(a.gpus.minForMemory) ? a.gpus.minForMemory : run.zero_stage === 0 ? "does not fit one GPU: shard states or checkpoint" : "does not fit even sharded"}</dd></div>
         {run.deadline_hours > 0 && <div><dt>GPUs to finish in {run.deadline_hours} h</dt><dd><strong>{a.gpus.forDeadline}</strong></dd></div>}
@@ -215,7 +246,7 @@ export function LengthPanel({ graph: g, analysis: a }: Props) {
         note="Above the dashed line not even one row fits on one GPU."
       />
       <LineChart
-        title={`Time for ${F.tokens(g.run.token_budget)} tokens on ${g.run.gpu_count} × ${gpu.label.split(" ·")[0]}`}
+        title={`Time for ${F.tokens(a.tokens.budget)} tokens on ${g.run.gpu_count} × ${gpu.label.split(" ·")[0]}`}
         xs={LENGTHS}
         series={[{ name: "hours", color: "--series-1", values: rows.map((r) => r.a.time.hours) }]}
         yFormat={F.hours}

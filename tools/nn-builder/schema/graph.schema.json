@@ -969,6 +969,17 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "token_rule": {
+          "enum": [
+            "custom",
+            "chinchilla",
+            "llama3_8b",
+            "tinyllama",
+            "smollm2_135m",
+            "pythia"
+          ],
+          "description": "A token-budget preset that follows the model's size; absent or \"custom\" = token_budget as typed."
         }
       }
     }

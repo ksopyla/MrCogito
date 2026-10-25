@@ -91,7 +91,9 @@ with `port: "table"` means an embedding's token table output.
 `row_length`, `rows_per_step` (rows per optimizer step), `micro_batch` (rows per GPU per pass; 0 = the largest that
 fits and splits the step evenly), `precision` (`amp_bf16` = PyTorch autocast with fp32 weights, `bf16_master`,
 `pure_bf16`, `fp32`), `optimizer`, `weight_decay`, `zero_stage` (sharding of optimizer state, gradients, weights),
-`checkpointing` (recompute every row in backward), `gpu`, `gpu_count`, `token_budget`, `deadline_hours`, and the
+`checkpointing` (recompute every row in backward), `gpu`, `gpu_count`, `token_budget` with an optional `token_rule`
+(`chinchilla` = 20 tokens per parameter, `llama3_8b`, `tinyllama`, `smollm2_135m` = those models' tokens per parameter,
+`pythia` = a fixed 300B; absent or `custom` = `token_budget` as typed), `deadline_hours`, and the
 speed calibration overrides `mfu`, `irregular_ratio`, `dp_efficiency` (0 = the built-in calibration).
 
 ## `derived` (export only)

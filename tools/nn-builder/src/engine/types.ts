@@ -1,6 +1,8 @@
 // The saved graph: a stable, documented JSON format (docs/schema.md, schema/graph.schema.json).
 // Everything a later code generator needs is here; `ui` is layout only and never changes the model.
 
+import type { TokenRule } from "./tokens";
+
 export const SCHEMA_ID = "nn-builder/graph";
 export const SCHEMA_VERSION = 1;
 
@@ -189,7 +191,8 @@ export interface RunSetup {
   checkpointing: boolean;
   gpu: string;
   gpu_count: number;
-  token_budget: number;
+  token_budget: number; // used as typed when token_rule is "custom" (or absent)
+  token_rule?: TokenRule; // a preset that follows the model's size (Chinchilla, …) or "custom"
   deadline_hours: number;
   mfu: number; // 0 = the GPU's default
   irregular_ratio: number; // 0 = calibrated default; speed of masked / gathered / looped work relative to plain matmuls

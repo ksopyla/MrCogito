@@ -270,6 +270,12 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     await setInput($<HTMLInputElement>("input.num-input", count)!, "8");
     check("picking B200 and 8 GPUs sets the run", graph().run.gpu === "b200" && graph().run.gpu_count === 8, `${graph().run.gpu} × ${graph().run.gpu_count}`);
     check("the summary shows the time on 8 × B200", /on 8 × B200/.test($$(".stat")[3]?.textContent ?? ""), $$(".stat")[3]?.textContent ?? "");
+    $$<HTMLButtonElement>(".tok-btn").find((b) => b.textContent?.startsWith("Chinchilla"))!.click();
+    await sleep(150);
+    check("Chinchilla sets 20 tokens per parameter", graph().run.token_rule === "chinchilla" && analyze(graph()).tokens.budget === 20 * params());
+    const tokens = $$<HTMLLabelElement>(".panel .field").find((f) => f.textContent?.startsWith("Training tokens"))!;
+    await setInput($<HTMLInputElement>("input.num-input", tokens)!, "3e9");
+    check("typing a number switches to a custom budget", graph().run.token_rule === "custom" && analyze(graph()).tokens.budget === 3e9, `${graph().run.token_rule} ${analyze(graph()).tokens.budget}`);
     await tab("Row length");
     const charts = $$("figure.chart");
     check("row length shows three charts and a table of 11 lengths", charts.length === 3 && $$(".breakdown tbody tr").length === 11);
