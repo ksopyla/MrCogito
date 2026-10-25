@@ -8,12 +8,15 @@ import type { Graph } from "../engine/types";
 import { DragProvider, type Payload, type Target } from "./drag";
 import { CostPanel, LengthPanel, SummaryStrip, TrainingPanel } from "./Estimates";
 import { Frame, stackWidths, type Sel } from "./Frame";
-import { useHistory } from "./history";
+import { useWorkspace } from "./history";
+import { ComparePanel } from "./Compare";
+import { DesignTabs } from "./DesignTabs";
 import { Inspector } from "./Inspector";
 import { Palette } from "./Palette";
 import { TopBar } from "./TopBar";
 
 const AUTOSAVE = "nn-builder.current";
+const WORKSPACE = "nn-builder.workspace";
 const SIDE_W = "nn-builder.panelWidth";
 const sideDefault = (vw: number) => (vw >= 1400 ? 520 : 440);
 
@@ -28,26 +31,32 @@ function storedSide(): number | null {
   }
 }
 
-function initial(): Graph {
+/** The designs open last time (or the single autosaved one from before tabs, or E33 30M). */
+function initial(): { graphs: Graph[]; active: number } {
   try {
+    const ws = JSON.parse(localStorage.getItem(WORKSPACE) ?? "null") as { graphs: unknown[]; active: number } | null;
+    const graphs = (ws?.graphs ?? []).map((g) => parseGraph(JSON.stringify(g)).graph).filter((g): g is Graph => Boolean(g));
+    if (graphs.length) return { graphs, active: Math.min(ws?.active ?? 0, graphs.length - 1) };
     const raw = localStorage.getItem(AUTOSAVE);
     const res = raw ? parseGraph(raw) : null;
-    if (res?.graph) return res.graph;
+    if (res?.graph) return { graphs: [res.graph], active: 0 };
   } catch {
     /* storage blocked: start fresh */
   }
-  return buildPreset("e33m_plain_30m");
+  return { graphs: [buildPreset("e33m_plain_30m")], active: 0 };
 }
+const start = initial();
 
 const TABS: [string, string][] = [
   ["inspect", "Inspect"],
   ["cost", "Compute & memory"],
   ["train", "GPUs & time"],
   ["length", "Row length"],
+  ["compare", "Compare"],
 ];
 
 export function App() {
-  const hist = useHistory(initial);
+  const hist = useWorkspace(() => start.graphs, start.active);
   const { graph, apply, undo, redo } = hist;
   const analysis = useMemo(() => analyze(graph), [graph]);
   const [sel, setSelRaw] = useState<Sel>(null);
@@ -101,10 +110,11 @@ export function App() {
   useEffect(() => {
     try {
       localStorage.setItem(AUTOSAVE, JSON.stringify(graph));
+      localStorage.setItem(WORKSPACE, JSON.stringify({ graphs: hist.tabs.map((t) => t.graph), active: hist.tabs.findIndex((t) => t.id === hist.active) }));
     } catch {
       /* storage blocked */
     }
-  }, [graph]);
+  }, [graph, hist.tabs, hist.active]);
 
   // a selection whose target was removed (undo, delete) is dropped
   useEffect(() => {
@@ -223,11 +233,16 @@ export function App() {
     const props = { graph, analysis, apply, setSel };
     if (k === "train") return <TrainingPanel {...props} />;
     if (k === "length") return <LengthPanel {...props} />;
+    if (k === "compare") return <ComparePanel tabs={hist.tabs} active={hist.active} onSwitch={switchDesign} />;
     return <CostPanel {...props} />;
   };
 
   const load = (g: Graph) => {
-    apply(() => g);
+    hist.open(g);
+    setSelRaw(null);
+  };
+  const switchDesign = (id: string) => {
+    hist.switchTo(id);
     setSelRaw(null);
   };
 
@@ -237,6 +252,13 @@ export function App() {
         <TopBar
           graph={graph} load={load} apply={apply} undo={undo} redo={redo} canUndo={hist.canUndo} canRedo={hist.canRedo} toast={toast}
           panelWidth={sideW} panelMax={vw - 200 - 360} onPanelWidth={setPref}
+        />
+        <DesignTabs
+          tabs={hist.tabs}
+          active={hist.active}
+          onSwitch={switchDesign}
+          onClose={(id) => (hist.close(id, () => buildPreset("blank")), setSelRaw(null))}
+          onCopy={() => load({ ...structuredClone(graph), name: `${graph.name} (copy)` })}
         />
         <SummaryStrip analysis={analysis} graph={graph} onOpen={setTab} />
         <div className="main" style={{ gridTemplateColumns: `200px minmax(0, 1fr) ${sideW}px` }}>

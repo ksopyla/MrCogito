@@ -315,9 +315,10 @@ function CellCard(p: Props & { stack: Stack; row: Row; cell: Cell; index: number
   const fed = takesWire && p.graph.edges.some((e) => e.kind === "source" && e.to.cell === c.id);
   const mix = mixing(c, p.stack, p.graph);
   const resid = (c.type === "attention" || c.type === "ffn") && c.residual !== "none";
+  const frozen = Boolean(c.frozen || p.stack.frozen);
   return (
     <div
-      className={`cell cat-${CATEGORY[c.type]} ${selected ? "selected" : ""} ${ins} ${wireOver}`}
+      className={`cell cat-${CATEGORY[c.type]} ${selected ? "selected" : ""} ${frozen ? "frozen" : ""} ${ins} ${wireOver}`}
       data-drop="cell"
       data-row={p.row.id}
       data-cell={c.id}
@@ -327,6 +328,7 @@ function CellCard(p: Props & { stack: Stack; row: Row; cell: Cell; index: number
     >
       {c.type === "attention" && (c.mode === "cross" || c.memory || fed) && <span className={`dot cell-in ${fed ? "fed" : ""}`} data-anchor={`cellin:${c.id}`} title="keys/values come in here" />}
       <div className="cell-title">
+        {frozen && <span className="frost" title="frozen: weights kept, not trained">❄</span>}
         <span className="cell-name" title={title}>{title}</span>
         {res && res.issues.length > 0 && <span className="warn" title={res.issues.join("\n")}>⚠</span>}
         <MixGlyph kind={mix.kind} title={mix.text} />

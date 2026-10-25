@@ -106,8 +106,17 @@ export function cellTensorSteps(g: Graph, a: Analysis, cellId: string, b: number
     case "kv_out": {
       push("input", X(d));
       const notes = (seq.pages?.count ?? 1) * (seq.perPage ?? seq.P) * c.entries;
-      push(`${c.projections === 4 ? "4" : "2"} projections → keys / values`, [B, ...pos, dim("entries", c.entries), dim("g", c.kv_heads), dim("dh", c.head_dim)]);
-      push("notes: ready keys / values for a reader", [B, dim("notes", notes), dim("g", c.kv_heads), dim("dh", c.head_dim)]);
+      const L = Math.max(1, c.layers ?? 1);
+      const layer = L > 1 ? [dim("layers", L)] : [];
+      push(`${c.projections === 4 ? "4" : "2"} projections → keys / values`, [B, ...pos, dim("entries", c.entries), ...layer, dim("g", c.kv_heads), dim("dh", c.head_dim)]);
+      push(L > 1 ? `notes: ready keys / values for each of ${L} reader layers` : "notes: ready keys / values for a reader", [B, dim("notes", notes), ...layer, dim("g", c.kv_heads), dim("dh", c.head_dim)]);
+      break;
+    }
+    case "pool": {
+      const p = seq.pages;
+      push("pages from the wired stack", [B, dim("pages", p?.count ?? 1), dim("W", p?.window ?? seq.P), dim("d", d)]);
+      push(c.mode === "mean" ? "mean over each page" : `attention pooling: ${c.heads} learned queries per page`, [B, dim("pages", p?.count ?? 1), dim("d", d)]);
+      push("one vector per page", X(out));
       break;
     }
     case "lm_head":
@@ -141,6 +150,20 @@ function attentionSteps(
   const src = wire ? a.stacks.find((s) => s.id === wire.from.stack) : undefined;
   push("input x", [B, ...pos, dim("d", d)]);
   if (c.norm !== "none") push("pre-norm", [B, ...pos, dim("d", d)]);
+  if (c.mla) {
+    const m = c.mla;
+    if (m.q_rank > 0) push("query latent (low-rank + norm)", [B, ...pos, dim("q_rank", m.q_rank)]);
+    push("queries q (no-position part + rotary part)", [B, ...pos, h, dim("nope+rope", m.nope_dim + m.rope_dim)]);
+    push("keys/values latent: the only thing cached", [B, ...pos, dim("kv_rank+rope", m.kv_rank + m.rope_dim)]);
+    push("keys k, values v, rebuilt from the latent", [B, ...pos, h, dim("nope+rope | v", m.nope_dim + m.rope_dim)]);
+    const qPos = pos.at(-1)!;
+    push("scores q·k", [B, ...pos.slice(0, -1), h, qPos, dim(qPos.n, c.window > 0 ? Math.min(c.window, qPos.v) : qPos.v)], "masked: each token sees itself and earlier tokens");
+    push("softmax · v", [B, ...pos, h, dim("v", m.v_dim)]);
+    push("heads joined", [B, ...pos, dim("h·v", c.heads * m.v_dim)]);
+    push("output projection", [B, ...pos, dim("d", d)]);
+    if (c.residual !== "none") push("⊕ added to the stream", [B, ...pos, dim("d", d)]);
+    return;
+  }
   push("queries q", [B, ...pos, h, dh]);
 
   // keys: own stream, another stack, or ready notes

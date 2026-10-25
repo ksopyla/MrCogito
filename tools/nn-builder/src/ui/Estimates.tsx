@@ -34,9 +34,12 @@ export function SummaryStrip({ analysis: a, graph: g, onOpen }: { analysis: Anal
   const m = a.memory;
   return (
     <div className="summary">
-      <button className="stat" onClick={() => onOpen("cost")} title={`${F.exact(a.params.total)} parameters`}>
-        <span className="k">Parameters</span>
-        <span className="v">{F.params(a.params.total)}</span>
+      <button className="stat" onClick={() => onOpen("cost")} title={`${F.exact(a.params.total)} parameters · ${F.exact(a.params.trainable)} trainable · ${F.exact(a.params.active)} used per token`}>
+        <span className="k">Parameters{a.params.trainable < a.params.total ? ` · ${F.params(a.params.trainable)} trained` : ""}</span>
+        <span className="v">
+          {F.params(a.params.total)}
+          {a.params.active < 0.8 * a.params.total && <small> · {F.params(a.params.active)} per token</small>}
+        </span>
       </button>
       <button className="stat" onClick={() => onOpen("cost")} title="forward + backward per token">
         <span className="k">Training compute</span>
@@ -72,6 +75,12 @@ export function CostPanel({ graph: g, analysis: a, setSel }: Props) {
   const train = Math.max(1, f.fwdPerToken + f.bwdPerToken);
   return (
     <div className="panel">
+      <h3>Parameters</h3>
+      <dl className="costs">
+        <div><dt>Total</dt><dd>{F.exact(a.params.total)}</dd></div>
+        <div><dt>Trained</dt><dd>{F.exact(a.params.trainable)}{a.params.trainable < a.params.total ? ` (${F.params(a.params.total - a.params.trainable)} frozen)` : ""}</dd></div>
+        <div><dt>Used per token</dt><dd>{F.exact(a.params.active)} <span className="muted">(no embedding lookups; only the routed experts in use)</span></dd></div>
+      </dl>
       <h3>Compute</h3>
       <dl className="costs">
         <div><dt>Forward / token</dt><dd>{F.flops(f.fwdPerToken)}</dd></div>

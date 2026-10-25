@@ -72,11 +72,11 @@ describe("tensor shapes through E33's page writer and notes", () => {
 });
 
 describe("cross-attention reads the encoder", () => {
-  test("keys/values come from the encoder's 1k positions", () => {
+  test("keys/values come from the encoder's 512 positions (T5-small)", () => {
     const { g, a } = setup("encdec");
     const steps = cellTensorSteps(g, a, "dec.L0.cross", 2);
-    expect(step(steps, /^keys/)).toEqual([2, 1024, 8, 64]);
-    expect(step(steps, /^scores/)).toEqual([2, 8, 1024, 1024]);
+    expect(step(steps, /^keys/)).toEqual([2, 512, 8, 64]);
+    expect(step(steps, /^scores/)).toEqual([2, 8, 512, 512]);
   });
 });
 
@@ -99,8 +99,8 @@ describe("what a wire carries and what the other end does with it", () => {
   test("the encoder output is projected into keys/values by each cross-attention", () => {
     const { g, a } = setup("encdec");
     const w = edgeTensors(g, a, "wire.cross0", 2);
-    expect(sizes(w.from.dims)).toEqual([2, 1024, 512]);
-    expect(step(w.steps, /^keys/)).toEqual([2, 1024, 8, 64]);
+    expect(sizes(w.from.dims)).toEqual([2, 512, 512]);
+    expect(step(w.steps, /^keys/)).toEqual([2, 512, 8, 64]);
   });
 
   test("a skip adds one row's output to a later row's input, times one weight", () => {

@@ -15,12 +15,12 @@ cd tools/nn-builder && npm start
 The first run installs the dependencies; then the app opens at http://localhost:5178. Needs Node ≥ 20.19.
 
 ```bash
-npm test          # engine tests: exact parameter counts, FLOPs, memory, schema, edits
+npm test          # engine tests: exact parameter counts, FLOPs, memory, shapes, tokens, schema, edits
 npm run typecheck
 ```
 
-Browser end-to-end test (39 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
-save / open / export). With the app running, open it and paste into the DevTools console:
+Browser end-to-end test (51 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
+GPU and token presets, resizing, wire details, tabs and comparison, save / open / export). With the app running, open it and paste into the DevTools console:
 
 ```js
 const { run } = await import("/tests/e2e/browser-e2e.ts"); console.table((await run()).steps);
@@ -46,8 +46,18 @@ It saves `designs/e2e_test.json`; delete that file afterwards.
 - **Save** writes `designs/<name>.json` (this folder); **Open…** lists them; **Export / Import** use files.
   Undo/redo: ⌘Z / ⇧⌘Z. Delete removes the selection. The current design is also kept in the browser.
 
-Presets: MrCogito dense 30M / 50M / 100M and E33 notebook 30M / 100M (the trainer's exact models), GPT-2 small,
-a T5-small-shaped encoder–decoder, and a blank one-layer model.
+Presets (each opens in its own tab):
+- MrCogito, exact against the trainer: dense 30M / 50M / 100M, E33 notebook 30M / 100M, E31c latent notebook
+  30M / 100M, and E36 (a 22.4M trained writer + key/value expander for a frozen SmolLM2-360M reader).
+- Outside references, exact against their Hugging Face configs: GPT-2 small (124,439,808), T5-small (60,506,624),
+  SmolLM3-3B (3,075,098,624), DeepSeek-V2-Lite (15,706,484,224; MLA + shared-expert MoE, 2.45B used per token).
+- DeepSeek-V4.1-Flash, **approximate**: its text backbone (≈552B + a 196B Engram memory, 16B used per token); the
+  compressed sparse attention, hyper-connections and drafting heads are approximated or left out.
+- A blank one-layer model.
+
+**Compare.** Every open design is a tab (switch with a click, × to close, **+ copy** to try a variant). The
+**Compare** tab lines them up — parameters (total, trained, used per token), compute, memory, speed, tokens and time
+— under one training setup (the current design's) or each its own.
 
 ## How the numbers are made
 

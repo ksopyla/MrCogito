@@ -100,7 +100,7 @@ select, input.num-input, input.text-input, textarea {
 .warn { color: var(--bad); margin-left: 4px; cursor: help; }
 
 /* ---------------------------------------------------------------- layout */
-.app { display: grid; grid-template-rows: auto auto 1fr; height: 100vh; }
+.app { display: grid; grid-template-rows: auto auto auto 1fr; height: 100vh; }
 .main { display: grid; grid-template-columns: 200px minmax(0, 1fr) 390px; min-height: 0; }
 .topbar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface-1); }
 .brand { font-weight: 700; margin-right: 8px; }
@@ -428,3 +428,26 @@ body[data-resizing] { cursor: ew-resize; user-select: none; }
 .token-ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .token-input { font-weight: 600; }
 .num-input.bad { border-color: var(--bad); color: var(--bad); }
+
+/* ---------------------------------------------------------------- frozen slots */
+.cell.frozen { background: repeating-linear-gradient(135deg, var(--surface-1) 0 6px, var(--surface-2) 6px 8px); }
+.frost { color: var(--accent); font-size: 11px; flex: none; }
+
+/* ---------------------------------------------------------------- open designs and comparison */
+.design-tabs { display: flex; align-items: stretch; gap: 2px; padding: 4px 10px 0; background: var(--surface-2); border-bottom: 1px solid var(--border); overflow-x: auto; }
+.design-tab { display: flex; align-items: center; gap: 8px; padding: 5px 8px 5px 12px; border: 1px solid var(--border); border-bottom: 0; border-radius: 7px 7px 0 0;
+  background: var(--surface-2); cursor: pointer; white-space: nowrap; font-size: 12.5px; color: var(--ink-2); }
+.design-tab.on { background: var(--surface-1); color: var(--ink); font-weight: 600; margin-bottom: -1px; }
+.design-tab .dt-num { font-size: 11px; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.design-tab .dt-close { border: 0; background: none; padding: 0 3px; font-size: 14px; line-height: 14px; color: var(--muted); }
+.design-tab .dt-close:hover { color: var(--bad); }
+.dt-add { border: 0; background: none; font-size: 12px; color: var(--accent); padding: 4px 10px; }
+.compare-scroll { overflow-x: auto; margin-top: 8px; }
+table.compare { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+table.compare th, table.compare td { padding: 5px 8px; border-bottom: 1px solid var(--grid); text-align: right; vertical-align: top; }
+table.compare thead th { font-weight: 600; white-space: nowrap; }
+table.compare tbody th { text-align: left; font-weight: 400; color: var(--ink-2); white-space: nowrap; }
+table.compare .current { background: var(--accent-soft); }
+table.compare td.best .cmp-val { font-weight: 700; }
+table.compare .cmp-val { display: block; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.compare .cmp-bar { display: block; height: 4px; margin-top: 3px; margin-left: auto; background: var(--series-1); border-radius: 2px; max-width: 100%; }

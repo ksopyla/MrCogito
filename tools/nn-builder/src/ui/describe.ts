@@ -13,6 +13,7 @@ export const CATEGORY: Record<CellType, Category> = {
   linear: "mem",
   latent_init: "mem",
   kv_out: "mem",
+  pool: "mem",
   norm: "out",
   lm_head: "out",
   custom: "other",
@@ -34,10 +35,11 @@ export function cellTitle(c: Cell): string {
     case "embedding":
       return c.share_with ? "Embedding (shared)" : "Embedding";
     case "positional":
-      return { rope: "Rotary positions", learned: "Learned positions", sinusoidal: "Sinusoidal positions", alibi: "ALiBi", none: "No positions" }[c.kind];
+      return { rope: "Rotary positions", learned: "Learned positions", sinusoidal: "Sinusoidal positions", alibi: "ALiBi", t5_bias: "Relative-position bias", none: "No positions" }[c.kind];
     case "attention":
       if (c.mode === "cross") return "Cross-attention";
       if (c.memory) return "Notebook read";
+      if (c.mla) return c.window > 0 ? "MLA attention (local)" : "MLA attention";
       if (c.window > 0) return `Local attention`;
       return c.causal ? "Full attention" : "Full attention ↔";
     case "ffn":
@@ -50,6 +52,8 @@ export function cellTitle(c: Cell): string {
       return "Learned queries";
     case "kv_out":
       return "Notes out";
+    case "pool":
+      return c.mode === "mean" ? "Mean of each page" : "Attention pooling";
     case "lm_head":
       return "LM head + loss";
     case "custom":
@@ -62,14 +66,15 @@ export function cellSub(c: Cell, widthIn: number): string {
     case "embedding":
       return `${k(c.vocab)} × ${c.dim}${c.ngram_tables ? ` + ${c.ngram_tables} n-gram` : ""}${c.proj === "gated_mlp" ? " → MLP" : c.proj === "linear" ? " → proj" : ""}`;
     case "positional":
-      return c.kind === "rope" ? `θ ${k(c.theta)}` : c.kind === "learned" ? `${len(c.max_len)} positions` : "";
+      return c.kind === "rope" ? `θ ${k(c.theta)}` : c.kind === "learned" ? `${len(c.max_len)} positions` : c.kind === "t5_bias" ? `${c.buckets ?? 32} buckets × ${c.heads ?? 1} heads` : "";
     case "attention": {
+      if (c.mla) return `${c.heads} heads · latent ${c.mla.kv_rank}${c.mla.q_rank ? ` · q ${c.mla.q_rank}` : ""}`;
       const kv = c.kv_heads !== c.heads ? ` · kv ${c.kv_heads}` : "";
       const win = c.window > 0 ? ` · w ${len(c.window)}` : "";
       return `${c.heads} × ${c.head_dim}${kv}${win}`;
     }
     case "ffn":
-      return c.experts > 1 ? `${c.experts} × ${c.hidden} · top ${c.top_k}` : `${widthIn} → ${c.hidden}`;
+      return c.experts > 1 ? `${c.experts}${c.shared_experts ? `+${c.shared_experts}` : ""} × ${c.hidden} · top ${c.top_k}` : `${widthIn} → ${c.hidden}`;
     case "norm":
       return String(widthIn);
     case "linear":
@@ -77,7 +82,9 @@ export function cellSub(c: Cell, widthIn: number): string {
     case "latent_init":
       return c.address_feats ? `+ address ${c.address_feats}` : "";
     case "kv_out":
-      return `${c.entries} × ${c.kv_heads}×${c.head_dim} · ${c.projections} maps`;
+      return `${c.entries} × ${c.kv_heads}×${c.head_dim}${(c.layers ?? 1) > 1 ? ` × ${c.layers} layers` : ` · ${c.projections} maps`}`;
+    case "pool":
+      return c.mode === "mean" ? "page → 1 vector" : `${c.heads} queries per page`;
     case "lm_head":
       return `${k(c.vocab)}${c.tied ? " · tied" : ""}${c.z_loss ? " · z-loss" : ""}`;
     case "custom":
@@ -149,6 +156,8 @@ export function mixing(c: Cell, s: Stack, g: Graph): { kind: MixKind; text: stri
       return { kind: "start", text: "starts the stream with learned query vectors (one per slot / latent)" };
     case "kv_out":
       return { kind: "point", text: "per slot: turns each slot into ready keys/values (notes) for a reader" };
+    case "pool":
+      return { kind: "page", text: "each page of tokens is pooled into one vector" };
     case "lm_head":
       return { kind: "head", text: `per token → logits over ${c.vocab} tokens; the loss compares them with the next token` };
     case "custom":

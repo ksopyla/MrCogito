@@ -83,9 +83,9 @@ export function TopBar(p: Props) {
           const pr = PRESETS.find((x) => x.id === e.target.value);
           if (pr) p.load(pr.build());
         }}
-        aria-label="Start from a preset"
+        aria-label="Open a preset in a new tab"
       >
-        <option value="">Start from…</option>
+        <option value="">Open a preset…</option>
         {PRESETS.map((x) => (
           <option key={x.id} value={x.id}>
             {x.label}

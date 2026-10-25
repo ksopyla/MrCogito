@@ -95,6 +95,7 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     }
   };
   const pane = $(".frame-scroll")!;
+  const tabsAtStart = $$(".design-tab").length;
 
   await attempt("presets reproduce the trainer's counts", async () => {
     const want: [string, number][] = [["dense_plain_30m", 30_293_140], ["e33m_plain_30m", 29_946_402], ["dense_plain_100m", 100_966_686], ["gpt2_small", 124_439_808]];
@@ -328,7 +329,29 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     check("Export gives e2e_test.json with the derived counts", exp?.name === "e2e_test.json" && parsed?.derived?.params_total === params(), exp?.name ?? "nothing captured");
   });
 
+  await attempt("compare the open designs and switch between them", async () => {
+    await selectPreset("dense_plain_30m");
+    await selectPreset("e33m_plain_30m");
+    const before = $$(".design-tab").length;
+    $$<HTMLButtonElement>(".dt-add")[0].click();
+    await sleep(200);
+    check("+ copy opens a copy of the design in a new tab", $$(".design-tab").length === before + 1 && /\(copy\)/.test($(".design-tab.on")?.textContent ?? ""));
+    await tab("Compare");
+    const cols = $$("table.compare thead th").length - 1;
+    check("Compare shows one column per open design", cols === $$(".design-tab").length, `${cols} columns, ${$$(".design-tab").length} tabs`);
+    const denseCol = $$<HTMLButtonElement>("table.compare thead th button").find((b) => b.textContent?.startsWith("dense_plain 30M"))!;
+    denseCol.click();
+    await sleep(200);
+    check("a column header switches to that design", $(".design-tab.on")?.textContent?.startsWith("dense_plain 30M") === true && params() === 30_293_140);
+  });
+
   await selectPreset("blank");
+  // close the tabs this test opened
+  for (let i = 0; i < 40 && $$(".design-tab").length > tabsAtStart + 1; i++) {
+    const tabs = $$(".design-tab");
+    $(".dt-close", tabs[tabs.length - 2])?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await sleep(30);
+  }
   const passed = steps.filter((s) => s.ok).length;
   return { passed, failed: steps.length - passed, steps };
 }

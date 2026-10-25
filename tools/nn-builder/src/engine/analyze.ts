@@ -85,7 +85,13 @@ export interface MemoryResult {
 export interface Analysis {
   S: number;
   issues: Issue[];
-  params: { total: number; byType: Record<string, number>; byStack: Record<string, number> };
+  params: {
+    total: number;
+    trainable: number; // total minus frozen cells (frozen weights get no gradients or optimizer state)
+    active: number; // used in a matmul per token: no embedding lookups (unless tied to a head), only the routed experts in use
+    byType: Record<string, number>;
+    byStack: Record<string, number>;
+  };
   stacks: StackResult[];
   cells: Map<string, CellResult>;
   flops: {
@@ -244,12 +250,13 @@ function widths(g: Graph, ix: Index, issues: Issue[]) {
   return { rowIn, rowOut, stackOut, tapWidth };
 }
 
-function notesOf(s: Stack, seq: SeqInfo): NotesInfo | undefined {
+function notesOf(s: Stack, seq: SeqInfo, seqs: Map<string, SeqInfo>): NotesInfo | undefined {
   const last = s.rows.flatMap((r) => r.cells).at(-1);
   if (!last || last.type !== "kv_out" || !seq.pages) return undefined;
   const kv = last as KvOutCell;
   const perPage = (seq.perPage ?? 0) * kv.entries;
-  return { total: seq.pages.count * perPage, perPage, pages: seq.pages, tokensOf: seq.tokensOf, kvHeads: kv.kv_heads, headDim: kv.head_dim };
+  const fromOtherText = seq.tokensOf !== undefined && seqs.get(seq.tokensOf)?.kind !== "tokens";
+  return { total: seq.pages.count * perPage, perPage, pages: seq.pages, tokensOf: seq.tokensOf, fromOtherText, kvHeads: kv.kv_heads, headDim: kv.head_dim };
 }
 
 // ------------------------------------------------------------------ the analysis
@@ -287,11 +294,12 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
     const home = ix.stacks.get(e.from.stack);
     const seq = seqs.get(e.from.stack);
     if (!home || !seq) return undefined;
-    return { stackId: home.id, width: W.tapWidth(e.from), P: seq.P, seq, notes: notesOf(home, seq) };
+    return { stackId: home.id, width: W.tapWidth(e.from), P: seq.P, seq, notes: notesOf(home, seq, seqs) };
   };
 
   const stackResults: StackResult[] = [];
   let fwd = 0, bwd = 0, recompute = 0, keysFwd = 0, irregularTrain = 0, irregularRecompute = 0;
+  let frozenParams = 0, inactive = 0;
   let actNoCkpt = 0, actCkptSaved = 0, actCkptPeakRow = 0, workspace = 0;
   const byType: Record<string, number> = {};
   const byStack: Record<string, number> = {};
@@ -347,8 +355,10 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
           embedding: embCell ? { cell: embCell, shared: Boolean(embCell.share_with) } : undefined,
           bytes,
         });
+        const frozen = Boolean(cell.frozen || s.frozen);
         const f = c.flops.reduce((n, t) => n + t.fwd, 0) * execs;
-        const b = c.flops.reduce((n, t) => n + t.fwd * t.bwd, 0) * execs;
+        // frozen weights: gradients still flow to the inputs, but no weight gradients are made
+        const b = c.flops.reduce((n, t) => n + t.fwd * (frozen && !t.keys ? Math.min(t.bwd, 1) : t.bwd), 0) * execs;
         const k = c.flops.filter((t) => t.keys).reduce((n, t) => n + t.fwd, 0) * execs;
         const res: CellResult = {
           id: cell.id,
@@ -367,7 +377,8 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
           irregular: c.irregular,
           issues: c.issues,
         };
-        if (cell.type === "lm_head" && cell.tied && embCell?.share_with) res.issues.push("the head is tied to a shared table");
+        if (frozen) frozenParams += res.params;
+        inactive += inactiveParams(cell, res, s);
         for (const m of c.issues) issues.push({ where: cell.id, msg: m });
         cells.set(cell.id, res);
         rowCells.push(res);
@@ -434,6 +445,7 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
   }
 
   const total = Object.values(byStack).reduce((a, b) => a + b, 0);
+  const trainable = total - frozenParams;
   const ckpt = run.checkpointing;
   const fwdT = fwd / S, bwdT = bwd / S, recT = ckpt ? recompute / S : 0;
   const trainT = fwdT + bwdT + recT;
@@ -446,11 +458,12 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
   const actPerRow = ckpt ? ckptRow : actNoCkpt;
   const memFor = (b: number, N: number): MemoryResult => {
     const z = run.zero_stage;
-    const weights = (total * prec.weight) / (z >= 3 ? N : 1);
-    const grads = (total * prec.grad) / (z >= 2 ? N : 1);
-    const master = (total * prec.master) / (z >= 1 ? N : 1);
-    const optimizer = (total * opt.bytes * prec.optScale) / (z >= 1 ? N : 1);
-    const castCopies = (total * prec.cast) / (z >= 3 ? N : 1);
+    // frozen weights are kept in the activation format (bf16 unless fp32) and need nothing else
+    const weights = (trainable * prec.weight + frozenParams * prec.act) / (z >= 3 ? N : 1);
+    const grads = (trainable * prec.grad) / (z >= 2 ? N : 1);
+    const master = (trainable * prec.master) / (z >= 1 ? N : 1);
+    const optimizer = (trainable * opt.bytes * prec.optScale) / (z >= 1 ? N : 1);
+    const castCopies = (trainable * prec.cast) / (z >= 3 ? N : 1);
     const activations = b * actPerRow * MEMORY_CAL.activationOverhead;
     const ws = b * workspace;
     const context = gpu.contextGiB * GiB;
@@ -496,7 +509,7 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
   return {
     S,
     issues,
-    params: { total, byType, byStack },
+    params: { total, trainable, active: total - inactive, byType, byStack },
     stacks: stackResults,
     cells,
     flops: {
@@ -527,4 +540,22 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
     },
     gpus: { minForMemory, forDeadline },
   };
+}
+
+/** Parameters a cell holds that a token does not run through: embedding lookups (unless the table is tied to a head),
+ *  the routed experts a token skips, and sparse lookup tables. */
+function inactiveParams(cell: Cell, res: CellResult, s: Stack): number {
+  if (cell.type === "embedding") {
+    const tied = s.rows.some((r) => r.cells.some((c) => c.type === "lm_head" && c.tied));
+    const table = res.parts.filter((p) => p.name === "token table" || p.name === "n-gram tables").reduce((n, p) => n + p.params, 0);
+    const ngrams = res.parts.find((p) => p.name === "n-gram tables")?.params ?? 0;
+    return tied ? ngrams : table;
+  }
+  if (cell.type === "ffn" && cell.experts > 1) {
+    const routed = res.parts.find((p) => p.name.endsWith("routed experts"))?.params ?? 0;
+    const k = Math.min(Math.max(1, cell.top_k), cell.experts);
+    return (routed * (cell.experts - k)) / cell.experts;
+  }
+  if (cell.type === "custom" && cell.sparse) return res.params;
+  return 0;
 }

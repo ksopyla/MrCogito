@@ -7,7 +7,7 @@ import { NumberField, Select, TextField, Toggle } from "./controls";
 import { cellConnections, cellTitle, edgeLabel, stackIO } from "./describe";
 import { PRECISIONS } from "../engine/hardware";
 import { cellTensorSteps, edgeTensors, elements, fmtShape, rowInputShape, stackOutputShape, type TensorStep } from "../engine/shapes";
-import { CELL_FIELDS, type Field } from "./fields";
+import { CELL_FIELDS, COMMON_FIELDS, MLA_FIELDS, type Field } from "./fields";
 import type { Sel } from "./Frame";
 import * as F from "./format";
 
@@ -66,7 +66,7 @@ function FieldView({ f, cell, onChange }: { f: Field; cell: Record<string, unkno
   if (f.kind === "bool") return <Toggle label={f.label} value={Boolean(raw)} help={f.help} onChange={(v) => onChange(f.key, v, f.extras)} />;
   if (f.kind === "select") return <Select label={f.label} value={raw as string} options={f.options as [string, string][]} help={f.help} onChange={(v) => onChange(f.key, v, f.extras)} />;
   if (f.kind === "text") return <TextField label={f.label} value={String(raw ?? "")} onChange={(v) => onChange(f.key, v, f.extras)} />;
-  return <NumberField label={f.label} value={Number(raw)} min={f.min} max={f.max} step={f.step} log={f.log} int={f.kind === "int"} help={f.help} onChange={(v) => onChange(f.key, v, f.extras)} />;
+  return <NumberField label={f.label} value={raw === undefined || raw === null ? f.min ?? 0 : Number(raw)} min={f.min} max={f.max} step={f.step} log={f.log} int={f.kind === "int"} help={f.help} onChange={(v) => onChange(f.key, v, f.extras)} />;
 }
 
 /** The forward pass of one cell, tensor by tensor, at the run's micro-batch. */
@@ -141,6 +141,24 @@ function CellInspector(p: Props & { id: string }) {
       {fields.map((f) => (
         <FieldView key={f.key} f={f} cell={c as unknown as Record<string, unknown>} onChange={set} />
       ))}
+      {c.type === "attention" && (
+        <>
+          <Toggle
+            label="Multi-head latent attention (DeepSeek MLA)"
+            value={Boolean(c.mla)}
+            help="keys and values pass through a small cached latent"
+            onChange={(v) => set("mla", v ? { q_rank: 0, kv_rank: 512, rope_dim: 64, nope_dim: 128, v_dim: 128 } : null)}
+          />
+          {c.mla &&
+            MLA_FIELDS.map((f) => (
+              <NumberField key={f.key} label={f.label} value={c.mla![f.key]} min={0} max={16384} int onChange={(v) => set("mla", { ...c.mla!, [f.key]: v })} />
+            ))}
+        </>
+      )}
+      {COMMON_FIELDS.map((f) => (
+        <FieldView key={f.key} f={f} cell={c as unknown as Record<string, unknown>} onChange={set} />
+      ))}
+      {home.stack.frozen && <p className="small muted">The whole stack is frozen, so this slot is frozen too.</p>}
       {c.type === "embedding" && (
         <Select label="Share the token table with" value={c.share_with ?? ""} options={[["", "nobody (own table)"], ...embeddings]} onChange={(v) => set("share_with", v || undefined)} />
       )}
@@ -279,6 +297,7 @@ function StackInspector(p: Props & { id: string }) {
       />
       <h3>Stack</h3>
       <TextField label="Name" value={s.name} onChange={(v) => p.apply((g) => E.updateStack(g, s.id, { name: v }))} />
+      <Toggle label="Frozen stack (weights kept, not trained)" value={Boolean(s.frozen)} help="a pretrained part: no gradients or optimizer state for its weights" onChange={(v) => p.apply((g) => E.updateStack(g, s.id, { frozen: v || undefined }))} />
       <Select label="Role" value={s.role} options={[["decoder", "decoder"], ["encoder", "encoder"], ["writer", "writer"], ["latent", "latent / notes"], ["other", "other"]]} onChange={(v) => p.apply((g) => E.updateStack(g, s.id, { role: v }))} />
       <NumberField label="Width (d_model)" value={s.width} min={8} max={32768} step={8} log int help="full-width attention and FFN ratios follow the width" onChange={(v) => p.apply((g) => E.setStackWidth(g, s.id, v), `width:${s.id}`)} />
       <Select label="Sequence" value={q.kind} options={seqOptions(s, p.graph)} onChange={changeKind} />
