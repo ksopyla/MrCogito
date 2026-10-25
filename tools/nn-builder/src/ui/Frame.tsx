@@ -2,9 +2,11 @@
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import type { Analysis, CellResult, RowResult } from "../engine/analyze";
 import type { Cell, Edge, Endpoint, Graph, Group, Row, Stack } from "../engine/types";
-import { CATEGORY, cellSub, cellTitle, seqSummary } from "./describe";
+import { CATEGORY, MIX_LEGEND, cellSub, cellTitle, mixing, seqSummary, stackIO } from "./describe";
 import { useDrag, useIsOver, type Target } from "./drag";
 import * as F from "./format";
+import { MixGlyph } from "./Glyph";
+import { fmtShape, positions as positionsOf, rowInputShape, stackOutputShape } from "../engine/shapes";
 
 export type Sel =
   | { kind: "cell"; id: string }
@@ -23,15 +25,85 @@ interface Props {
   onGroupCount: (groupId: string, count: number) => void;
 }
 
+const SHAPES_ON = "nn-builder.shapes";
+const readFlag = (key: string) => {
+  try {
+    return localStorage.getItem(key) !== "0";
+  } catch {
+    return true;
+  }
+};
+const writeFlag = (key: string, v: boolean) => {
+  try {
+    localStorage.setItem(key, v ? "1" : "0");
+  } catch {
+    /* storage blocked */
+  }
+};
+
 export function Frame(p: Props) {
+  const [shapes, setShapes] = useState(() => readFlag(SHAPES_ON));
+  const toggleShapes = (v: boolean) => (setShapes(v), writeFlag(SHAPES_ON, v));
   return (
-    <div className="frame-scroll" onPointerDown={(e) => e.target === e.currentTarget && p.setSel(null)}>
-      <div className="frame" onPointerDown={(e) => e.target === e.currentTarget && p.setSel(null)}>
-        {p.graph.stacks.map((s) => (
-          <StackColumn key={s.id} stack={s} {...p} />
-        ))}
-        <Wires graph={p.graph} analysis={p.analysis} sel={p.sel} setSel={p.setSel} />
+    <div className={`frame-wrap ${shapes ? "" : "shapes-off"}`}>
+      <div className="frame-scroll" onPointerDown={(e) => e.target === e.currentTarget && p.setSel(null)}>
+        <div className="frame" onPointerDown={(e) => e.target === e.currentTarget && p.setSel(null)}>
+          {p.graph.stacks.map((s) => (
+            <StackColumn key={s.id} stack={s} {...p} />
+          ))}
+          <Wires graph={p.graph} analysis={p.analysis} sel={p.sel} setSel={p.setSel} />
+        </div>
       </div>
+      <Legend shapes={shapes} setShapes={toggleShapes} batch={p.analysis.memory.microBatch} />
+    </div>
+  );
+}
+
+const LEGEND_OPEN = "nn-builder.legendOpen";
+
+function Legend({ shapes, setShapes, batch }: { shapes: boolean; setShapes: (v: boolean) => void; batch: number }) {
+  const [open, setOpenRaw] = useState(() => {
+    try {
+      return localStorage.getItem(LEGEND_OPEN) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const setOpen = (v: boolean) => {
+    setOpenRaw(v);
+    try {
+      localStorage.setItem(LEGEND_OPEN, v ? "1" : "0");
+    } catch {
+      /* storage blocked */
+    }
+  };
+  return (
+    <div className={`legend-box ${open ? "open" : ""}`}>
+      <button className="legend-toggle" onClick={() => setOpen(!open)}>
+        {open ? "▾" : "▸"} Connections
+      </button>
+      {open && (
+        <div className="legend-body">
+          <div className="legend-sec">How each slot connects tokens (row = reading token, column = what it reads)</div>
+          {MIX_LEGEND.map(([k, t]) => (
+            <div key={k} className="legend-row">
+              <MixGlyph kind={k} title={t} size={14} />
+              <span>{t}</span>
+            </div>
+          ))}
+          <div className="legend-sec">Tensors</div>
+          <label className="legend-row">
+            <input type="checkbox" checked={shapes} onChange={(e) => setShapes(e.target.checked)} />
+            show tensor shapes: <span className="shape-chip static">B×4k×576</span> = batch × positions × width (B = {batch} rows per GPU now)
+          </label>
+          <div className="legend-sec">Flow</div>
+          <div className="legend-row"><span className="lg-rail" /> the stream runs down the rows; each row reads it left to right (→)</div>
+          <div className="legend-row"><span className="resid static">+</span> residual: the slot's output is added back to the stream</div>
+          <div className="legend-row"><span className="lg-wire skip" /> skip wire: a row's output added to a later row</div>
+          <div className="legend-row"><span className="lg-wire source" /> keys/values or notes into an attention slot</div>
+          <div className="legend-row"><span className="lg-wire input" /> a stack's input (e.g. the token table feeding a writer)</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -43,6 +115,7 @@ function StackColumn(p: Props & { stack: Stack }) {
   const over = useIsOver((t) => t.drop === "stack" && t.stack === s.id);
   const selected = p.sel?.kind === "stack" && p.sel.id === s.id;
   const issues = a.issues.filter((i) => i.where === s.id);
+  const io = stackIO(s, g);
 
   // consecutive rows of one group render inside one bracket
   const segments: { group?: Group; rows: Row[]; first: number }[] = [];
@@ -72,12 +145,9 @@ function StackColumn(p: Props & { stack: Stack }) {
           <span>width {s.width}</span>
           <span className="num">{F.params(res?.params ?? 0)}</span>
         </div>
-        <span
-          className="dot out"
-          data-anchor={`stackout:${s.id}`}
-          title="output: drag to a cross-attention or notebook read, or onto another stack's header"
-          onPointerDown={(e) => start(e, { kind: "wire", from: { stack: s.id }, label: `${s.name} output` })}
-        />
+        <div className="stack-io in" title="what starts this stack's stream">
+          <span className="io-k">in</span> {io.input}
+        </div>
       </header>
       <div className="rows">
         {segments.map((seg) => {
@@ -114,6 +184,16 @@ function StackColumn(p: Props & { stack: Stack }) {
         })}
         <RowGap stack={s.id} index={s.rows.length} last onAdd={() => p.onAddRow(s.id)} />
       </div>
+      <footer className="stack-io out" title="where this stack's output goes">
+        <span className="io-k">out</span> <span className="shape-chip static out">{fmtShape(stackOutputShape(g, a, s.id, a.memory.microBatch), "compact")}</span>{" "}
+        {io.outputs.length ? io.outputs.join(" · ") : `${s.name} output (not wired)`}
+        <span
+          className="dot out"
+          data-anchor={`stackout:${s.id}`}
+          title="output (after the last row): drag to a cross-attention or notebook read, or onto another stack's header"
+          onPointerDown={(e) => start(e, { kind: "wire", from: { stack: s.id }, label: `${s.name} output` })}
+        />
+      </footer>
     </section>
   );
 }
@@ -137,6 +217,10 @@ function RowView(p: Props & { stack: Stack; row: Row; res?: RowResult; index: nu
   const skips = p.graph.edges.filter((e) => e.kind === "skip" && e.to.row === row.id).length;
   if (skips) extras.push(`+${skips} skip`);
   const label = row.label ?? `row ${p.index}`;
+  const b = p.analysis.memory.microBatch;
+  const inShape = fmtShape(rowInputShape(p.graph, p.analysis, row.id, b), "compact");
+  const prevRow = p.index > 0 ? s.rows[p.index - 1] : undefined;
+  const changed = !prevRow || fmtShape(rowInputShape(p.graph, p.analysis, prevRow.id, b), "compact") !== inShape;
 
   const clickRow = (e: PointerEvent) => {
     if (e.shiftKey && p.sel?.kind === "row" && p.sel.stack === s.id) {
@@ -157,9 +241,14 @@ function RowView(p: Props & { stack: Stack; row: Row; res?: RowResult; index: nu
         <span className="grip">⋮⋮</span>
         <span className="row-label">{label}</span>
       </div>
+      <span className={`rail ${p.index === 0 ? "first" : ""} ${p.index === s.rows.length - 1 ? "last" : ""}`} title="the stream flows down the rows; this row reads it here" />
+      {row.cells.length > 0 && <span className={`shape-chip ${changed ? "changed" : ""}`} title={`tensor entering ${label}: ${inShape} (B = rows per GPU, then positions, then width)`}>{inShape}</span>}
       <div className="cells">
         {row.cells.map((c, i) => (
-          <CellCard key={c.id} {...p} cell={c} index={i} res={p.analysis.cells.get(c.id)} />
+          <Fragment key={c.id}>
+            {i > 0 && <span className="link" aria-hidden>→</span>}
+            <CellCard {...p} cell={c} index={i} res={p.analysis.cells.get(c.id)} />
+          </Fragment>
         ))}
         <Slot row={row.id} index={row.cells.length} />
       </div>
@@ -198,6 +287,8 @@ function CellCard(p: Props & { stack: Stack; row: Row; cell: Cell; index: number
   const sub = cellSub(c, res?.widthIn ?? p.stack.width);
   const takesWire = c.type === "attention";
   const fed = takesWire && p.graph.edges.some((e) => e.kind === "source" && e.to.cell === c.id);
+  const mix = mixing(c, p.stack, p.graph);
+  const resid = (c.type === "attention" || c.type === "ffn") && c.residual !== "none";
   return (
     <div
       className={`cell cat-${CATEGORY[c.type]} ${selected ? "selected" : ""} ${ins} ${wireOver}`}
@@ -210,12 +301,16 @@ function CellCard(p: Props & { stack: Stack; row: Row; cell: Cell; index: number
     >
       {c.type === "attention" && (c.mode === "cross" || c.memory || fed) && <span className={`dot cell-in ${fed ? "fed" : ""}`} data-anchor={`cellin:${c.id}`} title="keys/values come in here" />}
       <div className="cell-title">
-        {title}
-        {res && res.execs > 1 && <span className="badge">×{res.execs}</span>}
+        <span className="cell-name" title={title}>{title}</span>
         {res && res.issues.length > 0 && <span className="warn" title={res.issues.join("\n")}>⚠</span>}
+        <MixGlyph kind={mix.kind} title={mix.text} />
       </div>
+      {resid && <span className="resid" title={`residual: the output is added back to the stream${c.residual === "post" ? " (norm after the add)" : ""}`}>+</span>}
       <div className="cell-sub">{c.label ? `${cellTitle(c)} · ${sub}` : sub}</div>
-      <div className="cell-num">{res && res.params > 0 ? F.params(res.params) : "0"}</div>
+      <div className="cell-foot">
+        {res && res.execs > 1 ? <span className="badge" title={`runs ${res.execs} times per row`}>×{res.execs}</span> : <span />}
+        <span className="cell-num">{res && res.params > 0 ? F.params(res.params) : "0"}</span>
+      </div>
       {c.type === "embedding" && (
         <span
           className="dot table"
@@ -234,6 +329,52 @@ interface WirePath {
   id: string;
   kind: Edge["kind"];
   d: string;
+  label: string;
+  tensor: string;
+  lx: number;
+  ly: number;
+}
+
+/** The wires that touch the selection: they are drawn strong, the others faint. */
+function relatedWires(g: Graph, sel: Sel): Set<string> | null {
+  if (!sel || sel.kind === "edge" || sel.kind === "group") return null;
+  const touches = (e: Edge, cells: Set<string>, rows: Set<string>, stack?: string) =>
+    (e.to.cell && cells.has(e.to.cell)) || (e.from.cell && cells.has(e.from.cell)) || (e.to.row && rows.has(e.to.row)) || (e.from.row && rows.has(e.from.row)) || (stack && (e.from.stack === stack || e.to.stack === stack));
+  let cells = new Set<string>(), rows = new Set<string>(), stack: string | undefined;
+  if (sel.kind === "cell") cells = new Set([sel.id]);
+  if (sel.kind === "row") {
+    rows = new Set(sel.ids);
+    cells = new Set(g.stacks.flatMap((s) => s.rows.filter((r) => rows.has(r.id)).flatMap((r) => r.cells.map((c) => c.id))));
+  }
+  if (sel.kind === "stack") stack = sel.id;
+  return new Set(g.edges.filter((e) => touches(e, cells, rows, stack)).map((e) => e.id));
+}
+
+function wireShape(e: Edge, g: Graph, a: Analysis): string {
+  const b = a.memory.microBatch;
+  if (e.from.port === "table" && e.from.cell) {
+    const c = a.cells.get(e.from.cell);
+    const home = g.stacks.find((s) => s.id === e.from.stack);
+    const seq = a.stacks.find((s) => s.id === home?.id)?.seq;
+    const cell = home?.rows.flatMap((r) => r.cells).find((x) => x.id === e.from.cell);
+    if (!c || !seq || cell?.type !== "embedding") return "";
+    return fmtShape([{ n: "B", v: b }, ...positionsOf(seq), { n: "e", v: cell.dim }], "compact");
+  }
+  if (e.from.row) {
+    const s = g.stacks.find((x) => x.id === e.from.stack);
+    const i = s?.rows.findIndex((r) => r.id === e.from.row) ?? -1;
+    const res = a.stacks.find((x) => x.id === e.from.stack);
+    const w = res?.rows[i]?.cells.at(-1)?.widthOut;
+    return res && w ? fmtShape([{ n: "B", v: b }, ...positionsOf(res.seq), { n: "d", v: w }], "compact") : "";
+  }
+  return fmtShape(stackOutputShape(g, a, e.from.stack, b), "compact");
+}
+
+function wireLabel(e: Edge, g: Graph): string {
+  if (e.kind === "skip") return e.weight === "scalar" ? "skip ×σ" : e.weight === "vector" ? "skip ×w" : "skip";
+  if (e.kind === "input") return e.from.port === "table" ? "token table → in" : "in";
+  const src = g.stacks.find((s) => s.id === e.from.stack);
+  return src?.rows.flatMap((r) => r.cells).at(-1)?.type === "kv_out" ? "notes" : "keys/values";
 }
 
 const fromAnchor = (e: Endpoint) => (e.cell && e.port === "table" ? `table:${e.cell}` : e.row ? `rowout:${e.row}` : `stackout:${e.stack}`);
@@ -243,6 +384,7 @@ function Wires({ graph, analysis, sel, setSel }: { graph: Graph; analysis: Analy
   const [paths, setPaths] = useState<WirePath[]>([]);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const svg = useRef<SVGSVGElement>(null);
+  const related = relatedWires(graph, sel);
   useLayoutEffect(() => {
     // the frame is the svg's parent (a parent's ref is not attached yet when a child's layout effect runs)
     const root = svg.current?.parentElement;
@@ -260,13 +402,14 @@ function Wires({ graph, analysis, sel, setSel }: { graph: Graph; analysis: Analy
         const a = at(fromAnchor(e.from));
         const b = at(toAnchor(e.to));
         if (!a || !b) continue;
+        const label = wireLabel(e, graph);
+        const tensor = wireShape(e, graph, analysis);
         if (e.kind === "skip") {
           const off = 18 + Math.min(60, Math.abs(b.y - a.y) / 12);
-          out.push({ id: e.id, kind: e.kind, d: `M ${a.x} ${a.y} C ${a.x + off} ${a.y}, ${b.x + off} ${b.y + 5}, ${b.x + 3} ${b.y + 5}` });
+          out.push({ id: e.id, kind: e.kind, label, tensor, lx: b.x + off * 0.75 + 4, ly: b.y - 2, d: `M ${a.x} ${a.y} C ${a.x + off} ${a.y}, ${b.x + off} ${b.y + 5}, ${b.x + 3} ${b.y + 5}` });
         } else {
           const dx = Math.max(50, Math.abs(b.x - a.x) / 2);
-          const end = e.kind === "input" ? b : { x: b.x, y: b.y };
-          out.push({ id: e.id, kind: e.kind, d: `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${end.x - dx} ${end.y}, ${end.x} ${end.y}` });
+          out.push({ id: e.id, kind: e.kind, label, tensor, lx: b.x - 8, ly: b.y - 8, d: `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}` });
         }
       }
       setPaths(out);
@@ -293,10 +436,18 @@ function Wires({ graph, analysis, sel, setSel }: { graph: Graph; analysis: Analy
       </defs>
       {paths.map((p) => {
         const selected = sel?.kind === "edge" && sel.id === p.id;
+        const rel = related ? (related.has(p.id) ? "related" : "faint") : "";
         return (
-          <g key={p.id} className={`wire ${p.kind} ${selected ? "selected" : ""}`} onPointerDown={(e) => (e.stopPropagation(), setSel({ kind: "edge", id: p.id }))}>
+          <g key={p.id} className={`wire ${p.kind} ${selected ? "selected" : ""} ${rel}`} onPointerDown={(e) => (e.stopPropagation(), setSel({ kind: "edge", id: p.id }))}>
+            <title>{p.tensor ? `${p.label}: ${p.tensor}` : p.label}</title>
             <path d={p.d} className="hit" />
             <path d={p.d} className="line" markerEnd={`url(#arrow-${p.kind})`} />
+            {(p.kind !== "skip" || selected || rel === "related") && (
+              <text x={p.lx} y={p.ly} className="wire-label" textAnchor={p.kind === "skip" ? "start" : "end"}>
+                {p.label}
+                {p.tensor && <tspan className="wire-shape"> {p.tensor}</tspan>}
+              </text>
+            )}
           </g>
         );
       })}

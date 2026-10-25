@@ -14,6 +14,9 @@ interface Props {
   canUndo: boolean;
   canRedo: boolean;
   toast: (msg: string) => void;
+  panelWidth: number;
+  panelMax: number;
+  onPanelWidth: (w: number) => void;
 }
 
 export const slug = (name: string) => name.trim().toLowerCase().replace(/[^a-z0-9_.-]+/g, "_").replace(/^[_.-]+|[_.-]+$/g, "") || "design";
@@ -110,6 +113,11 @@ export function TopBar(p: Props) {
       <button onClick={p.undo} disabled={!p.canUndo} title="Undo (⌘Z)">↶</button>
       <button onClick={p.redo} disabled={!p.canRedo} title="Redo (⇧⌘Z)">↷</button>
       <span className="grow" />
+      <label className="panel-width" title="width of the right panel (you can also drag its left edge)">
+        <span>Panel</span>
+        <input type="range" min={340} max={Math.max(340, p.panelMax)} step={10} value={p.panelWidth} onChange={(e) => p.onPanelWidth(Number(e.target.value))} />
+        <span className="num">{p.panelWidth}px</span>
+      </label>
       <button className="primary" onClick={save} title="Save to tools/nn-builder/designs/<name>.json">Save</button>
       <div className="menu-wrap">
         <button onClick={openMenu}>Open…</button>

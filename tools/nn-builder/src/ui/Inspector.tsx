@@ -4,7 +4,9 @@ import type { Analysis, CellResult } from "../engine/analyze";
 import * as E from "../engine/edit";
 import type { Cell, CellBody, Edge, Graph, SeqSpec, Stack } from "../engine/types";
 import { NumberField, Select, TextField, Toggle } from "./controls";
-import { cellTitle, edgeLabel } from "./describe";
+import { cellConnections, cellTitle, edgeLabel, stackIO } from "./describe";
+import { PRECISIONS } from "../engine/hardware";
+import { cellTensorSteps, elements, fmtShape, rowInputShape, stackOutputShape } from "../engine/shapes";
 import { CELL_FIELDS, type Field } from "./fields";
 import type { Sel } from "./Frame";
 import * as F from "./format";
@@ -67,6 +69,29 @@ function FieldView({ f, cell, onChange }: { f: Field; cell: Record<string, unkno
   return <NumberField label={f.label} value={Number(raw)} min={f.min} max={f.max} step={f.step} log={f.log} int={f.kind === "int"} help={f.help} onChange={(v) => onChange(f.key, v, f.extras)} />;
 }
 
+/** The forward pass of one cell, tensor by tensor, at the run's micro-batch. */
+function TensorWalk({ graph, analysis, cellId }: { graph: Graph; analysis: Analysis; cellId: string }) {
+  const b = analysis.memory.microBatch;
+  const bytes = PRECISIONS[graph.run.precision]?.act ?? 2;
+  const steps = cellTensorSteps(graph, analysis, cellId, b);
+  if (!steps.length) return null;
+  return (
+    <>
+      <h3>Tensors · B = {b} rows per GPU</h3>
+      <ol className="tensor-walk">
+        {steps.map((st, i) => (
+          <li key={i}>
+            <span className="tw-label">{st.label}</span>
+            <span className="tw-shape">{st.dims.length ? fmtShape(st.dims, "named") : "scalar"}</span>
+            <span className="tw-size muted">{st.dims.length ? F.bytes(elements(st.dims) * (i === 0 && st.label === "token ids" ? 8 : bytes)) : ""}</span>
+            {st.note && <span className="tw-note muted">{st.note}</span>}
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
 function CellInspector(p: Props & { id: string }) {
   const home = E.findCell(p.graph, p.id);
   const r = p.analysis.cells.get(p.id);
@@ -83,6 +108,10 @@ function CellInspector(p: Props & { id: string }) {
       <h2>
         {cellTitle(c)} <span className="muted small">in {rowName(p.graph, home.row.id)}</span>
       </h2>
+      <h3>Connections</h3>
+      <Costs items={cellConnections(p.graph, c.id, r.widthIn)} />
+      <TensorWalk graph={p.graph} analysis={p.analysis} cellId={c.id} />
+      <h3>Cost</h3>
       <Costs items={cellCostItems(r, p.analysis)} />
       {r.parts.length > 1 && (
         <details className="parts">
@@ -149,6 +178,7 @@ function RowInspector(p: Props & { ids: string[]; stack: string }) {
       <h2>{one ? rowName(p.graph, one.row.id) : `${rows.length} rows of ${rows[0].stack.name}`}</h2>
       <Costs
         items={[
+          ["Tensor in", fmtShape(rowInputShape(p.graph, p.analysis, rows[0].row.id, p.analysis.memory.microBatch), "named")],
           ["Parameters", F.exact(sum((r) => r.params))],
           ["Forward / token", F.flops(sum((r) => r.fwdPerToken))],
           ["Saved for backward", `${F.bytes(sum((r) => r.actBytesPerRow))} per row`],
@@ -235,6 +265,15 @@ function StackInspector(p: Props & { id: string }) {
         ]}
       />
       {issues.length > 0 && <ul className="issues">{issues.map((i) => <li key={i.msg}>⚠ {i.msg}</li>)}</ul>}
+      <h3>Connections</h3>
+      <Costs
+        items={[
+          ["Input", stackIO(s, p.graph).input],
+          ["Tensor in", s.rows[0] ? fmtShape(rowInputShape(p.graph, p.analysis, s.rows[0].id, p.analysis.memory.microBatch), "named") : "—"],
+          ["Tensor out", fmtShape(stackOutputShape(p.graph, p.analysis, s.id, p.analysis.memory.microBatch), "named")],
+          ["Output", stackIO(s, p.graph).outputs.join("; ") || "not wired"],
+        ]}
+      />
       <h3>Stack</h3>
       <TextField label="Name" value={s.name} onChange={(v) => p.apply((g) => E.updateStack(g, s.id, { name: v }))} />
       <Select label="Role" value={s.role} options={[["decoder", "decoder"], ["encoder", "encoder"], ["writer", "writer"], ["latent", "latent / notes"], ["other", "other"]]} onChange={(v) => p.apply((g) => E.updateStack(g, s.id, { role: v }))} />

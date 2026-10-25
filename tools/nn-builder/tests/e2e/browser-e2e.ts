@@ -41,6 +41,10 @@ function fire(type: string, x: number, y: number, init: PointerEventInit = {}) {
 
 /** Press on `from`, move in steps to `to` (an element's centre or a point), release. */
 async function drag(from: Element, to: Element | { x: number; y: number }, init: PointerEventInit = {}) {
+  if (to instanceof Element && from.closest(".frame-scroll") === null) {
+    to.scrollIntoView({ block: "nearest", inline: "center" }); // a drop from the palette: bring the target into view
+    await sleep(60);
+  }
   const a = center(from);
   const b = to instanceof Element ? center(to) : to;
   from.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, clientX: a.x, clientY: a.y, button: 0, buttons: 1, pointerId: 1, isPrimary: true, pointerType: "mouse", ...init }));
@@ -223,7 +227,11 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     await sleep(80);
     const cross = $$(".cell", dec).find((c) => c.querySelector(".cell-title")?.textContent?.startsWith("Cross"))!;
     check("a cross-attention without a source warns", Boolean(cross.querySelector(".warn")));
-    await drag($(".stack-head .dot.out", $$(".stack")[0])!, cross);
+    // scroll so the encoder's output dot (its bottom bar) and the decoder's cross-attention are both in view
+    const dot = $("footer.stack-io .dot.out", $$(".stack")[0])!;
+    pane.scrollLeft += dot.getBoundingClientRect().left - pane.getBoundingClientRect().left - 40;
+    await sleep(80);
+    await drag(dot, cross);
     const g = graph();
     check("the wire feeds the cross-attention", g.edges.some((e) => e.kind === "source" && e.from.stack === g.stacks[0].id) && $$(".wire.source").length === 1);
     check("its warning is gone", !$$(".cell", $$(".stack")[1]).find((c) => c.querySelector(".cell-title")?.textContent?.startsWith("Cross"))!.querySelector(".warn"));

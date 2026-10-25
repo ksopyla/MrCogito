@@ -14,6 +14,19 @@ import { Palette } from "./Palette";
 import { TopBar } from "./TopBar";
 
 const AUTOSAVE = "nn-builder.current";
+const SIDE_W = "nn-builder.panelWidth";
+const sideDefault = (vw: number) => (vw >= 1400 ? 520 : 440);
+
+// the width the user chose is kept (only once they choose one); the panel shows as much of it as the window allows
+const clampSide = (w: number, vw: number) => Math.round(Math.max(340, Math.min(w, vw - 200 - 360)));
+function storedSide(): number | null {
+  try {
+    const v = Number(localStorage.getItem(SIDE_W));
+    return v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
 
 function initial(): Graph {
   try {
@@ -39,6 +52,39 @@ export function App() {
   const analysis = useMemo(() => analyze(graph), [graph]);
   const [sel, setSelRaw] = useState<Sel>(null);
   const [tab, setTab] = useState("inspect");
+  const [pref, setPrefRaw] = useState<number | null>(storedSide);
+  const [vw, setVw] = useState(window.innerWidth);
+  const [resizing, setResizing] = useState(false);
+  const sideW = clampSide(pref ?? sideDefault(vw), vw);
+  const setPref = useCallback((w: number | null) => {
+    setPrefRaw(w);
+    try {
+      if (w === null) localStorage.removeItem(SIDE_W);
+      else localStorage.setItem(SIDE_W, String(w));
+    } catch {
+      /* storage blocked */
+    }
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const x0 = e.clientX, w0 = sideW;
+    setResizing(true);
+    const move = (ev: PointerEvent) => setPref(clampSide(w0 + (x0 - ev.clientX), window.innerWidth));
+    const up = () => {
+      setResizing(false);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
 
@@ -173,6 +219,13 @@ export function App() {
     }
   };
 
+  const estimates = (k: string) => {
+    const props = { graph, analysis, apply, setSel };
+    if (k === "train") return <TrainingPanel {...props} />;
+    if (k === "length") return <LengthPanel {...props} />;
+    return <CostPanel {...props} />;
+  };
+
   const load = (g: Graph) => {
     apply(() => g);
     setSelRaw(null);
@@ -181,9 +234,12 @@ export function App() {
   return (
     <DragProvider accepts={accepts} onDrop={onDrop}>
       <div className="app">
-        <TopBar graph={graph} load={load} apply={apply} undo={undo} redo={redo} canUndo={hist.canUndo} canRedo={hist.canRedo} toast={toast} />
+        <TopBar
+          graph={graph} load={load} apply={apply} undo={undo} redo={redo} canUndo={hist.canUndo} canRedo={hist.canRedo} toast={toast}
+          panelWidth={sideW} panelMax={vw - 200 - 360} onPanelWidth={setPref}
+        />
         <SummaryStrip analysis={analysis} graph={graph} onOpen={setTab} />
-        <div className="main">
+        <div className="main" style={{ gridTemplateColumns: `200px minmax(0, 1fr) ${sideW}px` }}>
           <Palette onQuickAdd={quickAdd} />
           <Frame
             graph={graph}
@@ -197,6 +253,7 @@ export function App() {
             onGroupCount={(id, count) => apply((g) => E.updateGroup(g, id, { count }), `group:${id}`)}
           />
           <aside className="side">
+            <div className={`splitter ${resizing ? "active" : ""}`} onPointerDown={startResize} onDoubleClick={() => setPref(null)} title="drag to resize; double-click for the default width" />
             <nav className="tabs">
               {TABS.map(([k, l]) => (
                 <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
@@ -205,10 +262,7 @@ export function App() {
               ))}
             </nav>
             <div className="side-body">
-              {tab === "inspect" && <Inspector graph={graph} analysis={analysis} sel={sel} setSel={setSel} apply={apply} toast={toast} />}
-              {tab === "cost" && <CostPanel graph={graph} analysis={analysis} apply={apply} setSel={setSel} />}
-              {tab === "train" && <TrainingPanel graph={graph} analysis={analysis} apply={apply} setSel={setSel} />}
-              {tab === "length" && <LengthPanel graph={graph} analysis={analysis} apply={apply} setSel={setSel} />}
+              {tab === "inspect" ? <Inspector graph={graph} analysis={analysis} sel={sel} setSel={setSel} apply={apply} toast={toast} /> : estimates(tab)}
             </div>
           </aside>
         </div>
