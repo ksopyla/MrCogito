@@ -7,7 +7,7 @@ import { parseGraph } from "../engine/serialize";
 import type { Graph } from "../engine/types";
 import { DragProvider, type Payload, type Target } from "./drag";
 import { CostPanel, LengthPanel, SummaryStrip, TrainingPanel } from "./Estimates";
-import { Frame, type Sel } from "./Frame";
+import { Frame, stackWidths, type Sel } from "./Frame";
 import { useHistory } from "./history";
 import { Inspector } from "./Inspector";
 import { Palette } from "./Palette";
@@ -251,6 +251,14 @@ export function App() {
               apply((g) => E.insertRow(g, stackId, s.rows.length, []));
             }}
             onGroupCount={(id, count) => apply((g) => E.updateGroup(g, id, { count }), `group:${id}`)}
+            onStackWidth={(id, w) =>
+              apply((g) => {
+                const widths = { ...stackWidths(g) };
+                if (w === null) delete widths[id];
+                else widths[id] = w;
+                return { ...g, ui: { ...(g.ui ?? {}), stackWidths: widths } };
+              }, `stackw:${id}`)
+            }
           />
           <aside className="side">
             <div className={`splitter ${resizing ? "active" : ""}`} onPointerDown={startResize} onDoubleClick={() => setPref(null)} title="drag to resize; double-click for the default width" />

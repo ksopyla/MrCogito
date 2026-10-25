@@ -23,7 +23,11 @@ interface Props {
   setSel: (s: Sel) => void;
   onAddRow: (stackId: string) => void;
   onGroupCount: (groupId: string, count: number) => void;
+  onStackWidth: (stackId: string, width: number | null) => void;
 }
+
+/** Stack widths the user set by dragging (layout only, kept in graph.ui). */
+export const stackWidths = (g: Graph) => ((g.ui?.stackWidths ?? {}) as Record<string, number>);
 
 const SHAPES_ON = "nn-builder.shapes";
 const readFlag = (key: string) => {
@@ -116,6 +120,27 @@ function StackColumn(p: Props & { stack: Stack }) {
   const selected = p.sel?.kind === "stack" && p.sel.id === s.id;
   const issues = a.issues.filter((i) => i.where === s.id);
   const io = stackIO(s, g);
+  const [dragW, setDragW] = useState<number | null>(null);
+  const width = dragW ?? stackWidths(g)[s.id];
+  const startResize = (e: React.PointerEvent<HTMLSpanElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const box = e.currentTarget.parentElement!.getBoundingClientRect();
+    const x0 = e.clientX, w0 = box.width;
+    let w = w0;
+    document.body.dataset.resizing = "1";
+    const move = (ev: PointerEvent) => setDragW((w = Math.max(320, Math.round(w0 + ev.clientX - x0))));
+    const up = () => {
+      delete document.body.dataset.resizing;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDragW(null);
+      if (Math.abs(w - w0) > 2) p.onStackWidth(s.id, w);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   // consecutive rows of one group render inside one bracket
   const segments: { group?: Group; rows: Row[]; first: number }[] = [];
@@ -127,7 +152,8 @@ function StackColumn(p: Props & { stack: Stack }) {
   });
 
   return (
-    <section className={`stack role-${s.role}`}>
+    <section className={`stack role-${s.role} ${width ? "sized" : ""}`} style={width ? { width } : undefined} data-stack-box={s.id}>
+      <span className="stack-resize" onPointerDown={startResize} onDoubleClick={() => p.onStackWidth(s.id, null)} title="drag to resize this stack; double-click for the automatic width" />
       <header
         className={`stack-head ${selected ? "selected" : ""} ${over}`}
         data-drop="stack"
@@ -331,6 +357,7 @@ interface WirePath {
   d: string;
   label: string;
   tensor: string;
+  mid?: boolean;
   lx: number;
   ly: number;
 }
@@ -409,7 +436,8 @@ function Wires({ graph, analysis, sel, setSel }: { graph: Graph; analysis: Analy
           out.push({ id: e.id, kind: e.kind, label, tensor, lx: b.x + off * 0.75 + 4, ly: b.y - 2, d: `M ${a.x} ${a.y} C ${a.x + off} ${a.y}, ${b.x + off} ${b.y + 5}, ${b.x + 3} ${b.y + 5}` });
         } else {
           const dx = Math.max(50, Math.abs(b.x - a.x) / 2);
-          out.push({ id: e.id, kind: e.kind, label, tensor, lx: b.x - 8, ly: b.y - 8, d: `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}` });
+          const long = Math.abs(b.x - a.x) > 260;
+          out.push({ id: e.id, kind: e.kind, label, tensor, mid: long, lx: long ? (a.x + b.x) / 2 : b.x - 8, ly: long ? (a.y + b.y) / 2 - 6 : b.y - 8, d: `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}` });
         }
       }
       setPaths(out);
@@ -443,7 +471,7 @@ function Wires({ graph, analysis, sel, setSel }: { graph: Graph; analysis: Analy
             <path d={p.d} className="hit" />
             <path d={p.d} className="line" markerEnd={`url(#arrow-${p.kind})`} />
             {(p.kind !== "skip" || selected || rel === "related") && (
-              <text x={p.lx} y={p.ly} className="wire-label" textAnchor={p.kind === "skip" ? "start" : "end"}>
+              <text x={p.lx} y={p.ly} className="wire-label" textAnchor={p.kind === "skip" ? "start" : p.mid ? "middle" : "end"}>
                 {p.label}
                 {p.tensor && <tspan className="wire-shape"> {p.tensor}</tspan>}
               </text>

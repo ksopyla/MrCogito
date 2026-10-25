@@ -237,6 +237,29 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     check("its warning is gone", !$$(".cell", $$(".stack")[1]).find((c) => c.querySelector(".cell-title")?.textContent?.startsWith("Cross"))!.querySelector(".warn"));
   });
 
+  await attempt("resize a stack by dragging its edge", async () => {
+    const box = $$(".stack")[1];
+    const w0 = box.getBoundingClientRect().width;
+    const handle = $(".stack-resize", box)!;
+    const c = center(handle);
+    await drag(handle, { x: c.x + 180, y: c.y });
+    const w1 = $$(".stack")[1].getBoundingClientRect().width;
+    const saved = (graph().ui?.stackWidths ?? {}) as Record<string, number>;
+    check("the stack is 180 px wider and the width is kept in the file", Math.abs(w1 - w0 - 180) < 3 && Object.keys(saved).length === 1, `${Math.round(w0)} → ${Math.round(w1)}`);
+    check("its slots grow with it", $$(".cell", $$(".stack")[1])[0].getBoundingClientRect().width > 150);
+    $(".stack-resize", $$(".stack")[1])!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    await sleep(150);
+    check("double-click gives the automatic width back", Math.abs($$(".stack")[1].getBoundingClientRect().width - w0) < 3);
+  });
+
+  await attempt("clicking a wire explains what it carries", async () => {
+    const wire = $$(".wire.source .hit")[0];
+    wire.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    await sleep(150);
+    const text = $(".inspector")?.textContent ?? "";
+    check("the wire panel shows the tensor carried and the steps on the way", /Carries/.test(text) && /Arrives as/.test(text) && $$(".inspector .tensor-walk li").length >= 3, text.slice(0, 80));
+  });
+
   await attempt("estimate tabs", async () => {
     await tab("Compute");
     check("compute & memory shows the memory bar and the per-cell table", Boolean($(".stackbar")) && $$(".breakdown tbody tr").length > 5);

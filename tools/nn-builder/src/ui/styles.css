@@ -164,7 +164,7 @@ select, input.num-input, input.text-input, textarea {
 .cells { display: flex; gap: 6px; flex: 1; align-items: stretch; }
 .row-meta { width: 50px; flex: none; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; font-size: 11px; }
 
-.cell { position: relative; width: 144px; min-height: 54px; border: 1px solid var(--border); border-left: 4px solid var(--cat); border-radius: 6px; padding: 4px 7px 3px 8px;
+.cell { position: relative; flex: 1 1 144px; min-width: 144px; max-width: 460px; min-height: 54px; border: 1px solid var(--border); border-left: 4px solid var(--cat); border-radius: 6px; padding: 4px 7px 3px 8px;
   background: var(--surface-1); cursor: grab; touch-action: none; user-select: none; display: flex; flex-direction: column; }
 .cell:hover { box-shadow: var(--shadow); }
 .cell.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -397,3 +397,12 @@ footer.stack-io .dot.out { right: -6px; }
 .tensor-walk .tw-shape { grid-column: 2; font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 0.93em; }
 .tensor-walk .tw-size { grid-column: 3; grid-row: 1; font-size: 0.9em; text-align: right; }
 .tensor-walk .tw-note { grid-column: 2 / 4; font-size: 0.86em; }
+.inspector .lead { margin: 0 0 6px; color: var(--ink-2); line-height: 1.45; }
+
+/* ---------------------------------------------------------------- resizable stacks */
+.stack.sized { min-width: max-content; }
+.stack-resize { position: absolute; top: 64px; bottom: 44px; right: -5px; width: 10px; cursor: ew-resize; z-index: 5; border-radius: 4px; }
+.stack-resize::after { content: ""; position: absolute; top: 50%; left: 3px; width: 4px; height: 36px; transform: translateY(-50%); border-left: 2px dotted var(--axis); border-right: 2px dotted var(--axis); opacity: 0; transition: opacity 0.15s; }
+.stack:hover .stack-resize::after, body[data-resizing] .stack-resize::after { opacity: 1; }
+.stack-resize:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+body[data-resizing] { cursor: ew-resize; user-select: none; }

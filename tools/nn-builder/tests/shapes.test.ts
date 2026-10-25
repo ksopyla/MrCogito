@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { analyze } from "../src/engine/analyze";
 import { buildPreset } from "../src/engine/presets";
-import { cellTensorSteps, fmtShape, rowInputShape, stackOutputShape } from "../src/engine/shapes";
+import { cellTensorSteps, edgeTensors, fmtShape, rowInputShape, stackOutputShape } from "../src/engine/shapes";
 
 const sizes = (dims: { v: number }[]) => dims.map((d) => d.v);
 const setup = (id: string) => {
@@ -77,5 +77,37 @@ describe("cross-attention reads the encoder", () => {
     const steps = cellTensorSteps(g, a, "dec.L0.cross", 2);
     expect(step(steps, /^keys/)).toEqual([2, 1024, 8, 64]);
     expect(step(steps, /^scores/)).toEqual([2, 8, 1024, 1024]);
+  });
+});
+
+describe("what a wire carries and what the other end does with it", () => {
+  test("the token table feeding the page writer is cut into pages", () => {
+    const { g, a } = setup("e33m_plain_30m");
+    const w = edgeTensors(g, a, "wire.table", 4);
+    expect(sizes(w.from.dims)).toEqual([4, 4096, 256]);
+    expect(step(w.steps, /^cut into pages/)).toEqual([4, 21, 256, 256]);
+    expect(sizes(w.to.dims)).toEqual([4, 21, 256, 256]);
+  });
+
+  test("the notes become the read's extra keys/values", () => {
+    const { g, a } = setup("e33m_plain_30m");
+    const w = edgeTensors(g, a, "wire.notes", 4);
+    expect(sizes(w.from.dims)).toEqual([4, 672, 1, 64]);
+    expect(step(w.steps, /^scores/)).toEqual([4, 9, 4096, 256 + 672]);
+  });
+
+  test("the encoder output is projected into keys/values by each cross-attention", () => {
+    const { g, a } = setup("encdec");
+    const w = edgeTensors(g, a, "wire.cross0", 2);
+    expect(sizes(w.from.dims)).toEqual([2, 1024, 512]);
+    expect(step(w.steps, /^keys/)).toEqual([2, 1024, 8, 64]);
+  });
+
+  test("a skip adds one row's output to a later row's input, times one weight", () => {
+    const { g, a } = setup("dense_plain_30m");
+    const w = edgeTensors(g, a, "main.skip0", 8);
+    expect(sizes(w.from.dims)).toEqual([8, 4096, 576]);
+    expect(sizes(w.to.dims)).toEqual([8, 4096, 576]);
+    expect(w.params).toBe(1);
   });
 });

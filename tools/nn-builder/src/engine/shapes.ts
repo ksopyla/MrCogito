@@ -1,7 +1,7 @@
 // Tensor shapes along the forward pass: what each cell receives, makes inside, and hands on, for a batch of B rows.
 import type { Analysis } from "./analyze";
 import type { SeqInfo } from "./cells";
-import type { Cell, Graph } from "./types";
+import type { Cell, Edge, Graph } from "./types";
 
 export interface Dim {
   n: string; // name: B, S, pages, W, slots, h, dh, d, F, V, ...
@@ -219,3 +219,98 @@ export function fmtShape(s: Dim[] & { kind?: string }, mode: "compact" | "number
 
 /** Elements in a tensor. */
 export const elements = (s: Dim[]) => s.reduce((n, x) => n * x.v, 1);
+
+// ------------------------------------------------------------------ wires: what they carry and what happens at the other end
+
+export interface EdgeTensors {
+  from: { label: string; dims: Dim[] };
+  to: { label: string; dims: Dim[] };
+  steps: TensorStep[];
+  params: number; // parameters the wire itself adds (a skip's weight)
+  summary: string;
+}
+
+const stackName = (g: Graph, id: string) => g.stacks.find((s) => s.id === id)?.name ?? id;
+const rowLabel = (g: Graph, id: string) => {
+  for (const s of g.stacks) {
+    const i = s.rows.findIndex((r) => r.id === id);
+    if (i >= 0) return `${s.name} · ${s.rows[i].label ?? `row ${i}`}`;
+  }
+  return id;
+};
+const cellName = (c: Cell) => c.label ?? c.type.replace("_", " ");
+
+/** The tensor at the start of a wire. */
+function endpointDims(g: Graph, a: Analysis, e: Edge["from"], b: number): Dim[] {
+  const res = a.stacks.find((s) => s.id === e.stack);
+  if (!res) return [];
+  const B = dim("B", b);
+  if (e.port === "table" && e.cell) {
+    const cell = g.stacks.find((s) => s.id === e.stack)?.rows.flatMap((r) => r.cells).find((c) => c.id === e.cell);
+    return cell?.type === "embedding" ? [B, ...positions(res.seq), dim("e", cell.dim)] : [];
+  }
+  if (e.row) {
+    const rr = res.rows.find((r) => r.id === e.row);
+    const w = rr?.cells.at(-1)?.widthOut;
+    return w ? [B, ...positions(res.seq), dim("d", w)] : [];
+  }
+  return stackOutputShape(g, a, e.stack, b);
+}
+
+export function edgeTensors(g: Graph, a: Analysis, edgeId: string, b: number): EdgeTensors {
+  const e = g.edges.find((x) => x.id === edgeId);
+  const empty: EdgeTensors = { from: { label: "", dims: [] }, to: { label: "", dims: [] }, steps: [], params: 0, summary: "" };
+  if (!e) return empty;
+  const fromDims = endpointDims(g, a, e.from, b);
+  const fromLabel = e.from.port === "table" ? `${stackName(g, e.from.stack)} token table` : e.from.row ? `${rowLabel(g, e.from.row)} output` : `${stackName(g, e.from.stack)} output`;
+  const steps: TensorStep[] = [{ label: fromLabel, dims: fromDims }];
+
+  if (e.kind === "skip") {
+    const to = e.to.row ? rowInputShape(g, a, e.to.row, b) : shape([]);
+    const width = fromDims.at(-1)?.v ?? 0;
+    const params = e.weight === "scalar" ? 1 : e.weight === "vector" ? width : 0;
+    steps.push({ label: e.weight === "scalar" ? "× σ, one learned number (starts at 0)" : e.weight === "vector" ? "× w, one learned weight per channel" : "as is", dims: fromDims });
+    steps.push({ label: `added to the input of ${rowLabel(g, e.to.row ?? "")}`, dims: [...to] });
+    return { from: { label: fromLabel, dims: fromDims }, to: { label: `${rowLabel(g, e.to.row ?? "")} input`, dims: [...to] }, steps, params,
+      summary: "A U-net skip: an earlier row's output, scaled, is added to a later row's input; both are the same shape." };
+  }
+
+  if (e.kind === "input") {
+    const target = g.stacks.find((s) => s.id === e.to.stack);
+    const tres = a.stacks.find((s) => s.id === e.to.stack);
+    if (!target || !tres) return empty;
+    const last = fromDims.at(-1) ?? dim("d", 0);
+    if (tres.seq.kind === "pages" && tres.seq.pages) {
+      const p = tres.seq.pages;
+      steps.push({ label: `cut into pages: ${p.count} pages of ${p.window} tokens, a new page every ${p.stride}`, dims: [dim("B", b), dim("pages", p.count), dim("W", p.window), last],
+        note: p.window > p.stride ? `pages overlap: ${p.count * p.window} page tokens for ${tres.seq.tokensOf ? a.stacks.find((s) => s.id === tres.seq.tokensOf)?.P : "the"} row tokens` : undefined });
+    } else steps.push({ label: `starts ${target.name}`, dims: fromDims });
+    const first = target.rows.flatMap((r) => r.cells)[0];
+    let toDims: Dim[] = steps.at(-1)!.dims;
+    if (first) {
+      const inner = cellTensorSteps(g, a, first.id, b).filter((s) => s.dims.length);
+      for (const s of inner.slice(1)) steps.push({ ...s, label: `${cellName(first)}: ${s.label}` });
+      toDims = inner.at(-1)?.dims ?? toDims;
+    }
+    return { from: { label: fromLabel, dims: fromDims }, to: { label: `${target.name} (its stream starts here)`, dims: toDims }, steps, params: 0,
+      summary: `${target.name} starts from this tensor${tres.seq.kind === "pages" ? ", cut into overlapping pages" : ""}.` };
+  }
+
+  // source: keys/values for a cross-attention, or ready notes for a notebook read
+  const home = g.stacks.find((s) => s.rows.some((r) => r.cells.some((c) => c.id === e.to.cell)));
+  const cell = home?.rows.flatMap((r) => r.cells).find((c) => c.id === e.to.cell);
+  if (!home || !cell) return empty;
+  const inner = cellTensorSteps(g, a, cell.id, b);
+  for (const s of inner) if (/^(queries|keys|notes|scores|softmax)/.test(s.label)) steps.push(s);
+  const notes = cell.type === "attention" && cell.mode === "self" && cell.memory;
+  const toDims = inner.filter((s) => s.dims.length).at(-1)?.dims ?? [];
+  return {
+    from: { label: fromLabel, dims: fromDims },
+    to: { label: `${home.name} · ${cellName(cell)}`, dims: toDims },
+    steps,
+    params: 0,
+    summary: notes
+      ? "Ready notes: the read uses them directly as extra keys/values (no projection), next to its recent-token window; each note becomes readable once its page is complete."
+      : "Cross-attention: this cell's queries come from its own stream; the wired tensor is projected into keys and values.",
+  };
+}

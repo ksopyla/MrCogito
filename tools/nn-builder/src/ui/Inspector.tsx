@@ -6,7 +6,7 @@ import type { Cell, CellBody, Edge, Graph, SeqSpec, Stack } from "../engine/type
 import { NumberField, Select, TextField, Toggle } from "./controls";
 import { cellConnections, cellTitle, edgeLabel, stackIO } from "./describe";
 import { PRECISIONS } from "../engine/hardware";
-import { cellTensorSteps, elements, fmtShape, rowInputShape, stackOutputShape } from "../engine/shapes";
+import { cellTensorSteps, edgeTensors, elements, fmtShape, rowInputShape, stackOutputShape, type TensorStep } from "../engine/shapes";
 import { CELL_FIELDS, type Field } from "./fields";
 import type { Sel } from "./Frame";
 import * as F from "./format";
@@ -72,12 +72,15 @@ function FieldView({ f, cell, onChange }: { f: Field; cell: Record<string, unkno
 /** The forward pass of one cell, tensor by tensor, at the run's micro-batch. */
 function TensorWalk({ graph, analysis, cellId }: { graph: Graph; analysis: Analysis; cellId: string }) {
   const b = analysis.memory.microBatch;
+  return <StepList graph={graph} title={`Tensors · B = ${b} rows per GPU`} steps={cellTensorSteps(graph, analysis, cellId, b)} />;
+}
+
+function StepList({ graph, title, steps }: { graph: Graph; title: string; steps: TensorStep[] }) {
   const bytes = PRECISIONS[graph.run.precision]?.act ?? 2;
-  const steps = cellTensorSteps(graph, analysis, cellId, b);
   if (!steps.length) return null;
   return (
     <>
-      <h3>Tensors · B = {b} rows per GPU</h3>
+      <h3>{title}</h3>
       <ol className="tensor-walk">
         {steps.map((st, i) => (
           <li key={i}>
@@ -313,10 +316,25 @@ function EdgeInspector(p: Props & { id: string }) {
   if (!e) return <p className="muted pad">Nothing selected.</p>;
   const issues = p.analysis.issues.filter((i) => i.where === e.id);
   const end = (x: Edge["from"]) => (x.cell ? `${p.graph.stacks.find((s) => s.id === x.stack)?.name} · ${x.port === "table" ? "token table" : cellTitle(E.findCell(p.graph, x.cell)?.cell as Cell)}` : x.row ? rowName(p.graph, x.row) : `${p.graph.stacks.find((s) => s.id === x.stack)?.name} output`);
+  const b = p.analysis.memory.microBatch;
+  const t = edgeTensors(p.graph, p.analysis, e.id, b);
+  const bytes = PRECISIONS[p.graph.run.precision]?.act ?? 2;
+  const tensor = (d: typeof t.from.dims) => (d.length ? `${fmtShape(d, "named")} · ${F.bytes(elements(d) * bytes)}` : "—");
   return (
     <div className="inspector">
       <h2>{edgeLabel(e, p.graph)}</h2>
-      <Costs items={[["From", end(e.from)], ["To", end(e.to)]]} />
+      {t.summary && <p className="lead">{t.summary}</p>}
+      <h3>Connects</h3>
+      <Costs
+        items={[
+          ["From", end(e.from)],
+          ["Carries", tensor(t.from.dims)],
+          ["To", t.to.label || end(e.to)],
+          ["Arrives as", tensor(t.to.dims)],
+          ["Parameters it adds", F.exact(t.params)],
+        ]}
+      />
+      <StepList graph={p.graph} title={`On the way · B = ${b} rows per GPU`} steps={t.steps} />
       {issues.length > 0 && <ul className="issues">{issues.map((i) => <li key={i.msg}>⚠ {i.msg}</li>)}</ul>}
       {e.kind === "skip" && (
         <Select
@@ -326,11 +344,6 @@ function EdgeInspector(p: Props & { id: string }) {
           onChange={(v) => p.apply((g) => E.updateEdge(g, e.id, { weight: v } as Partial<Edge>))}
         />
       )}
-      <p className="muted small">
-        {e.kind === "skip" && "The source row's output is added (times the weight) to this row's input."}
-        {e.kind === "source" && "The target cell reads its keys and values (or ready notes) from here."}
-        {e.kind === "input" && "The target stack's stream starts from this output."}
-      </p>
       <div className="actions">
         <button className="danger" onClick={() => (p.apply((g) => E.removeEdge(g, e.id)), p.setSel(null))}>Remove wire</button>
       </div>
