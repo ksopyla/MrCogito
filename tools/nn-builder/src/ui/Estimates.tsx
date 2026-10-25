@@ -128,12 +128,6 @@ export function CostPanel({ graph: g, analysis: a, setSel }: Props) {
   );
 }
 
-const CLUSTERS: { label: string; gpu: string; n: number }[] = [
-  { label: "Odra · 3 × RTX 3090", gpu: "rtx3090", n: 3 },
-  { label: "Polonez · 4 × RTX 3090", gpu: "rtx3090", n: 4 },
-  { label: "AWS p5.48xlarge · 8 × H100", gpu: "h100_80", n: 8 },
-];
-
 export function TrainingPanel({ graph: g, analysis: a, apply }: Props) {
   const run = g.run;
   const set = (patch: Partial<RunSetup>, key?: string) => apply((x) => E.updateRun(x, patch), key ?? `run:${Object.keys(patch).join(",")}`);
@@ -142,15 +136,18 @@ export function TrainingPanel({ graph: g, analysis: a, apply }: Props) {
   return (
     <div className="panel">
       <h3>Hardware</h3>
-      <div className="chips">
-        {CLUSTERS.map((c) => (
-          <button key={c.label} className={run.gpu === c.gpu && run.gpu_count === c.n ? "chip on" : "chip"} onClick={() => set({ gpu: c.gpu, gpu_count: c.n })}>
-            {c.label}
+      <div className="gpu-picker" role="radiogroup" aria-label="GPU model">
+        {GPUS.filter((x) => !x.hidden || x.id === run.gpu).map((x) => (
+          <button key={x.id} role="radio" aria-checked={run.gpu === x.id} className={`gpu-btn ${run.gpu === x.id ? "on" : ""}`} title={`${x.label} · ${x.peakTflops} TFLOPS bf16 dense`} onClick={() => set({ gpu: x.id })}>
+            <span className="gpu-name">{x.short}</span>
+            <span className="gpu-mem">{x.memGiB} GB</span>
           </button>
         ))}
       </div>
-      <Select label="GPU" value={run.gpu} options={GPUS.map((x) => [x.id, x.label] as [string, string])} help={gpu.note} onChange={(v) => set({ gpu: v })} />
-      <NumberField label="GPUs" value={run.gpu_count} min={1} max={1024} log int onChange={(v) => set({ gpu_count: v })} />
+      <NumberField label="Number of GPUs" value={run.gpu_count} min={1} max={1024} log int onChange={(v) => set({ gpu_count: v })} />
+      <p className="small muted">
+        {gpu.label} · {gpu.peakTflops} TFLOPS bf16 peak · {gpu.note}.
+      </p>
       <h3>Run</h3>
       <NumberField label="Token budget" value={run.token_budget} min={1e6} max={1e13} log step={1e6} int onChange={(v) => set({ token_budget: v })} />
       <NumberField label="Row length (tokens)" value={run.row_length} min={64} max={1048576} log step={64} int onChange={(v) => set({ row_length: v })} />

@@ -14,23 +14,32 @@ export const CAL = {
 
 export interface GpuSpec {
   id: string;
+  short: string; // the model name on its button
   label: string;
   memGiB: number;
-  peakTflops: number; // nominal dense bf16 tensor-core peak
+  peakTflops: number; // nominal dense bf16 tensor-core peak (FP32 accumulate)
   contextGiB: number; // CUDA context + cuBLAS/allocator reserve
   mfu: number; // default share of the peak that plain matmul work reaches
   note: string;
+  hidden?: boolean; // kept so older designs still load; not offered on a button
 }
 
+// Peaks: NVIDIA datasheets via secondary spec tables (checked 25 Oct 2026); GeForce cards at FP32 accumulate.
 export const GPUS: GpuSpec[] = [
-  { id: "rtx3090", label: "RTX 3090 · 24 GB", memGiB: 24, peakTflops: 71, contextGiB: 0.6, mfu: CAL.regularMfu3090,
+  { id: "rtx3090", short: "3090", label: "RTX 3090 · 24 GB", memGiB: 24, peakTflops: 71, contextGiB: 0.6, mfu: CAL.regularMfu3090,
     note: "speed calibrated on the project's measured runs" },
-  { id: "rtx4090", label: "RTX 4090 · 24 GB", memGiB: 24, peakTflops: 165, contextGiB: 0.6, mfu: CAL.regularMfu3090,
-    note: "same efficiency as the 3090 assumed" },
-  { id: "a100_80", label: "A100 · 80 GB", memGiB: 80, peakTflops: 312, contextGiB: 0.8, mfu: 0.3,
+  { id: "rtx4090", short: "4090", label: "RTX 4090 · 24 GB", memGiB: 24, peakTflops: 165, contextGiB: 0.6, mfu: CAL.regularMfu3090,
+    note: "same efficiency as the calibrated 3090 assumed" },
+  { id: "rtx5090", short: "5090", label: "RTX 5090 · 32 GB", memGiB: 32, peakTflops: 209.5, contextGiB: 0.6, mfu: CAL.regularMfu3090,
+    note: "same efficiency as the calibrated 3090 assumed" },
+  { id: "h100_80", short: "H100", label: "H100 SXM · 80 GB", memGiB: 80, peakTflops: 989, contextGiB: 0.8, mfu: 0.3,
+    note: "efficiency is a guess for a ~500M model; small models reach less (AWS p5.48xlarge = 8 of these)" },
+  { id: "b200", short: "B200", label: "B200 · 180 GB", memGiB: 180, peakTflops: 2250, contextGiB: 1.0, mfu: 0.3,
     note: "efficiency is a guess for a ~500M model; small models reach less" },
-  { id: "h100_80", label: "H100 SXM · 80 GB", memGiB: 80, peakTflops: 989, contextGiB: 0.8, mfu: 0.3,
-    note: "efficiency is a guess for a ~500M model; small models reach less (p5.48xlarge = 8 of these)" },
+  { id: "b300", short: "B300", label: "B300 · 288 GB", memGiB: 288, peakTflops: 2250, contextGiB: 1.0, mfu: 0.3,
+    note: "efficiency is a guess for a ~500M model; small models reach less" },
+  { id: "a100_80", short: "A100", label: "A100 · 80 GB", memGiB: 80, peakTflops: 312, contextGiB: 0.8, mfu: 0.3,
+    note: "efficiency is a guess for a ~500M model; small models reach less", hidden: true },
 ];
 
 export const gpuById = (id: string): GpuSpec => GPUS.find((g) => g.id === id) ?? GPUS[0];

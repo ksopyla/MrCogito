@@ -264,9 +264,12 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     await tab("Compute");
     check("compute & memory shows the memory bar and the per-cell table", Boolean($(".stackbar")) && $$(".breakdown tbody tr").length > 5);
     await tab("GPUs");
-    $$<HTMLButtonElement>(".chips button").find((b) => b.textContent?.startsWith("Polonez"))!.click();
+    $$<HTMLButtonElement>(".gpu-btn").find((b) => b.textContent?.startsWith("B200"))!.click();
     await sleep(150);
-    check("the Polonez preset sets 4 × RTX 3090", graph().run.gpu_count === 4 && graph().run.gpu === "rtx3090");
+    const count = $$<HTMLLabelElement>(".panel .field").find((f) => f.textContent?.startsWith("Number of GPUs"))!;
+    await setInput($<HTMLInputElement>("input.num-input", count)!, "8");
+    check("picking B200 and 8 GPUs sets the run", graph().run.gpu === "b200" && graph().run.gpu_count === 8, `${graph().run.gpu} × ${graph().run.gpu_count}`);
+    check("the summary shows the time on 8 × B200", /on 8 × B200/.test($$(".stat")[3]?.textContent ?? ""), $$(".stat")[3]?.textContent ?? "");
     await tab("Row length");
     const charts = $$("figure.chart");
     check("row length shows three charts and a table of 11 lengths", charts.length === 3 && $$(".breakdown tbody tr").length === 11);

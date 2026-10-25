@@ -406,3 +406,11 @@ footer.stack-io .dot.out { right: -6px; }
 .stack:hover .stack-resize::after, body[data-resizing] .stack-resize::after { opacity: 1; }
 .stack-resize:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 body[data-resizing] { cursor: ew-resize; user-select: none; }
+
+/* ---------------------------------------------------------------- GPU model picker */
+.gpu-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.gpu-btn { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 7px 4px; border-radius: 8px; }
+.gpu-btn .gpu-name { font-weight: 700; font-size: 15px; }
+.gpu-btn .gpu-mem { font-size: 11.5px; color: var(--muted); }
+.gpu-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.gpu-btn.on .gpu-mem { color: rgba(255, 255, 255, 0.85); }
