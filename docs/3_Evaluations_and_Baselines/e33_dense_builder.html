@@ -279,7 +279,7 @@ function fP(n){n=Math.round(n);const a=Math.abs(n);if(a>=1e8)return (n/1e6).toFi
 function fF(f){if(f>=1e9)return (f/1e9).toFixed(f>=1e10?1:2)+" GFLOP";if(f>=1e6)return (f/1e6).toFixed(f>=1e7?0:1)+" MFLOP";return (f/1e3).toFixed(0)+" kFLOP"}
 function fT(n){return n>=1e9?(n/1e9).toFixed(n%1e9?1:0)+"B":(n/1e6).toFixed(0)+"M"}
 function fS(v){return v>=1e4?(v/1e3).toFixed(1)+"k":v>=1e3?(v/1e3).toFixed(2)+"k":v.toFixed(0)}
-function fK(S){return S>=1024&&S%1024===0?(S/1024)+"k":int(S)}
+function fK(S){if(S>=1048576&&S%262144===0)return (S/1048576)+"M";return S>=1024&&S%512===0?(S/1024)+"k":int(S)}
 function pct(a,b){return b?((a-b)/b*100):0}
 function dl(a,b,f,lowGood){ // delta label
   if(Math.abs(a-b)<1e-9*Math.max(1,Math.abs(b)))return `<span class="dl eq">as preset</span>`;
@@ -493,7 +493,7 @@ function levers(m,id){const s=ST.models[m],k=kindOf(id),L=[];
   if(k==="model"){L.push(lev("Fit the feed-forward width to the "+(s.target/1e6)+"M target",x=>{x.F=fitF(x)}));
     L.push(lev("One more layer at the end",x=>{x.layers.push(clone(x.layers[x.layers.length-1]))}));
     L.push(lev("Width +128 (every layer)",x=>{x.d+=128}));L.push(lev("Width −128 (every layer)",x=>{x.d=Math.max(128,x.d-128)}))}
-  if(k==="tokens"){L.push(lev("Train on 8k rows instead of "+fK(s.S),x=>{x.S=Math.min(65536,x.S*2)}));L.push(lev("Train on rows half as long",x=>{x.S=Math.max(1024,x.S/2)}))}
+  if(k==="tokens"){if(s.S<1048576)L.push(lev(`Train on ${fK(Math.min(1048576,s.S*2))} rows instead of ${fK(s.S)}`,x=>{x.S=Math.min(1048576,x.S*2)}));L.push(lev("Train on rows half as long",x=>{x.S=Math.max(1024,x.S/2)}))}
   if(k==="table"){L.push(lev("Halve the table width e",x=>{x.e=Math.max(64,x.e/2)}));if(!s.ngram)L.push(lev("Add word-pair and word-triple tables",x=>{x.ngram=2}))}
   if(k==="mlp"){L.push(lev("Width +128",x=>{x.d+=128}));L.push(lev("Width −128",x=>{x.d=Math.max(128,x.d-128)}))}
   if(k==="layer"){const i=+id.slice(1),Ly=s.layers[i];
@@ -510,7 +510,7 @@ function levers(m,id){const s=ST.models[m],k=kindOf(id),L=[];
   if(k==="w_lat"){L.push(lev("Twice the latents per page",x=>{x.wr.K*=2}));L.push(lev("Half the latent width",x=>{x.wr.D=Math.max(64,x.wr.D/2)}));L.push(lev("One writer round",x=>{x.wr.rounds=1}))}
   if(k==="w_notes"){const ng=divs(H(s)).find(x=>x>s.g);if(ng)L.push(lev(`${ng} key/value heads instead of ${s.g} (wider notes and raw keys)`,x=>{x.g=ng}));L.push(lev("Two notes per latent",x=>{x.wr.m=2}))}
   if(k==="head"){L.push(lev("Vocabulary 8,192",x=>{x.V=8192}))}
-  if(k==="kv"){L.push(lev("Train dense on 8k rows",x=>{x.S*=2}))}
+  if(k==="kv"&&s.S<1048576){L.push(lev(`Train dense on ${fK(s.S*2)} rows`,x=>{x.S*=2}))}
   return L}
 function impactOf(m,apply){const s=ST.models[m],t=fix(apply&&(()=>{const c=clone(s);apply(c);return c})());
   const p0=params(s).total,p1=params(t).total,f0=flops(s).total,f1=flops(t).total;
@@ -519,28 +519,34 @@ function impactOf(m,apply){const s=ST.models[m],t=fix(apply&&(()=>{const c=clone
 
 /* ---------------------------------------------------------------- controls per node */
 function C(k,label,min,max,step,fmt){return {k,label,min,max,step,fmt:fmt||(v=>int(v))}}
+// a slider that steps through a list of values (×1.5 ladders for row length and vocabulary)
+function CV(k,label,vals,fmt){return {k,label,vals,fmt:fmt||(v=>int(v))}}
+const LADDER=(lo,hi)=>{const a=[];for(let v=lo;v<=hi;v*=2){a.push(v);if(v*1.5<=hi)a.push(v*1.5)}return a};
+const S_VALS=LADDER(1024,1048576),V_VALS=LADDER(1024,131072);
+const SC=()=>CV("S","row length",S_VALS,v=>fK(v)),VC=()=>CV("V","vocabulary",V_VALS,v=>fK(v)),EC=()=>C("e","token embedding e",32,2048,32),FC=(l)=>C("F",l||"feed-forward F",64,8192,64);
+const nearest=(vals,v)=>vals.reduce((bi,x,i)=>Math.abs(x-v)<Math.abs(vals[bi]-v)?i:bi,0);
 const divs=h=>[1,2,3,4,6,7,8,9,12,14,16].filter(x=>x<=h&&h%x===0);
 const GSEL=s=>({k:"g",label:"key/value heads",sel:divs(H(s)).map(x=>[x,`${x} (${x*s.dh} numbers)`])});
 const DHSEL={k:"dh",label:"head size",sel:[[32,"32"],[64,"64"],[128,"128"]]};
 function controls(m,id){const s=ST.models[m],k=kindOf(id),c=[];
-  if(k==="model"){c.push(C("d","width d",128,1536,64),C("F","feed-forward F",256,6144,64),DHSEL,GSEL(s),
+  if(k==="model"){c.push(C("d","width d",128,1536,64),EC(),FC(),DHSEL,GSEL(s),
     C("tokens","training tokens",1e8,6e9,1e8,v=>fT(v)),C("target","parameter target",10e6,500e6,5e6,v=>(v/1e6)+"M"))}
-  if(k==="tokens")c.push(C("S","row length",1024,32768,1024),C("V","vocabulary",1024,32768,1024));
-  if(k==="table")c.push(C("e","table width e",64,1024,64),{k:"ngram",label:"word-pair / triple tables",sel:[[0,"off"],[1,"pairs"],[2,"pairs + triples"]]});
-  if(k==="mlp")c.push(C("d","width d",128,1536,64));
+  if(k==="tokens")c.push(SC(),VC(),EC(),FC("feed-forward F (all layers)"));
+  if(k==="table")c.push(EC(),{k:"ngram",label:"word-pair / triple tables",sel:[[0,"off"],[1,"pairs"],[2,"pairs + triples"]]});
+  if(k==="mlp")c.push(EC(),C("d","width d",128,1536,64));
   if(k==="layer"){const i=+id.slice(1),L=s.layers[i];
     if(L.t==="local")c.push(C(`layers.${i}.w`,"window",1,4096,1));
     if(L.t==="read")c.push(C("rawWin","raw window",16,4096,16),{k:"order",label:"order on demand",ck:1},C("count","count heads",0,4,1));
     if(L.t==="read"&&hasNotes(s))c.push(C("rounds","loop rounds",1,8,1),C("span","layers looped after the read",0,4,1));
-    c.push(C("F","feed-forward F (all layers)",256,6144,64))}
+    c.push(FC("feed-forward F (all layers)"))}
   if(k==="loop")c.push(C("rounds","loop rounds",1,8,1),C("span","layers looped after the read",0,4,1),{k:"feedback",label:"pass the named word on",ck:1});
   if(k==="lens")c.push({k:"feedback",label:"pass the named word on",ck:1});
   if(k==="w_pages")c.push(C("wr.W","page window",32,2048,32),C("wr.stride","new page every",16,2048,16));
   if(k==="w_enc")c.push(C("wr.enc","encoder layers",0,4,1),C("wr.dw","writer width",64,1024,64));
   if(k==="w_lat")c.push(C("wr.K","latents per page",4,256,4),C("wr.D","latent width",64,2048,64),C("wr.hl","latent heads",1,16,1),C("wr.rounds","writer rounds",1,4,1));
   if(k==="w_notes")c.push(C("wr.m","notes per latent",1,4,1),GSEL(s),DHSEL);
-  if(k==="head")c.push(C("V","vocabulary",1024,32768,1024));
-  if(k==="kv")c.push(C("S","row length",1024,32768,1024),GSEL(s));
+  if(k==="head")c.push(VC());
+  if(k==="kv")c.push(SC(),GSEL(s));
   return c}
 
 /* ---------------------------------------------------------------- losses */
@@ -689,6 +695,7 @@ function renderInspector(full){
       cs.forEach(c=>{const v=getP(s,c.k),cid=`c-${m}-${c.k.replace(/\./g,"_")}`;
         if(c.ck)h+=`<label class="ctl ck" for="${cid}"><span class="nm">${c.label}</span><input type="checkbox" id="${cid}" data-k="${c.k}" ${v?"checked":""}></label>`;
         else if(c.sel)h+=`<div class="ctl ck"><span class="nm">${c.label}</span><select id="${cid}" data-k="${c.k}">${c.sel.map(([a,l])=>`<option value="${a}"${+v===a?" selected":""}>${l}</option>`).join("")}</select></div>`;
+        else if(c.vals)h+=`<label class="ctl" for="${cid}"><span class="nm">${c.label}</span><input type="range" id="${cid}" data-k="${c.k}" data-vals="${c.vals.join(",")}" min="0" max="${c.vals.length-1}" step="1" value="${nearest(c.vals,v)}"><output data-o="${c.k}">${c.fmt(v)}</output></label>`;
         else h+=`<label class="ctl" for="${cid}"><span class="nm">${c.label}</span><input type="range" id="${cid}" data-k="${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${v}"><output data-o="${c.k}">${c.fmt(v)}</output></label>`});
       if(isLayer){const i=+id.slice(1);h+=`<div class="row-btns"><button class="btn sm" data-act="dup" data-i="${i}">Duplicate</button><button class="btn sm" data-act="up" data-i="${i}" ${i===0?"disabled":""}>Move up</button><button class="btn sm" data-act="down" data-i="${i}" ${i===s.layers.length-1?"disabled":""}>Move down</button><button class="btn sm" data-act="del" data-i="${i}" ${s.layers.length<=1?"disabled":""}>Remove</button></div>`}
       if(id==="model")h+=`<div class="row-btns"><button class="btn sm" data-act="fit">Fit F to ${s.target/1e6}M</button></div>`;
@@ -714,12 +721,14 @@ function reachSVG(m){
   const top=74,rh=28,h=top+rows.length*rh+44;
   let o=`<svg viewBox="0 0 1000 ${h}" role="img" aria-label="reach per layer, ${m}">`;
   o+=`<text class="r-lb" x="8" y="18">${s.kind==="dense"?"Dense":"E33"} · token ${int(t)}</text><text class="r-tx" x="8" y="34">the row (${fK(S)} tokens)${G?` · ${G.n} pages`:""}</text>`;
-  if(G){G.starts.forEach((st,k)=>{const closed=st+G.W-1<=t,y=8+(k%2)*13;o+=`<rect x="${px(st)}" y="${y}" width="${Math.max(1,px(st+G.W)-px(st)-1)}" height="10" rx="3" fill="${closed?"color-mix(in srgb,var(--c2) 55%,var(--card))":"var(--card)"}" stroke="var(--c2)" stroke-width="1" ${closed?"":`stroke-dasharray="3 2"`}/>`});}
+  if(G&&G.n<=240){G.starts.forEach((st,k)=>{const closed=st+G.W-1<=t,y=8+(k%2)*13;o+=`<rect x="${px(st)}" y="${y}" width="${Math.max(1,px(st+G.W)-px(st)-1)}" height="10" rx="3" fill="${closed?"color-mix(in srgb,var(--c2) 55%,var(--card))":"var(--card)"}" stroke="var(--c2)" stroke-width="1" ${closed?"":`stroke-dasharray="3 2"`}/>`});}
+  else if(G){const lc=notesAt(G,t).last;if(lc>=0)o+=`<rect x="${px(0)}" y="8" width="${Math.max(1,px(lc+1)-px(0))}" height="23" rx="3" fill="color-mix(in srgb,var(--c2) 55%,var(--card))" stroke="var(--c2)"/>`;
+    if(lc<S-1)o+=`<rect x="${px(lc+1)}" y="8" width="${Math.max(1,px(S)-px(lc+1))}" height="23" rx="3" fill="var(--card)" stroke="var(--c2)" stroke-dasharray="3 2"/>`}
   o+=`<line x1="${XL}" x2="${XR}" y1="44" y2="44" class="axis"/>`;
   const lo=s.kind==="dense"?0:Math.max(0,t-s.rawWin+1);
   o+=`<rect x="${px(lo)}" y="40" width="${Math.max(2,px(t+1)-px(lo))}" height="8" rx="3" fill="var(--c3)"/><line x1="${px(t+1)}" x2="${px(t+1)}" y1="4" y2="54" stroke="var(--fg)" stroke-width="1.5"/>`;
   o+=`<text class="r-tx" x="${XL}" y="64">${s.kind==="dense"?"green: every earlier token is readable at every layer":`green: the raw window of the read · orange: pages (filled = closed, its notes readable)`}</text>`;
-  [1,4,16,64,256,1024,4096,16384,65536].filter(d=>d<=S).concat(S&(S-1)?[S]:[]).forEach(d=>{o+=`<line class="gl" x1="${lx(d)}" x2="${lx(d)}" y1="${top-4}" y2="${top+rows.length*rh}"/><text class="tick" x="${lx(d)}" y="${top+rows.length*rh+14}" text-anchor="middle">${d===1?"1":fK(d)}</text>`});
+  [1,4,16,64,256,1024,4096,16384,65536,262144,1048576].filter(d=>d<=S).concat(S&(S-1)?[S]:[]).forEach(d=>{o+=`<line class="gl" x1="${lx(d)}" x2="${lx(d)}" y1="${top-4}" y2="${top+rows.length*rh}"/><text class="tick" x="${lx(d)}" y="${top+rows.length*rh+14}" text-anchor="middle">${d===1?"1":fK(d)}</text>`});
   o+=`<text class="tick" x="${(XL+XR)/2}" y="${top+rows.length*rh+32}" text-anchor="middle">how far back the layer reads, in tokens (log scale; 1 = the token itself)</text>`;
   rows.forEach((r,k)=>{const y=top+k*rh,L=r.L;let txt="",reach=1,notes=null;
     if(L.t==="full"){reach=t+1;txt=`all ${int(t+1)} earlier tokens`}
@@ -747,17 +756,18 @@ function stackChart(kind){
       o+=`<rect class="mb${ci+1}" x="${x}" y="${y+(r.faint?4:0)}" width="${Math.max(w-2,.8)}" height="${r.faint?10:20}" rx="${w>8?4:1}" opacity="${r.faint?.4:1}" data-tip="${esc(`${r.label} · ${name}: ${kind==="p"?int(v):fF(v)} (${(v/T*100).toFixed(1)} %)`)}"/>`;x+=w});
     o+=`<text class="pv" x="${x+6}" y="${y+14}">${kind==="p"?fP(T):fF(T)}</text>`});
   const tbl=`<details class="tbl"><summary>Table</summary><div class="scroll"><table class="data"><tr><th>component</th>${rows.map(r=>`<th>${r.label}${r.faint?"":""}</th>`).join("")}</tr>${CATS.map(([c,name])=>`<tr><td>${name}</td>${rows.map(r=>`<td>${kind==="p"?int(r.v[c]):fF(r.v[c])}</td>`).join("")}</tr>`).join("")}<tr><td><b>total</b></td>${rows.map(r=>`<td><b>${kind==="p"?int(tot(r)):fF(tot(r))}</b></td>`).join("")}</tr></table></div></details>`;
-  return `<div class="panel"><p class="chart-t">${kind==="p"?"Parameters":"Training compute per token"}</p><p class="chart-s">${kind==="p"?"Where the weights sit.":"Forward + backward, averaged over a "+fK(ST.models[vis()[0]].S)+" row."}</p><div class="scroll">${o}</svg></div>${tbl}</div>`}
+  return `<div class="panel"><p class="chart-t">${kind==="p"?"Parameters":"Training compute per token"}</p><p class="chart-s">${kind==="p"?"Where the weights sit.":"Forward + backward, averaged over the row ("+vis().map(m=>`${m==="dense"?"Dense":"E33"} ${fK(ST.models[m].S)}`).join(", ")+")."}</p><div class="scroll">${o}</svg></div>${tbl}</div>`}
 
 function scaleChart(){
-  const Ss=[1024,2048,4096,8192,16384,32768,65536],ser=[["dense","Dense","var(--fg2)"],["e33","E33","var(--c2)"]];
+  const Ss=[1024,2048,4096,8192,16384,32768,65536,131072,262144,524288,1048576],ser=[["dense","Dense","var(--fg2)"],["e33","E33","var(--c2)"]];
   const vals=ser.map(([m])=>Ss.map(S=>{const x=clone(ST.models[m]);x.S=S;return flops(fix(x)).total/1e9}));
-  const max=Math.max(...vals.flat())*1.08,XL=60,XR=680,YT=14,YB=210,lx=S=>XL+Math.log2(S/1024)/6*(XR-XL),ly=v=>YB-v/max*(YB-YT);
+  const lo=Math.pow(10,Math.floor(Math.log10(Math.min(...vals.flat())))),hi=Math.pow(10,Math.ceil(Math.log10(Math.max(...vals.flat()))));
+  const XL=60,XR=680,YT=14,YB=210,lx=S=>XL+Math.log2(S/1024)/10*(XR-XL),ly=v=>YB-Math.log10(v/lo)/Math.log10(hi/lo)*(YB-YT);
   let o=`<svg viewBox="0 0 760 248" role="img" aria-label="compute per token against row length" id="scale-svg">`;
-  const step=max>20?10:max>8?2:max>4?1:.5;for(let v=0;v<=max;v+=step)o+=`<line class="gl" x1="${XL}" x2="${XR}" y1="${ly(v)}" y2="${ly(v)}"/><text class="tick" x="${XL-6}" y="${ly(v)+3.5}" text-anchor="end">${v}</text>`;
+  for(let v=lo;v<=hi*1.001;v*=10)o+=`<line class="gl" x1="${XL}" x2="${XR}" y1="${ly(v)}" y2="${ly(v)}"/><text class="tick" x="${XL-6}" y="${ly(v)+3.5}" text-anchor="end">${v>=1?int(v):v.toPrecision(1)}</text>`;
   Ss.forEach(S=>o+=`<text class="tick" x="${lx(S)}" y="${YB+16}" text-anchor="middle">${fK(S)}</text>`);
   o+=`<line x1="${lx(4096)}" x2="${lx(4096)}" y1="${YT}" y2="${YB}" stroke="var(--muted)" stroke-dasharray="4 3"/><text class="tick" x="${lx(4096)+4}" y="${YT+10}">trained at 4k</text>`;
-  o+=`<text class="tick" x="${(XL+XR)/2}" y="${YB+34}" text-anchor="middle">row length (tokens, log scale) · y: training GFLOP per token</text>`;
+  o+=`<text class="tick" x="${(XL+XR)/2}" y="${YB+34}" text-anchor="middle">row length (tokens, log scale) · y: training GFLOP per token (log scale)</text>`;
   ser.forEach(([m,name,col],k)=>{const v=vals[k];o+=`<path d="${v.map((y,i)=>`${i?"L":"M"}${lx(Ss[i])},${ly(y)}`).join(" ")}" fill="none" stroke="${col}" stroke-width="2"/>`;
     v.forEach((y,i)=>o+=`<circle cx="${lx(Ss[i])}" cy="${ly(y)}" r="4" fill="${col}" stroke="var(--card)" stroke-width="2"/>`);
     o+=`<text class="r-lb" x="${XR+8}" y="${ly(v[v.length-1])+4}">${name}</text>`});
@@ -854,7 +864,7 @@ document.addEventListener("input",ev=>{const el=ev.target;const m=ST.sel.m,s=ST.
   if(el.id==="a-k"){ST.kc=+el.value;el.nextElementSibling.textContent=ST.kc;clearTimeout(window._lt);window._lt=setTimeout(renderLoss,120);return}
   if(el.dataset.lw){const lm=ST.view==="both"?ST.lossM:ST.view;if(!dragging){pushHist();dragging=true}ST.models[lm].loss[el.dataset.lw].w=+el.value;el.nextElementSibling.textContent=+el.value;
     $("#dgms").innerHTML=vis().map(mm=>`<div class="dgm">${drawGraph(mm)}</div>`).join("");document.querySelector(".eqn:not(.body .eqn)")&&($("#loss .eqn").textContent=eqn(ST.models[lm]));return}
-  if(el.dataset.k&&el.type==="range"){if(!dragging){pushHist();dragging=true}setP(s,el.dataset.k,+el.value);fix(s);renderLight();return}});
+  if(el.dataset.k&&el.type==="range"){if(!dragging){pushHist();dragging=true}setP(s,el.dataset.k,el.dataset.vals?+el.dataset.vals.split(",")[+el.value]:+el.value);fix(s);renderLight();return}});
 document.addEventListener("change",ev=>{const el=ev.target;const m=ST.sel.m,s=ST.models[m];
   if(el.id==="t-sizes"){ST.sizes=el.checked;renderAll(false);return}
   if(el.id==="t-nums"){ST.nums=el.checked;renderAll(false);return}
