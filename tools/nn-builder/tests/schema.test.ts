@@ -4,6 +4,7 @@ import schema from "../schema/graph.schema.json";
 import { analyze } from "../src/engine/analyze";
 import { PRESETS, buildPreset } from "../src/engine/presets";
 import { parseGraph, toExport } from "../src/engine/serialize";
+import { designHash } from "../src/engine/spec";
 
 const validate = new Ajv2020({ allErrors: true, strict: false }).compile(schema);
 
@@ -29,6 +30,7 @@ describe("export and import", () => {
     const out = toExport(buildPreset("dense_plain_30m"));
     expect(out.derived.params_total).toBe(30_293_140);
     expect(out.derived.cells["main.L0.attn"]).toMatchObject({ width_in: 576, width_out: 576 });
+    expect(out.derived.hash).toBe(designHash(buildPreset("dense_plain_30m")));
   });
 
   test("a file that is not a graph is refused with a reason", () => {

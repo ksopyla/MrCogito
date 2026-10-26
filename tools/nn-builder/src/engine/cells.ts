@@ -66,7 +66,8 @@ export interface CellCost {
   workspace: number; // transient bytes per row
   widthOut: number;
   irregular: boolean; // masked / gathered work that runs slower than plain matmuls
-  issues: string[];
+  issues: string[]; // errors: the design cannot be built as drawn
+  warnings: string[]; // worth a look, but buildable
 }
 
 export const normParams = (kind: NormKind, d: number) => (kind === "rmsnorm" ? d : kind === "layernorm" ? 2 * d : 0);
@@ -85,6 +86,7 @@ function cost(c: Partial<CellCost> & { widthOut: number }): CellCost {
     widthOut: c.widthOut,
     irregular: c.irregular ?? false,
     issues: c.issues ?? [],
+    warnings: c.warnings ?? [],
   };
 }
 
@@ -103,7 +105,7 @@ export function cellCost(cell: Cell, ctx: CellCtx): CellCost {
           { name: "position table", params: learned ? cell.max_len * ctx.width : 0 },
           { name: "relative-position bias (buckets × heads)", params: cell.kind === "t5_bias" ? (cell.buckets ?? 32) * (cell.heads ?? 1) : 0 },
         ],
-        issues: learned && ctx.seq.P > cell.max_len ? [`learned positions cover ${cell.max_len} tokens but the row has ${ctx.seq.P}`] : [],
+        warnings: learned && ctx.seq.P > cell.max_len ? [`learned positions cover ${cell.max_len} tokens but the row has ${ctx.seq.P}`] : [],
       });
     }
     case "attention":
@@ -245,6 +247,7 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
   const src = ctx.source;
   const mla = cell.mla ?? null;
   const issues: string[] = [];
+  const warnings: string[] = [];
   if (!mla && (g < 1 || h % g !== 0)) issues.push(`heads (${h}) must be a multiple of key/value heads (${g})`);
 
   const cross = cell.mode === "cross";
@@ -271,7 +274,7 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
   let visibleNotes = 0;
   if (notes) {
     const sameRow = notes.tokensOf === ctx.stackId && ctx.seq.kind === "tokens";
-    if (!sameRow && !notes.fromOtherText) issues.push("notes were written over another stack's tokens: every note counts as visible");
+    if (!sameRow && !notes.fromOtherText) warnings.push("notes were written over another stack's tokens: every note counts as visible");
     visibleNotes = sameRow ? avgVisibleNotes(P, notes.pages, notes.perPage) : notes.total;
   }
   const scoreCoef = notes && cell.dual_key ? 6 : 4;
@@ -315,7 +318,7 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
     parts.push({ name: "count heads", params: 2 * nc + d * nc * dh + dh + nc * (km + 2) * d });
     flops.push({ name: "count heads", fwd: (2 * nc * dh * (notes.total + Math.max(cell.window, 0)) + 2 * d * nc * dh + 2 * nc * (km + 2) * d) * P, bwd: 2, keys: true });
   }
-  if (!notes && (cell.extras.order_term || nc > 0)) issues.push("order term and count heads only act on a memory read");
+  if (!notes && (cell.extras.order_term || nc > 0)) warnings.push("order term and count heads only act on a memory read");
 
   // saved for backward
   const kvPos = cross ? Psrc : P;
@@ -334,6 +337,7 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
     act,
     irregular: Boolean(notes) || cell.kernel === "eager" || ctx.seq.kind === "pages" || ctx.seq.kind === "slots",
     issues,
+    warnings,
   });
 }
 

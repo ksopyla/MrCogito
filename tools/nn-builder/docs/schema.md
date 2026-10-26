@@ -4,6 +4,8 @@ A saved design is one JSON file (`designs/<name>.json`, or a downloaded export).
 to rebuild the network in code. The machine-readable schema is [`schema/graph.schema.json`](../schema/graph.schema.json)
 (JSON Schema 2020-12); every preset is tested against it (`tests/schema.test.ts`). This page gives the meaning of
 each field — what the forward pass does — so a code generator can write a PyTorch `nn.Module` from the file alone.
+Coding agents usually read the generated spec instead (every setting resolved, shapes, execution order, a hash and
+diffs between versions): see [agent-spec.md](agent-spec.md).
 
 ## Top level
 
@@ -118,6 +120,7 @@ speed calibration overrides `mfu`, `irregular_ratio`, `dp_efficiency` (0 = the b
 ```json
 "derived": {
   "exported_at": "2026-10-24T09:48:00.000Z",
+  "hash": "nnb1-1bd9d7ec43a7620523251415c770",
   "row_length": 4096,
   "params_total": 29946402,
   "params_by_stack": { "main": 25960546, "pages": 1377792, "notes": 2608064 },
@@ -127,5 +130,5 @@ speed calibration overrides `mfu`, `irregular_ratio`, `dp_efficiency` (0 = the b
 ```
 
 A code generator should build the model, count its trainable parameters, and check them against `params_total`
-and the per-cell numbers. For the MrCogito presets these match the trainer exactly
+and the per-cell numbers. `hash` identifies the architecture's version (see [agent-spec.md](agent-spec.md)). For the MrCogito presets these match the trainer exactly
 (`evaluation/text_checks.count_params`).

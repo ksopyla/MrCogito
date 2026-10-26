@@ -2,10 +2,13 @@
 // export time, so a code generator can check the model it writes against the counts the builder showed.
 import { analyze } from "./analyze";
 import { DEFAULT_RUN } from "./defaults";
+import { designHash } from "./spec";
 import { SCHEMA_ID, SCHEMA_VERSION, type Graph } from "./types";
 
 export interface Derived {
   exported_at: string;
+  /** the architecture's hash (spec.ts designHash): the version an agent implements and diffs against */
+  hash: string;
   row_length: number;
   params_total: number;
   params_by_stack: Record<string, number>;
@@ -25,6 +28,7 @@ export function toExport(g: Graph): ExportedGraph {
     ...clean,
     derived: {
       exported_at: new Date().toISOString(),
+      hash: designHash(g),
       row_length: a.S,
       params_total: a.params.total,
       params_by_stack: a.params.byStack,

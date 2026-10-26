@@ -2,7 +2,8 @@
 
 Compose a neural network from layer slots and see what it costs while you build it: parameters, forward and
 backward compute, GPU memory, how many GPUs a run needs and how long it takes, and how all of that changes with
-the row length. Save the design as a JSON file that a later step turns into PyTorch code.
+the row length. Save the design as a JSON file; coding agents (Claude Code, Cursor, Codex) read it through a local
+MCP server and implement it.
 
 Self-contained (its own `package.json` and dependencies) so it can move to its own repository.
 
@@ -15,12 +16,14 @@ cd tools/nn-builder && npm start
 The first run installs the dependencies; then the app opens at http://localhost:5178. Needs Node ≥ 20.19.
 
 ```bash
-npm test          # engine tests: exact parameter counts, FLOPs, memory, shapes, tokens, schema, edits
+npm test          # engine tests: exact parameter counts, FLOPs, memory, shapes, tokens, schema, edits, spec, MCP server
 npm run typecheck
+npm run mcp       # the MCP server on stdio (agents start it themselves; see docs/agent-spec.md)
 ```
 
-Browser end-to-end test (51 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
-GPU and token presets, resizing, wire details, tabs and comparison, save / open / export). With the app running, open it and paste into the DevTools console:
+Browser end-to-end test (57 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
+GPU and token presets, resizing, wire details, tabs and comparison, save / open / export, the unsaved-changes
+mark). With the app running, open it and paste into the DevTools console:
 
 ```js
 const { run } = await import("/tests/e2e/browser-e2e.ts"); console.table((await run()).steps);
@@ -84,13 +87,18 @@ Presets (each opens in its own tab):
 |---|---|
 | `src/engine/` | the cost engine (no UI): `types.ts` (the graph format), `cells.ts` (per-cell costs), `analyze.ts` (whole graph, memory, GPU plan), `edit.ts` (pure edits), `presets.ts`, `serialize.ts`, `hardware.ts` (GPUs, number formats, calibration) |
 | `src/ui/` | React interface |
-| `server/designs-api.ts` | dev-server endpoint that reads and writes `designs/*.json` |
+| `server/designs-api.ts` | dev-server endpoint that reads and writes `designs/*.json` (each save also keeps `designs/.history/<name>/<hash>.json`) |
 | `schema/graph.schema.json`, `docs/schema.md` | the graph file format, machine-readable and in words |
+| `src/engine/spec.ts`, `schema/spec.schema.json`, `docs/agent-spec.md` | the spec agents read (generated from a design), its hash, the diff between versions, validation; the agent guide |
+| `mcp/server.ts`, `scripts/mcp.mjs` | the read-only MCP server for agents (`npm run mcp`; built into `mcp/dist/`) |
 | `designs/` | saved designs (an E33 30M example is there) |
 | `tests/` | vitest suites |
 
 ## From a design to PyTorch
 
-Save the design, then ask Claude to generate PyTorch code from `tools/nn-builder/designs/<name>.json`.
-[`docs/schema.md`](docs/schema.md) gives the forward pass of every cell, wire and loop; the file's `derived` block
-holds the parameter count of every cell, so the generated model can be checked against it.
+Save the design (a design with unsaved changes has an amber dot on its tab and on Save). Then ask a coding agent
+to implement it. The agent reads it through the `nn-builder` MCP server: `list_designs`, `get_design_spec` (every
+block with resolved settings and shapes, the execution order with loops, wires, exact parameter counts,
+validation, and a hash of the architecture), `validate_design`, and `diff_design` (what changed since the hash
+it implemented). Setup for Claude Code, Cursor and Codex, and how to read a spec: [`docs/agent-spec.md`](docs/agent-spec.md).
+The design file itself is documented in [`docs/schema.md`](docs/schema.md).

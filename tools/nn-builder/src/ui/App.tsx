@@ -31,19 +31,19 @@ function storedSide(): number | null {
   }
 }
 
-/** The designs open last time (or the single autosaved one from before tabs, or E33 30M). */
-function initial(): { graphs: Graph[]; active: number } {
+/** The designs open last time, with the key of each one's last save (or the single autosaved one from before tabs, or E33 30M). */
+function initial(): { graphs: Graph[]; active: number; saved: (string | null)[] } {
   try {
-    const ws = JSON.parse(localStorage.getItem(WORKSPACE) ?? "null") as { graphs: unknown[]; active: number } | null;
-    const graphs = (ws?.graphs ?? []).map((g) => parseGraph(JSON.stringify(g)).graph).filter((g): g is Graph => Boolean(g));
-    if (graphs.length) return { graphs, active: Math.min(ws?.active ?? 0, graphs.length - 1) };
+    const ws = JSON.parse(localStorage.getItem(WORKSPACE) ?? "null") as { graphs: unknown[]; active: number; saved?: (string | null)[] } | null;
+    const opened = (ws?.graphs ?? []).map((g, i) => ({ graph: parseGraph(JSON.stringify(g)).graph, saved: ws?.saved?.[i] ?? null })).filter((t): t is { graph: Graph; saved: string | null } => Boolean(t.graph));
+    if (opened.length) return { graphs: opened.map((t) => t.graph), active: Math.min(ws?.active ?? 0, opened.length - 1), saved: opened.map((t) => t.saved) };
     const raw = localStorage.getItem(AUTOSAVE);
     const res = raw ? parseGraph(raw) : null;
-    if (res?.graph) return { graphs: [res.graph], active: 0 };
+    if (res?.graph) return { graphs: [res.graph], active: 0, saved: [] };
   } catch {
     /* storage blocked: start fresh */
   }
-  return { graphs: [buildPreset("e33m_plain_30m")], active: 0 };
+  return { graphs: [buildPreset("e33m_plain_30m")], active: 0, saved: [] };
 }
 const start = initial();
 
@@ -56,7 +56,7 @@ const TABS: [string, string][] = [
 ];
 
 export function App() {
-  const hist = useWorkspace(() => start.graphs, start.active);
+  const hist = useWorkspace(() => start.graphs, start.active, start.saved);
   const { graph, apply, undo, redo } = hist;
   const analysis = useMemo(() => analyze(graph), [graph]);
   const [sel, setSelRaw] = useState<Sel>(null);
@@ -110,7 +110,7 @@ export function App() {
   useEffect(() => {
     try {
       localStorage.setItem(AUTOSAVE, JSON.stringify(graph));
-      localStorage.setItem(WORKSPACE, JSON.stringify({ graphs: hist.tabs.map((t) => t.graph), active: hist.tabs.findIndex((t) => t.id === hist.active) }));
+      localStorage.setItem(WORKSPACE, JSON.stringify({ graphs: hist.tabs.map((t) => t.graph), saved: hist.tabs.map((t) => t.saved), active: hist.tabs.findIndex((t) => t.id === hist.active) }));
     } catch {
       /* storage blocked */
     }
@@ -237,8 +237,15 @@ export function App() {
     return <CostPanel {...props} />;
   };
 
-  const load = (g: Graph) => {
-    hist.open(g);
+  const load = (g: Graph, onDisk = false) => {
+    hist.open(g, onDisk);
+    setSelRaw(null);
+  };
+  const closeDesign = (id: string) => {
+    const t = hist.tabs.find((x) => x.id === id);
+    // a design with edits that are not in the designs folder is lost on close; a fresh preset is not
+    if (t?.unsaved && (t.edited || t.saved) && !window.confirm(`"${t.graph.name}" has changes that are not saved. Close it anyway?`)) return;
+    hist.close(id, () => buildPreset("blank"));
     setSelRaw(null);
   };
   const switchDesign = (id: string) => {
@@ -251,13 +258,14 @@ export function App() {
       <div className="app">
         <TopBar
           graph={graph} load={load} apply={apply} undo={undo} redo={redo} canUndo={hist.canUndo} canRedo={hist.canRedo} toast={toast}
+          unsaved={hist.unsaved} neverSaved={hist.tabs.find((t) => t.id === hist.active)?.saved == null} onSaved={(g) => hist.markSaved(hist.active, g)}
           panelWidth={sideW} panelMax={vw - 200 - 360} onPanelWidth={setPref}
         />
         <DesignTabs
           tabs={hist.tabs}
           active={hist.active}
           onSwitch={switchDesign}
-          onClose={(id) => (hist.close(id, () => buildPreset("blank")), setSelRaw(null))}
+          onClose={closeDesign}
           onCopy={() => load({ ...structuredClone(graph), name: `${graph.name} (copy)` })}
         />
         <SummaryStrip analysis={analysis} graph={graph} onOpen={setTab} />

@@ -299,8 +299,11 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     await tab("Inspect");
     await setInput($$<HTMLInputElement>(".inspector .text-input")[0], "e2e test");
     check("the design is renamed", graph().name === "e2e test");
+    const marked = () => ({ tab: Boolean($(".design-tab.on.unsaved")), save: Boolean($(".topbar button.save.unsaved")) });
+    check("an edited design is marked unsaved (tab and Save)", marked().tab && marked().save, JSON.stringify(marked()));
     $$<HTMLButtonElement>(".topbar button").find((b) => b.textContent === "Save")!.click();
     await sleep(500);
+    check("Save clears the unsaved marks", !marked().tab && !marked().save, JSON.stringify(marked()));
     const list = (await (await fetch("/api/designs")).json()) as { name: string }[];
     check("Save writes designs/e2e_test.json", list.some((d) => d.name === "e2e_test"));
     const saved = parseGraph(await (await fetch("/api/designs/e2e_test")).text());
@@ -311,6 +314,15 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     $$<HTMLButtonElement>(".menu button").find((b) => b.textContent?.startsWith("e2e_test"))!.click();
     await sleep(400);
     check("Open… loads it back", graph().name === "e2e test");
+    check("a design opened from disk starts out saved", !marked().tab, JSON.stringify(marked()));
+    $$<HTMLButtonElement>(".topbar button").find((b) => b.textContent === "+ Stack")?.click();
+    await sleep(100);
+    $$<HTMLButtonElement>(".menu button").find((b) => b.textContent?.startsWith("Decoder"))?.click();
+    await sleep(200);
+    check("an edit after opening marks it unsaved again", marked().tab && marked().save, JSON.stringify(marked()));
+    $$<HTMLButtonElement>(".topbar button").find((b) => b.textContent === "↶")!.click();
+    await sleep(200);
+    check("undoing back to the saved version clears the mark", !marked().tab, JSON.stringify(marked()));
     // capture the export instead of downloading it
     let captured: { name: string; text: string } | null = null;
     const orig = HTMLAnchorElement.prototype.click;
@@ -345,13 +357,26 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     check("a column header switches to that design", $(".design-tab.on")?.textContent?.startsWith("dense_plain 30M") === true && params() === 30_293_140);
   });
 
+  // leave an unsaved edit in the design shown now (dense 30M), so closing it has something to lose
+  $$<HTMLButtonElement>(".topbar button").find((b) => b.textContent === "+ Stack")?.click();
+  await sleep(100);
+  $$<HTMLButtonElement>(".menu button").find((b) => b.textContent?.startsWith("Decoder"))?.click();
+  await sleep(100);
   await selectPreset("blank");
-  // close the tabs this test opened
-  for (let i = 0; i < 40 && $$(".design-tab").length > tabsAtStart + 1; i++) {
-    const tabs = $$(".design-tab");
-    $(".dt-close", tabs[tabs.length - 2])?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await sleep(30);
+  // close the tabs this test opened; closing an edited, unsaved design asks first (answered yes here)
+  const confirmOrig = window.confirm;
+  const asked: string[] = [];
+  window.confirm = (msg?: string) => (asked.push(msg ?? ""), true);
+  try {
+    for (let i = 0; i < 40 && $$(".design-tab").length > tabsAtStart + 1; i++) {
+      const tabs = $$(".design-tab");
+      $(".dt-close", tabs[tabs.length - 2])?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await sleep(30);
+    }
+  } finally {
+    window.confirm = confirmOrig;
   }
+  check("closing an edited, unsaved design asks first", asked.some((m) => /not saved/.test(m)), `${asked.length} asked`);
   const passed = steps.filter((s) => s.ok).length;
   return { passed, failed: steps.length - passed, steps };
 }

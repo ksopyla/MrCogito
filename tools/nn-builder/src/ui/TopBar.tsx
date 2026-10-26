@@ -7,13 +7,18 @@ import type { Graph } from "../engine/types";
 
 interface Props {
   graph: Graph;
-  load: (g: Graph) => void;
+  /** open a design in a new tab; onDisk when it came from the designs folder */
+  load: (g: Graph, onDisk?: boolean) => void;
   apply: (fn: (g: Graph) => Graph) => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
   toast: (msg: string) => void;
+  /** the design differs from its last save (or was never saved) */
+  unsaved: boolean;
+  neverSaved: boolean;
+  onSaved: (g: Graph) => void;
   panelWidth: number;
   panelMax: number;
   onPanelWidth: (w: number) => void;
@@ -35,12 +40,14 @@ export function TopBar(p: Props) {
   const file = useRef<HTMLInputElement>(null);
 
   const save = async () => {
-    const name = slug(p.graph.name);
+    const g = p.graph;
+    const name = slug(g.name);
     try {
-      const r = await fetch(`/api/designs/${encodeURIComponent(name)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toExport(p.graph)) });
+      const r = await fetch(`/api/designs/${encodeURIComponent(name)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toExport(g)) });
       const body = await r.json();
       if (!r.ok) throw new Error(body.error ?? r.statusText);
-      p.toast(`Saved to tools/nn-builder/${body.saved}. Ask Claude to turn it into PyTorch code.`);
+      p.onSaved(g);
+      p.toast(`Saved to tools/nn-builder/${body.saved}${body.hash ? ` (version ${body.hash})` : ""}. Agents read it through the nn-builder MCP server.`);
     } catch (e) {
       download(`${name}.json`, JSON.stringify(toExport(p.graph), null, 2));
       p.toast(`Could not save on disk (${(e as Error).message}); downloaded ${name}.json instead.`);
@@ -62,7 +69,7 @@ export function TopBar(p: Props) {
     const r = await fetch(`/api/designs/${encodeURIComponent(name)}`);
     const res = parseGraph(await r.text());
     if (res.error || !res.graph) return p.toast(res.error ?? "could not open");
-    p.load(res.graph);
+    p.load(res.graph, true);
     p.toast(`Opened designs/${name}.json`);
   };
 
@@ -118,7 +125,14 @@ export function TopBar(p: Props) {
         <input type="range" min={340} max={Math.max(340, p.panelMax)} step={10} value={p.panelWidth} onChange={(e) => p.onPanelWidth(Number(e.target.value))} />
         <span className="num">{p.panelWidth}px</span>
       </label>
-      <button className="primary" onClick={save} title="Save to tools/nn-builder/designs/<name>.json">Save</button>
+      <button
+        className={`primary save ${p.unsaved ? "unsaved" : ""}`}
+        onClick={save}
+        aria-label={p.unsaved ? "Save (unsaved changes)" : "Save"}
+        title={`Save to tools/nn-builder/designs/${slug(p.graph.name)}.json. ${p.neverSaved ? "Not saved yet" : p.unsaved ? "Changed since the last save" : "Saved"}: agents read the last saved version.`}
+      >
+        Save
+      </button>
       <div className="menu-wrap">
         <button onClick={openMenu}>Open…</button>
         {menu === "open" && (

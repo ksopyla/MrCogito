@@ -8,6 +8,7 @@ import type { Cell, EmbeddingCell, Endpoint, Graph, Group, KvOutCell, LmHeadCell
 export interface Issue {
   where: string; // a cell, row, stack, edge or group id
   msg: string;
+  level?: "error" | "warning"; // absent = error
 }
 
 export interface CellResult {
@@ -380,6 +381,8 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
         if (frozen) frozenParams += res.params;
         inactive += inactiveParams(cell, res, s);
         for (const m of c.issues) issues.push({ where: cell.id, msg: m });
+        for (const m of c.warnings) issues.push({ where: cell.id, msg: m, level: "warning" });
+        res.issues.push(...c.warnings);
         cells.set(cell.id, res);
         rowCells.push(res);
         rowParams += res.params;
@@ -437,6 +440,18 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
 
     byStack[s.id] = stackParams;
     stackResults.push({ id: s.id, name: s.name, role: s.role, P: seq.P, seq, widthOut: W.stackOut.get(s.id) ?? s.width, params: stackParams, fwdPerToken: stackFwd / S, rows, groups });
+  }
+
+  // flow checks: every stack's stream must start somewhere, and its output should go somewhere
+  for (const s of g.stacks) {
+    const cellsOf = s.rows.flatMap((r) => r.cells);
+    const first = cellsOf.find((c) => c.type !== "positional");
+    const wiredIn = g.edges.some((e) => e.kind === "input" && e.to.stack === s.id);
+    if (!cellsOf.length) issues.push({ where: s.id, msg: "the stack is empty", level: "warning" });
+    else if (!wiredIn && first && first.type !== "embedding" && first.type !== "latent_init")
+      issues.push({ where: s.id, msg: "nothing starts this stack's stream: add an embedding or learned queries first, or wire an input onto its header" });
+    const used = cellsOf.some((c) => c.type === "lm_head") || g.edges.some((e) => e.from.stack === s.id && e.kind !== "skip");
+    if (cellsOf.length && !used) issues.push({ where: s.id, msg: "its output is not used: no LM head, and no wire leaves it", level: "warning" });
   }
 
   for (const e of g.edges) {

@@ -451,3 +451,8 @@ table.compare .current { background: var(--accent-soft); }
 table.compare td.best .cmp-val { font-weight: 700; }
 table.compare .cmp-val { display: block; font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.compare .cmp-bar { display: block; height: 4px; margin-top: 3px; margin-left: auto; background: var(--series-1); border-radius: 2px; max-width: 100%; }
+
+/* unsaved changes: a dot after the tab's name and on the Save button (CSS only, so the labels keep their text) */
+.design-tab.unsaved .dt-name::after { content: "●"; margin-left: 6px; font-size: 9px; vertical-align: 2px; color: var(--series-4); }
+button.save { position: relative; }
+button.save.unsaved::after { content: ""; position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--series-4); border: 2px solid var(--surface-1); }
