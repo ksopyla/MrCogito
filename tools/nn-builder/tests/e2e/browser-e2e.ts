@@ -3,7 +3,7 @@
 //   const { run } = await import("/tests/e2e/browser-e2e.ts"); await run();
 // It drives the interface with pointer events (drag and drop, wires, loops), clicks and keys, checks the saved
 // graph after every step against the engine, saves / opens / exports a design, and returns a pass/fail report.
-// It writes designs/e2e_test.json (delete it afterwards) and leaves the blank preset loaded.
+// It writes designs/e2e_test.json and designs/.history/e2e_test/ (delete them afterwards) and leaves the blank preset loaded.
 import { analyze } from "../../src/engine/analyze";
 import { parseGraph } from "../../src/engine/serialize";
 import type { Graph } from "../../src/engine/types";
@@ -39,20 +39,77 @@ function fire(type: string, x: number, y: number, init: PointerEventInit = {}) {
   target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 1, isPrimary: true, pointerType: "mouse", ...init }));
 }
 
-/** Press on `from`, move in steps to `to` (an element's centre or a point), release. */
+const describe = (el: Element | null) => (el ? `${el.tagName.toLowerCase()}${typeof el.className === "string" && el.className.trim() ? "." + el.className.trim().split(/\s+/).join(".") : ""}` : "nothing");
+
+/** Scroll the frame (only) so the element's centre is inside its visible part, as a user would before grabbing it. */
+function reveal(el: Element) {
+  const pane = $(".frame-scroll")!;
+  if (!pane.contains(el)) return;
+  const r = pane.getBoundingClientRect(), c = center(el), m = 60;
+  if (c.x < r.left + m) pane.scrollLeft -= r.left + m - c.x;
+  else if (c.x > r.right - m) pane.scrollLeft += c.x - (r.right - m);
+  if (c.y < r.top + m) pane.scrollTop -= r.top + m - c.y;
+  else if (c.y > r.bottom - m) pane.scrollTop += c.y - (r.bottom - m);
+}
+
+/** Press where a mouse lands: the element under `from`'s centre must be `from` or inside it, so a handle that is
+ *  covered (by the side panel, another element) or clipped fails instead of being pressed anyway. */
+function press(from: Element, init: PointerEventInit) {
+  reveal(from);
+  const a = center(from);
+  const hit = document.elementFromPoint(a.x, a.y);
+  if (!hit || !from.contains(hit)) throw new Error(`a press on the centre of ${describe(from)} lands on ${describe(hit)}`);
+  hit.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, clientX: a.x, clientY: a.y, button: 0, buttons: 1, pointerId: 1, isPrimary: true, pointerType: "mouse", ...init }));
+  return a;
+}
+
+/** Press on `from`, move in steps to `to` (an element's centre or a point), release. A target in the frame but
+ *  scrolled out of sight (or under the side panel) is reached as a user would: hold the pointer at that edge of the
+ *  frame until the drag's auto-scroll brings it into view. */
 async function drag(from: Element, to: Element | { x: number; y: number }, init: PointerEventInit = {}) {
+  const pane = $(".frame-scroll")!;
   if (to instanceof Element && from.closest(".frame-scroll") === null) {
     to.scrollIntoView({ block: "nearest", inline: "center" }); // a drop from the palette: bring the target into view
     await sleep(60);
   }
-  const a = center(from);
-  const b = to instanceof Element ? center(to) : to;
-  from.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, clientX: a.x, clientY: a.y, button: 0, buttons: 1, pointerId: 1, isPrimary: true, pointerType: "mouse", ...init }));
-  for (let i = 1; i <= 10; i++) {
-    fire("pointermove", a.x + ((b.x - a.x) * i) / 10, a.y + ((b.y - a.y) * i) / 10, init);
-    await sleep(16);
+  let a = press(from, init);
+  const b = () => (to instanceof Element ? center(to) : to);
+  const steps = async (end: () => { x: number; y: number }) => {
+    const s = a;
+    for (let i = 1; i <= 10; i++) {
+      const e = end();
+      fire("pointermove", s.x + ((e.x - s.x) * i) / 10, s.y + ((e.y - s.y) * i) / 10, init);
+      await sleep(16);
+    }
+    a = end();
+  };
+  if (to instanceof Element && pane.contains(to)) {
+    const r = pane.getBoundingClientRect();
+    const side = (x: number) => (x > r.right - 10 ? 1 : x < r.left + 10 ? -1 : 0);
+    const dir = side(b().x);
+    if (dir) {
+      const edge = { x: dir > 0 ? r.right - 20 : r.left + 20, y: Math.min(Math.max(a.y, r.top + 60), r.bottom - 60) };
+      await steps(() => edge);
+      const inView = () => b().x > r.left + 60 && b().x < r.right - 60;
+      // animation frames do not run in a hidden page, so the auto-scroll stalls there: then turn the wheel instead
+      const sl0 = pane.scrollLeft;
+      let wheel = false;
+      for (let t = 0; t < 300 && !inView(); t++) {
+        if (t === 20 && pane.scrollLeft === sl0) wheel = true;
+        if (wheel) pane.scrollLeft += dir * 14;
+        fire("pointermove", edge.x, edge.y, init);
+        await sleep(16);
+      }
+    }
   }
-  fire("pointerup", b.x, b.y, init);
+  await steps(b);
+  // the release must land on the target too, not on something drawn over it
+  const hit = document.elementFromPoint(a.x, a.y);
+  if (to instanceof Element && (!hit || !to.contains(hit))) {
+    fire("pointerup", a.x, a.y, init);
+    throw new Error(`the drop point on ${describe(to)} is covered by ${describe(hit)}`);
+  }
+  fire("pointerup", a.x, a.y, init);
   await sleep(120);
 }
 
@@ -96,6 +153,10 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
   };
   const pane = $(".frame-scroll")!;
   const tabsAtStart = $$(".design-tab").length;
+  // the legend floats over the frame's lower right; fold it so it covers no drop target in a small window
+  const legendOpen = Boolean($(".legend-box.open"));
+  if (legendOpen) $<HTMLButtonElement>(".legend-toggle")!.click();
+  await sleep(50);
 
   await attempt("presets reproduce the trainer's counts", async () => {
     const want: [string, number][] = [["dense_plain_30m", 30_293_140], ["e33m_plain_30m", 29_946_402], ["dense_plain_100m", 100_966_686], ["gpt2_small", 124_439_808]];
@@ -228,10 +289,22 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     await sleep(80);
     const cross = $$(".cell", dec).find((c) => c.querySelector(".cell-title")?.textContent?.startsWith("Cross"))!;
     check("a cross-attention without a source warns", Boolean(cross.querySelector(".warn")));
-    // scroll so the encoder's output dot (its bottom bar) and the decoder's cross-attention are both in view
+    // scroll the encoder's output dot (its bottom bar) into view; when the cross-attention is out of sight (a narrow
+    // window, a wide panel) the drag holds at the frame's edge until it scrolls in, as a user would
     const dot = $("footer.stack-io .dot.out", $$(".stack")[0])!;
     pane.scrollLeft += dot.getBoundingClientRect().left - pane.getBoundingClientRect().left - 40;
     await sleep(80);
+    const hitShare = (el: Element) => {
+      const b = el.getBoundingClientRect();
+      let n = 0;
+      for (let i = 0; i < 5; i++)
+        for (let j = 0; j < 5; j++) {
+          const h = document.elementFromPoint(b.left + (b.width * (i + 0.5)) / 5, b.top + (b.height * (j + 0.5)) / 5);
+          if (h && el.contains(h)) n++;
+        }
+      return n / 25;
+    };
+    check("the stack's output dot takes a press on its whole area", hitShare(dot) >= 0.8, `${Math.round(hitShare(dot) * 100)} % of a 5 × 5 grid`);
     await drag(dot, cross);
     const g = graph();
     check("the wire feeds the cross-attention", g.edges.some((e) => e.kind === "source" && e.from.stack === g.stacks[0].id) && $$(".wire.source").length === 1);
@@ -242,6 +315,7 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     const box = $$(".stack")[1];
     const w0 = box.getBoundingClientRect().width;
     const handle = $(".stack-resize", box)!;
+    reveal(handle);
     const c = center(handle);
     await drag(handle, { x: c.x + 180, y: c.y });
     const w1 = $$(".stack")[1].getBoundingClientRect().width;
@@ -377,6 +451,7 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     window.confirm = confirmOrig;
   }
   check("closing an edited, unsaved design asks first", asked.some((m) => /not saved/.test(m)), `${asked.length} asked`);
+  if (legendOpen && !$(".legend-box.open")) $<HTMLButtonElement>(".legend-toggle")!.click();
   const passed = steps.filter((s) => s.ok).length;
   return { passed, failed: steps.length - passed, steps };
 }

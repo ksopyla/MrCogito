@@ -21,7 +21,7 @@ npm run typecheck
 npm run mcp       # the MCP server on stdio (agents start it themselves; see docs/agent-spec.md)
 ```
 
-Browser end-to-end test (57 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
+Browser end-to-end test (58 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
 GPU and token presets, resizing, wire details, tabs and comparison, save / open / export, the unsaved-changes
 mark). With the app running, open it and paste into the DevTools console:
 
@@ -29,7 +29,9 @@ mark). With the app running, open it and paste into the DevTools console:
 const { run } = await import("/tests/e2e/browser-e2e.ts"); console.table((await run()).steps);
 ```
 
-It saves `designs/e2e_test.json`; delete that file afterwards.
+It presses where a mouse would land (a covered or clipped handle fails), reaches far targets by holding at the
+frame's edge, and passes at 1440 × 900 and 1920 × 1080. It saves `designs/e2e_test.json`; delete that file
+(and `designs/.history/e2e_test/`) afterwards.
 
 ## Use
 
