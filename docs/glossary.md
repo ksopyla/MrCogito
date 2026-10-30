@@ -146,7 +146,7 @@ meaningless without knowing which slice it came from.
 | **CogitoProbe** | four local synthetic families (`bits`, `bind`, `arith`, `props`) with Hub *names* `ksopyla/cogito-probe-*`. Not on the Hub until approved. Length ladder 1k→32k; `fixed` vs `scaled`. |
 | **subexpr / match / eval** | arith tasks: packed internal-node values (primary); Dyck-3 closer index (stack); root scalar (calculator shortcut — not a success metric). |
 | **ordered notes / nested dropout** | training trick from Next-Concept Modeling (arXiv 2610.14162): during training a page is sometimes read through only its first k notes, so the first notes learn to hold the gist and later ones add detail — like a progressive JPEG that is already a blurry picture after its first bytes. |
-| **coarse-to-fine notebook** | the 2026-10-30 proposed bet: ordered notes first, then residual levels (each level writes what the coarser ones missed), then a learned router deciding where the finest notes go. One writer for every compression rate. |
+| **coarse-to-fine notebook** | the 2026-10-30 proposed bet: ordered notes first, then notes placed by a learned boundary router (H-Net style: more notes where the facts are, fewer on filler), then residual levels (each level writes what the coarser ones missed). One writer for every compression rate. |
 
 ---
 
