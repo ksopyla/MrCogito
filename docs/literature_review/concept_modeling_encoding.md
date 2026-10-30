@@ -26,6 +26,7 @@ Concept learning and encoding, list of extracts from articles. How to model conc
         * [The evaluation procedure, evaluation datasets and results](#the-evaluation-procedure-evaluation-datasets-and-results-2)
         * [Previous attempts to solve this problem](#previous-attempts-to-solve-this-problem-2)
         * [Max 5 top most relevant to the problem follow-up publications](#max-5-top-most-relevant-to-the-problem-follow-up-publications)
+    * [Next-Concept Modeling: Fast, Parallel Coarse-to-Fine Text Generation](#next-concept-modeling-fast-parallel-coarse-to-fine-text-generation)
 
 
 
@@ -234,3 +235,83 @@ Link: https://arxiv.org/pdf/2502.06785
 Authors: Mike Heddes, Adel Javanmard, Kyriakos Axiotis, Gang Fu, MohammadHossein Bateni, Vahab Mirrokni
 
 Transformer networks have achieved remarkable success across diverse domains, leveraging a variety of architectural innovations, including residual connections. However, traditional residual connections, which simply sum the outputs of previous layers, can dilute crucial information. This work introduces DeepCrossAttention (DCA), an approach that enhances residual learning in transformers. DCA employs learnable, input-dependent weights to dynamically combine layer outputs, enabling the model to selectively focus on the most relevant information in any of the previous layers. Furthermore, DCA incorporates depth-wise cross-attention, allowing for richer interactions between layers at different depths. Our language modeling experiments show that DCA achieves improved perplexity for a given training time. Moreover, DCA obtains the same model quality up to 3x faster while adding a negligible number of parameters. Theoretical analysis confirms that DCA provides an improved trade-off between accuracy and model size when the ratio of collective layer ranks to the ambient dimension falls below a critical threshold.
+
+
+## Next-Concept Modeling: Fast, Parallel Coarse-to-Fine Text Generation
+
+**Title:** Next-Concept Modeling: Fast, Parallel Coarse-to-Fine Text Generation  
+**Publish Date:** 9 October 2026  
+**Authors:** Hermann Kumbong, Ishan S. Khare, Iddah Mlauzi, Andrew Woen, Charles Ding, E. Kelly Buchanan, Simran Arora, Azalia Mirhoseini, Christopher Ré (Stanford / Together AI)  
+**URL:** [https://arxiv.org/abs/2610.14162](https://arxiv.org/abs/2610.14162) · code [HazyResearch/ncm](https://github.com/HazyResearch/ncm) (MIT) · data [hazyresearch/ncm-datasets](https://huggingface.co/datasets/hazyresearch/ncm-datasets)  
+**Project fit:** [hierarchy_lessons_hnet_ncm_mai_20261030.md](../4_Research_Notes/hierarchy_lessons_hnet_ncm_mai_20261030.md) (Adapt: ordered / residual notes; Sudoku-style exam)
+
+### TL;DR
+
+Text is first encoded by a frozen **multiscale residual VQ-VAE** into K levels of discrete codes, short and
+coarse first, full length last; a transformer then generates **one level per step, all codes of a level in
+parallel**, conditioned on the cumulative reconstruction of the earlier levels. With K ≪ L steps and short early
+levels, ~100M models match or beat diffusion language models at 10–31× less wall-clock and ~4–5× fewer training
+tokens, and a 25M model solves 86 % of hard Sudoku boards where autoregressive models solve 1 %. "Concept" here
+means *what the coarse levels carry*.
+
+### The problem that authors want to solve
+
+Diffusion language models promise parallel generation but (i) lose quality quickly with fewer denoising steps,
+(ii) process the full sequence at every step with no KV cache, and (iii) need many passes over the data (DUO and
+MDLM see > 500B tokens of OpenWebText). Distillation to few steps costs extra training and diversity.
+
+### The solution, main idea on the intuition level and strong points
+
+Borrow next-scale prediction from images (VAR) and residual quantization from audio codecs: describe a sequence
+at increasing resolution, each level coding only what the coarser ones missed, and generate resolution by
+resolution. Coarse levels fix the "idea" (the paper's translation trajectory shows the gist first, words later);
+fine levels fill in and correct. Early steps are cheap because coarse levels are short.
+
+### The detailed solution, training process, data preparation
+
+- **Tokenizer.** `z = E(x) ∈ R^{L×d}`. Level k: `u_k = Down_k(z^{(k-1)}) ∈ R^{ℓ_k×d}` (residual downsampled to
+  `ℓ_k` vectors, `ℓ_1 < … < ℓ_K = L`), nearest entry of codebook `V_k`, a reconstruction operator `R_k` maps the
+  chosen vectors back to length L: `ẑ^{(k)} = ẑ^{(k-1)} + R_k(e_k(r_k))`, `z^{(k)} = z − ẑ^{(k)}`. Decoder maps
+  `ẑ^{(K)}` to token distributions.
+- **Nested dropout.** Each training step samples a cutoff k and computes reconstruction CE plus VQ commitment and
+  codebook MSE at `ẑ^{(k)}`, so every prefix of levels is a usable reconstruction (earlier levels cannot defer
+  information to later ones). Straight-through estimator through quantization.
+- **Generator.** Tokenizer frozen. Input to level k = `ẑ^{(k-1)}` resized to `ℓ_k` positions and projected; all
+  levels trained in one forward pass with block-diagonal attention; loss `Σ_k w_k Σ_i −log p(r_k^i | z̃^{(k-1)})`
+  with `w_k ∝ ℓ_k^{-α}` (α = 0 equal per code, α = 1 equal per level). **Conditioning corruption:** a level-
+  dependent fraction of conditioning codes is replaced by random codes of the same codebook (labels stay true), for
+  robustness to the generator's own errors. Codes within a level are sampled independently given the earlier
+  levels.
+- **Conditional generation.** Prefix-LM mask: prompt tokens (embedded with the tokenizer's table) attend to each
+  other; each target block attends to the prompt and itself.
+- **Scale.** Generators ~100M (88M XSum, 120M WMT, 25M Sudoku); one tokenizer per dataset; scaling run 97M / 317M /
+  725M on LM1B with a shared tokenizer.
+
+### The evaluation procedure, evaluation datasets and results
+
+- Unconditional (TinyStories, LM1B, OpenWebText): generative perplexity under GPT-2-large, reported with mean
+  unigram entropy (diversity). Matches or beats the strongest diffusion LMs with ~4–11× fewer function
+  evaluations; LM1B 21× faster than DUO at better perplexity; OWT 10× faster, competitive.
+- Conditional: XSum ROUGE-1/2/L 35.0 / 12.8 / 28.0 at 8 steps vs AURORA-LM 34.7 / 12.2 / 26.6 at 128 (31×
+  faster); with MBR over candidates 37.3 / 14.0 / 29.6. WMT14 De–En 22.6 BLEU at 11 steps (AR 25.2 at 64; E2D2
+  24.8 at 64).
+- Reasoning: Sudoku (40 / 35 / 30 clues) 99.5 / 96.5 / 86.1 % solved at 12 steps vs AR 14.6 / 5.1 / 1.0 %, MDLM 92.0
+  / 77.1 / 30.2 %, FMLM+ 97.7 / 92.8 / 81.3 % at 16 steps.
+- Efficiency: LM1B tokenizer + generator see 13.4B token positions vs 66B for the baselines (4.9×). Tokenizer exact
+  reconstruction near 100 % (100 % on Sudoku), codebook use 62–90 %.
+- Probes (appendix H, not read): coarse levels carry global structure, fine levels detail.
+
+### Previous attempts to solve this problem
+
+Few-step diffusion by distillation (SDTT, DUO distillation) and flow maps (FMLM); block-autoregressive diffusion
+(KV cache, but blocks are sequential); latent diffusion over continuous text representations. Hierarchical /
+concept-level LMs: MEGABYTE (byte patches), H-Net (learned chunks), Large Concept Models (sentence embeddings),
+ConceptLM, Dynamic Large Concept Models (variable-length concepts), HDLM (hierarchy of vocabularies).
+
+### Max 5 top most relevant to the problem publications from bibliography
+
+- VAR, next-scale prediction for images: [arXiv 2404.02905](https://arxiv.org/abs/2404.02905)
+- RQ-VAE, residual quantization: [arXiv 2203.01941](https://arxiv.org/abs/2203.01941)
+- H-Net, dynamic chunking: [arXiv 2507.07955](https://arxiv.org/abs/2507.07955)
+- Dynamic Large Concept Models: [arXiv 2512.24617](https://arxiv.org/abs/2512.24617)
+- MDLM, masked diffusion LMs: [arXiv 2406.07524](https://arxiv.org/abs/2406.07524)

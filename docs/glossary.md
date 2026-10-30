@@ -44,6 +44,7 @@ never bother to use the notebook.**
 | **free-run / generation** | the model writes from its own output. Hard mode; where weak models fall apart. |
 | **warm start** | continuing from an existing checkpoint instead of from scratch. |
 | **pilot / main run** | small cheap version to decide; the full-budget version afterwards. |
+| **frontier-shaped dense control** | a dense model laid out like current frontier models (MAI-Thinking-1, Gemma): five sliding-window layers (window 512, with position code) for every one full-attention layer (no position code). Proposed 2026-10-30 as the fair competitor: its global layers are exactly what our notebook replaces. |
 
 ---
 
@@ -73,6 +74,8 @@ never bother to use the notebook.**
 | **distinct-1** | share of the words the model generates that are different from each other — is it saying new things? | higher | our gate has been ≥0.20. Below that it is looping. |
 | **REP-3** | share of 3-word sequences it has already said — is it repeating itself? | lower | our gate has been ≤0.60. Quoted next to distinct-1, so a pair like `0.162/0.686` means "not diverse enough and repeating too much". |
 | **σ (sigma)** | how many standard errors away from zero a difference is | higher = more certain it is real | under 2 = noise. Over 10 = definitely real (but possibly tiny). |
+| **efficiency multiplier** | how much more training dense needs to reach a model's result: dense's tokens to pass ÷ the model's tokens to pass on a task, or the dense tokens needed to reach the model's final loss. MAI-Thinking-1 calls it Efficiency Gain. Proposed 2026-10-30. | higher | 1× = no saving; 2× = dense needs twice the data; below 1× = dense is cheaper. |
+| **rate–distortion curve (notebook)** | an exam's score when each page may be read through only its first 1, 2, 4 … 32 notes | higher at fewer notes | shows how many notes an answer really needs; a flat curve at few notes means the notes are not ordered by importance. Proposed 2026-10-30. |
 
 **Real and tiny are different things.** A difference can be 25σ and still be worth nothing. Always
 report both: is it real, and is it big enough to matter.
@@ -142,6 +145,8 @@ meaningless without knowing which slice it came from.
 | **hybrid key anchors** | identity raw keys on the *key* tokens plus pooled gist for the rest (BAPO `b` + `a`). |
 | **CogitoProbe** | four local synthetic families (`bits`, `bind`, `arith`, `props`) with Hub *names* `ksopyla/cogito-probe-*`. Not on the Hub until approved. Length ladder 1k→32k; `fixed` vs `scaled`. |
 | **subexpr / match / eval** | arith tasks: packed internal-node values (primary); Dyck-3 closer index (stack); root scalar (calculator shortcut — not a success metric). |
+| **ordered notes / nested dropout** | training trick from Next-Concept Modeling (arXiv 2610.14162): during training a page is sometimes read through only its first k notes, so the first notes learn to hold the gist and later ones add detail — like a progressive JPEG that is already a blurry picture after its first bytes. |
+| **coarse-to-fine notebook** | the 2026-10-30 proposed bet: ordered notes first, then residual levels (each level writes what the coarser ones missed), then a learned router deciding where the finest notes go. One writer for every compression rate. |
 
 ---
 
