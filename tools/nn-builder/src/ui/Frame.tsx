@@ -2,7 +2,7 @@
 import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import type { Analysis, CellResult, RowResult } from "../engine/analyze";
 import type { Cell, Edge, Endpoint, Graph, Group, Row, Stack } from "../engine/types";
-import { CATEGORY, MIX_LEGEND, cellSub, cellTitle, mixing, seqSummary, stackIO } from "./describe";
+import { CATEGORY, MIX_LEGEND, cellSub, cellTitle, embeddingParts, mixing, seqSummary, sharedTable, stackIO } from "./describe";
 import { useDrag, useIsOver, type Target } from "./drag";
 import * as F from "./format";
 import { MixGlyph } from "./Glyph";
@@ -151,6 +151,8 @@ function StackColumn(p: Props & { stack: Stack }) {
     else segments.push({ group: grp, rows: [row], first: i });
   });
 
+  const shared = sharedTable(s, g);
+
   return (
     <section className={`stack role-${s.role} ${width ? "sized" : ""}`} style={width ? { width } : undefined} data-stack-box={s.id}>
       <span className="stack-resize" onPointerDown={startResize} onDoubleClick={() => p.onStackWidth(s.id, null)} title="drag to resize this stack; double-click for the automatic width" />
@@ -176,6 +178,18 @@ function StackColumn(p: Props & { stack: Stack }) {
         </div>
       </header>
       <div className="rows">
+        {shared && (
+          <button
+            type="button"
+            className="shared-table cat-input"
+            title={`The same table as ${shared.from.name}'s embedding: no weights of its own. Click to see it.`}
+            onClick={() => p.setSel({ kind: "cell", id: shared.cell.id })}
+          >
+            <span className="dot in" data-anchor={`shared:${s.id}`} />
+            <strong>Token table</strong> <span className="muted">{shared.cell.vocab.toLocaleString("en-US")} × {shared.cell.dim}</span>
+            <span className="shared-note">same as {shared.from.name} · 0 new weights</span>
+          </button>
+        )}
         {segments.map((seg) => {
           const body = seg.rows.map((row, k) => {
             const i = seg.first + k;
@@ -316,9 +330,11 @@ function CellCard(p: Props & { stack: Stack; row: Row; cell: Cell; index: number
   const mix = mixing(c, p.stack, p.graph);
   const resid = (c.type === "attention" || c.type === "ffn") && c.residual !== "none";
   const frozen = Boolean(c.frozen || p.stack.frozen);
+  const parts = c.type === "embedding" ? embeddingParts(c, res?.widthOut ?? p.stack.width, res) : null;
   return (
     <div
-      className={`cell cat-${CATEGORY[c.type]} ${selected ? "selected" : ""} ${frozen ? "frozen" : ""} ${ins} ${wireOver}`}
+      className={`cell cat-${CATEGORY[c.type]} ${parts ? "split" : ""} ${selected ? "selected" : ""} ${frozen ? "frozen" : ""} ${ins} ${wireOver}`}
+      title={parts ? title : undefined}
       data-drop="cell"
       data-row={p.row.id}
       data-cell={c.id}
@@ -327,18 +343,40 @@ function CellCard(p: Props & { stack: Stack; row: Row; cell: Cell; index: number
       onPointerDown={(e) => start(e, { kind: "cell", id: c.id, label: title }, () => p.setSel({ kind: "cell", id: c.id }))}
     >
       {c.type === "attention" && (c.mode === "cross" || c.memory || fed) && <span className={`dot cell-in ${fed ? "fed" : ""}`} data-anchor={`cellin:${c.id}`} title="keys/values come in here" />}
-      <div className="cell-title">
-        {frozen && <span className="frost" title="frozen: weights kept, not trained">❄</span>}
-        <span className="cell-name" title={title}>{title}</span>
-        {res && res.issues.length > 0 && <span className="warn" title={res.issues.join("\n")}>⚠</span>}
-        <MixGlyph kind={mix.kind} title={mix.text} />
-      </div>
-      {resid && <span className="resid" title={`residual: the output is added back to the stream${c.residual === "post" ? " (norm after the add)" : ""}`}>+</span>}
-      <div className="cell-sub">{c.label ? `${cellTitle(c)} · ${sub}` : sub}</div>
-      <div className="cell-foot">
-        {res && res.execs > 1 ? <span className="badge" title={`runs ${res.execs} times per row`}>×{res.execs}</span> : <span />}
-        <span className="cell-num">{res && res.params > 0 ? F.params(res.params) : "0"}</span>
-      </div>
+      {parts ? (
+        <div className="cell-parts">
+          {parts.map((part, i) => (
+            <div key={part.name} className="cell-part">
+              <div className="cell-title">
+                {i === 0 && frozen && <span className="frost" title="frozen: weights kept, not trained">❄</span>}
+                <span className="cell-name" title={part.name}>{part.name}</span>
+                {i === 0 && res && res.issues.length > 0 && <span className="warn" title={res.issues.join("\n")}>⚠</span>}
+                {i === 1 && <MixGlyph kind={mix.kind} title={mix.text} />}
+              </div>
+              <div className="cell-sub" title={part.sub}>{part.sub}</div>
+              <div className="cell-foot">
+                <span />
+                <span className="cell-num">{part.params > 0 ? F.params(part.params) : "0"}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="cell-title">
+            {frozen && <span className="frost" title="frozen: weights kept, not trained">❄</span>}
+            <span className="cell-name" title={title}>{title}</span>
+            {res && res.issues.length > 0 && <span className="warn" title={res.issues.join("\n")}>⚠</span>}
+            <MixGlyph kind={mix.kind} title={mix.text} />
+          </div>
+          {resid && <span className="resid" title={`residual: the output is added back to the stream${c.residual === "post" ? " (norm after the add)" : ""}`}>+</span>}
+          <div className="cell-sub">{c.label ? `${cellTitle(c)} · ${sub}` : sub}</div>
+          <div className="cell-foot">
+            {res && res.execs > 1 ? <span className="badge" title={`runs ${res.execs} times per row`}>×{res.execs}</span> : <span />}
+            <span className="cell-num">{res && res.params > 0 ? F.params(res.params) : "0"}</span>
+          </div>
+        </>
+      )}
       {c.type === "embedding" && (
         <span
           className="dot table"
@@ -401,13 +439,13 @@ function wireShape(e: Edge, g: Graph, a: Analysis): string {
 
 function wireLabel(e: Edge, g: Graph): string {
   if (e.kind === "skip") return e.weight === "scalar" ? "skip ×σ" : e.weight === "vector" ? "skip ×w" : "skip";
-  if (e.kind === "input") return e.from.port === "table" ? "token table → in" : "in";
+  if (e.kind === "input") return e.from.port === "table" ? "same table" : "in";
   const src = g.stacks.find((s) => s.id === e.from.stack);
   return src?.rows.flatMap((r) => r.cells).at(-1)?.type === "kv_out" ? "notes" : "keys/values";
 }
 
 const fromAnchor = (e: Endpoint) => (e.cell && e.port === "table" ? `table:${e.cell}` : e.row ? `rowout:${e.row}` : `stackout:${e.stack}`);
-const toAnchor = (e: Endpoint) => (e.cell ? `cellin:${e.cell}` : e.row ? `rowout:${e.row}` : `stackin:${e.stack}`);
+const toAnchor = (e: Edge) => (e.kind === "input" && e.from.port === "table" ? `shared:${e.to.stack}` : e.to.cell ? `cellin:${e.to.cell}` : e.to.row ? `rowout:${e.to.row}` : `stackin:${e.to.stack}`);
 
 function Wires({ graph, analysis, sel, setSel }: { graph: Graph; analysis: Analysis; sel: Sel; setSel: (s: Sel) => void }) {
   const [paths, setPaths] = useState<WirePath[]>([]);
@@ -429,7 +467,7 @@ function Wires({ graph, analysis, sel, setSel }: { graph: Graph; analysis: Analy
       const out: WirePath[] = [];
       for (const e of graph.edges) {
         const a = at(fromAnchor(e.from));
-        const b = at(toAnchor(e.to));
+        const b = at(toAnchor(e));
         if (!a || !b) continue;
         const label = wireLabel(e, graph);
         const tensor = wireShape(e, graph, analysis);

@@ -1,6 +1,6 @@
 // Plain-word names for cells, stacks and wires.
-import type { SeqInfo } from "../engine/cells";
-import type { Cell, CellType, Edge, Graph, Stack } from "../engine/types";
+import type { Part, SeqInfo } from "../engine/cells";
+import type { Cell, CellType, Edge, EmbeddingCell, Graph, Stack } from "../engine/types";
 import { len } from "./format";
 
 export type Category = "input" | "attn" | "ffn" | "mem" | "out" | "other";
@@ -178,6 +178,25 @@ export const MIX_LEGEND: [MixKind, string][] = [
 ];
 
 /** What starts a stack's stream and where its output goes. */
+/** An embedding with an input MLP or projection, drawn as two parts: the table, which a wire can share, and what
+ *  follows it. Display only; null when it has no such step and stays one part. */
+export function embeddingParts(c: EmbeddingCell, widthOut: number, res?: { params: number; parts: Part[] }): { name: string; sub: string; params: number }[] | null {
+  if (c.proj === "none") return null;
+  const table = (res?.parts ?? []).filter((x) => x.name === "token table" || x.name === "n-gram tables").reduce((n, x) => n + x.params, 0);
+  return [
+    { name: c.share_with ? "Token table (shared)" : "Token table", sub: `${c.vocab.toLocaleString("en-US")} × ${c.dim}${c.ngram_tables ? ` + ${c.ngram_tables} n-gram` : ""}`, params: table },
+    { name: c.proj === "gated_mlp" ? "Input MLP" : "Input projection", sub: `${c.dim} → ${widthOut}`, params: (res?.params ?? 0) - table },
+  ];
+}
+
+/** The token table a stack starts from, when a wire from an embedding's table feeds it: it holds no weights of its own. */
+export function sharedTable(s: Stack, g: Graph): { from: Stack; cell: EmbeddingCell & { id: string } } | null {
+  const wire = g.edges.find((e) => e.kind === "input" && e.to.stack === s.id && e.from.port === "table");
+  const from = g.stacks.find((x) => x.id === wire?.from.stack);
+  const cell = from?.rows.flatMap((r) => r.cells).find((c) => c.id === wire?.from.cell);
+  return from && cell?.type === "embedding" ? { from, cell } : null;
+}
+
 export function stackIO(s: Stack, g: Graph): { input: string; outputs: string[] } {
   const first = s.rows.flatMap((r) => r.cells)[0];
   const wire = g.edges.find((e) => e.kind === "input" && e.to.stack === s.id);

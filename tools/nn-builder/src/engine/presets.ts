@@ -72,7 +72,7 @@ function notebook(d: number, pre: number, post: number, F: number, tokens: numbe
     id: "pages", name: "Pages", role: "writer", width: dw, seq: { kind: "pages", of: s, window: 256, stride: 192 },
     rows: [
       row("pages.in", [
-        cell("pages.in.proj", { type: "linear", out: dw, bias: false, out_norm: "rmsnorm" }, "table → writer width"),
+        cell("pages.in.proj", { type: "linear", out: dw, bias: false, out_norm: "rmsnorm" }, "Project to writer"),
         cell("pages.in.pos", { type: "positional", kind: "rope", theta: 10000, max_len: 256 }),
       ], { label: "in" }),
       ...[0, 1].map((i) =>

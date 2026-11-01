@@ -454,6 +454,44 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     check("the finished model has no warnings", analyze(g).issues.length === 0, analyze(g).issues.map((i) => i.msg).join(" | "));
   });
 
+  await attempt("the shared token table is visible", async () => {
+    await selectPreset("e33m_plain_30m");
+    pane.scrollLeft = 0;
+    const split = $(".cell.split", $(`[data-stack-box="main"]`)!)!;
+    const parts = $$(".cell-part", split);
+    check("the embedding splits into the table and the input MLP", parts.length === 2 && /^Token table/.test(parts[0].textContent ?? "") && /1\.05M$/.test(parts[0].textContent ?? "") && /^Input MLP/.test(parts[1].textContent ?? "") && /627k$/.test(parts[1].textContent ?? ""), parts.map((x) => x.textContent).join(" | "));
+    check("nothing in the split is cut off at the default width", $$(".cell-name, .cell-sub", split).every((x) => x.scrollWidth <= x.clientWidth));
+    const tableDot = $(".dot.table", split)!;
+    const middle = parts[0].getBoundingClientRect().right;
+    check("the table's dot sits under the table, before the MLP", center(tableDot).x < middle && !parts[1].contains(tableDot));
+    check("the table's dot takes a press", tableDot.contains(document.elementFromPoint(center(tableDot).x, center(tableDot).y)));
+    const pagesBox = $(`[data-stack-box="pages"]`)!;
+    const block = $<HTMLButtonElement>(".shared-table", pagesBox)!;
+    check("Pages shows a dashed block: same table, no new weights", /Token table/.test(block.textContent ?? "") && /same as Decoder/.test(block.textContent ?? "") && /0 new weights/.test(block.textContent ?? "") && getComputedStyle(block).borderLeftStyle === "dashed");
+    check("it sits above Pages' first row", block.compareDocumentPosition($(".row", pagesBox)!) === Node.DOCUMENT_POSITION_FOLLOWING);
+    check("only the fed stack has one", $$(".shared-table").length === 1);
+    check("it is no cell and no drop target", !block.closest("[data-drop]") && !block.querySelector("[data-drop], .cell"));
+    check("the wire is labelled same table", /^same table/.test($(".wire.input text")?.textContent ?? ""), $(".wire.input text")?.textContent ?? "");
+    const before = params();
+    const cellsBefore = graph().stacks.flatMap((x) => x.rows.flatMap((r) => r.cells)).length;
+    $(".frame-scroll")!.scrollLeft = block.getBoundingClientRect().left - pane.getBoundingClientRect().left + pane.scrollLeft - 40;
+    await sleep(60);
+    await drag(paletteItem("SwiGLU"), block);
+    check("a layer dropped on it adds nothing", params() === before && graph().stacks.flatMap((x) => x.rows.flatMap((r) => r.cells)).length === cellsBefore);
+    await tab("Inspect");
+    block.click();
+    await sleep(120);
+    check("clicking it selects the embedding it shares", Boolean($(".cell.split.selected")), $(".inspector h2")?.textContent ?? "");
+    $$(".wire.input .hit")[0].dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    await sleep(120);
+    $$<HTMLButtonElement>(".inspector button").find((b) => b.textContent === "Remove wire")!.click();
+    await sleep(150);
+    check("removing the wire removes the block", !$(".shared-table"), `${$$(".shared-table").length} left, ${$$(".wire.input").length} input wires`);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await selectPreset("blank");
+    check("an embedding with no MLP stays one part", !$(".cell.split"));
+  });
+
   await attempt("compare the open designs and switch between them", async () => {
     await selectPreset("dense_plain_30m");
     await selectPreset("e33m_plain_30m");

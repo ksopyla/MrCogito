@@ -329,7 +329,7 @@ export function addStack(g0: Graph, template: StackTemplate): Graph {
       s = { id, name: "Encoder", role: "encoder", width: w, seq: { kind: "source", length: 0 }, rows: [r([defaultBody("embedding", w), defaultBody("positional", w)], "input"), layer({ causal: false }), r([defaultBody("norm", w)], "out")] };
       break;
     case "pages":
-      s = { id, name: "Pages", role: "writer", width: w, seq: { kind: "pages", of: main.id, window: 256, stride: 192 }, rows: [r([{ ...(defaultBody("linear", w) as object), out_norm: "rmsnorm" } as CellBody], "in"), layer({ causal: false })] };
+      s = { id, name: "Pages", role: "writer", width: w, seq: { kind: "pages", of: main.id, window: 256, stride: 192 }, rows: [r([{ ...(defaultBody("linear", w) as object), out_norm: "rmsnorm", label: "Project to writer" } as unknown as CellBody], "in"), layer({ causal: false })] };
       {
         // a page writer starts from the token table of the text it pages, when there is one
         const emb = main.rows.flatMap((x) => x.cells).find((c) => c.type === "embedding");

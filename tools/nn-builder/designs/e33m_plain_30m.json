@@ -440,7 +440,7 @@
               "bias": false,
               "out_norm": "rmsnorm",
               "id": "pages.in.proj",
-              "label": "table → writer width"
+              "label": "Project to writer"
             },
             {
               "type": "positional",

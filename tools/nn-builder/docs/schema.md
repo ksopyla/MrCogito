@@ -120,7 +120,7 @@ speed calibration overrides `mfu`, `irregular_ratio`, `dp_efficiency` (0 = the b
 ```json
 "derived": {
   "exported_at": "2026-10-24T09:48:00.000Z",
-  "hash": "nnb1-1bd9d7ec43a7620523251415c770",
+  "hash": "nnb1-039eea21ba3d7b130cce6edcb2f3",
   "row_length": 4096,
   "params_total": 29946402,
   "params_by_stack": { "main": 25960546, "pages": 1377792, "notes": 2608064 },

@@ -159,7 +159,7 @@ After the person widened one FFN and saved:
 
 ```json
 {
-  "from_hash": "nnb1-1bd9d7ec43a7620523251415c770", "to_hash": "nnb1-049098962cb62410bff287edff66",
+  "from_hash": "nnb1-039eea21ba3d7b130cce6edcb2f3", "to_hash": "nnb1-0ec4ccb1d88b4f044009ba9357ff",
   "changes": [{ "change": "changed", "what": "block", "id": "main.L0.ffn", "where": "Decoder · L0",
                 "field": "hidden", "from": 1152, "to": 1600 }],
   "parameters": { "from": 29946402, "to": 30720546 },

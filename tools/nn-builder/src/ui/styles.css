@@ -457,3 +457,17 @@ table.compare .cmp-bar { display: block; height: 4px; margin-top: 3px; margin-le
 .design-tab.unsaved .dt-name::after { content: "●"; margin-left: 6px; font-size: 9px; vertical-align: 2px; color: var(--series-4); }
 button.save { position: relative; }
 button.save.unsaved::after { content: ""; position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--series-4); border: 2px solid var(--surface-1); }
+
+/* an embedding with an input MLP is drawn in two parts; the table dot sits under the table, so a wire leaves before the MLP */
+.cell.split { flex: 2 1 216px; min-width: 216px; max-width: 560px; }
+.cell-parts { display: grid; grid-template-columns: 1fr 1fr; flex: 1; }
+.cell-part { min-width: 0; display: flex; flex-direction: column; padding-right: 6px; }
+.cell-part + .cell-part { border-left: 1px solid var(--border); padding: 0 0 0 7px; }
+.cell.split .dot.table { left: 25%; right: auto; bottom: -7px; transform: translateX(-50%); }
+
+/* a stack fed by another stack's token table: drawn where its embedding would be, dashed because it holds no weights */
+.shared-table { position: relative; display: block; width: calc(100% - 172px); margin: 4px 0 2px 93px; padding: 4px 8px; text-align: left; font-size: 12px; background: none; border: 1.5px dashed var(--cat); border-radius: 6px; color: var(--ink); }
+.shared-table:hover { background: var(--surface-2); }
+.shared-table .dot.in { border-color: var(--wire-input); background: var(--wire-input); }
+.shared-table .muted { font-size: 11px; }
+.shared-note { display: block; font-size: 11px; color: var(--ink-2); }

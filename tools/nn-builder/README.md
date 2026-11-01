@@ -21,7 +21,7 @@ npm run typecheck
 npm run mcp       # the MCP server on stdio (agents start it themselves; see docs/agent-spec.md)
 ```
 
-Browser end-to-end test (66 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
+Browser end-to-end test (79 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
 GPU and token presets, resizing, wire details, tabs and comparison, save / open / export, the unsaved-changes
 mark). With the app running, open it and paste into the DevTools console:
 
@@ -46,6 +46,9 @@ frame's edge, and passes at 1440 × 900 and 1920 × 1080. It saves `designs/e2e_
   selected row.
 - **Wires.** Drag from a dot: to a later row = a skip (U-net) wire; to a cross-attention or notebook read = its
   keys/values; onto another stack's header = that stack's input. The embedding's lower-right dot is its token table.
+- **Shared token table.** An embedding with an input MLP is drawn as two parts, the table and the MLP, with the table's
+  dot under the table. A stack fed from that dot shows a dashed block at its top: the same table, no new weights
+  (click it to see the embedding it shares). The block follows the wire and counts for nothing.
 - **Loops.** Shift-click row handles to select neighbouring rows, then **Loop** (shared weights, R rounds) or
   **Repeat** (R independent copies) in the inspector. The −/+ on a loop's tag changes R.
 - **Stacks.** `+ Stack` adds a decoder, an encoder, a page writer (pages over a stack), a slots-per-page notes
