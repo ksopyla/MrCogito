@@ -271,7 +271,7 @@ function StackInspector(p: Props & { id: string }) {
     if (k === "source") setSeq({ kind: "source", length: 0 });
     if (k === "latents") setSeq({ kind: "latents", count: 256 });
     if (k === "pages") setSeq({ kind: "pages", of: others[0][0], window: 256, stride: 192 });
-    if (k === "slots") setSeq({ kind: "slots", of: pagesStacks[0][0], per_page: 32 });
+    if (k === "slots") setSeq({ kind: "slots", of: pagesStacks[0]?.[0] ?? "", per_page: 32 });
   };
   const issues = p.analysis.issues.filter((i) => i.where === s.id);
   return (
@@ -412,6 +412,7 @@ function GraphInfo(p: Props) {
       </label>
       <h3>How to build</h3>
       <ul className="howto">
+        <li>Add a main block with <b>+ Stack</b> in the top bar: decoder, encoder, page writer, notes or fixed latents. A page writer starts from the decoder's token table by itself; notes need a page writer.</li>
         <li>Drag a layer from the left into a <b>+</b> slot (same row) or between rows (a new row).</li>
         <li>Drag a slot or a row handle <b>⋮⋮</b> to move it; drop it on the palette to remove it.</li>
         <li>Drag from a dot <span className="dot-inline" />: to a later row (skip), to a cross-attention or notebook read (keys/values), or onto a stack header (its input).</li>

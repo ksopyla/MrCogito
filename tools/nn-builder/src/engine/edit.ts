@@ -1,6 +1,6 @@
 // Pure edits of a graph: each returns a new graph and never changes the one it was given.
 import { attention, defaultBody, newId, round64 } from "./defaults";
-import type { Cell, CellBody, Edge, Endpoint, Graph, Group, Row, Stack } from "./types";
+import type { AttentionCell, Cell, CellBody, Edge, Endpoint, Graph, Group, Row, Stack } from "./types";
 
 const clone = (g: Graph): Graph => structuredClone(g);
 
@@ -223,7 +223,21 @@ export function setStackWidth(g0: Graph, stackId: string, width: number): Graph 
 // ------------------------------------------------------------------ wires
 
 /** Wire `from` to `to` by what they are: row → later row = skip; anything → attention cell = source; → stack = input. */
-export function connect(g0: Graph, from: Endpoint, to: Endpoint): { graph: Graph; error?: string } {
+/** A notebook read must use the notes' key/value shape: match it when the wire lands, and say what changed. */
+function matchNotes(g: Graph, fromStack: string, a: AttentionCell): string | undefined {
+  const last = g.stacks.find((s) => s.id === fromStack)?.rows.flatMap((r) => r.cells).at(-1);
+  if (last?.type !== "kv_out" || (a.kv_heads === last.kv_heads && a.head_dim === last.head_dim)) return undefined;
+  const before = `${a.kv_heads} × ${a.head_dim}`;
+  a.kv_heads = last.kv_heads;
+  a.head_dim = last.head_dim;
+  const heads = Math.ceil(a.heads / a.kv_heads) * a.kv_heads; // heads must stay a multiple of the key/value heads
+  const also = heads !== a.heads ? `, and ${heads} heads (was ${a.heads})` : "";
+  a.heads = heads;
+  return `This read now uses ${a.kv_heads} × ${a.head_dim} key/value heads (was ${before})${also}, to match the notes.`;
+}
+
+/** `note`: a setting the wire changed on the way, worth telling the user. */
+export function connect(g0: Graph, from: Endpoint, to: Endpoint): { graph: Graph; error?: string; note?: string } {
   const g = clone(g0);
   if (to.cell) {
     const target = findCell(g, to.cell);
@@ -233,7 +247,7 @@ export function connect(g0: Graph, from: Endpoint, to: Endpoint): { graph: Graph
     if (a.mode === "self" && !a.memory) a.memory = true; // a wire into self-attention makes it a notebook read
     g.edges = g.edges.filter((e) => !(e.kind === "source" && e.to.cell === to.cell));
     g.edges.push({ id: newId("wire"), kind: "source", from, to: { stack: target.stack.id, cell: to.cell } });
-    return { graph: g };
+    return { graph: g, note: a.mode === "self" && !a.mla ? matchNotes(g, from.stack, a) : undefined };
   }
   if (to.row) {
     const a = from.row ? findRow(g, from.row) : undefined;
@@ -316,6 +330,16 @@ export function addStack(g0: Graph, template: StackTemplate): Graph {
       break;
     case "pages":
       s = { id, name: "Pages", role: "writer", width: w, seq: { kind: "pages", of: main.id, window: 256, stride: 192 }, rows: [r([{ ...(defaultBody("linear", w) as object), out_norm: "rmsnorm" } as CellBody], "in"), layer({ causal: false })] };
+      {
+        // a page writer starts from the token table of the text it pages, when there is one
+        const emb = main.rows.flatMap((x) => x.cells).find((c) => c.type === "embedding");
+        if (emb) g.edges.push({ id: newId("wire"), kind: "input", from: { stack: main.id, cell: emb.id, port: "table" }, to: { stack: id } });
+      }
+      // notes added before their page writer attach to it now
+      {
+        const writers = new Set(g.stacks.filter((x) => x.seq.kind === "pages").map((x) => x.id));
+        for (const x of g.stacks) if (x.seq.kind === "slots" && !writers.has(x.seq.of)) x.seq.of = id;
+      }
       break;
     case "slots": {
       const pages = g.stacks.find((x) => x.seq.kind === "pages");

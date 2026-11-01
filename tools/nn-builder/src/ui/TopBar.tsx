@@ -107,7 +107,7 @@ export function TopBar(p: Props) {
               ["decoder", "Decoder (tokens, causal)"],
               ["encoder", "Encoder (its own source, two-way)"],
               ["pages", "Pages over a stack (page writer)"],
-              ["slots", "Slots per page → notes"],
+              ["slots", p.graph.stacks.some((s) => s.seq.kind === "pages") ? "Slots per page → notes" : "Slots per page → notes (needs a page writer)"],
               ["latents", "Fixed latents (Perceiver)"],
             ] as [E.StackTemplate, string][]).map(([k, l]) => (
               <button key={k} onClick={() => (p.apply((g) => E.addStack(g, k)), setMenu(null))}>

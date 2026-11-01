@@ -208,7 +208,10 @@ export function App() {
       const to = t.drop === "cell" ? { stack: graph.stacks.find((s) => s.rows.some((r) => r.cells.some((c) => c.id === t.cell)))!.id, cell: t.cell } : t.drop === "row" ? { stack: t.stack!, row: t.row } : { stack: t.stack! };
       const res = E.connect(graph, p.from, to);
       if (res.error) toast(res.error);
-      else apply(() => res.graph);
+      else {
+        apply(() => res.graph);
+        if (res.note) toast(res.note);
+      }
     }
   };
 

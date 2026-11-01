@@ -415,6 +415,45 @@ export async function run(): Promise<{ passed: number; failed: number; steps: St
     check("Export gives e2e_test.json with the derived counts", exp?.name === "e2e_test.json" && parsed?.derived?.params_total === params(), exp?.name ?? "nothing captured");
   });
 
+  await attempt("build a notebook model from scratch", async () => {
+    await selectPreset("blank");
+    await tab("Inspect");
+    check("the help names + Stack", /\+ Stack/.test($(".howto")?.textContent ?? ""));
+    const openStackMenu = async () => {
+      $$<HTMLButtonElement>(".topbar button").find((b) => b.textContent === "+ Stack")!.click();
+      await sleep(80);
+      return $$<HTMLButtonElement>(".menu button");
+    };
+    const addStack = async (label: string) => {
+      (await openStackMenu()).find((b) => b.textContent?.startsWith(label))!.click();
+      await sleep(150);
+    };
+    const notesItem = (await openStackMenu()).find((b) => b.textContent?.startsWith("Slots per page"))!;
+    check("with no page writer, the notes item says it needs one", /needs a page writer/.test(notesItem.textContent ?? ""), notesItem.textContent ?? "");
+    notesItem.click();
+    await sleep(150);
+    const warnings = () => $(".issues")?.textContent ?? "";
+    check("notes with no page writer say what to add", /\+ Stack → Pages/.test(warnings()) && !/unknown stack/.test(warnings()), warnings());
+    await addStack("Pages over");
+    let g = graph();
+    const pages = g.stacks.find((s) => s.seq.kind === "pages")!;
+    const notes = g.stacks.find((s) => s.seq.kind === "slots")!;
+    check("notes attach to the page writer added after them", notes.seq.kind === "slots" && notes.seq.of === pages.id);
+    check("the page writer starts from the token table by itself", g.edges.some((e) => e.kind === "input" && e.to.stack === pages.id && e.from.port === "table") && $$(".wire.input").length === 1 && !/nothing starts/.test(warnings()), warnings());
+    const box = (id: string) => $(`[data-stack-box="${id}"]`)!;
+    const cellTitled = (id: string, title: string) => $$(".cell", box(id)).find((c) => c.querySelector(".cell-title")?.textContent?.startsWith(title))!;
+    await drag($("footer.stack-io .dot.out", box(pages.id))!, cellTitled(notes.id, "Cross"));
+    await drag(paletteItem("Notebook read"), $$(".rowgap").find((x) => x.dataset.stack === "main" && x.dataset.index === "2")!);
+    const readId = graph().stacks[0].rows[2].cells[0].id;
+    await drag($("footer.stack-io .dot.out", box(notes.id))!, cellTitled(graph().stacks[0].id, "Notebook read"));
+    const toastText = $(".toast")?.textContent ?? "";
+    g = graph();
+    const read = g.stacks[0].rows[2].cells[0];
+    check("the wire makes the read match the notes", read.id === readId && read.type === "attention" && read.kv_heads === 1 && read.head_dim === 64, JSON.stringify(read).slice(0, 80));
+    check("and the app says it did", /to match the notes/.test(toastText), toastText);
+    check("the finished model has no warnings", analyze(g).issues.length === 0, analyze(g).issues.map((i) => i.msg).join(" | "));
+  });
+
   await attempt("compare the open designs and switch between them", async () => {
     await selectPreset("dense_plain_30m");
     await selectPreset("e33m_plain_30m");

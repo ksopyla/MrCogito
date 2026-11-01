@@ -167,9 +167,10 @@ function seqInfos(g: Graph, S: number, issues: Issue[]): Map<string, SeqInfo> {
       const pages = pageGeometry(base.P, q.window, q.stride);
       info = { kind: "pages", P: pages.count * pages.window, pages, pageWindowCfg: q.window, tokensOf: q.of };
     } else {
-      const base = visit(q.of);
-      if (base.kind !== "pages" || !base.pages) {
-        issues.push({ where: id, msg: "slots must sit on a pages stack" });
+      const base = byId.get(q.of)?.seq.kind === "pages" ? visit(q.of) : undefined;
+      if (!base?.pages) {
+        const anyPages = g.stacks.some((x) => x.seq.kind === "pages");
+        issues.push({ where: id, msg: anyPages ? "these slots sit on no page writer: choose one under \"Slots on the pages of\"" : "these slots read the pages of a page writer, and there is none yet: add one with + Stack → Pages over a stack, and they attach to it" });
         info = { kind: "slots", P: q.per_page, perPage: q.per_page, pageWindowCfg: 0 };
       } else
         info = {
@@ -249,6 +250,16 @@ function widths(g: Graph, ix: Index, issues: Issue[]) {
   };
   for (const s of g.stacks) visit(s.id);
   return { rowIn, rowOut, stackOut, tapWidth };
+}
+
+/** The exact drag that starts an unfed stack, where the design tells which one it is. */
+function howToStart(g: Graph, s: Stack): string {
+  const q = s.seq;
+  const base = q.kind === "pages" ? g.stacks.find((x) => x.id === q.of) : undefined;
+  if (!base) return "add an embedding or learned queries first, or wire an input onto its header";
+  return base.rows.some((r) => r.cells.some((c) => c.type === "embedding"))
+    ? `drag the token-table dot (lower right of ${base.name}'s embedding) onto this stack's header`
+    : `drag ${base.name}'s output dot onto this stack's header`;
 }
 
 function notesOf(s: Stack, seq: SeqInfo, seqs: Map<string, SeqInfo>): NotesInfo | undefined {
@@ -449,7 +460,7 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
     const wiredIn = g.edges.some((e) => e.kind === "input" && e.to.stack === s.id);
     if (!cellsOf.length) issues.push({ where: s.id, msg: "the stack is empty", level: "warning" });
     else if (!wiredIn && first && first.type !== "embedding" && first.type !== "latent_init")
-      issues.push({ where: s.id, msg: "nothing starts this stack's stream: add an embedding or learned queries first, or wire an input onto its header" });
+      issues.push({ where: s.id, msg: `nothing starts this stack's stream: ${howToStart(g, s)}` });
     const used = cellsOf.some((c) => c.type === "lm_head") || g.edges.some((e) => e.from.stack === s.id && e.kind !== "skip");
     if (cellsOf.length && !used) issues.push({ where: s.id, msg: "its output is not used: no LM head, and no wire leaves it", level: "warning" });
   }

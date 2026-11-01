@@ -256,7 +256,7 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
   if (cross && src?.notes) issues.push("the source hands over ready notes: read them with a memory read on self-attention");
   if (!cross && cell.memory && !notes) issues.push("memory read has no notes: drag a wire from a notes stack (one that ends in a kv_out cell)");
   if (notes && mla) issues.push("a notebook read needs plain (non-MLA) attention");
-  if (notes && (notes.kvHeads !== g || notes.headDim !== dh)) issues.push(`notes are ${notes.kvHeads} × ${notes.headDim} but this read uses ${g} × ${dh} key/value heads`);
+  if (notes && (notes.kvHeads !== g || notes.headDim !== dh)) issues.push(`notes are ${notes.kvHeads} × ${notes.headDim} but this read uses ${g} × ${dh} key/value heads: drag the wire onto it again to match them`);
 
   const dSrc = cross ? src?.width ?? d : d;
   const Psrc = cross ? src?.P ?? 0 : P;

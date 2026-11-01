@@ -21,7 +21,7 @@ npm run typecheck
 npm run mcp       # the MCP server on stdio (agents start it themselves; see docs/agent-spec.md)
 ```
 
-Browser end-to-end test (58 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
+Browser end-to-end test (66 checks: presets, drag and drop, wires, loops, undo / redo, inspector, estimate tabs,
 GPU and token presets, resizing, wire details, tabs and comparison, save / open / export, the unsaved-changes
 mark). With the app running, open it and paste into the DevTools console:
 
@@ -35,6 +35,11 @@ frame's edge, and passes at 1440 × 900 and 1920 × 1080. It saves `designs/e2e_
 
 ## Use
 
+- **Stacks.** Add a main block with **+ Stack** in the top bar: a decoder, an encoder, a page writer (it starts from
+  the decoder's token table by itself), notes (slots per page; they read a page writer's pages, and attach to one
+  added later) or fixed latents. For a notebook model from "Blank: one layer": + Stack → Pages, + Stack → Notes, drag
+  the Pages output dot onto the Notes cross-attention, drop a Notebook read between two decoder rows, then drag the
+  Notes output dot onto it (the read takes on the notes' key/value shape).
 - **Frame of slots.** Each stack is a column; each row is a layer; each row holds sublayer slots that run left to
   right. Drag a layer from the palette into a **+** slot (same row) or between rows (a new row). Drag a slot or a
   row handle **⋮⋮** to move it; drop it on the palette to remove it. Click a palette item to add it to the

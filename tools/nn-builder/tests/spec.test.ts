@@ -149,7 +149,8 @@ describe("validation an agent can trust", () => {
 
   test("a stack that nothing starts is an error", () => {
     const g = E.addStack(buildPreset("blank"), "pages");
-    expect(validateDesign(g).errors.some((e) => /nothing starts/.test(e.message))).toBe(true);
+    const cut = { ...g, edges: g.edges.filter((e) => e.kind !== "input") };
+    expect(validateDesign(cut).errors.some((e) => /nothing starts/.test(e.message))).toBe(true);
   });
 
   test("a stack whose output goes nowhere is a warning", () => {
