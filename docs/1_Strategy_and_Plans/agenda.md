@@ -20,6 +20,15 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-04 — E33n, E33 on the LSA testbed (natural long text, AWS H100, ≤ $2,000).** The Latent Sparse Attention
+  paper's protocol scaled down: FineWeb-Edu 4k trunk, then a 16k decay on LongDocs-lite (its Common Pile long-document
+  recipe), evaluated by held-out long-document loss by position (4k–128k), its 13 RULER tasks and its 8 short
+  benchmarks. Four arms at 30M / 100M (300M if the gate holds) non-embedding parameters: the window control, the
+  dense ceiling, E33 with the full note read, and **E33n: each query reads only its 64 best notes** (LSA's selection
+  applied to compressed notes). Data built (FineWeb-Edu 6B GPT-2 tokens; LongDocs-lite 1.5B); AWS scripts in
+  `infra/aws/`; on-demand H100 capacity in us-east-1 was not available at 22:00 UTC (launch retrying).
+  Spec [E33n](../experiments_specs/ahead/E33n_lsa_testbed_topk_notes.md) · plan
+  [E33n_plan](../experiments_specs/ahead/E33n_plan.md).
 - **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
   ladder failed its pass mark.**
   - The frozen reader can take a whole 512-token span through one optimised key/value entry: 99.98 % of tokens,

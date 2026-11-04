@@ -451,7 +451,9 @@ class LatentMemoryWriter(nn.Module):
             kk = apply_rope(kk, cos_s, sin_s)
         slot_side = slot_side_w.repeat_interleave(K * m, dim=1)
         self._last_k_bar = kk
-        self.last_diag = self._diagnostics(w, mask, geo)
+        # diagnostics only outside training: they force four host syncs per forward (E33n speed, 2026-11-04);
+        # nothing reads them during training
+        self.last_diag = {} if self.training else self._diagnostics(w, mask, geo)
         return {
             "k": kk, "v": vv, "slot_doc": slot_doc, "slot_side": slot_side, "slot_pos": slot_pos,
             "window_pick": pick,
