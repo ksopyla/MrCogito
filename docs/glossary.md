@@ -76,6 +76,7 @@ never bother to use the notebook.**
 | **σ (sigma)** | how many standard errors away from zero a difference is | higher = more certain it is real | under 2 = noise. Over 10 = definitely real (but possibly tiny). |
 | **efficiency multiplier** | how much more training dense needs to reach a model's result: dense's tokens to pass ÷ the model's tokens to pass on a task, or the dense tokens needed to reach the model's final loss. MAI-Thinking-1 calls it Efficiency Gain. Proposed 2026-10-30. | higher | 1× = no saving; 2× = dense needs twice the data; below 1× = dense is cheaper. |
 | **rate–distortion curve (notebook)** | an exam's score when each page may be read through only its first 1, 2, 4 … 32 notes | higher at fewer notes | shows how many notes an answer really needs; a flat curve at few notes means the notes are not ordered by importance. Proposed 2026-10-30. |
+| **note budget curve** | an exam's score when each question may read only its top 16, 64, 256 … notes (by read score) | higher at smaller budgets | shows how selective a reader can be per task; single-fact lookup usually survives tiny budgets, many-key and counting tasks do not. Proposed 2026-11-04. |
 
 **Real and tiny are different things.** A difference can be 25σ and still be worth nothing. Always
 report both: is it real, and is it big enough to matter.
@@ -146,7 +147,8 @@ meaningless without knowing which slice it came from.
 | **CogitoProbe** | four local synthetic families (`bits`, `bind`, `arith`, `props`) with Hub *names* `ksopyla/cogito-probe-*`. Not on the Hub until approved. Length ladder 1k→32k; `fixed` vs `scaled`. |
 | **subexpr / match / eval** | arith tasks: packed internal-node values (primary); Dyck-3 closer index (stack); root scalar (calculator shortcut — not a success metric). |
 | **ordered notes / nested dropout** | training trick from Next-Concept Modeling (arXiv 2610.14162): during training a page is sometimes read through only its first k notes, so the first notes learn to hold the gist and later ones add detail — like a progressive JPEG that is already a blurry picture after its first bytes. |
-| **coarse-to-fine notebook** | the 2026-10-30 proposed bet: ordered notes first, then notes placed by a learned boundary router (H-Net style: more notes where the facts are, fewer on filler), then residual levels (each level writes what the coarser ones missed). One writer for every compression rate. |
+| **coarse-to-fine notebook** | the 2026-10-30 proposed bet: ordered notes first, then notes placed by a learned boundary router (H-Net style: more notes where the facts are, fewer on filler), then (since 4 Nov) a clustered note index. One writer for every compression rate, read coarse-then-fine. |
+| **clustered note index** | step 3 of the coarse-to-fine notebook (4 Nov), after Latent Sparse Attention (arXiv 2610.42147): finished notes are grouped by content into buckets of about eight; a question first scores one centre per bucket, then reads only the notes of the best buckets plus the recent raw text — like checking a library's subject index before pulling books off the shelf. |
 
 ---
 
