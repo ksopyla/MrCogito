@@ -28,10 +28,19 @@ Every Cartesia-post and MAI number below must be re-checked against the primary 
 
 ## Brief
 
-- **All three move the heavy work onto a shorter, coarser sequence** — H-Net runs its deep network on learned
-  chunks, NCM generates coarse codes first, LatentMoE runs experts in a 4× narrower latent. This is outside
-  evidence for the vision's direction. None reaches our ratios (H-Net's deepest level sees about one position per
-  9 bytes ≈ 2 tokens; we write one note per 6 tokens and aim for 16–128) or our use (reading a long book).
+- **All four move the heavy work onto a shorter, coarser representation.**
+  - H-Net runs its deep network on learned chunks.
+  - NCM generates coarse codes first.
+  - LatentMoE runs experts in a 4× narrower latent.
+  - LSA searches content clusters before it reads keys.
+
+  This is outside evidence for the vision's direction. None reaches our ratios: H-Net's deepest level sees about
+  one position per 9 bytes ≈ 2 tokens, while we write one note per 6 tokens and aim for 16–128. LSA keeps every
+  key. None of them targets our use, which is reading and reasoning over a long book through compressed notes.
+- **"Next-concept modeling" is now a published name** (Stanford, arXiv 2610.14162) for something different from
+  ours. Their "concepts" are the coarse levels of a code used to *generate* text fast; ours are notes used to *read
+  and reason*. Any MrCogito paper must cite it and state the difference. The two are complementary: theirs is a
+  candidate for our decoder (the crystallisation step).
 - **The strongest lesson for our notebook comes from H-Net's ablations:** at equal compression, **fixed-width
   pooling clearly loses to learned boundaries** (0.780 vs 0.755 bits per byte, lower is better), while **how a
   chunk is squeezed does not matter** (keeping one vector, mean, max and cross-attention are on par) — the
@@ -42,11 +51,6 @@ Every Cartesia-post and MAI number below must be re-checked against the primary 
   names and objects change. Its "down" step is plain averaging over fixed regions, and the whole hierarchy is
   ~5× *larger* than the token ids — only the coarse levels compress. Nested dropout (train with only the first
   levels sometimes) is the reusable trick.
-- **Capability testing:** report an **efficiency multiplier** against dense (LatentMoE gives the primary
-  definition: invert the baseline's fitted scaling curve); require a ranking to hold at **two sizes** before
-  parking or crowning; add a **frontier-shaped dense control**; add a **global-constraint exam** (Sudoku-like,
-  where a refining model beat left-to-right 86 % vs 1 % in NCM); make **out-of-distribution and surface-noise
-  robustness** a headline column (H-Net's 2-stage model was twice as robust to noisy text as BPE).
 - **Latent Sparse Attention (added 4 Nov) is the closest of the four to the vision's 10M-token goal.** It groups
   each 512-token block's keys into content clusters of ~8 (no new parameters: the attention's own keys, Ward
   merging), and a question scores one centre per cluster, then reads only the best clusters' keys plus a window.
@@ -63,10 +67,27 @@ Every Cartesia-post and MAI number below must be re-checked against the primary 
      trained coarse writer; residual levels move to Watch.
 
   Two cheap H-Net levers ride along: start the raw-text shortcut at zero, and try a recurrent writer.
-- **Capability testing additions from LSA:**
-  - a **sparse-attention ceiling past 32k** (our dense ceiling stops at 32k);
+- **Far context only pays on long documents.** In LSA's native run every attention variant sits within 0.004
+  of the others at 4k. Only a 12B-token phase on 128k-token books, papers and code repositories separates them:
+  a window-only model ends 0.069 nats worse than full attention. This matches our own law that the objective must
+  pay for the channel; E22 measured ~0.05 nats of far-context value on ordinary text. Long natural documents are a
+  data lever we have not used: the text checks train on short stories plus generated facts.
+- **Capability testing — eleven changes (§3):**
+  - an **efficiency multiplier** against dense (LatentMoE gives the primary definition: invert the baseline's
+    fitted scaling curve);
+  - a ranking must hold at **two sizes** before an architecture is parked or crowned;
+  - a **frontier-shaped control**: a few local layers per global layer, run both with full attention and with
+    LSA as the **ceiling past 32k**, where our dense ceiling stops;
+  - a **global-constraint exam** (Sudoku-like: a refining model beat left-to-right 86 % vs 1 % in NCM);
+  - **out-of-distribution and surface-noise robustness** as a headline column (H-Net's 2-stage model was about
+    2× as robust to noisy text as BPE);
+  - the notebook's **rate–distortion** and **note budget** curves;
+  - score against the number of sequential steps;
+  - a gist-vs-fact swap probe;
   - **answer-not-in-the-book** questions;
-  - **revised facts** whose old value is still quoted elsewhere (from LSA's PaperTrail benchmark).
+  - **revised facts** whose old value is still quoted elsewhere (LSA's PaperTrail).
+- **First moves need no training (§6):** the note budget curve, the rate–distortion curve, LSA-style clustering
+  of an existing checkpoint's notes, and the efficiency multiplier all run on checkpoints we already have.
 
 ## 1. Per source
 
@@ -109,6 +130,9 @@ Every Cartesia-post and MAI number below must be re-checked against the primary 
   separately trained tokenizer ("end-to-end training could benefit"); ≤ 725M; artifacts at coarse transitions.
   Both of their future-work items are what H-Net provides.
 - **Verdict: Adapt** (nested dropout for ordered notes; constraint exam). **Watch** as a future parallel decoder.
+- **For publication.** The name overlaps with our framing; cite it and draw the line. NCM's concepts are *generated*
+  coarse codes over ≤ 1,024 tokens. Ours are *written and read* notes over 16k–1M-token books, used for lookup and
+  multi-step reasoning.
 
 ### 1.2 H-Net (arXiv 2507.07955) — paper + code; Cartesia's scaled version (blog, excerpts)
 
@@ -276,6 +300,14 @@ end to end with notes-only questions, keeping H-Net's stabilisers for any learne
 names. Our notes must hold facts. Coarse notes can route; fine notes must store — the E32 split, now with
 outside evidence.
 
+**Data: far context needs long documents (added 4 Nov).** LSA's native comparison is flat at 4k (all within 0.004)
+and opens only in a 128k-token decay on long books, papers, code repositories and agent traces (window-only
+1.154 vs full attention 1.085). H-Net and NCM never test far context. Our E22 law ("the objective must pay for the
+channel") and the text checks' question-density finding (1 question per document switched no notebook on; 8 switched
+every one on) say the same: the read learns only what the data pays for. Generated facts pay for lookup; long
+natural documents would pay for general far-context use. LSA's LongDocs recipe (public sources, equal share per
+domain, extra weight at the longest lengths) is a template.
+
 **Our own evidence agrees with the robustness results:** on unseen sentence shapes dense lookup falls from
 37–48 % to 0–1 % while the notebook model keeps 64 % (one run, text checks finding 6); H-Net's 2-stage model
 is ~2× more robust to noisy text than BPE.
@@ -419,6 +451,28 @@ is ~2× more robust to noisy text than BPE.
   - Clustering *compressed notes* (each already ~6 tokens of content) is untested: buckets of 8 notes summarise
     ~50 tokens, where LSA's block ablation shows coarser units start hiding single facts.
   - The two-path summary read is code only, with no reported result.
+
+## 6. Recommended order of work
+
+Cheapest and most informative first. Nothing here is launched; each step that trains goes through
+`experiment-design` first.
+
+| # | what | needs training? | answers |
+|---|---|---|---|
+| 1 | **Note budget curve (T11)** and **rate–distortion curve (T6)** on the newest text-notebook checkpoints (E33 / E31c): top-k notes per question, and the first / a random k notes per page | no | how selective a reader can be per task; whether a sparse or clustered read can work at all |
+| 2 | **Clustered read on existing notes** (step 3 read-only): Ward-cluster a checkpoint's notes per closed block, read the best buckets plus the raw window, and compare with the dense note read at 16k–128k, plus the oracle check that the answer's note is in the expanded set | no | whether LSA-style clustering of *compressed* notes keeps lookup; how much of step 3 a training run must add |
+| 3 | **Efficiency multiplier (T1)** from dense checkpoints already on the text board | no | how much cheaper each architecture is, not just pass / fail |
+| 4 | **Exam additions**: answer-not-in-the-book (T9), revised facts with stale echoes (T10), surface-noise variant and robustness column (T5), gist-vs-fact swap probe (T8) | no (generator and scorer work) | gaps none of today's exams cover |
+| 5 | **Ordered notes (bet step 1)**: two 30M seeds on the text notebook | yes, ~2–3 h per run on 4 × 3090 | the rate–distortion curve from one writer; a free coarse index |
+| 6 | **Frontier-shaped control (T3)**, full-attention arm (≤ 32k) | yes | the real competitor at equal size |
+| 7 | **Clustered note index trained (bet step 3)**, if step 2 above shows a gap the gradient could close | yes | O(log N) note reads at 128k–1M |
+| 8 | **Content-placed notes (bet step 2)** with H-Net's router, smoothing and ratio loss; zero-start raw shortcut and recurrent writer as separate flags | yes, M–L effort | facts get notes, filler does not |
+| 9 | **N-LSA ceiling arm (T3)** and the **global-constraint exam (T4)**, both calibrating first | yes | a reference past 32k; the first exam where concepts could beat dense |
+| 10 | **Two-size confirmation (T2)** of any park or champion decision these produce | yes | whether the ranking survives scale |
+
+**Still to read at the source.** The Cartesia *From Tokens to Bytes* posts and the MAI-Thinking-1 report. Both
+hosts (www.cartesia.ai, microsoft.ai) are blocked from the cloud session; allowing them in the environment's network
+settings, or adding the PDF to the repository, would let the secondary numbers in §1.2 and §1.3 be checked.
 
 ## Sources
 
