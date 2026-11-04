@@ -9,7 +9,7 @@ source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH"
 export HF_HOME="$MC_DISK/hf" UV_CACHE_DIR="$MC_DISK/uv-cache" TMPDIR="$MC_DISK/tmp"
 mkdir -p "$HF_HOME" "$UV_CACHE_DIR" "$TMPDIR"
-JOB="$1"
+JOB="$1"; shift   # the job script; any further words are its arguments (e.g. "jobs/e33n_run.sh e33n s30")
 PRICE="${MC_PRICE_PER_HOUR:-6.88}"
 TOKEN=$(curl -s -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 md() { curl -s -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/meta-data/$1"; }
@@ -38,7 +38,7 @@ if grep -q '^# mc: no-sync' "$JOB"; then
 else
   uv sync --frozen 2>&1 | tail -3 || uv sync 2>&1 | tail -3
 fi
-bash "$JOB"
+bash "$JOB" "$@"
 RC=$?
 echo "[node_run] $(date -u) job exit code $RC"
 kill "$HB" 2>/dev/null

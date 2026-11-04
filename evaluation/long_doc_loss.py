@@ -82,10 +82,15 @@ def main() -> None:
             except ValueError:
                 per_len[src] = {"rows": 0}
                 continue
-            per_len[src] = {"notes_on": score(model, ds, S, a.rows, a.device)}
-            if a.notes_off and has_notes:
-                model._message_override = "none"
-                per_len[src]["notes_off"] = score(model, ds, S, a.rows, a.device)
+            try:
+                per_len[src] = {"notes_on": score(model, ds, S, a.rows, a.device)}
+                if a.notes_off and has_notes:
+                    model._message_override = "none"
+                    per_len[src]["notes_off"] = score(model, ds, S, a.rows, a.device)
+            except (torch.cuda.OutOfMemoryError, RuntimeError) as e:  # a length past what fits: record it, go on
+                per_len[src] = {"error": f"{type(e).__name__}: {str(e)[:300]}"}
+                torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            finally:
                 model._message_override = "real"
             print(S, src, json.dumps({k: v.get("loss") if isinstance(v, dict) else v
                                       for k, v in per_len[src].items()}), flush=True)

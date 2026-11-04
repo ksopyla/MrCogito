@@ -52,15 +52,29 @@ sudo -u ubuntu bash -lc '
 '
 EOF
 
-ID=$(aws ec2 run-instances --image-id "$AMI" --instance-type "$TYPE" --key-name "$MC_KEY" \
-  --security-group-ids "$SG" --iam-instance-profile "Name=${MC_ROLE}" \
-  --instance-initiated-shutdown-behavior terminate \
-  --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=${MC_ROOT_GB},VolumeType=gp3,DeleteOnTermination=true}" \
-  --metadata-options "HttpTokens=required,HttpEndpoint=enabled" \
-  --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${NAME}},{Key=Project,Value=${MC_PROJECT_TAG}},{Key=MaxHours,Value=${MAX_HOURS}}]" \
-  --user-data "file://${USERDATA}" --query 'Instances[0].InstanceId' --output text)
+case "$TYPE" in p5.4xlarge) PRICE=6.88 ;; c7i.4xlarge) PRICE=0.714 ;; c7i.2xlarge) PRICE=0.357 ;; *) PRICE=$MC_PRICE_PER_HOUR ;; esac
+# H100 capacity differs per zone: try each zone's default subnet in turn (MC_ZONES overrides the order)
+ZONES="${MC_ZONES:-us-east-1a us-east-1b us-east-1c us-east-1d us-east-1f us-east-1e}"
+ID=""
+for AZ in $ZONES; do
+  SUBNET=$(aws ec2 describe-subnets --filters Name=default-for-az,Values=true "Name=availability-zone,Values=$AZ" \
+    --query 'Subnets[0].SubnetId' --output text)
+  [ "$SUBNET" = "None" ] && continue
+  if ID=$(aws ec2 run-instances --image-id "$AMI" --instance-type "$TYPE" --key-name "$MC_KEY" \
+    --subnet-id "$SUBNET" --security-group-ids "$SG" --iam-instance-profile "Name=${MC_ROLE}" \
+    --instance-initiated-shutdown-behavior terminate \
+    --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=${MC_ROOT_GB},VolumeType=gp3,DeleteOnTermination=true}" \
+    --metadata-options "HttpTokens=required,HttpEndpoint=enabled" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${NAME}},{Key=Project,Value=${MC_PROJECT_TAG}},{Key=MaxHours,Value=${MAX_HOURS}}]" \
+    --user-data "file://${USERDATA}" --query 'Instances[0].InstanceId' --output text 2>/tmp/mc_launch_err); then
+    break
+  fi
+  echo "no $TYPE in $AZ: $(grep -oE '\(([A-Za-z]+)\)' /tmp/mc_launch_err | head -1)"
+  ID=""
+done
 rm -f "$USERDATA"
-echo "launched $NAME = $ID ($TYPE, max ${MAX_HOURS} h ≈ \$$(python3 -c "print(f'{$MAX_HOURS*$MC_PRICE_PER_HOUR:.0f}')") cap)"
+[ -z "$ID" ] && { echo "no capacity in any zone; try again later"; exit 2; }
+echo "launched $NAME = $ID ($TYPE in $AZ, max ${MAX_HOURS} h ≈ \$$(python3 -c "print(f'{$MAX_HOURS*$PRICE:.0f}')") cap)"
 aws ec2 wait instance-running --instance-ids "$ID"
 IP=$(aws ec2 describe-instances --instance-ids "$ID" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 echo "running at $IP — ssh -i $MC_KEY_FILE ubuntu@$IP ; tmux attach -t job"

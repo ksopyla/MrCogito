@@ -151,10 +151,40 @@ class PerceiverARLMEval(HFLM):
             return out
 
     def _model_generate(self, context, max_length: int, stop, **generation_kwargs):
-        raise NotImplementedError(
-            "perceiver_ar has no HF-compatible generate() yet; use loglikelihood tasks "
-            "(the E18 main run's KV-cache decode will enable generate_until tasks)."
-        )
+        """Greedy decoding without a cache (E33n: RULER through `generate_until`).
+
+        Every new token re-runs the whole row: O(new × forward), fine for RULER's short answers at ≤ 64k. Left padding
+        from the harness becomes document id −1 (padding keys are never read; positions restart at the first real
+        token). Only the last position is projected through the output layer (`hidden_states`), so a 64k row never
+        materialises [S, V] logits. Stops when every row has produced one of `stop` or the length is reached."""
+        ids = context
+        attn = generation_kwargs.get("attention_mask")
+        doc = None if attn is None else torch.where(attn.bool(), torch.zeros_like(attn), torch.full_like(attn, -1))
+        cfg = self.model.config
+        W = self.model.lm_head.weight
+        B, L0 = ids.shape
+        done = torch.zeros(B, dtype=torch.bool, device=ids.device)
+        stops = [s for s in (stop or []) if s]
+        with torch.no_grad():
+            for _ in range(max(0, int(max_length) - L0)):
+                h = self.model.hidden_states(ids, doc_ids=doc)[:, -1]
+                logits = F.linear(h, W).float()
+                if cfg.logit_softcap:
+                    logits = cfg.logit_softcap * torch.tanh(logits / cfg.logit_softcap)
+                nxt = logits.argmax(-1)
+                nxt = torch.where(done, torch.full_like(nxt, self.tokenizer.eos_token_id), nxt)
+                ids = torch.cat([ids, nxt[:, None]], 1)
+                if doc is not None:
+                    doc = torch.cat([doc, torch.zeros_like(doc[:, :1])], 1)
+                done |= nxt == self.tokenizer.eos_token_id
+                if stops:
+                    for b in range(B):
+                        if not done[b]:
+                            text = self.tokenizer.decode(ids[b, L0:].tolist())
+                            done[b] = any(s in text for s in stops)
+                if bool(done.all()):
+                    break
+        return ids
 
 
 __all__ = [
