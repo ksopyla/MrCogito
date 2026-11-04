@@ -178,14 +178,27 @@ def main():
         is_causal_ar,
         tokenizer.eos_token_id,
     )
-    train_ds, test_ds = load_pretraining_datasets(
-        tokenizer,
-        data_args,
-        training_args,
-        append_eos_token_id,
-    )
+    if getattr(data_args, "bin_manifest", None):
+        # E33n: fixed rows straight from GPT-2 token shards (no HF datasets, no packing pass): each item already
+        # carries input_ids [S] and doc_ids [S], the PackedDataset contract the causal-LM collator reads
+        from data.bin_token_dataset import load_bin_manifest
+
+        train_ds, test_ds, bin_meta = load_bin_manifest(data_args.bin_manifest)
+        if int(bin_meta["seq_len"]) != int(data_args.max_seq_length):
+            raise ValueError(f"bin_manifest seq_len {bin_meta['seq_len']} != max_seq_length {data_args.max_seq_length}")
+        if is_main_process():
+            logger.info("Token-shard rows: train=%s eval=%s seq=%s rule=%s per source %s", f"{len(train_ds):,}",
+                        f"{len(test_ds):,}" if test_ds is not None else "none", bin_meta["seq_len"],
+                        bin_meta.get("rule", "stream"), train_ds.rows_per_source)
+    else:
+        train_ds, test_ds = load_pretraining_datasets(
+            tokenizer,
+            data_args,
+            training_args,
+            append_eos_token_id,
+        )
     train_lengths = None
-    if data_args.batch_packing_mode in ("length_group", "pack"):
+    if data_args.batch_packing_mode in ("length_group", "pack") and not getattr(data_args, "bin_manifest", None):
         length_cache_num_proc = os.environ.get("LENGTH_CACHE_NUM_PROC")
         with training_args.main_process_first(desc="preparing sequence-length cache"):
             train_lengths = compute_or_load_interleaved_lengths(
@@ -217,7 +230,7 @@ def main():
     )
     freeze_all_but(model, getattr(model_args, "train_only_params", ""))
 
-    if data_args.batch_packing_mode == "pack":
+    if data_args.batch_packing_mode == "pack" and not getattr(data_args, "bin_manifest", None):
         import inspect
 
         if "doc_ids" not in inspect.signature(model.forward).parameters:

@@ -237,6 +237,9 @@ class PerceiverARConfig(PretrainedConfig):
         lm_read: str = "exclusive",       # E31c — "exclusive" (only tokens after QUERY read earlier sides) |
                                           #   "closed" (every token reads the windows closed at or before it: text)
         slot_pos_ref: int = 2048,         # "scaled" slot positions: max query–slot distance (order kept, length-invariant)
+        lm_read_topk: int = 0,            # E33n — top-k note read (LSA-style selection on notes): each query and head reads
+                                          #   only its k best visible notes (by its own score, chosen without gradient)
+                                          #   plus the raw window; 0 = every visible note (E31c / E33)
         lm_note_age: str = "none",        # E33d — page distance on the note read, outside the key: "none" | "log" | "linear"
                                           #   (score −= s_h · f((pos(t) − slot_pos) / unit), s_h per head, starts at 0)
         lm_note_age_unit: int = 0,        # E33d — tokens per distance unit; 0 = lm_stride (one page step)
@@ -373,6 +376,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.message_override = str(message_override)
         self.swp_slot_pos = str(swp_slot_pos)
         self.slot_pos_ref = int(slot_pos_ref)
+        self.lm_read_topk = int(lm_read_topk or 0)
         self.lm_note_age = str(lm_note_age or "none")
         self.lm_note_age_unit = int(lm_note_age_unit or 0)
         self.lm_note_rank_margin = float(lm_note_rank_margin)
@@ -534,6 +538,14 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("lm_note_age measures from each note's read position: it needs lm_slot_pos='reader'")
         if getattr(self, "lm_note_age", "none") != "none" and self.message_write != "latent_memory":
             raise ValueError("lm_note_age (E33d) is a latent-memory read option; it needs message_write='latent_memory'")
+        if self.lm_read_topk < 0:
+            raise ValueError("lm_read_topk must be >= 0 (0 = read every visible note)")
+        if self.lm_read_topk > 0:
+            if self.message_write != "latent_memory" or self.lm_read != "closed":
+                raise ValueError("lm_read_topk (E33n) selects among notes: it needs message_write='latent_memory' and "
+                                 "lm_read='closed'")
+            if self.lm_note_age != "none" or int(getattr(self, "lm_count_heads", 0) or 0) > 0:
+                raise ValueError("lm_read_topk is not combined with lm_note_age / lm_count_heads (scores would differ)")
         if self.message_raw_window < 0:
             raise ValueError("message_raw_window must be >= 0 (0 = full causal raw keys)")
         if self.message_raw_window and self.message_slots_inplace:
@@ -982,6 +994,7 @@ class MessageCtx:
     read_rule: str = "exclusive"  # E31c "closed": any token reads slots of its document whose window closed ≤ it
     slot_close: Optional[torch.Tensor] = None  # [B,nb] int64 — last token a slot's window wrote from (closed rule)
     slot_nope: bool = False       # E31c "reader": slot keys are un-rotated and met by the un-rotated query
+    note_topk: int = 0            # E33n: each query and head reads only its k best visible notes (0 = all)
     capture: Optional[dict] = None  # exam probe: {"q_pos": [B,P]} → appends each read's attention mass per note,
                                     # [B,P,nb] summed over heads, to capture["mass"] (`capture_note_mass`)
     # text multi-hop (2026-10-17), training only: per-round read targets [B,T,4] (answer position, round, first and
@@ -1747,6 +1760,40 @@ def read_target_loss(q, k, k_bar, ctx: MessageCtx, key_valid, *, q_slot=None) ->
         ctx.read_losses.append(-torch.log(share.clamp(min=1e-6)))
 
 
+@torch.no_grad()
+def note_topk_threshold(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: MessageCtx, key_valid, *, k: int,
+                        chunk: int = 1024) -> torch.Tensor:
+    """E33n: per (row, head, query) the k-th best score among the notes this query may see, [B,h,S] fp32.
+
+    The score is the read's own slot logit, q_slot·k̄ / √dh (the logit `attend_message` gives the notes). A query that
+    sees at most k notes gets −inf (it keeps all of them). Computed in query chunks without gradient: the choice of
+    the k notes carries no gradient, the logits of the kept notes keep theirs (LSA's native selection, arXiv
+    2610.42147, applied to compressed notes instead of raw keys). One KV head is shared by its query heads, so each
+    query head ranks the notes by its own score."""
+    B, S, h, dh = q_slot.shape
+    C, g = k_bar.shape[1], k_bar.shape[2]
+    rep = h // g
+    dev = q_slot.device
+    sc = dh ** -0.5
+    pred = make_message_mask_pred(S, ctx, key_valid)
+    bi = torch.arange(B, device=dev)[:, None, None]
+    kv = S + torch.arange(C, device=dev)[None, None, :]
+    kb = k_bar.float()
+    kk = min(int(k), C)
+    out = torch.full((B, h, S), float("-inf"), dtype=torch.float32, device=dev)
+    for s0 in range(0, S, chunk):
+        s1 = min(S, s0 + chunk)
+        qi = torch.arange(s0, s1, device=dev)[None, :, None]
+        vis = pred(bi, None, qi, kv)                                                     # [B,s,C]
+        qq = q_slot[:, s0:s1].float().reshape(B, s1 - s0, g, rep, dh)
+        lg = torch.einsum("bsgrd,bcgd->bgrsc", qq, kb).reshape(B, h, s1 - s0, C) * sc
+        lg = lg.masked_fill(~vis[:, None], float("-inf"))
+        t = lg.topk(kk, dim=-1).values[..., -1]                                          # [B,h,s]
+        many = (vis.sum(-1) > kk)[:, None]                                               # [B,1,s]
+        out[:, :, s0:s1] = torch.where(many, t, torch.full_like(t, float("-inf")))
+    return out
+
+
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,
                    q_slot=None, note_bias=None):
     """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh].
@@ -1768,6 +1815,19 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
         capture_note_mass(q, k, k_bar, ctx, key_valid, q_slot=q_slot)
     if getattr(ctx, "read_losses", None) is not None and ctx.read_targets is not None:
         read_target_loss(q, k, k_bar, ctx, key_valid, q_slot=q_slot)
+    # E33n top-k note read: a note below its query's and head's k-th best score is cut from the softmax
+    topk = int(getattr(ctx, "note_topk", 0) or 0)
+    tau = None
+    if topk > 0 and k_bar.shape[1] > topk and ctx.override == "real":
+        if note_bias is not None:
+            raise NotImplementedError("lm_read_topk is not combined with note_bias (E33d / E33e)")
+        qs0 = q_slot if q_slot is not None else q
+        # small slack below the k-th score: the kernel's bf16-input scores and these fp32 ones differ by ~1e-6
+        tau = note_topk_threshold(qs0, k_bar, ctx, key_valid, k=topk) - 1e-3
+        if backend != "flex":  # SDPA (CPU / MPS tests): the keep mask on the slot columns, [B,h,S,C]
+            rep_t = h // g
+            lg = torch.einsum("bshd,bchd->bhsc", qs0.float(), k_bar.float().repeat_interleave(rep_t, dim=2)) * dh ** -0.5
+            topk_keep = lg >= tau[..., None]
     scale = None
     if q_slot is not None:
         q = torch.cat([q, q_slot.to(q.dtype)], dim=-1)
@@ -1824,6 +1884,11 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
                     age = torch.clamp(pos_f[b, q_idx] - spos_f[b, c], min=0.0) / unit_f
                     f = torch.log1p(age) if log_f else age
                     return torch.where(kv_idx >= S, score - sl[b, hh, q_idx] * f, score)
+        elif tau is not None:
+            tau_c = tau.contiguous()
+
+            def score_mod(score, b, hh, q_idx, kv_idx):
+                return torch.where((kv_idx >= S) & (score < tau_c[b, hh, q_idx]), -float("inf"), score)
 
         if kernel_options is not None and torch.cuda.is_available():
             out = _get_flex()(qt, kt, vt, block_mask=bm, enable_gqa=(g != h), scale=scale, score_mod=score_mod,
@@ -1836,6 +1901,9 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
         kt = kt.repeat_interleave(rep, dim=1)
         vt = vt.repeat_interleave(rep, dim=1)
     mask = dense_message_mask(S, ctx, key_valid, q.device)
+    if tau is not None:  # E33n on SDPA: cut the notes below each query's and head's k-th score
+        mask = mask.expand(B, h, S, mask.shape[-1]).clone()
+        mask[..., S:] &= topk_keep
     if note_bias is not None:  # E33d: float mask, per head, the bias on the slot columns only
         slope, pos_t, spos, unit, mode = note_bias
         fm = torch.zeros(mask.shape, dtype=torch.float32, device=q.device).masked_fill(~mask, float("-inf"))
@@ -2943,7 +3011,8 @@ class PerceiverARLM(PreTrainedModel):
                           anchor=anchor, anchor_mode=anchor_mode, window_valid=window_valid,
                           raw_window=int(getattr(cfg, "message_raw_window", 0) or 0),
                           read_rule="closed" if closed else "exclusive", slot_close=slot_close,
-                          slot_nope=write == "latent_memory" and str(getattr(cfg, "lm_slot_pos", "read")) == "reader")
+                          slot_nope=write == "latent_memory" and str(getattr(cfg, "lm_slot_pos", "read")) == "reader",
+                          note_topk=int(getattr(cfg, "lm_read_topk", 0) or 0) if closed else 0)
         self._last_message_ctx = ctx
         return ctx
 

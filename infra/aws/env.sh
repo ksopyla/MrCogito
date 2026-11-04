@@ -1,0 +1,20 @@
+# Shared settings for the AWS training scripts (sourced, not run).
+# Research account, us-east-1: on-demand H100 quota 64 vCPU = four p5.4xlarge (1 × H100 each) at once.
+export AWS_PROFILE="${AWS_PROFILE:-m21-research}"
+export AWS_REGION="${AWS_REGION:-us-east-1}"
+export AWS_PAGER=""
+
+export MC_PROJECT_TAG="mrcogito"
+export MC_INSTANCE_TYPE="${MC_INSTANCE_TYPE:-p5.4xlarge}"
+export MC_PRICE_PER_HOUR="${MC_PRICE_PER_HOUR:-6.88}"     # on-demand Linux us-east-1, checked 2026-11-04
+export MC_BUDGET_USD="${MC_BUDGET_USD:-2000}"             # author's cap for the E33n goal (2026-11-04)
+export MC_ROLE="mrcogito-train-node"
+export MC_SG="mrcogito-train-ssh"
+export MC_KEY="mrcogito-train"
+export MC_KEY_FILE="${HOME}/.ssh/mrcogito-train.pem"
+export MC_REPO_URL="https://github.com/ksopyla/MrCogito.git"
+export MC_ROOT_GB="${MC_ROOT_GB:-200}"
+
+_acct() { aws sts get-caller-identity --query Account --output text; }
+export MC_ACCOUNT="${MC_ACCOUNT:-$(_acct)}"
+export MC_BUCKET="${MC_BUCKET:-mrcogito-train-${MC_ACCOUNT}}"

@@ -401,6 +401,8 @@ class ModelArguments:
     lm_note_age_init: str = field(default="", metadata={"help": "E33g: per-head starting strengths of the note-order "
                                                                  "term, comma-separated (one value = every head)."})
     lm_note_age_learn: bool = field(default=True, metadata={"help": "E33g: False keeps the note-order strengths fixed."})
+    lm_read_topk: int = field(default=0, metadata={"help": "E33n: each query and head reads only its k best visible "
+                                                           "notes (chosen without gradient) plus the raw window; 0 = all."})
     message_loop_name_lens: float = field(default=0.0, metadata={"help": "E33q: weight of round r naming hop r's "
                                                                          "output word through the LM head (training)."})
     message_loop_feedback: str = field(default="none", metadata={"help": "E33q: none | soft (re-embed round r's "
@@ -512,6 +514,14 @@ class DataTrainingArguments:
         metadata={
             "help": "Optional JSON object that overrides source weights at runtime, "
             'e.g. \'{"finepdfs_100BT":0.6,"fineweb_edu":0.2,"finemath_3plus":0.2}\'.'
+        },
+    )
+    bin_manifest: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "E33n: JSON manifest of GPT-2 token shards (.bin, modded-nanogpt format) read by "
+            "data/bin_token_dataset.py — fixed rows of max_seq_length with per-token doc_ids ('stream' rows for the "
+            "FineWeb-Edu trunk, 'doc' rows for the LongDocs decay). Replaces every other data route when set."
         },
     )
     pretokenized_manifest: Optional[str] = field(
