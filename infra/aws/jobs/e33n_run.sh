@@ -8,7 +8,7 @@
 set -uo pipefail
 ARM="$1"; SIZE="$2"; LR="${3:-}"; TT="${4:-}"
 source /etc/mrcogito.env
-export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1
+export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_MODE=offline WANDB_PROJECT=MrCogito EXPERIMENT_ID=E33n
 D="$MC_DISK/data"
 RUN="e33n_${SIZE}_${ARM}${LR:+_lr$LR}${TT:+_tok$TT}"

@@ -9,7 +9,7 @@
 # AFTER_EACH (optional): a command run after every item (stage0.sh copies results to S3 with it).
 set -uo pipefail
 DATA="$1"; OUT="$2"; shift 2
-export PATH="$HOME/.local/bin:$PATH" WANDB_MODE=offline TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1
+export PATH="$HOME/.local/bin:$PATH" WANDB_MODE=offline TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_DIR="${WANDB_DIR:-$OUT/wandb}"
 mkdir -p "$OUT" "$WANDB_DIR"
 [ -f "$OUT/summary.tsv" ] || printf 'size\tarm\tphase\tmicro\tstatus\ttok_per_s\tpeak_mem_gb\tseconds\n' > "$OUT/summary.tsv"

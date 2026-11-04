@@ -7,7 +7,7 @@
 # Result: OUT/lr_summary.tsv (peak lr, final train loss, final validation loss).
 set -uo pipefail
 D="$1"; OUT="$2"; SIZE="$3"; TOKENS="$4"; MICRO="$5"; shift 5
-export PATH="$HOME/.local/bin:$PATH" WANDB_MODE=offline TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1
+export PATH="$HOME/.local/bin:$PATH" WANDB_MODE=offline TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_DIR="$OUT/wandb"
 mkdir -p "$OUT" "$WANDB_DIR"
 ROWS=$(uv run python -c "import sys; sys.path.insert(0, '.'); from scripts.run_e33n import SIZES; print(SIZES['$SIZE']['rows'])")
