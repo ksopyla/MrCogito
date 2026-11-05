@@ -13,6 +13,8 @@
 # E33N_MICRO_TRUNK / E33N_MICRO_DECAY: micro-batch per GPU (default: the driver's, sized for an 80 GB H100).
 # E33N_CORE_BATCH (default 32) / E33N_RULER_BATCH (default 8): eval batch; on a 24 GB GPU use core 8 (batch 32 ×
 #   2,048 tokens × the 50k vocabulary needs a 12 GB log-softmax).
+# E33N_CORE_BACKEND (default sdpa): the core benchmarks' many short, ragged batches made flex attention's compiler
+#   fail on Polonez (ptxas segfault, then "PassManager::run failed", 2026-11-05); SDPA needs no compile.
 # E33N_RULER_LENGTHS (default 4096,8192,16384,32768): RULER lengths, 100 documents each (uncached decoding: the cost
 #   grows with length; 4096 is LSA's headline column).
 # A rerun skips the phases that already have a final model.
@@ -108,6 +110,6 @@ uv run --with wonderwords python evaluation/run_lsa_suite.py --checkpoint "$DECA
 sync_up
 log "eval core"
 uv run python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" --suite core \
-  --limit 0 --batch "${E33N_CORE_BATCH:-32}" --out "$R/eval_core.json" > "$R/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
+  --limit 0 --batch "${E33N_CORE_BATCH:-32}" --backend "${E33N_CORE_BACKEND:-sdpa}" --out "$R/eval_core.json" > "$R/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
 log "done"
 finish
