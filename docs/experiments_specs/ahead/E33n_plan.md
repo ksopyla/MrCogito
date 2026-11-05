@@ -34,6 +34,32 @@ Spec: [E33n_lsa_testbed_topk_notes.md](E33n_lsa_testbed_topk_notes.md). Branch `
   `decay_type 1-sqrt`, `min_lr_ratio 0.1`, weights from the trunk's `final`, fresh optimizer.
 - peak learning rate 1e-3 (s30), scaled by 1/width above (6.4e-4, 4.5e-4) unless stage 0 says otherwise.
 
+## Stage 0, measured on the home servers (2026-11-04 23:20 – 2026-11-05 00:33 UTC, no AWS cost)
+No on-demand H100 was free in us-east-1 from 2026-11-04 21:50 UTC (every zone, retried every 2–3 min), and the
+account has H100 quota in no other region and none in SageMaker. Stage 0 therefore ran on Odra / Polonez RTX 3090s
+(`infra/aws/jobs/home_gpu_check.sh`, `lr_check.sh`); the H100 stage 0 (`stage0.sh`) still runs when capacity appears.
+
+Speed (tokens/s, one RTX 3090, flex attention, bf16) and peak memory:
+
+| size | rows | window | dense | e33 (full read) | e33n (top-64) |
+|---|---|---|---|---|---|
+| s30 | 4k, micro 4 | 29.1k, 21.2 GB | 38.4k, 16.6 GB | 28.1k, 21.2 GB | 26.2k, 21.2 GB |
+| s30 | 16k, micro 1 | — | 25.5k, 8.6 GB | — | 16.6k, 13.2 GB |
+| m100 | 4k, micro 2 | — | 22.1k, 13.3 GB | — | 14.6k, 16.6 GB |
+
+- The top-k read compiles and trains under flex attention (first GPU run). Its cost is ~7 % over the full read; the
+  writer (run by the window arm too) is the larger cost: ~25 % at s30 against the dense arm.
+- Peak learning rate (window control, s30, 0.1B tokens, warmup 5 %, 1−sqrt decay over the last 20 %), validation
+  loss: 5e-4 → 4.731, **1e-3 → 4.408**, 2e-3 → 4.516, 4e-3 → 5.124. The default 1e-3 stays; m100 / l300 keep
+  their width-scaled peaks (6.4e-4, 4.5e-4).
+- Data on the home servers is rebuilt from the public sources by `data_build.sh` and is identical to the S3 copy
+  (same documents kept and tokens per source, same shard hash).
+
+## Stage 1 location (2026-11-05 00:33 UTC)
+30M runs on the home servers, free: Odra GPU 0 / 1 / 2 = window / e33 / e33n, Polonez GPU 0 = dense in ≤ 5.5 h bursts
+with 20 min cooldowns (`E33N_BURST_H`, heat rule). Expected ~13–19 h per arm on a 3090. AWS stays for stage 2
+(100M) and stage 3 (300M). Runs: `~/dev/MrCogito-lsa/Cache/e33n_runs/e33n_s30_<arm>/` on each server.
+
 ## Risks seen while building
 - The output layer is untied and full width: with a 50k vocabulary it is a large share of compute at s30.
 - No whole-model compile; host syncs in the notebook path (mask building, writer diagnostics) cost throughput —
