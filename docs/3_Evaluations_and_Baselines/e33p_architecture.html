@@ -1,0 +1,982 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E33p Exact Read</title>
+<style>
+:root{
+ --bg:#f4f3ef;--card:#fcfcfb;--card2:#efeee9;--line:#dcdad3;--fg:#0b0b0b;--fg2:#52514e;--muted:#7c7b76;
+ --win:#2a78d6;--open:#eb6834;--note:#1baf7a;--none:#e4e3dd;--blank:#f8f7f4;
+ --win-soft:#dce9f9;--open-soft:#fbe3d8;--note-soft:#d9f2e8;
+ --new:#b8501f;--new-bg:#fbe9df;--same:#1a7f37;--same-bg:#e6f4ea;--base:#4a3aa7;--base-bg:#ecebf8;--off:#8f8e88;--off-bg:#f1f0ec;
+ --accent:#2a78d6;--info-bg:#eaf2fc;--warn:#9a6200;--warn-bg:#fff4e0;--good:#1a7f37;--good-bg:#e6f4ea;--bad:#c62828;--bad-bg:#fdecea;
+ color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --win:#3987e5;--open:#d95926;--note:#199e70;--none:#2d2d2a;--blank:#161615;
+ --win-soft:#17304f;--open-soft:#3d2316;--note-soft:#123329;
+ --new:#f08a5d;--new-bg:#3a2418;--same:#5cc47a;--same-bg:#16301f;--base:#9085e9;--base-bg:#25213f;--off:#77766f;--off-bg:#1e1e1c;
+ --accent:#5b9cea;--info-bg:#15263b;--warn:#e0a040;--warn-bg:#35280f;--good:#5cc47a;--good-bg:#16301f;--bad:#ef6b6b;--bad-bg:#3a1a1a;
+ color-scheme:dark;}}
+:root[data-theme="dark"]{
+ --bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --win:#3987e5;--open:#d95926;--note:#199e70;--none:#2d2d2a;--blank:#161615;
+ --win-soft:#17304f;--open-soft:#3d2316;--note-soft:#123329;
+ --new:#f08a5d;--new-bg:#3a2418;--same:#5cc47a;--same-bg:#16301f;--base:#9085e9;--base-bg:#25213f;--off:#77766f;--off-bg:#1e1e1c;
+ --accent:#5b9cea;--info-bg:#15263b;--warn:#e0a040;--warn-bg:#35280f;--good:#5cc47a;--good-bg:#16301f;--bad:#ef6b6b;--bad-bg:#3a1a1a;
+ color-scheme:dark;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+main{max-width:1100px;margin:0 auto;padding-inline:16px;padding-block:26px 80px}
+h1{font-size:29px;line-height:1.15;margin:4px 0 8px;text-wrap:balance}
+h2{font-size:21px;margin:46px 0 8px;padding-top:14px;border-top:1px solid var(--line);text-wrap:balance}
+h3{font-size:16px;margin:18px 0 6px}
+p{max-width:78ch}
+.kicker{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.sub{color:var(--fg2);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.callout{border-radius:10px;padding:12px 16px;margin:14px 0;border-left:4px solid var(--accent);background:var(--info-bg)}
+.callout.warn{border-color:var(--warn);background:var(--warn-bg)}
+.callout p{margin:4px 0}
+.callout ul,.callout ol{margin:6px 0 2px;padding-left:20px}
+.toc{display:flex;flex-wrap:wrap;gap:6px 8px;margin:12px 0 4px;font-size:13.5px}
+.toc a{text-decoration:none;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:2px 10px;color:var(--fg2)}
+.toc a:hover{border-color:var(--accent);color:var(--accent)}
+.controls{position:sticky;top:0;z-index:5;background:var(--bg);padding:9px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-right:1px solid var(--line);background:var(--card);color:var(--fg2);padding:6px 11px;font:inherit;font-size:13.5px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--accent);color:#fff}
+.lab{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:650}
+.armline{font-size:14px;color:var(--fg2);margin:8px 0 0;max-width:none}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;padding:6px 14px;font:inherit;font-size:14px;cursor:pointer}
+.btn.ghost{background:var(--card);color:var(--accent)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+svg{display:block;width:100%;height:auto}
+svg text{fill:var(--fg);font-family:inherit}
+svg .m{fill:var(--muted)} svg .s{fill:var(--fg2)} svg .inv{fill:var(--bg)} svg .dk{fill:#111}
+.svgwrap{overflow-x:auto}
+.svgwrap svg{min-width:700px}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.8px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:650}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.hl td{background:var(--info-bg)}
+code{font:13px ui-monospace,Menlo,monospace;background:var(--card2);padding:1px 5px;border-radius:4px}
+.eq{font:14px/1.7 ui-monospace,Menlo,monospace;background:var(--card2);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:pre}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--fg2);margin:6px 0 2px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.p-new{background:var(--new-bg);color:var(--new)} .p-same{background:var(--same-bg);color:var(--same)}
+.p-base{background:var(--base-bg);color:var(--base)} .p-off{background:var(--off-bg);color:var(--off)}
+.p-mine{background:var(--warn-bg);color:var(--warn)} .p-q{background:var(--bad-bg);color:var(--bad)} .p-spec{background:var(--card2);color:var(--fg2)}
+.det{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px 18px;margin-top:6px}
+.det>div{min-width:0;font-size:14px}
+.det .q{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:650;margin-bottom:2px}
+.det .mono{font:12.8px/1.55 ui-monospace,Menlo,monospace;word-break:break-word}
+.det p{margin:3px 0}
+.stepbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
+.stepbar .where{font-size:13px;color:var(--muted)}
+ol.steps{margin:6px 0;padding-left:22px}
+ol.steps li{margin:4px 0;max-width:80ch}
+.why{border-left:3px solid var(--open);padding:4px 12px;margin:10px 0;background:var(--open-soft);border-radius:0 8px 8px 0}
+.chk select,.chk input{font:inherit;font-size:13.5px;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:4px 6px;width:100%}
+#chk{min-width:820px}
+#chk td:first-child{color:var(--muted);font-variant-numeric:tabular-nums}
+textarea{width:100%;min-height:170px;font:12.8px/1.5 ui-monospace,Menlo,monospace;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:10px}
+.note{color:var(--fg2);font-size:13.8px}
+.small{font-size:13px;color:var(--muted)}
+[hidden]{display:none!important}
+/* svg classes */
+.f-win{fill:var(--win)} .f-open{fill:var(--open)} .f-note{fill:var(--note)} .f-none{fill:var(--none)} .f-blank{fill:var(--blank)}
+.f-self{fill:var(--fg)} .f-card{fill:var(--card)} .f-card2{fill:var(--card2)} .f-muted{fill:var(--muted)}
+.f-winsoft{fill:var(--win-soft)} .f-opensoft{fill:var(--open-soft)} .f-notesoft{fill:var(--note-soft)}
+.s-line{stroke:var(--line)} .s-fg{stroke:var(--fg)} .s-muted{stroke:var(--muted)} .s-open{stroke:var(--open)} .s-note{stroke:var(--note)} .s-win{stroke:var(--win)} .s-accent{stroke:var(--accent)}
+.nd rect.box{stroke-width:1.5}
+.nd.t-new rect.box{fill:var(--new-bg);stroke:var(--new)} .nd.t-same rect.box{fill:var(--same-bg);stroke:var(--same)}
+.nd.t-base rect.box{fill:var(--base-bg);stroke:var(--base)} .nd.t-off rect.box{fill:var(--off-bg);stroke:var(--off);stroke-dasharray:5 4}
+.nd.t-off text{fill:var(--off)}
+.nd.on rect.box{stroke:var(--accent);stroke-width:3.5;stroke-dasharray:none}
+.nd{cursor:pointer}
+.nd .tg{font-size:11px;font-weight:700}
+.nd.t-new .tg{fill:var(--new)} .nd.t-same .tg{fill:var(--same)} .nd.t-base .tg{fill:var(--base)}
+.arw{stroke:var(--muted);stroke-width:1.6;fill:none}
+.arwl{font-size:11.5px}
+.mrow{cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+<div class="kicker">MrCogito · E33p · alignment page · 2026-11-05 · draft design, no code written yet</div>
+<h1>E33p: the notes point, the reading layer opens the exact tokens behind them</h1>
+<p class="sub">E33n showed that at 30M nearly all the value of distant text on long documents is <b>exact copying</b>, and a note (a summary of about 8 tokens) cannot return an exact token. E33p keeps the same notebook but changes its job: the notes become an <b>index</b>. Each block of queries uses the notes to find where to look, then reads the raw, uncompressed tokens behind its best notes. This page lays out the design as I understood it from the spec, so you can check it before any code is written.</p>
+
+<div class="callout">
+<p><b>What I need from you:</b> go through the checklist in <a href="#check">section 8</a> (agree / change / question), press “Collect answers”, and paste the text back into the chat.</p>
+<p>The spec leaves a few details open. Where I had to choose, the page says <span class="pill p-mine">my reading</span>; <a href="#choices">section 7</a> lists all nine, and each is also a checklist row.</p>
+</div>
+
+<nav class="toc">
+ <a href="#why">1 · why (E33n evidence)</a><a href="#pipeline">2 · the pipeline, step by step</a><a href="#toy">3 · a worked toy example</a>
+ <a href="#mask">4 · who may attend to what</a><a href="#budget">5 · information budget</a><a href="#bars">6 · pass marks and plan</a>
+ <a href="#choices">7 · where I had to choose</a><a href="#check">8 · alignment checklist</a>
+</nav>
+
+<div class="controls" id="armctl">
+ <span class="lab">Arm</span>
+ <span class="seg" id="armseg"></span>
+</div>
+<p class="armline" id="armline"></p>
+
+<!-- ======================================================= -->
+<h2 id="why">1 · Why: what E33n found (16k-token documents, positions 2k–16k)</h2>
+<p>Four 30M models, identical except for the reading layer, were scored on held-out long documents (64 rows per source, 156 documents). The number is the loss: the model's average surprise at the true next token, in nats. <b>Lower is better.</b></p>
+<div class="card"><div class="svgwrap"><svg id="evid" viewBox="0 0 1060 214" role="img" aria-label="Loss of the four E33n models on a number line, with the success bar and the stop line for E33p"></svg></div>
+<p class="note"><b>G</b> is the far-context gap: how much better the dense ceiling (which may re-read every earlier token) is than the window control (which sees only the last 512 tokens). G = 0.1335 nats per token, so the dense model gives the right token about 14 % more probability on average. An arm's <b>share of G</b> is how much of that gap it closes; higher is better. Both notebook models closed about 6 %, far below E33n's own 15 % stop line.</p></div>
+
+<h3>Where G sits: the copy split</h3>
+<p>Each scored token is a <b>far copy</b> if the same 4 tokens (3 of context and itself) appeared earlier only beyond the 512-token window, a <b>near copy</b> if they appeared inside it, and <b>no copy</b> otherwise.</p>
+<div class="tw card"><table>
+ <tr><th>tokens</th><th class="num">share of tokens</th><th class="num">window − dense<br>(nats per token)</th><th class="num">part of G</th><th class="num">closed by the notes<br>(E33 / E33n)</th></tr>
+ <tr><td><b>far copy</b></td><td class="num">9.6 %</td><td class="num">+1.361</td><td class="num"><b>97 %</b></td><td class="num">1.6 % / 1.8 %</td></tr>
+ <tr><td>near copy</td><td class="num">17.7 %</td><td class="num">−0.009</td><td class="num">−1 %</td><td class="num">—</td></tr>
+ <tr><td>no copy</td><td class="num">72.7 %</td><td class="num">+0.007</td><td class="num">4 %</td><td class="num">94 % / 106 %</td></tr>
+</table>
+<p class="note">Read it as: one token in ten is a far copy, and on those the dense model is 1.361 nats better, meaning it gives the right token about 3.9 times more probability. That is almost all of G. The notes close only 2 % of it. On tokens that are not copies the gap is tiny (0.007 nats), and there the notes close nearly all of it. So the 30M model can copy (the dense model does), and the notebook helps with gist; what the notebook cannot do is hand back an exact earlier token. With a stricter 8-token test the picture holds: 5.2 % of tokens, 63 % of G, notes close about 1 %.</p></div>
+
+<!-- ======================================================= -->
+<h2 id="pipeline">2 · The pipeline, step by step</h2>
+<p>From token ids to the loss, at the claim scale (30M, E33n's shape: width 576, two local layers, the reading layer, five more local layers, the loop of 4 rounds; one 16,384-token row). Click a box or step with the buttons. The arm switch at the top re-tags every step, so each difference is one click away.</p>
+<div class="legend">
+ <span><i style="background:var(--new-bg);border:1.5px solid var(--new)"></i>new in E33p</span>
+ <span><i style="background:var(--same-bg);border:1.5px solid var(--same)"></i>unchanged from E33</span>
+ <span><i style="background:var(--base-bg);border:1.5px solid var(--base)"></i>this baseline's own version of the step</span>
+ <span><i style="background:var(--off-bg);border:1.5px dashed var(--off)"></i>not in this arm</span>
+</div>
+<div class="card"><div class="svgwrap"><svg id="pipe" viewBox="0 0 1060 420" role="img" aria-label="E33p pipeline: tokens, local layers, page writer, the reading layer loop with address keys, note choice, opened tokens and one softmax, then the coda and the loss">
+ <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-muted"/></marker></defs>
+ <rect x="18" y="140" width="1024" height="160" rx="14" class="f-blank s-line" stroke-width="1.5" stroke-dasharray="6 5"/>
+ <text x="34" y="160" class="m" font-size="12">THE LOOP · reading layer + one local layer · 4 rounds, the same weights</text>
+ <path class="arw" d="M178 62 H196" marker-end="url(#ah)"/>
+ <path class="arw" d="M358 62 H376" marker-end="url(#ah)"/>
+ <path class="arw" d="M275 24 V12 H860 V24" marker-end="url(#ah)"/><text x="420" y="9" class="m arwl">token table → page writer (it reads each page on its own, both ways)</text>
+ <path class="arw" d="M455 100 V118 H108 V172" marker-end="url(#ah)"/>
+ <path class="arw" d="M770 100 V128 H273 V172" marker-end="url(#ah)"/><text x="520" y="124" class="m arwl">assignment A[t,n]</text>
+ <path class="arw" d="M960 100 V150 H768 V172" marker-end="url(#ah)"/><text x="840" y="146" class="m arwl">note values</text>
+ <path class="arw" d="M186 209 H194" marker-end="url(#ah)"/><path class="arw" d="M351 209 H359" marker-end="url(#ah)"/><path class="arw" d="M516 209 H524" marker-end="url(#ah)"/><path class="arw" d="M681 209 H689" marker-end="url(#ah)"/><path class="arw" d="M846 209 H854" marker-end="url(#ah)"/>
+ <path class="arw" d="M933 246 V272 H108 V250" marker-end="url(#ah)"/><text x="440" y="289" class="m arwl">next round (the reading layer runs again with what it found)</text>
+ <path class="arw" d="M645 300 V326" marker-end="url(#ah)"/><text x="655" y="318" class="m arwl">after round 4</text>
+ <path class="arw" d="M762 364 H784" marker-end="url(#ah)"/>
+ <g id="pnodes"></g>
+</svg></div>
+<div id="pdet"></div>
+<div class="stepbar"><button class="btn ghost" id="pprev">← previous</button><button class="btn ghost" id="pnext">next →</button><span class="where" id="pwhere"></span></div>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="toy">3 · A worked toy example: why the exact token becomes copyable</h2>
+<p>A 31-token text whose last token, “ship”, should be followed by “Kestrel”, a word last seen 25 tokens earlier, beyond the window. The model has to copy it. <b>Toy scale:</b> pages of 8 tokens (real 256), 2 notes per page (real 32), a window of 8 tokens (real 512), a block of the last 4 queries (real 128), 2 notes chosen per block (real 64), and pages-open opens 1 page (real 2). No page overlap here; section 4 shows it. <span class="pill p-mine">illustrative</span> All scores and weights are hand-built to show the mechanism. They are not measured.</p>
+<div class="card">
+ <div class="row"><span class="lab">Query in the block</span><span class="seg" id="toyq"></span><span class="small">the block's 4 queries share one choice of notes; each skips its own window</span></div>
+ <div class="legend" style="margin-top:8px">
+  <span><i class="lg" style="background:var(--fg)"></i>the query</span>
+  <span><i style="background:var(--win-soft);border:1.5px solid var(--win)"></i>raw token it sees (window; all earlier tokens for the dense ceiling)</span>
+  <span><i style="background:var(--open)"></i>opened token (exact, behind a chosen note or page)</span>
+  <span><i style="background:var(--note-soft);border:1.5px solid var(--note)"></i>note read as gist</span>
+  <span><i style="background:var(--note)"></i>note chosen (notes-open: its members are opened; E33n: kept)</span>
+ </div>
+ <div class="svgwrap"><svg id="toysvg" viewBox="0 0 1060 290" role="img" aria-label="Toy row of 31 tokens in three closed pages and an open page, with the notes of each page"></svg></div>
+ <ol class="steps" id="toysteps"></ol>
+ <h3 style="margin-top:14px">What query 30 (“ship”) reads, in this arm</h3>
+ <div class="legend">
+  <span><i style="background:var(--win)"></i>raw token (window, or any earlier token for the dense ceiling)</span>
+  <span><i style="background:var(--note)"></i>note (gist)</span>
+  <span><i style="background:var(--open)"></i>opened token</span>
+ </div>
+ <div class="svgwrap"><svg id="toyread" viewBox="0 0 1060 240" role="img" aria-label="Attention weights of query 30 over its entries"></svg></div>
+ <div class="why" id="toywhy"></div>
+ <div class="tw"><table id="toycmp"></table></div>
+ <p class="small">“Share of ‘Kestrel’ in what the read returns” counts the weight on the exact token plus, for a note, its weight times the part of the note that is “Kestrel”. For that part I assume a note's value is the assignment-weighted average of its tokens (note 1a: 22 % “Kestrel”). The real writer learns its own value, so this is an upper picture, not a measurement. The toy has only 30 earlier tokens, so the dense ceiling faces few distractors; at 16k it faces thousands.</p>
+</div>
+
+<!-- ======================================================= -->
+<h2 id="mask">4 · Who may attend to what</h2>
+<p>A toy row at the real proportions: 64 tokens, pages of 8 starting every 6 (so neighbours share 2 tokens, like 64 of 256), 2 notes per page, a window of 16 (two pages, like 512 = 2 × 256), blocks of 4 queries, 4 notes chosen per block (4 notes × ~4 tokens = 16 = the window, like 64 × 8 = 512), E33n keeps 4 notes per query, pages-open opens 2 pages. Each row is a query; columns are the raw tokens, then the notes. <b>Click a row</b> to read that query's view. <span class="pill p-mine">illustrative</span> The scores behind the choices are random with a mild preference for recent pages, because nearby text tends to resemble the current text.</p>
+<div class="card">
+ <div class="legend">
+  <span><i style="background:var(--fg)"></i>the query itself</span>
+  <span><i style="background:var(--win)"></i>raw token in view</span>
+  <span><i style="background:var(--open)"></i>opened token</span>
+  <span><i style="background:var(--open);outline:2px solid var(--fg);outline-offset:-3px"></i>opened once, though two chosen notes name it (overlapping pages)</span>
+  <span><i style="background:var(--note)"></i>note read as gist</span>
+  <span><i style="background:var(--note);outline:2px solid var(--open);outline-offset:-3px"></i>note chosen for opening (or a note of a chosen page)</span>
+  <span><i style="background:var(--none)"></i>closed but not read (E33n cut, or notes switched off)</span>
+  <span><i style="background:var(--blank);border:1px solid var(--line)"></i>not visible (future, or page not yet closed)</span>
+ </div>
+ <div class="svgwrap"><svg id="msvg" viewBox="0 0 800 600" role="img" aria-label="Attention mask matrix for a 64-token toy row"></svg></div>
+ <p id="mtext" class="note" style="max-width:none"></p>
+</div>
+<h3>The rules, in one table</h3>
+<div class="tw card"><table style="min-width:760px">
+ <tr><th>entry</th><th>query i may read it when</th><th>why it is safe</th><th>status</th></tr>
+ <tr><td>raw tokens (the window)</td><td>i − 511 ≤ j ≤ i, same document</td><td>causal by construction</td><td><span class="pill p-same">unchanged</span></td></tr>
+ <tr><td>notes as gist</td><td>the note's page has closed: its last token ≤ i; same document</td><td>the writer reads a page both ways, but every token of it is ≤ i</td><td><span class="pill p-same">unchanged</span> (E33's closed read; the key is now κ)</td></tr>
+ <tr><td>opened tokens</td><td>j &lt; i − 511, and a note that j is a member of (one per page holding j, so at most two) is in the chosen set of i's block</td><td>older than the window means every page holding j closed long ago (a page is 256 tokens, the window 512), so causality and “closed pages only” hold automatically</td><td><span class="pill p-new">new</span></td></tr>
+ <tr><td>duplicates</td><td>a token named by two chosen notes in two overlapping pages</td><td>the read is a mask over positions: one column per token, so it is opened once</td><td><span class="pill p-new">new</span></td></tr>
+ <tr><td>the choice</td><td>one set of 64 notes per block of 128 queries, from the notes its queries may see, made without gradient</td><td>uses only scores of visible notes</td><td><span class="pill p-new">new</span>, coarser than per query (a listed risk)</td></tr>
+ <tr><td>other documents</td><td>never (the 4k phase packs several documents per row)</td><td>same document test as E33</td><td><span class="pill p-same">unchanged</span></td></tr>
+</table>
+<p class="note">One consequence the spec does not address: a chosen note whose members all sit inside the query's window opens nothing, yet it used one of the 64 places. Recent notes are the likeliest to win votes, so this may waste a real part of the budget. The toy above shows it at query 27, and the matrix often shows it. It is checklist row 24.</p></div>
+
+<!-- ======================================================= -->
+<h2 id="budget">5 · Information budget along the path</h2>
+<h3>What one entry can hand back</h3>
+<div class="tw card"><table style="min-width:760px">
+ <tr><th>thing</th><th>size</th><th>what it can return</th></tr>
+ <tr><td>an exact next token</td><td>one of 50,257 pieces = log₂ 50,257 ≈ <b>15.6 bits</b></td><td>this is what a copy must deliver, per token</td></tr>
+ <tr><td>the far-copy gap</td><td>1.361 nats ≈ 2.0 bits per far-copy token</td><td>the dense model gives the right token about 3.9 times more probability on those 9.6 % of tokens</td></tr>
+ <tr><td>one note (gist entry)</td><td>one 64-number key and one 64-number value in the read (one key/value head of width 64), made from a 512-number writer state; stands for about 8 tokens</td><td>to give back all 8 tokens exactly it would need about 8 × 15.6 ≈ 125 bits plus their order, and the read takes its value as a whole: a query cannot pull “the token after <i>of the ship</i>” out of it. Measured: 1.6–1.8 % of the far-copy gap.</td></tr>
+ <tr><td>one address key κ (new)</td><td>one 64-number weighted average of about 8 raw keys</td><td>enough to say <i>where</i> to look; q·κ is the average of q·k over the note's tokens, so one sharp match is diluted by its neighbours</td></tr>
+ <tr><td>one opened token (new)</td><td>its own 64-number raw key and value, from its own state</td><td>its identity (15.6 bits) and, through the local layers, what came just before it: the same entries the 30M dense model uses to close all of G</td></tr>
+</table></div>
+
+<h3>Read budget per query: entries in the one softmax, for the last query of the row</h3>
+<p>Each panel is scaled to its own dense read (every earlier token). Hover a bar for the parts. The notes still grow with length; the spec leaves capping them (E33n's top-64) for later, and the last row shows what that would cost.</p>
+<div class="legend">
+ <span><i style="background:var(--win)"></i>raw tokens (window, or all earlier tokens for the dense ceiling)</span>
+ <span><i style="background:var(--note)"></i>notes (gist)</span>
+ <span><i style="background:var(--open)"></i>opened tokens (up to about 512)</span>
+</div>
+<div class="card"><div class="svgwrap"><svg id="bud" viewBox="0 0 1060 470" role="img" aria-label="Read budget per query at 16k and 128k for each arm"></svg></div>
+<details><summary class="small" style="cursor:pointer">the same numbers as a table</summary><div class="tw"><table id="budtab"></table></div></details>
+<p class="note">Counts at 16,384 tokens: 85 pages, 2,720 notes, 128 query blocks. At 131,072: 683 pages, 21,856 notes, 1,024 blocks. Averaged over every position of a 16k row, a query sees about 1,340 notes and the dense read about 8,190 tokens. “About 512 opened” is 64 notes × 256/32 tokens. The real count varies with how evenly the notes split their pages, and drops when members fall inside the window or are shared by two chosen notes.</p></div>
+
+<!-- ======================================================= -->
+<h2 id="bars">6 · Pass marks (set before running) and the plan</h2>
+<div class="tw card"><table style="min-width:760px">
+ <tr><th>mark</th><th>plain meaning</th><th>in numbers (16k, positions ≥ 2k unless said)</th></tr>
+ <tr><td><span class="pill p-new">success</span> S1</td><td>the exact read carries far context</td><td>notes-open closes ≥ 40 % of G: loss ≤ <b>2.561</b> (window 2.615, dense 2.481, E33n 2.606)</td></tr>
+ <tr><td><span class="pill p-new">success</span> S2</td><td>and it does so by copying</td><td>on far-copy tokens, closes ≥ 30 % of their 1.361-nat gap: ≥ 0.41 nats better than the window there (notes alone: 2 %)</td></tr>
+ <tr><td><span class="pill p-new">success</span> S3</td><td>no dilution with length</td><td>its share of G at 64k is at most 5 points below its share at 16k</td></tr>
+ <tr><td><span class="pill p-new">success</span> S4</td><td>no harm nearby</td><td>loss on positions &lt; 512 within 0.01 nats of the window control; RULER at 4k (a 13-task long-context test) not below the window control</td></tr>
+ <tr><td><span class="pill p-q">stop</span> K1</td><td>the idea fails</td><td>after the long-document phase both new arms close &lt; 15 % of G (loss above 2.595) → stop E33p</td></tr>
+ <tr><td><span class="pill p-q">stop</span> K2</td><td>too slow to be worth it</td><td>a notes-open training step runs below 60 % of the E33 arm's speed (below 16.0k tokens/s, E33 = 26.7k on one RTX 3090) after the stage-0 kernel work → fix the kernel before stage 1</td></tr>
+ <tr><td><span class="pill p-q">stop</span> K3</td><td>an unhealthy run</td><td>loss spikes above 0.5 that do not recover within 1k steps, or trunk loss more than 0.1 above the window control at 25 % of the run → stop that run and debug</td></tr>
+</table>
+<p class="note">S1 is the stricter of the first two. Far copies carry 97 % of G, so closing 40 % of G means closing roughly 37–41 % of the far-copy gap. S2 at its 30 % bar would be worth only about 29 % of G.</p></div>
+<div class="tw card"><table style="min-width:640px">
+ <tr><th>stage</th><th>what</th><th>where, cost</th></tr>
+ <tr><td>0</td><td>correctness tests: κ equals the assignment-weighted mean; membership and dedupe across overlapping pages; causality; with every note chosen, the opened read equals the eval-only “raw” read restricted to closed pages; gradient reaches A and the key projection, none through the choice. Then speed and memory at 4k and 16k (K2).</td><td>Mac + one 3090, free</td></tr>
+ <tr><td>1</td><td>notes-open and pages-open at 30M, E33n's protocol (1.5B tokens at 4k, then 0.2B at 16k with a decay), then E33n's evals plus two switches inside each model: notes off, opened tokens off. Gate: S1–S4, K1.</td><td>Odra + Polonez, about 20 RTX 3090 hours each, free</td></tr>
+ <tr><td>2</td><td>100M against new 100M controls, only if S1 and S2 hold and only with your approval</td><td>one AWS H100, within E33n's unspent ≤ $850</td></tr>
+</table></div>
+
+<!-- ======================================================= -->
+<h2 id="choices">7 · Where the spec was open and I had to choose</h2>
+<div class="callout warn"><ol>
+ <li><b>Which assignment A[t, n].</b> The writer has 8 heads and 2 rounds; each head has its own softmax over notes. I take the last round, averaged over the 8 heads (the code already averages heads this way for a note's position).</li>
+ <li><b>One choice per block for all 9 query heads.</b> There is one key/value head, so one opened set per block, scored with the 9 heads' votes added. The alternative is 9 sets per block.</li>
+ <li><b>κ and the choice are redone in every loop round.</b> The reading layer's raw keys change each round, so κ does too. The notes' values are written once.</li>
+ <li><b>Votes only from queries that may see the note.</b> Each query's softmax runs over the notes closed for it. A note that closes mid-block gets votes only from the later queries.</li>
+ <li><b>Notes whose members all sit inside the window still compete</b> for the 64 places, as written; they then open nothing. Should the choice skip them? (question)</li>
+ <li><b>“About 512 opened tokens” is an average, not a cap.</b> m = 64 notes is fixed; the token count varies. Should there be a hard cap for the kernel? (question)</li>
+ <li><b>Note size.</b> The spec calls a note “a 576-number average”. In the code a note enters the read as one 64-number key and one 64-number value (one key/value head of width 64), made from a 512-number writer state. The page uses those numbers.</li>
+ <li><b>Pages-open differs only in what it opens.</b> It keeps the gist notes keyed by κ, scores pages with the same votes, and opens each shared token once where its two pages overlap.</li>
+ <li><b>The writer's own note key goes unused in the tied arms.</b> κ keys both the choice and the gist entries; the spec's “writer” option for the note key would use the writer's key for both.</li>
+</ol></div>
+
+<!-- ======================================================= -->
+<h2 id="check">8 · Alignment checklist</h2>
+<p>One row per design decision. Pick a verdict, add a note where you want a change or have a question, then press <b>Collect answers</b>. The text appears below and is copied to the clipboard if the browser allows it. Your picks are kept in this browser if you reload.</p>
+<div class="card chk"><div class="tw"><table id="chk"><tr><th>#</th><th>decision</th><th>source</th><th style="width:120px">verdict</th><th style="width:28%">note</th></tr></table></div>
+ <div class="row" style="margin-top:12px"><button class="btn" id="collect">Collect answers</button><button class="btn ghost" id="restagree">Mark unanswered rows “agree”</button><span class="small" id="copied"></span></div>
+ <textarea id="out" readonly placeholder="Your answers appear here as plain text to paste into the chat."></textarea>
+</div>
+<p class="small">Sources: the spec <code>docs/experiments_specs/ahead/E33p_note_indexed_exact_read.md</code>; the evidence <code>docs/2_Experiments_Registry/run_reports/e33n_s30_lsa_testbed_20261105.md</code>; shapes from <code>nn/perceiver_ar_lm.py</code>, <code>nn/latent_memory.py</code> and <code>scripts/run_e33n.py</code> (s30).</p>
+</main>
+
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, txt, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (txt !== undefined && txt !== null) e.textContent = txt;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function tip(node, text) { el("title", {}, text, node); return node; }
+function fmt(x, d) { return Number(x).toLocaleString("en-US", { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 }); }
+function pct(x, d) { return (100 * x).toFixed(d === undefined ? 0 : d) + " %"; }
+
+/* ------------------------------------------------------------------ arms */
+const ARMS = [
+  { id: "open", name: "notes-open (main)", line: "<b>Main arm.</b> The notes are the index: each block of 128 queries opens the exact tokens behind its 64 best notes, and every note still joins the read as gist." },
+  { id: "pages", name: "pages-open", line: "<b>Second arm, coarser.</b> Each block opens its 2 best pages whole (2 × 256 = 512 tokens). It tells whether grouping by note, finer than a page, matters." },
+  { id: "e33", name: "E33 full note read", line: "<b>Baseline (from E33n, not retrained).</b> The last 512 raw tokens plus every note of every closed page, notes keyed by the writer. Closed 5.5 % of G." },
+  { id: "e33n", name: "E33n top-64 note read", line: "<b>Baseline (from E33n, not retrained).</b> The last 512 raw tokens plus each query's 64 best notes, chosen without gradient. Closed 6.1 % of G." },
+  { id: "window", name: "window control", line: "<b>Control (from E33n, not retrained).</b> Only the last 512 raw tokens; the writer is built but its notes are switched off. G is measured from it." },
+  { id: "dense", name: "dense ceiling", line: "<b>Ceiling (from E33n, not retrained).</b> The reading layer may read every earlier raw token exactly. At 30M it closes all of G, so the capacity to copy exists." }
+];
+let ARM = "open";
+const listeners = [];
+function setArm(a) {
+  ARM = a;
+  document.querySelectorAll("#armseg button").forEach(b => b.classList.toggle("on", b.dataset.v === a));
+  document.getElementById("armline").innerHTML = ARMS.find(x => x.id === a).line;
+  listeners.forEach(f => f());
+}
+(function buildArmSeg() {
+  const seg = document.getElementById("armseg");
+  ARMS.forEach(a => {
+    const b = document.createElement("button");
+    b.dataset.v = a.id; b.textContent = a.name;
+    b.addEventListener("click", () => setArm(a.id));
+    seg.appendChild(b);
+  });
+})();
+
+/* ------------------------------------------------------------------ 1 · evidence chart */
+function drawEvidence() {
+  const svg = document.getElementById("evid"); svg.innerHTML = "";
+  const lo = 2.47, hi = 2.63, x0 = 60, x1 = 1020;
+  const X = v => x0 + (v - lo) / (hi - lo) * (x1 - x0);
+  const y = 104;
+  el("line", { x1: x0, x2: x1, y1: y, y2: y, class: "s-muted", "stroke-width": 1 }, null, svg);
+  for (let k = 0; k <= 8; k++) {
+    const v = lo + 0.02 * k;
+    el("line", { x1: X(v), x2: X(v), y1: y, y2: y + 5, class: "s-muted" }, null, svg);
+    el("text", { x: X(v), y: y + 19, "text-anchor": "middle", "font-size": 11.5, class: "m" }, v.toFixed(2), svg);
+  }
+  el("text", { x: x0, y: y + 40, "font-size": 12, class: "m" }, "← lower loss is better (nats per token)", svg);
+  // G bracket
+  const gy = 30;
+  el("path", { d: `M${X(2.4811)} ${gy + 8} V${gy} H${X(2.6146)} V${gy + 8}`, class: "s-fg", fill: "none", "stroke-width": 1.2 }, null, svg);
+  el("text", { x: (X(2.4811) + X(2.6146)) / 2, y: gy - 7, "text-anchor": "middle", "font-size": 12.5 }, "G = 0.1335: what the dense ceiling gains over the window control", svg);
+  // E33p pass marks (lines), labels short enough not to cross each other
+  const marks = [
+    { v: 2.5612, t: "E33p success bar ≤ 2.561", cls: "s-open", ty: 60 },
+    { v: 2.5946, t: "E33p stop line 2.595", cls: "s-muted", ty: 78 }
+  ];
+  marks.forEach(m => {
+    el("line", { x1: X(m.v), x2: X(m.v), y1: m.ty - 12, y2: y + 6, class: m.cls, "stroke-width": 2, "stroke-dasharray": "5 4" }, null, svg);
+    el("text", { x: X(m.v) - 6, y: m.ty, "text-anchor": "end", "font-size": 12, class: "s" }, m.t, svg);
+  });
+  // the four E33n models; labels stacked below, right-aligned at their dots (the three on the right sit close together)
+  const pts = [
+    { v: 2.4811, t: "dense ceiling 2.481", cls: "f-win", ly: y + 62, anchor: "start" },
+    { v: 2.6064, t: "E33n, top-64 notes: 2.606 (6.1 % of G)", cls: "f-note", ly: y + 62, anchor: "end" },
+    { v: 2.6073, t: "E33, all notes: 2.607 (5.5 % of G)", cls: "f-note", ly: y + 80, anchor: "end" },
+    { v: 2.6146, t: "window control 2.615", cls: "f-self", ly: y + 98, anchor: "end" }
+  ];
+  pts.forEach(p => {
+    el("line", { x1: X(p.v), x2: X(p.v), y1: y + 7, y2: p.ly - 11, class: "s-line" }, null, svg);
+    const c = el("circle", { cx: X(p.v), cy: y, r: 6, class: p.cls, stroke: "var(--card)", "stroke-width": 2 }, null, svg);
+    tip(c, p.t);
+    el("text", { x: X(p.v) + (p.anchor === "start" ? -2 : 2), y: p.ly, "text-anchor": p.anchor, "font-size": 12.5 }, p.t, svg);
+  });
+}
+
+/* ------------------------------------------------------------------ 2 · pipeline */
+const STAGES = [
+  { t: "1 · Tokens", sub: "one 16k document",
+    what: "One row of the long-document phase: 16,384 word pieces from one document, in GPT-2's vocabulary of 50,257 pieces. In the earlier 4k phase several documents are packed per row; no read ever crosses from one document into another.",
+    shape: "ids [B, 16384] (B rows; one per micro-batch at 16k, accumulated to 0.26M tokens per step)",
+    keeps: "Everything: this is the text itself." },
+  { t: "2 · Token table", sub: "256 numbers → 576",
+    what: "Each piece looks up a 256-number row of the token table, which is then lifted to the model width of 576. Plain input: no n-gram tables, no value embeddings. The page writer reads the same table.",
+    shape: "[B, 16384, 256] → x0 [B, 16384, 576]",
+    keeps: "Which piece sits at each position; no context yet." },
+  { t: "3 · Two local layers", sub: "last 128 tokens",
+    what: "Each token attends to the previous 128 tokens, with rotary positions: 9 query heads of 64 share one key/value head, then a feed-forward of width 1,472. This is where a token's state learns what came just before it. Copying later matches on exactly that: a query ending in “of the ship” looks for the token whose state says “I came right after <i>of the ship</i>”.",
+    shape: "[B, 16384, 576]",
+    keeps: "Short phrases around every token." },
+  { t: "4 · Page writer (the notebook)", sub: "32 notes per closed 256-token page",
+    what: "A page is 256 tokens, and a new page starts every 192 tokens, so neighbouring pages share 64 tokens. A small page encoder reads each page both ways (2 layers, 256 wide), from the token table only. Then the page's 32 notes <b>compete</b> for its tokens: for every token, a softmax over the 32 notes says how much each note takes it. That share is the <b>assignment A[t, n]</b>, a soft k-means. After 2 rounds each note is a 512-number state; it hands the reading layer one 64-number value (and a 64-number key of its own, which only the E33 baselines use). A page is <b>closed</b> once its last token has been read.",
+    shape: "pages [B·85, 256, 256] → note states [B·85, 32, 512]; assignment A [B·85, 8 writer heads, 32 notes, 256 tokens]; note values [B, 2,720, 1, 64]",
+    keeps: "About 8 tokens per note (256 ÷ 32), blended into one value: the gist, not the exact words." },
+  { t: "5 · Reading layer", sub: "q, k, v by content",
+    what: "The one layer that reaches beyond 128 tokens. It uses no positions and matches by content only. Every token makes a query q<sub>i</sub>, a raw key k<sub>t</sub> and a raw value v<sub>t</sub> (9 query heads, one shared key/value head of 64). The window and the opened tokens both use these same raw keys and values.",
+    shape: "q [B, 16384, 9, 64]; k, v [B, 16384, 1, 64]",
+    keeps: "Every token's own state, uncompressed. E33p keeps the raw keys and values of the whole row, as the dense ceiling does, so that closed pages can be opened." },
+  { t: "6 · Address keys κ", sub: "tied to raw keys",
+    what: "Each note gets an address key built from the reading layer's own raw keys of its page, weighted by how much the note took each token: <b>κ<sub>n</sub> = Σ<sub>t</sub> A[t,n] k<sub>t</sub> / Σ<sub>t</sub> A[t,n]</b>. Because κ lives in the reader's key space, q·κ<sub>n</sub> is exactly the weighted average of q·k<sub>t</sub> over the page. “The query matches the note” then means “the query matches the note's tokens on average”. Gradient flows through κ into A (the writer) and into the reading layer's key projection, and this is what trains the index.",
+    shape: "A (8 writer heads averaged, normalised over the page) [B·85, 32, 256] × the page's raw keys [B·85, 256, 64] → κ [B, 2,720, 1, 64]",
+    keeps: "Where content sits (an address) and a blurred picture of it. Not the exact tokens.",
+    mine: "A is the writer's last round averaged over its 8 heads. κ is recomputed in each of the 4 loop rounds, because the raw keys change every round." },
+  { t: "7 · Choose notes", sub: "64 per 128 queries",
+    what: "Queries come in blocks of 128 consecutive positions. Each block scores every note its queries may see: <b>s<sub>b</sub>(n) = Σ<sub>i∈b</sub> softmax<sub>n</sub>(q<sub>i</sub>·κ<sub>n</sub>)</b>. Each query spreads one unit of vote over the notes, and the block adds the votes up. The 64 notes with the most votes are chosen. The choice carries no gradient, like E33n's top-64.",
+    shape: "votes [B, 128 blocks, 2,720 notes] → choice table [B, 128, 64] note ids",
+    keeps: "A list of 64 note numbers per block: pointers, no content.",
+    mine: "One choice per block, shared by the 9 query heads (votes added over heads). Each query votes only over the notes closed for it." },
+  { t: "8 · Open members", sub: "~8 per note → ~512",
+    what: "A token is a <b>member</b> of the note that took most of it (its largest A[t, n]): 256 ÷ 32 ≈ 8 members per note. Each query opens the raw keys and values of the members of its block's 64 notes, except tokens already in its own 512-token window. A token in two overlapping pages can be named by two chosen notes; it is opened once, because the read is a mask over positions. Every opened token is older than the window, so its pages closed long ago.",
+    shape: "membership [B, 16384 tokens, ≤ 2 pages] → about 64 × 8 = 512 opened positions per block (the count varies), read through a block-sparse mask over the raw keys",
+    keeps: "The exact past tokens behind the chosen notes, each with its full key and value. This is what copying needs.",
+    mine: "512 is an average, not a cap. A chosen note whose members are all inside the window opens nothing." },
+  { t: "9 · One softmax", sub: "window‖notes‖opened",
+    what: "For query i, one attention over three kinds of entry: its last 512 raw tokens; every note of every closed page as a <b>gist entry</b> (key κ<sub>n</sub>, value the writer's note value); and its <b>opened tokens</b> (raw key, raw value). Scale 1/√64. All entries compete in the one softmax, so a sharp exact match on an opened token can take most of the weight.",
+    shape: "keys per query ≈ 512 + up to 2,720 + about 512; output [B, 16384, 9, 64] → [B, 16384, 576]",
+    keeps: "Recent text exactly; the gist of everything closed; exact distant tokens wherever the index pointed." },
+  { t: "10 · Local + loop", sub: "× 4, same weights",
+    what: "One local layer (128-token window), then back to the reading layer: 4 rounds with the same weights, each round asking with what the previous one found. This is E33's loop. The notes are written once; q, k, v, the address keys and the choice are recomputed each round.",
+    shape: "[B, 16384, 576] per round",
+    keeps: "What the reads fetched, mixed with the neighbourhood." },
+  { t: "11 · Four local layers", sub: "128-token window",
+    what: "Four more local layers, with U-net skips from the early layers. The prediction takes shape here.",
+    shape: "[B, 16384, 576]",
+    keeps: "The state each position predicts from." },
+  { t: "12 · Output and loss", sub: "next-token cross-entropy",
+    what: "A 576 → 50,257 output layer scores every possible next piece (soft-capped at 30). The loss is next-token cross-entropy on every position, plus a tiny z-loss. Same objective in every arm.",
+    shape: "[B, 16384, 50,257], computed 2,048 positions at a time → one number",
+    keeps: "—" }
+];
+const OFF = { what: "This step does not exist in this arm.", shape: "—", keeps: "—" };
+const OV = {
+  pages: {
+    6: { t: "7 · Choose pages", sub: "2 per 128 queries",
+      what: "The same votes s<sub>b</sub>(n) as notes-open. A page scores the sum of its 32 notes' votes, and the block keeps its 2 best pages. No gradient.",
+      shape: "votes [B, 128, 2,720] → page scores [B, 128, 85] → choice [B, 128, 2] page ids", keeps: "Two page numbers per block.",
+      mine: "Pages-open keeps κ and the gist notes and differs only in what it opens." },
+    7: { t: "8 · Open pages", sub: "2 × 256 tokens",
+      what: "Every token of the two chosen pages, except those already in the query's window. Where the two pages overlap, each shared token is opened once.",
+      shape: "≤ 512 opened positions per block", keeps: "Two whole pages of exact text, chosen by their notes' combined votes." }
+  },
+  e33: {
+    5: { sub: "not in this arm", what: "Not in this arm. E33 keys each note with the writer's own key, made from the note's state. It lives in the writer's space, not the reader's, so “the query matches the note” says nothing about the note's tokens.", shape: "writer note keys [B, 2,720, 1, 64]", keeps: "—" },
+    6: { sub: "not in this arm", ...OFF }, 7: { sub: "not in this arm", ...OFF },
+    8: { sub: "window ‖ all notes", what: "The last 512 raw tokens plus every note of every closed page, keyed by the writer. Nothing beyond the window is exact.", shape: "keys per query ≈ 512 + up to 2,720", keeps: "Recent text exactly; everything older as gist only." }
+  },
+  e33n: {
+    5: { sub: "not in this arm", what: "Not in this arm: E33n keys notes with the writer's own key.", shape: "writer note keys [B, 2,720, 1, 64]", keeps: "—" },
+    6: { t: "7 · Top-64 notes", sub: "per query and head",
+      what: "E33n's choice: each query and head keeps its own 64 best notes, scored with the writer's note key; the rest are cut from its softmax. No gradient through the choice. Nothing is opened.",
+      shape: "threshold [B, 9 heads, 16384] (each query's 64th best score)", keeps: "64 notes' gist per query and head." },
+    7: { sub: "not in this arm", ...OFF },
+    8: { sub: "window ‖ 64 notes", what: "The last 512 raw tokens plus the query's 64 best notes.", shape: "keys per query = 512 + 64", keeps: "Recent text exactly; 64 notes' gist." }
+  },
+  window: {
+    3: { sub: "built, notes switched off", what: "The same writer runs, so the model has the same parts, but the reading layer never sees its notes (they are masked).", shape: "notes are written, then masked", keeps: "Nothing reaches the read." },
+    5: { sub: "not in this arm", ...OFF }, 6: { sub: "not in this arm", ...OFF }, 7: { sub: "not in this arm", ...OFF },
+    8: { sub: "window only", what: "Only the last 512 raw tokens.", shape: "keys per query = 512", keeps: "The last 512 tokens; nothing older." }
+  },
+  dense: {
+    3: { sub: "no notebook", what: "The dense ceiling has no writer at all.", shape: "—", keeps: "—" },
+    4: { sub: "all earlier tokens", what: "The same layer, but it attends to every earlier raw token of the row, causally. Nothing is compressed or chosen.", shape: "q [B, 16384, 9, 64]; k, v [B, 16384, 1, 64]", keeps: "Everything before the query, exactly." },
+    5: { sub: "not in this arm", ...OFF }, 6: { sub: "not in this arm", ...OFF }, 7: { sub: "not in this arm", ...OFF },
+    8: { sub: "every earlier token", what: "All earlier raw tokens of the row, causal.", shape: "keys per query = i + 1 (up to 16,384)", keeps: "Everything." }
+  }
+};
+const TAGS = { open: "sssssnnnnsss", pages: "sssssnnnnsss", e33: "sssssooobsss", e33n: "sssssobobsss", window: "sssbsooobsss", dense: "sssobooobsss" };
+const TAGNAME = { s: ["same", "unchanged"], n: ["new", "new in E33p"], b: ["base", "baseline's own"], o: ["off", "not in this arm"] };
+const LAYOUT = [
+  [20, 24, 158], [198, 24, 158], [378, 24, 158], [700, 24, 330],
+  [30, 172, 156], [195, 172, 156], [360, 172, 156], [525, 172, 156], [690, 172, 156], [855, 172, 156],
+  [530, 328, 230], [790, 328, 230]
+];
+let STEP = 7;
+function stageFor(i) { return Object.assign({}, STAGES[i], (OV[ARM] || {})[i] || {}); }
+function drawPipe() {
+  const g = document.getElementById("pnodes"); g.innerHTML = "";
+  STAGES.forEach((_, i) => {
+    const s = stageFor(i), tg = TAGS[ARM][i], [x, y, w] = LAYOUT[i], h = (i >= 10 ? 72 : 74);
+    const nd = el("g", { class: `nd t-${TAGNAME[tg][0]}${i === STEP ? " on" : ""}`, tabindex: 0, role: "button", "aria-label": s.t }, null, g);
+    el("rect", { class: "box", x, y, width: w, height: h, rx: 10 }, null, nd);
+    el("text", { x: x + 10, y: y + 22, "font-size": 13.5, "font-weight": 700 }, s.t, nd);
+    el("text", { x: x + 10, y: y + 42, "font-size": 12, class: "s" }, s.sub, nd);
+    el("text", { x: x + 10, y: y + 62, class: "tg" }, TAGNAME[tg][1], nd);
+    nd.addEventListener("click", () => { STEP = i; drawPipe(); });
+    nd.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); STEP = i; drawPipe(); } });
+  });
+  const s = stageFor(STEP), tg = TAGS[ARM][STEP];
+  const armName = ARMS.find(a => a.id === ARM).name;
+  let cmp = "";
+  if (ARM !== "open" && TAGS[ARM][STEP] !== "s") {
+    const m = STAGES[STEP];
+    cmp = `<div><div class="q">in notes-open (main) instead</div><p>${m.t.replace(/^\d+ · /, "")}: ${m.sub}.</p></div>`;
+  }
+  const mine = s.mine && tg !== "o" ? `<div><div class="q">my reading (the spec is silent)</div><p>${s.mine}</p></div>` : "";
+  document.getElementById("pdet").innerHTML =
+    `<div class="det" style="margin-top:12px">
+      <div style="grid-column:1/-1"><div class="q">${armName} · step ${STEP + 1} of ${STAGES.length} · <span class="pill p-${TAGNAME[tg][0]}">${TAGNAME[tg][1]}</span></div>
+        <p style="font-size:16px;font-weight:700;margin:2px 0">${s.t.replace(/^\d+ · /, "")}</p><p>${s.what}</p></div>
+      <div><div class="q">tensor shapes (30M, one 16k row)</div><p class="mono">${s.shape}</p></div>
+      <div><div class="q">what information survives this step</div><p>${s.keeps}</p></div>
+      ${mine}${cmp}
+    </div>`;
+  document.getElementById("pwhere").textContent = `step ${STEP + 1} of ${STAGES.length}`;
+}
+document.getElementById("pprev").addEventListener("click", () => { STEP = (STEP + STAGES.length - 1) % STAGES.length; drawPipe(); });
+document.getElementById("pnext").addEventListener("click", () => { STEP = (STEP + 1) % STAGES.length; drawPipe(); });
+
+/* ------------------------------------------------------------------ 3 · toy example */
+const TW = ["The","crew","of","the","ship","Kestrel","sailed",".", "Rain","fell","on","the","old","town","all","day",
+            "Years","later","divers","found","a","wreck","near","the", "reef",".","The","bell","of","the","ship"];
+const MEMB = ["1b","1a","1b","1b","1a","1a","1b","1b", "2a","2a","2b","2b","2b","2b","2b","2a",
+              "3a","3a","3a","3a","3b","3b","3b","3b", null,null,null,null,null,null,null];
+const NOTES = ["1a","1b","2a","2b","3a","3b"];
+// assignment A[t][note]: member 0.8 / other note of the page 0.2; "sailed" is the hard-cut case (0.45 / 0.55)
+function A(t, n) {
+  const m = MEMB[t]; if (!m || m[0] !== n[0]) return 0;
+  if (t === 6) return n === "1a" ? 0.45 : 0.55;
+  return m === n ? 0.8 : 0.2;
+}
+// hand-built logits of query 30 ("ship") against each raw key; token 5's key says "I came right after 'of the ship'"
+const L30 = [0.2,0.8,0.6,0.4,1.2,4.0,0.3,0.0, 0.1,0.0,0.1,0.4,0.0,0.2,0.0,0.0, 0.1,0.0,0.5,0.3,0.2,1.0,0.3,0.4, 0.6,0.0,0.2,0.8,0.6,0.4,1.2];
+const WRITER_LOGIT = { "1a": 2.0, "1b": 0.2, "2a": 0.0, "2b": 0.1, "3a": 0.4, "3b": 0.9 };
+const VOTES = { "1a": 1.30, "1b": 0.25, "2a": 0.15, "2b": 0.20, "3a": 0.90, "3b": 1.20 };
+const TOY = { win: 8, close: { "1": 7, "2": 15, "3": 23 }, target: 5, query: 30 };
+function pageTokens(p) { const s = (p - 1) * 8; return [...Array(8).keys()].map(k => s + k); }
+function members(n) { return TW.map((_, t) => t).filter(t => MEMB[t] === n); }
+function kappaLogit(n) { let a = 0, b = 0; pageTokens(+n[0]).forEach(t => { a += A(t, n) * L30[t]; b += A(t, n); }); return a / b; }
+function kestrelShare(n) { let b = 0; pageTokens(+n[0]).forEach(t => { b += A(t, n); }); return A(TOY.target, n) / b; }
+const CHOSEN = Object.keys(VOTES).sort((a, b) => VOTES[b] - VOTES[a]).slice(0, 2);  // 1a, 3b
+const PAGEVOTES = [1, 2, 3].map(p => VOTES[p + "a"] + VOTES[p + "b"]);
+const BESTPAGE = 1 + PAGEVOTES.indexOf(Math.max(...PAGEVOTES));                     // page 3
+const E33N_KEEP = Object.keys(WRITER_LOGIT).sort((a, b) => WRITER_LOGIT[b] - WRITER_LOGIT[a]).slice(0, 2);
+let TOYQ = 30;
+function inWin(q, t) { return t <= q && q - t < TOY.win; }
+function toyOpened(arm, q) {
+  if (arm === "open") return CHOSEN.flatMap(n => members(n)).filter(t => t < q && !inWin(q, t)).sort((a, b) => a - b);
+  if (arm === "pages") return pageTokens(BESTPAGE).filter(t => t < q && !inWin(q, t));
+  return [];
+}
+function toyEntries(arm) {
+  const q = TOY.query, E = [];
+  const raw = (t, kind) => E.push({ kind, label: `“${TW[t]}” (token ${t}${kind === "opened" ? ", opened" : t > q - TOY.win ? ", window" : ""})`, logit: L30[t], kest: t === TOY.target ? 1 : 0 });
+  if (arm === "dense") { for (let t = 0; t <= q; t++) raw(t, "raw"); }
+  else { for (let t = q - TOY.win + 1; t <= q; t++) raw(t, "raw"); }
+  const noteE = (n, logit) => E.push({ kind: "note", label: `note ${n} (gist of ${members(n).map(t => TW[t]).join(" ")})`, logit, kest: kestrelShare(n) });
+  if (arm === "e33") NOTES.forEach(n => noteE(n, WRITER_LOGIT[n]));
+  if (arm === "e33n") E33N_KEEP.forEach(n => noteE(n, WRITER_LOGIT[n]));
+  if (arm === "open" || arm === "pages") { NOTES.forEach(n => noteE(n, kappaLogit(n))); toyOpened(arm, q).forEach(t => raw(t, "opened")); }
+  const mx = Math.max(...E.map(e => e.logit)); let z = 0;
+  E.forEach(e => { e.w = Math.exp(e.logit - mx); z += e.w; });
+  E.forEach(e => { e.w /= z; });
+  const exact = E.filter(e => e.kind !== "note" && e.kest === 1).reduce((a, e) => a + e.w, 0);
+  const share = E.reduce((a, e) => a + e.w * e.kest, 0);
+  return { E, exact, share };
+}
+function drawToySvg() {
+  const svg = document.getElementById("toysvg"); svg.innerHTML = "";
+  const q = TOYQ, rowsY = [30, 94, 158, 222], x0 = 120, dx = 78, w = 72, h = 30;
+  const opened = new Set(toyOpened(ARM, q));
+  const labels = [["page 1", "closed at token 7"], ["page 2", "closed at token 15"], ["page 3", "closed at token 23"], ["page 4", "still open"]];
+  labels.forEach((l, r) => {
+    el("text", { x: 10, y: rowsY[r] + 13, "font-size": 13, "font-weight": 700 }, l[0], svg);
+    el("text", { x: 10, y: rowsY[r] + 29, "font-size": 11, class: "m" }, l[1], svg);
+  });
+  for (let t = 0; t <= 30; t++) {
+    const r = Math.floor(t / 8), k = t % 8, x = x0 + k * dx, y = rowsY[r];
+    let cls = "f-card2", stroke = "s-line", txt = "", fade = false;
+    if (t === q) { cls = "f-self"; txt = "inv"; }
+    else if (t > q) { fade = true; }
+    else if (ARM === "dense" || inWin(q, t)) { cls = "f-winsoft"; stroke = "s-win"; }
+    else if (opened.has(t)) { cls = "f-open"; stroke = "s-open"; txt = "dk"; }
+    const g = el("g", { opacity: fade ? 0.4 : 1 }, null, svg);
+    el("rect", { x, y, width: w, height: h, rx: 6, class: `${cls} ${stroke}`, "stroke-width": 1.5 }, null, g);
+    el("text", { x: x + w / 2, y: y + 19.5, "text-anchor": "middle", "font-size": 13, class: txt, "font-weight": t === TOY.target ? 700 : 400 }, TW[t], g);
+    el("text", { x: x + 3, y: y - 3, "font-size": 9.5, class: "m" }, String(t), g);
+    if (MEMB[t]) el("text", { x: x + w / 2, y: y + h + 13, "text-anchor": "middle", "font-size": 10.5, class: "m" }, "in note " + MEMB[t], g);
+    tip(g, `token ${t} “${TW[t]}”` + (MEMB[t] ? `, member of note ${MEMB[t]} (assignment ${A(t, MEMB[t]).toFixed(2)})` : ""));
+  }
+  // target box
+  { const x = x0 + 7 * dx, y = rowsY[3];
+    el("rect", { x, y, width: w, height: h, rx: 6, class: "f-blank s-muted", "stroke-width": 1.5, "stroke-dasharray": "4 3" }, null, svg);
+    el("text", { x: x + w / 2, y: y + 19.5, "text-anchor": "middle", "font-size": 12, class: "m" }, "next: ?", svg); }
+  // the answer marker
+  el("text", { x: x0 + 5 * dx + w / 2, y: rowsY[0] - 14, "text-anchor": "middle", "font-size": 11, "font-weight": 700, class: "s" }, "the answer ▾", svg);
+  // notes chips, with a header saying what the right-hand number is in this arm
+  const head = { open: "notes · their members · block votes", pages: "notes · their members · block votes",
+    e33: "notes · members · writer-key score (query 30)", e33n: "notes · members · writer-key score (query 30)",
+    window: "notes (switched off in this arm)", dense: "no notebook in this arm" }[ARM];
+  el("text", { x: 760, y: 14, "font-size": 11, class: "m" }, head, svg);
+  NOTES.forEach(n => {
+    const p = +n[0], r = p - 1, y = rowsY[r] - 4 + (n[1] === "a" ? 0 : 27), x = 760, cw = 290, ch = 24;
+    let cls = "f-card", stroke = "s-line", txt = "", sw = 1.2, extra = "";
+    const closed = TOY.close[p] <= q;
+    if (ARM === "window") { extra = "off"; }
+    else if (ARM === "dense") { extra = "—"; }
+    else if (!closed) { extra = "not closed"; }
+    else if (ARM === "e33") { cls = "f-notesoft"; stroke = "s-note"; extra = WRITER_LOGIT[n].toFixed(1); }
+    else if (ARM === "e33n") {
+      if (E33N_KEEP.includes(n)) { cls = "f-note"; stroke = "s-note"; txt = "dk"; extra = "kept " + WRITER_LOGIT[n].toFixed(1); }
+      else { extra = "cut " + WRITER_LOGIT[n].toFixed(1); }
+    } else {
+      cls = "f-notesoft"; stroke = "s-note"; extra = VOTES[n].toFixed(2);
+      if (ARM === "open" && CHOSEN.includes(n)) { cls = "f-note"; txt = "dk"; extra = "chosen " + VOTES[n].toFixed(2); }
+      if (ARM === "pages" && p === BESTPAGE) { sw = 3; stroke = "s-open"; }
+    }
+    const g = el("g", { opacity: (ARM === "window" || ARM === "dense") ? 0.45 : 1 }, null, svg);
+    el("rect", { x, y, width: cw, height: ch, rx: 6, class: `${cls} ${stroke}`, "stroke-width": sw }, null, g);
+    el("text", { x: x + 8, y: y + 16, "font-size": 12, "font-weight": 700, class: txt }, "note " + n, g);
+    el("text", { x: x + 60, y: y + 16, "font-size": 11.5, class: txt || "s" }, members(n).map(t => TW[t]).join(" "), g);
+    el("text", { x: x + cw - 8, y: y + 16, "font-size": 11, "text-anchor": "end", class: txt || "m" }, extra, g);
+  });
+  if (ARM === "pages") {
+    const y = rowsY[BESTPAGE - 1];
+    el("text", { x: 1050, y: y + 62, "text-anchor": "end", "font-size": 11.5, "font-weight": 700, class: "s" }, `page ${BESTPAGE} chosen (votes ${PAGEVOTES[BESTPAGE - 1].toFixed(2)})`, svg);
+  }
+}
+function wordsOf(ts) { return ts.length ? ts.map(t => `“${TW[t]}”`).join(", ") : "none"; }
+function drawToySteps() {
+  const q = TOYQ, ol = document.getElementById("toysteps"), lo = q - TOY.win + 1;
+  const op = toyOpened(ARM, q);
+  const winTxt = `Query ${q} (“${TW[q]}”) sees tokens ${lo}–${q} in its window (toy for 512).`;
+  let items = [];
+  if (ARM === "open") {
+    const skip = CHOSEN.flatMap(n => members(n)).filter(t => inWin(q, t));
+    const empty = CHOSEN.filter(n => members(n).every(t => inWin(q, t)));
+    items = [
+      `<b>Votes.</b> Each of the block's 4 queries (27–30) spreads one vote over the 6 notes by q·κ, and the block adds them up (numbers on the chips; they total 4).`,
+      `<b>Choice.</b> The 2 most-voted notes win: ${CHOSEN.map(n => `note ${n} (${VOTES[n].toFixed(2)})`).join(" and ")}. No gradient flows through this choice.`,
+      `<b>Opening.</b> ${winTxt} It opens the members of the chosen notes that are not in that window: ${wordsOf(op)}.` +
+        (skip.length ? ` Skipped because they are already in the window: ${wordsOf(skip)}.` : "") +
+        (empty.length ? ` <b>Note ${empty.join(", ")} opens nothing for this query</b>: all its members are inside the window, yet it used one of the 2 places.` : ""),
+      `<b>Read.</b> One softmax over the window, all 6 notes as gist (key κ) and the opened tokens. The bars below are for query 30.`
+    ];
+  } else if (ARM === "pages") {
+    items = [
+      `<b>Votes</b> as in notes-open. A page scores the sum of its two notes: page 1 = ${PAGEVOTES[0].toFixed(2)}, page 2 = ${PAGEVOTES[1].toFixed(2)}, page 3 = ${PAGEVOTES[2].toFixed(2)}.`,
+      `<b>Choice.</b> Page ${BESTPAGE} wins (toy: 1 page, the same token budget as 2 notes). Two fairly good notes outvoted one very good note. Whether this happens in real text is what the pages-open arm measures.`,
+      `<b>Opening.</b> ${winTxt} It opens page ${BESTPAGE}'s tokens outside the window: ${wordsOf(op)}. “Kestrel” is not among them.`,
+      `<b>Read.</b> One softmax over the window, the 6 notes as gist and the opened page.`
+    ];
+  } else if (ARM === "e33") {
+    items = [`No choice, nothing opened. ${winTxt}`, `<b>Read.</b> The window plus all 6 notes, keyed by the writer. Note 1a scores well, but it can only hand back its blend of “crew ship Kestrel”.`];
+  } else if (ARM === "e33n") {
+    items = [`${winTxt}`, `<b>Choice per query.</b> It keeps its 2 best notes by the writer's key (toy for 64): ${E33N_KEEP.map(n => "note " + n).join(" and ")}. Only their gist enters the read.`];
+  } else if (ARM === "window") {
+    items = [`${winTxt}`, `Nothing older. “Kestrel” is out of reach.`];
+  } else {
+    items = [`Query ${q} sees every earlier token exactly. “Kestrel” is there among all the others; nothing has to be chosen.`];
+  }
+  ol.innerHTML = items.map(x => `<li>${x}</li>`).join("");
+}
+function drawToyRead() {
+  const svg = document.getElementById("toyread"); svg.innerHTML = "";
+  const R = toyEntries(ARM), top = R.E.slice().sort((a, b) => b.w - a.w).slice(0, 8);
+  const H = 20 + top.length * 26; svg.setAttribute("viewBox", `0 0 1060 ${H}`);
+  const x0 = 360, W = 600, mx = Math.max(...top.map(e => e.w));
+  top.forEach((e, k) => {
+    const y = 8 + k * 26;
+    el("text", { x: x0 - 10, y: y + 14, "text-anchor": "end", "font-size": 12.5, "font-weight": e.kest === 1 ? 700 : 400 }, e.label, svg);
+    const bw = Math.max(2, W * e.w / Math.max(mx, 0.6));
+    const r = el("rect", { x: x0, y: y + 2, width: bw, height: 16, rx: 4, class: e.kind === "note" ? "f-note" : e.kind === "opened" ? "f-open" : "f-win" }, null, svg);
+    tip(r, `${e.label}: weight ${pct(e.w, 1)}`);
+    el("text", { x: x0 + bw + 6, y: y + 14, "font-size": 12, class: "s" }, pct(e.w, 1), svg);
+  });
+  const k1a = kappaLogit("1a");
+  const E33 = toyEntries("e33"), OPN = toyEntries("open");
+  const w1a = E33.E.find(e => e.label.startsWith("note 1a")).w;
+  document.getElementById("toywhy").innerHTML =
+    `<b>Why the note alone cannot return “Kestrel”, and the opened token can.</b> In the full note read, note 1a takes ${pct(w1a)} of query 30's weight, but its value is one blend of “crew ship Kestrel” (about ${pct(kestrelShare("1a"))} “Kestrel” if it were the assignment-weighted average). So the read returns about ${pct(E33.share)} “Kestrel”. Opened, token 5's own key answers the query sharply (score 4.0 against note 1a's 1.4, because q·κ averages over the note's tokens and the sharp one is diluted), and its value is “Kestrel” alone. Here the read returns about ${pct(OPN.share)} “Kestrel”. The note's job is only to point; its address score of ${k1a.toFixed(2)} was enough to win a place.`;
+  const tb = document.getElementById("toycmp");
+  let html = `<tr><th>arm</th><th class="num">entries query 30 reads</th><th class="num">weight on the exact “Kestrel” token</th><th class="num">share of “Kestrel” in what the read returns</th></tr>`;
+  ARMS.forEach(a => {
+    const r = toyEntries(a.id);
+    html += `<tr class="${a.id === ARM ? "hl" : ""}"><td>${a.name}</td><td class="num">${r.E.length}</td><td class="num">${r.exact ? pct(r.exact) : "— (not reachable)"}</td><td class="num">${pct(r.share)}</td></tr>`;
+  });
+  tb.innerHTML = html;
+}
+(function buildToyQ() {
+  const seg = document.getElementById("toyq");
+  [27, 28, 29, 30].forEach(q => {
+    const b = document.createElement("button"); b.dataset.v = q; b.textContent = `${q} “${TW[q]}”`;
+    if (q === TOYQ) b.classList.add("on");
+    b.addEventListener("click", () => { TOYQ = q; seg.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); drawToySvg(); drawToySteps(); });
+    seg.appendChild(b);
+  });
+})();
+
+/* ------------------------------------------------------------------ 4 · mask matrix */
+const MK = { N: 64, PW: 8, PS: 6, WIN: 16, BL: 4, M: 4, K: 4, PG: 2 };
+const MST = (() => { const s = []; for (let x = 0; x <= MK.N - MK.PW; x += MK.PS) s.push(x); if (s[s.length - 1] !== MK.N - MK.PW) s.push(MK.N - MK.PW); return s; })();
+const NP = MST.length, NN = NP * 2;
+function rnd(a, b) {
+  let h = Math.imul(a + 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x7f4a7c15, 0xc2b2ae35);
+  h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d); h = Math.imul(h ^ (h >>> 12), 0x297a2d39); h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+const MEMN = MST.map((s, p) => [...Array(MK.PW).keys()].map(k => 2 * p + (rnd(s + k, p + 11) < 0.5 ? 0 : 1)));
+MEMN.forEach((arr, p) => { if (arr.every(n => n === arr[0])) arr[MK.PW - 1] = 2 * p + (arr[0] % 2 ? 0 : 1); });
+const closeOfPage = p => MST[p] + MK.PW - 1;
+const closeOfNote = n => closeOfPage(Math.floor(n / 2));
+function noteMembers(n) { const p = Math.floor(n / 2); return MEMN[p].map((m, k) => m === n ? MST[p] + k : -1).filter(t => t >= 0); }
+const voteCache = {};
+function blockVotes(b) {
+  if (voteCache[b]) return voteCache[b];
+  const v = new Array(NN).fill(0);
+  for (let i = b * MK.BL; i < (b + 1) * MK.BL; i++) {
+    const vis = []; for (let n = 0; n < NN; n++) if (closeOfNote(n) <= i) vis.push(n);
+    if (!vis.length) continue;
+    const lg = vis.map(n => 1.8 * rnd(n * 13 + 1, b * 7 + 3) + 1.4 * Math.exp(-(i - closeOfNote(n)) / 18) + 0.3 * rnd(n, i + 101));
+    const mx = Math.max(...lg), ex = lg.map(x => Math.exp(x - mx)), z = ex.reduce((a, c) => a + c, 0);
+    vis.forEach((n, k) => { v[n] += ex[k] / z; });
+  }
+  return (voteCache[b] = v);
+}
+function chosenNotesB(b) { const v = blockVotes(b); return [...Array(NN).keys()].filter(n => v[n] > 0).sort((x, y) => v[y] - v[x]).slice(0, MK.M); }
+function chosenPagesB(b) {
+  const v = blockVotes(b), ps = [];
+  for (let p = 0; p < NP; p++) { const s = v[2 * p] + v[2 * p + 1]; if (s > 0) ps.push([p, s]); }
+  return ps.sort((x, y) => y[1] - x[1]).slice(0, MK.PG).map(x => x[0]);
+}
+function e33nKeep(i) {
+  const vis = []; for (let n = 0; n < NN; n++) if (closeOfNote(n) <= i) vis.push(n);
+  const sc = n => 1.8 * rnd(n * 5 + 2, i * 3 + 1) + 1.0 * Math.exp(-(i - closeOfNote(n)) / 18);
+  return new Set(vis.sort((x, y) => sc(y) - sc(x)).slice(0, MK.K));
+}
+function maskView(i, arm) {
+  const raw = new Array(MK.N).fill("blank"), note = new Array(NN).fill("blank");
+  const info = { opened: 0, dup: [], empty: [], chosen: [], pages: [] };
+  for (let j = 0; j <= i; j++) raw[j] = j === i ? "self" : (arm === "dense" || i - j < MK.WIN) ? "win" : "none";
+  const b = Math.floor(i / MK.BL);
+  if (arm === "open" || arm === "pages") {
+    const cnt = new Array(MK.N).fill(0);
+    if (arm === "open") {
+      info.chosen = chosenNotesB(b);
+      info.chosen.forEach(n => {
+        let got = 0;
+        if (closeOfNote(n) <= i) noteMembers(n).forEach(t => { if (i - t >= MK.WIN) { cnt[t]++; got++; } });
+        if (!got) info.empty.push(n);
+      });
+    } else {
+      info.pages = chosenPagesB(b);
+      info.pages.forEach(p => { if (closeOfPage(p) <= i) for (let k = 0; k < MK.PW; k++) { const t = MST[p] + k; if (i - t >= MK.WIN) cnt[t]++; } });
+    }
+    for (let t = 0; t < MK.N; t++) if (cnt[t]) { raw[t] = cnt[t] > 1 ? "dup" : "open"; info.opened++; if (cnt[t] > 1) info.dup.push(t); }
+  }
+  const keep = arm === "e33n" ? e33nKeep(i) : null;
+  for (let n = 0; n < NN; n++) {
+    const closed = closeOfNote(n) <= i;
+    if (!closed) continue;
+    if (arm === "dense") note[n] = "blank";
+    else if (arm === "window") note[n] = "none";
+    else if (arm === "e33n") note[n] = keep.has(n) ? "gist" : "none";
+    else if (arm === "open") note[n] = info.chosen.includes(n) ? "chosen" : "gist";
+    else if (arm === "pages") note[n] = info.pages.includes(Math.floor(n / 2)) ? "chosen" : "gist";
+    else note[n] = "gist";
+  }
+  return { raw, note, info, b };
+}
+let MQ = null;
+function pickDefaultQuery() {
+  let best = 47;
+  for (let i = MK.N - 1; i >= 36; i--) { const v = maskView(i, "open"); if (v.info.dup.length && v.info.empty.length) return i; if (v.info.dup.length) best = i; }
+  return best;
+}
+const CELL = { win: "f-win", open: "f-open", dup: "f-open", self: "f-self", none: "f-none", blank: "f-blank", gist: "f-note", chosen: "f-note" };
+function drawMask() {
+  const svg = document.getElementById("msvg"); svg.innerHTML = "";
+  const C = 8, x0 = 46, y0 = 58, xn = x0 + MK.N * C + 22;
+  const W = xn + NN * C + 20, H = y0 + MK.N * C + 14;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  // page spans above the raw columns (two lanes so overlaps show)
+  MST.forEach((s, p) => {
+    const yy = 14 + (p % 2) * 9;
+    el("line", { x1: x0 + s * C + 1, x2: x0 + (s + MK.PW) * C - 1, y1: yy, y2: yy, class: "s-muted", "stroke-width": 3, "stroke-linecap": "round" }, null, svg);
+  });
+  el("text", { x: 4, y: 21, "font-size": 10.5, class: "m" }, "pages", svg);
+  for (let t = 0; t < MK.N; t += 8) el("text", { x: x0 + t * C + 1, y: y0 - 18, "font-size": 10, class: "m" }, String(t), svg);
+  el("text", { x: x0, y: y0 - 6, "font-size": 10.5, class: "m" }, "raw tokens (keys) →", svg);
+  el("text", { x: xn, y: y0 - 6, "font-size": 10.5, class: "m" }, "notes, 2 per page →", svg);
+  for (let p = 0; p < NP; p += 2) el("text", { x: xn + 2 * p * C, y: y0 - 18, "font-size": 10, class: "m" }, "p" + (p + 1), svg);
+  el("text", { x: 4, y: y0 + 10, "font-size": 10.5, class: "m" }, "query", svg);
+  for (let i = 0; i < MK.N; i++) {
+    const v = maskView(i, ARM), y = y0 + i * C;
+    const g = el("g", { class: "mrow" }, null, svg);
+    el("rect", { x: 0, y, width: W, height: C, fill: "transparent" }, null, g);
+    if (i % 8 === 0) el("text", { x: x0 - 6, y: y + 7, "text-anchor": "end", "font-size": 9.5, class: "m" }, String(i), g);
+    for (let j = 0; j < MK.N; j++) {
+      el("rect", { x: x0 + j * C + 0.5, y: y + 0.5, width: C - 1, height: C - 1, class: CELL[v.raw[j]] }, null, g);
+      if (v.raw[j] === "dup") el("rect", { x: x0 + j * C + 2, y: y + 2, width: C - 4, height: C - 4, fill: "none", class: "s-fg", "stroke-width": 1.2 }, null, g);
+    }
+    for (let n = 0; n < NN; n++) {
+      el("rect", { x: xn + n * C + 0.5, y: y + 0.5, width: C - 1, height: C - 1, class: CELL[v.note[n]] }, null, g);
+      if (v.note[n] === "chosen") el("rect", { x: xn + n * C + 1.5, y: y + 1.5, width: C - 3, height: C - 3, fill: "none", class: "s-open", "stroke-width": 1.6 }, null, g);
+    }
+    g.addEventListener("click", () => { MQ = i; drawMask(); });
+  }
+  for (let i = MK.BL; i < MK.N; i += MK.BL) el("line", { x1: x0 - 2, x2: xn + NN * C, y1: y0 + i * C, y2: y0 + i * C, class: "s-line", "stroke-width": 0.6 }, null, svg);
+  if (MQ === null) MQ = pickDefaultQuery();
+  el("rect", { x: 1, y: y0 + MQ * C - 1, width: W - 2, height: C + 2, fill: "none", class: "s-accent", "stroke-width": 2, rx: 2 }, null, svg);
+  describeMask();
+}
+function ranges(ts) {
+  if (!ts.length) return "none";
+  const out = []; let a = ts[0], b = ts[0];
+  for (let k = 1; k <= ts.length; k++) {
+    if (k < ts.length && ts[k] === b + 1) { b = ts[k]; continue; }
+    out.push(a === b ? String(a) : `${a}–${b}`); if (k < ts.length) { a = b = ts[k]; }
+  }
+  return out.join(", ");
+}
+const noteName = n => `p${Math.floor(n / 2) + 1}${n % 2 ? "b" : "a"}`;
+function describeMask() {
+  const i = MQ, v = maskView(i, ARM), b = v.b, lo = Math.max(0, i - MK.WIN + 1);
+  const nClosed = v.note.filter(s => s !== "blank").length;
+  const opened = v.raw.map((s, t) => (s === "open" || s === "dup") ? t : -1).filter(t => t >= 0);
+  let s = `<b>Query ${i}</b> (block ${b}: queries ${b * MK.BL}–${b * MK.BL + MK.BL - 1}). `;
+  if (ARM === "dense") s += `It reads every earlier token, 0–${i}, exactly: ${i + 1} entries. No notebook.`;
+  else {
+    s += `Window: tokens ${lo}–${i}. `;
+    if (ARM === "window") s += `Its ${nClosed} closed notes are switched off.`;
+    if (ARM === "e33") s += `Gist: all ${nClosed} notes of the pages closed by token ${i}.`;
+    if (ARM === "e33n") s += `Gist: its own ${Math.min(MK.K, nClosed)} best of the ${nClosed} closed notes; the rest are cut.`;
+    if (ARM === "open") {
+      s += `Gist: all ${nClosed} closed notes. The block chose ${v.info.chosen.map(noteName).join(", ") || "nothing (no closed notes yet)"}. Opened for this query: ${opened.length} tokens (${ranges(opened)}).`;
+      if (v.info.dup.length) s += ` Token${v.info.dup.length > 1 ? "s" : ""} ${v.info.dup.join(", ")} ${v.info.dup.length > 1 ? "are" : "is"} named by two chosen notes in overlapping pages and opened once.`;
+      if (v.info.empty.length) s += ` <b>${v.info.empty.map(noteName).join(", ")} open${v.info.empty.length > 1 ? "" : "s"} nothing for this query</b>: ${v.info.empty.length > 1 ? "their" : "its"} members are inside the window (or ${v.info.empty.length > 1 ? "their" : "its"} page closes later in the block).`;
+    }
+    if (ARM === "pages") {
+      s += `Gist: all ${nClosed} closed notes. The block chose page${v.info.pages.length > 1 ? "s" : ""} ${v.info.pages.map(p => "p" + (p + 1)).join(" and ") || "none"}. Opened for this query: ${opened.length} tokens (${ranges(opened)}).`;
+      if (v.info.dup.length) s += ` The two pages overlap at ${v.info.dup.join(", ")}: opened once.`;
+    }
+  }
+  if (ARM === "open" || ARM === "pages") s += ` Every opened token is older than the window, so it is past and on a closed page by construction.`;
+  document.getElementById("mtext").innerHTML = s;
+}
+
+/* ------------------------------------------------------------------ 5 · budget */
+const BUD = {
+  "16k": { notes: 2720, dense: 16384 },
+  "128k": { notes: 21856, dense: 131072 }
+};
+function budRows(L) {
+  const n = BUD[L].notes, d = BUD[L].dense;
+  return [
+    { arm: "notes-open (main)", w: 512, n, o: 512, id: "open" },
+    { arm: "pages-open", w: 512, n, o: 512, id: "pages" },
+    { arm: "E33 full note read", w: 512, n, o: 0, id: "e33" },
+    { arm: "E33n top-64 note read", w: 512, n: 64, o: 0, id: "e33n" },
+    { arm: "window control", w: 512, n: 0, o: 0, id: "window" },
+    { arm: "dense ceiling", w: d, n: 0, o: 0, id: "dense" },
+    { arm: "later option: notes-open, notes capped at 64", w: 512, n: 64, o: 512, id: "cap" }
+  ];
+}
+function drawBudget() {
+  const svg = document.getElementById("bud"); svg.innerHTML = "";
+  const x0 = 330, W = 560;
+  let y = 6;
+  ["16k", "128k"].forEach(L => {
+    const rows = budRows(L), d = BUD[L].dense;
+    el("text", { x: 0, y: y + 16, "font-size": 14, "font-weight": 700 }, L === "16k" ? "16,384-token row (the training length)" : "131,072-token row (length transfer)", svg);
+    y += 26;
+    rows.forEach(r => {
+      const tot = r.w + r.n + r.o, hl = r.id === ARM;
+      el("text", { x: x0 - 10, y: y + 13, "text-anchor": "end", "font-size": 12.5, "font-weight": hl ? 700 : 400, class: r.id === "cap" ? "s" : "" }, r.arm, svg);
+      let x = x0;
+      [["w", "f-win", "raw tokens"], ["n", "f-note", "notes (gist)"], ["o", "f-open", "opened tokens (up to)"]].forEach(([k, cls, nm]) => {
+        if (!r[k]) return;
+        const bw = Math.max(2, W * r[k] / d);
+        const rect = el("rect", { x, y: y + 2, width: bw, height: 15, rx: 3, class: cls }, null, svg);
+        tip(rect, `${r.arm}, ${L}: ${fmt(r[k])} ${nm}`);
+        x += bw + 2;
+      });
+      el("text", { x: x + 6, y: y + 14, "font-size": 12, class: "s" }, `${fmt(tot)}  (${(100 * tot / d).toFixed(tot / d < 0.01 ? 1 : 0)} % of dense)`, svg);
+      if (hl) el("rect", { x: 2, y: y - 1, width: 1054, height: 22, rx: 5, fill: "none", class: "s-accent", "stroke-width": 1.2 }, null, svg);
+      y += 26;
+    });
+    y += 14;
+  });
+  svg.setAttribute("viewBox", `0 0 1060 ${y}`);
+  const tb = document.getElementById("budtab");
+  let html = `<tr><th>arm</th><th class="num">16k: raw + notes + opened = total</th><th class="num">128k: raw + notes + opened = total</th></tr>`;
+  const a = budRows("16k"), c = budRows("128k");
+  a.forEach((r, k) => {
+    const s = c[k];
+    html += `<tr><td>${r.arm}</td><td class="num">${fmt(r.w)} + ${fmt(r.n)} + ${fmt(r.o)} = ${fmt(r.w + r.n + r.o)}</td><td class="num">${fmt(s.w)} + ${fmt(s.n)} + ${fmt(s.o)} = ${fmt(s.w + s.n + s.o)}</td></tr>`;
+  });
+  tb.innerHTML = html;
+}
+
+/* ------------------------------------------------------------------ 8 · checklist */
+const DEC = [
+  ["spec", "Note keys tied to the reading layer: κ_n = Σ_t A[t,n] k_t / Σ_t A[t,n], the assignment-weighted mean of the reader's own raw keys (instead of the writer's own note key)"],
+  ["spec", "Notes stay in the softmax as gist entries (every note of every closed page), with κ_n as their key and the writer's note value as their value"],
+  ["spec", "One softmax over window ‖ notes ‖ opened tokens (no separate branches or gates as in DeepSeek's native sparse attention)"],
+  ["spec", "m = 64 notes chosen per query block"],
+  ["spec", "One choice per block of 128 queries (not per query), made without gradient; votes s_b(n) = Σ_i softmax_n(q_i·κ_n)"],
+  ["spec", "Membership by largest assignment: a token belongs to the one note of a page that took most of it (a hard cut, no gradient through membership)"],
+  ["spec", "Opened budget of about 512 tokens per query (64 notes × ~8 members), the same as the window"],
+  ["spec", "Tokens already in the query's own window are not repeated; overlapping pages (stride 192) are deduped by position; only closed pages open"],
+  ["spec", "Pages-open (the 2 best whole pages per block; page score = the sum of its notes' votes) as the second arm"],
+  ["spec", "Reuse E33n's dense ceiling, window control and full note read as controls, not retrained (same data order and seed)"],
+  ["spec", "Training protocol identical to E33n's 30M run: 1.5B tokens at 4k (constant learning rate), then 0.2B at 16k with a decay"],
+  ["spec", "Two eval switches inside each new model: notes off, and opened tokens off"],
+  ["spec", "Success S1: notes-open closes ≥ 40 % of G at 16k on positions ≥ 2k (loss ≤ 2.561)"],
+  ["spec", "Success S2: on far-copy tokens it closes ≥ 30 % of their 1.361-nat gap (notes alone: 2 %)"],
+  ["spec", "Success S3, no dilution: its share of G at 64k is at most 5 points below its share at 16k"],
+  ["spec", "Success S4, no harm: positions < 512 within 0.01 nats of the window control; RULER at 4k not below it"],
+  ["spec", "Stop K1: both new arms close < 15 % of G at 16k after the long-document phase (loss above 2.595) → stop E33p"],
+  ["spec", "Stop K2, speed: a notes-open step below 60 % of E33's throughput (below 16.0k tokens/s on one RTX 3090) after the stage-0 kernel work → fix the kernel before stage 1"],
+  ["spec", "Stop K3, health: loss spikes above 0.5 not recovered within 1k steps, or trunk loss more than 0.1 above the window control at 25 % of the run"],
+  ["spec", "Stage 2 (100M on one AWS H100, within ≤ $850) only if S1 and S2 hold, and only with your approval"],
+  ["mine", "A[t,n] is the writer's last-round competition weights averaged over its 8 heads"],
+  ["mine", "One opened set per block, shared by the 9 query heads (votes added over heads), not one set per head"],
+  ["mine", "κ and the choice are recomputed in each of the 4 loop rounds (the reader's raw keys change each round); note values are written once"],
+  ["question", "Chosen notes whose members all sit inside the window open nothing but use one of the 64 places. Keep them competing (as written), or skip them in the choice?"],
+  ["question", "Is ~512 opened tokens only an average (64 notes fixed, count varies), or should the kernel enforce a hard cap?"],
+  ["mine", "Pages-open keeps the gist notes keyed by κ and differs from notes-open only in what it opens"],
+  ["mine", "A note in the read is one 64-number key + one 64-number value (one key/value head of 64), from a 512-number writer state; the spec text says “576-number average”"]
+];
+const KIND = { spec: ["p-spec", "spec"], mine: ["p-mine", "my reading"], question: ["p-q", "question"] };
+const STORE = "e33p_alignment_v1";
+function loadAns() { try { return JSON.parse(localStorage.getItem(STORE) || "{}") || {}; } catch (e) { return {}; } }
+function saveAns() {
+  const o = {};
+  DEC.forEach((_, i) => { o["v" + i] = document.getElementById("v" + i).value; o["n" + i] = document.getElementById("n" + i).value; });
+  try { localStorage.setItem(STORE, JSON.stringify(o)); } catch (e) { /* storage unavailable: answers live only in the page */ }
+}
+(function buildChecklist() {
+  const tbl = document.getElementById("chk"), saved = loadAns();
+  DEC.forEach(([kind, d], i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${i + 1}</td><td>${d}</td><td><span class="pill ${KIND[kind][0]}">${KIND[kind][1]}</span></td>
+      <td><select id="v${i}" aria-label="verdict for row ${i + 1}"><option value="">—</option><option>agree</option><option>change</option><option>question</option></select></td>
+      <td><input id="n${i}" placeholder="optional note" aria-label="note for row ${i + 1}"></td>`;
+    tbl.appendChild(tr);
+    const sel = tr.querySelector("select"), inp = tr.querySelector("input");
+    if (saved["v" + i]) sel.value = saved["v" + i];
+    if (saved["n" + i]) inp.value = saved["n" + i];
+    sel.addEventListener("change", saveAns); inp.addEventListener("input", saveAns);
+  });
+})();
+document.getElementById("restagree").addEventListener("click", () => {
+  DEC.forEach((_, i) => { const s = document.getElementById("v" + i); if (!s.value) s.value = "agree"; });
+  saveAns();
+});
+document.getElementById("collect").addEventListener("click", async () => {
+  const lines = [], open = [];
+  DEC.forEach(([kind, d], i) => {
+    const v = document.getElementById("v" + i).value, n = document.getElementById("n" + i).value.trim();
+    if (!v) open.push(i + 1);
+    lines.push(`${i + 1}. [${v || "no answer"}] ${d}${kind !== "spec" ? " (" + KIND[kind][1] + ")" : ""}` + (n ? `\n   note: ${n}` : ""));
+  });
+  let txt = "E33p alignment, answers from the page (e33p_architecture.html, draft of 2026-11-05):\n" + lines.join("\n");
+  if (open.length) txt += `\nUnanswered rows: ${open.join(", ")}`;
+  const out = document.getElementById("out"), msg = document.getElementById("copied");
+  out.value = txt;
+  try { await navigator.clipboard.writeText(txt); msg.textContent = "Copied to the clipboard. The text is also below."; }
+  catch (e) {
+    out.focus(); out.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+    msg.textContent = ok ? "Copied. The text is also below." : "Select the text below and copy it.";
+  }
+});
+
+/* ------------------------------------------------------------------ wiring */
+listeners.push(drawPipe, drawToySvg, drawToySteps, drawToyRead, drawMask, drawBudget);
+drawEvidence();
+setArm("open");
+if (window.matchMedia) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  if (mq.addEventListener) mq.addEventListener("change", () => setArm(ARM));
+}
+</script>
+</body>
+</html>

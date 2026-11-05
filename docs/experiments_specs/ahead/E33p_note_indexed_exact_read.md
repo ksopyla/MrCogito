@@ -60,8 +60,9 @@ one KV head) reads, per query i in query block b (128 queries):
   - **pages-open (coarser):** opens the 2 best pages whole (page score = the sum of its notes' block scores), again
     512 tokens. This tells whether the finer grouping matters.
   - **controls:** E33n's dense ceiling, window control and full note read (not retrained).
-- **Information budget:** one note is a 576-number average over about 8 tokens and cannot return which of 50,257
-  tokens came next. An opened token keeps its full per-token state; the 30M dense model shows that this size can copy
+- **Information budget:** in the read, one note is a single 64-number key and 64-number value (one key/value head),
+  made from a 512-number writer state that summarises about 8 tokens; it cannot return which of 50,257 tokens came
+  next. An opened token keeps its full per-token state; the 30M dense model shows that this size can copy
   when it can see the text (it closes all of G).
 
 ## Why this is not a safe retread
