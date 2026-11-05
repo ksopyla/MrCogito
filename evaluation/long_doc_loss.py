@@ -18,6 +18,7 @@ import math
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 
 BUCKETS = (0, 512, 2048, 8192, 16384, 32768, 65536, 131072)
@@ -27,10 +28,21 @@ def bucket_names(S: int) -> list[str]:
     return [f"{a}-{b}" for a, b in zip(BUCKETS[:-1], BUCKETS[1:]) if a < S]
 
 
+def doc_key(ds, i: int) -> str:
+    """'shard:offset of the document's first token' for row i — rows cut from one document share it (a bootstrap over
+    documents resamples them together)."""
+    k, r = ds.index[i]
+    src = ds.sources[int(k)]
+    si, off = (int(x) for x in src.rows[int(r)])
+    starts = np.flatnonzero(np.asarray(src.shards[si][: off + 1]) == ds.eot)
+    return f"{si}:{int(starts[-1]) if len(starts) else 0}"
+
+
 @torch.no_grad()
-def score(model, ds, S: int, rows: int, device: str) -> dict:
+def score(model, ds, S: int, rows: int, device: str, per_row: bool = False) -> dict:
     sums = {b: 0.0 for b in bucket_names(S)}
     counts = {b: 0 for b in sums}
+    detail = []
     n = min(rows, len(ds))
     t0 = time.time()
     for i in range(n):
@@ -40,14 +52,22 @@ def score(model, ds, S: int, rows: int, device: str) -> dict:
         out, per, valid = model(input_ids=ids, labels=ids, doc_ids=doc, return_per_token_loss=True)
         per, valid = per[0].float(), valid[0]
         pos = torch.arange(1, per.shape[0] + 1, device=per.device)  # per[t] predicts token t+1
+        row = {}
         for (a, b), name in zip(zip(BUCKETS[:-1], BUCKETS[1:]), sums):
             m = valid & (pos >= a) & (pos < b)
-            sums[name] += float(per[m].sum())
-            counts[name] += int(m.sum())
-    return {"rows": n, "seconds": round(time.time() - t0, 1),
-            "loss": {b: (sums[b] / counts[b] if counts[b] else None) for b in sums},
-            "tokens": counts,
-            "all": sum(sums.values()) / max(1, sum(counts.values()))}
+            s, c = float(per[m].sum()), int(m.sum())
+            sums[name] += s
+            counts[name] += c
+            row[name] = [s, c]
+        if per_row:
+            detail.append({"doc": doc_key(ds, i), "buckets": row})
+    out = {"rows": n, "seconds": round(time.time() - t0, 1),
+           "loss": {b: (sums[b] / counts[b] if counts[b] else None) for b in sums},
+           "tokens": counts,
+           "all": sum(sums.values()) / max(1, sum(counts.values()))}
+    if per_row:
+        out["per_row"] = detail  # per row: document key and [loss sum, token count] per bucket
+    return out
 
 
 def main() -> None:
@@ -57,6 +77,8 @@ def main() -> None:
     ap.add_argument("--lengths", default="4096,16384,32768,65536")
     ap.add_argument("--rows", type=int, default=16, help="rows per source and length")
     ap.add_argument("--notes_off", action="store_true")
+    ap.add_argument("--per_row", action="store_true",
+                    help="also save every row's bucket sums with its document key (for a bootstrap over documents)")
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", required=True)
@@ -83,10 +105,10 @@ def main() -> None:
                 per_len[src] = {"rows": 0}
                 continue
             try:
-                per_len[src] = {"notes_on": score(model, ds, S, a.rows, a.device)}
+                per_len[src] = {"notes_on": score(model, ds, S, a.rows, a.device, a.per_row)}
                 if a.notes_off and has_notes:
                     model._message_override = "none"
-                    per_len[src]["notes_off"] = score(model, ds, S, a.rows, a.device)
+                    per_len[src]["notes_off"] = score(model, ds, S, a.rows, a.device, a.per_row)
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:  # a length past what fits: record it, go on
                 per_len[src] = {"error": f"{type(e).__name__}: {str(e)[:300]}"}
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
