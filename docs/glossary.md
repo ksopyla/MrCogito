@@ -97,6 +97,8 @@ meaningless without knowing which slice it came from.
 |---|---|
 | **concepts / latents / slots** | the small set of vectors the long input is compressed into. The notebook pages. |
 | **cross-attention** | the mechanism for looking things up in the notebook; the "read". |
+| **indexed notebook / opened tokens (E33p)** | the notebook used as a table of contents: the reader picks its best notes, then rereads the original tokens those notes summarise ("opened tokens") — exact words, not a summary. Like LSA's buckets: the summary only says where to look. |
+| **tied address key** | a note's lookup key built as the average of the reader's own keys for the tokens it summarises, so a question that matches those tokens also matches the note. |
 | **self-attention** | tokens looking at each other. |
 | **sliding-window attention (SWA)** | each token can only see the last *K* tokens. Cheap; limits how far back a single layer sees. |
 | **reach** | how far back information can actually travel through a stack of windows: roughly `layers × window`. |
