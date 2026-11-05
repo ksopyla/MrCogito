@@ -1,56 +1,96 @@
 #!/bin/bash
-# E33n, one arm × size end to end on one H100 (spec docs/experiments_specs/ahead/E33n_lsa_testbed_topk_notes.md):
+# E33n, one arm × size end to end on one GPU (spec docs/experiments_specs/ahead/E33n_lsa_testbed_topk_notes.md):
 #   1. trunk  — FineWeb-Edu GPT-2 shards, rows of 4,096, warmup then constant learning rate
 #   2. decay  — from the trunk's final weights, fresh optimizer, LongDocs-lite rows of 16,384, 1−sqrt decay
 #   3. evals  — long-document loss by position at 4k–128k (notebook on / off), RULER (13 tasks, 4k–32k), core benchmarks
-# Everything lands in s3://BUCKET/runs/e33n/<run>/ (weights of the two final models, logs, W&B offline runs, results).
-# Usage (as a launch.sh job): "infra/aws/jobs/e33n_run.sh ARM SIZE [LR] [TRUNK_TOKENS]"
+#
+# AWS node (a launch.sh job; data from S3, results to s3://BUCKET/runs/e33n/<run>/, W&B offline):
+#     infra/aws/jobs/e33n_run.sh ARM SIZE [LR] [TRUNK_TOKENS]
+# Home server (Odra / Polonez, in tmux; data from data_build.sh, W&B as the server is set up):
+#     E33N_DATA=DIR E33N_RUNS=DIR CUDA_VISIBLE_DEVICES=0 bash infra/aws/jobs/e33n_run.sh ARM SIZE [LR] [TRUNK_TOKENS]
+#   E33N_BURST_H=5.5 E33N_COOL_MIN=20: train in bursts of at most 5.5 h with a 20 min cooldown between them
+#   (Polonez heat rule); each burst ends with a checkpoint and the next resumes from it.
+# E33N_MICRO_TRUNK / E33N_MICRO_DECAY: micro-batch per GPU (default: the driver's, sized for an 80 GB H100).
+# A rerun skips the phases that already have a final model.
+# Smoke tests: E33N_CMD_EXTRA="--local" (laptop trainer settings), E33N_SKIP_EVAL=1 (stop after the decay).
 set -uo pipefail
 ARM="$1"; SIZE="$2"; LR="${3:-}"; TT="${4:-}"
-source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_MODE=offline WANDB_PROJECT=MrCogito EXPERIMENT_ID=E33n
-D="$MC_DISK/data"
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_PROJECT=MrCogito EXPERIMENT_ID=E33n
+if [ -f /etc/mrcogito.env ]; then
+  source /etc/mrcogito.env
+  D="$MC_DISK/data"; RUNS="$MC_DISK/runs"; export WANDB_MODE=offline
+else
+  D="${E33N_DATA:?set E33N_DATA}"; RUNS="${E33N_RUNS:?set E33N_RUNS}"; MC_BUCKET=""
+fi
 RUN="e33n_${SIZE}_${ARM}${LR:+_lr$LR}${TT:+_tok$TT}"
-R="$MC_DISK/runs/$RUN"; S3R="s3://$MC_BUCKET/runs/e33n/$RUN"
+R="$RUNS/$RUN"; S3R="${MC_BUCKET:+s3://$MC_BUCKET/runs/e33n/$RUN}"
 export WANDB_DIR="$R/wandb"
-mkdir -p "$D/fineweb_edu_gpt2" "$R" "$WANDB_DIR"
+mkdir -p "$R" "$WANDB_DIR"
 log() { echo "[e33n $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$R/events.log"; }
 sync_up() {
+  [ -n "$S3R" ] || return 0
   aws s3 sync --only-show-errors "$R/" "$S3R/" --exclude "*/checkpoint-*" --exclude "*optimizer.pt" \
     --exclude "*rng_state*" --exclude "*.pth" || true
 }
-( while sleep 900; do sync_up; done ) &
-SYNC=$!
+SYNC=""
+if [ -n "$S3R" ]; then ( while sleep 900; do sync_up; done ) & SYNC=$!; fi
+finish() { [ -n "$SYNC" ] && kill "$SYNC" 2>/dev/null; sync_up; }
 
-log "start $RUN on $MC_IID"
-NSH=$(uv run python -c "import sys; sys.path.insert(0, '.'); from scripts.run_e33n import SIZES; print(int(float('${TT:-0}') or SIZES['$SIZE']['trunk']) // 100_000_000 + 2)")
-aws s3 cp --only-show-errors "s3://$MC_BUCKET/data/fineweb_edu_gpt2/finewebedu_val_000000.bin" "$D/fineweb_edu_gpt2/"
-for i in $(seq 1 "$NSH"); do
-  f=$(printf "finewebedu_train_%06d.bin" "$i")
-  aws s3 cp --only-show-errors "s3://$MC_BUCKET/data/fineweb_edu_gpt2/$f" "$D/fineweb_edu_gpt2/" || true
-done
-aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/tokenizer_gpt2/" "$D/tokenizer_gpt2/"
-aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/longdocs_lite_gpt2/" "$D/longdocs_lite_gpt2/"
-log "data ready: $NSH FineWeb shards, LongDocs-lite"
+# phase NAME CMD: run a training phase; with E33N_BURST_H, in bursts that resume from the newest checkpoint
+phase() {
+  local name=$1 cmd=$2 ck="" rc
+  while true; do
+    ( eval "$cmd${E33N_BURST_H:+ --max_train_hours $E33N_BURST_H}${ck:+ --resume_from_checkpoint $ck}" ) \
+      >> "$R/$name.log" 2>&1
+    rc=$?
+    [ "$rc" = 3 ] || return "$rc"
+    ck=$(ls -d "$R/$name"/*/checkpoint-* | awk -F'checkpoint-' '{print $NF" "$0}' | sort -n | tail -1 | cut -d' ' -f2)
+    log "$name burst ended at ${ck##*/}; cooldown ${E33N_COOL_MIN:-20} min"
+    sync_up
+    sleep $(( ${E33N_COOL_MIN:-20} * 60 ))
+    log "$name resumes from ${ck##*/}"
+  done
+}
 
-CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase trunk --data "$D" --out "$R" \
-      ${LR:+--lr $LR} ${TT:+--tokens $TT} --eval_every 500 --wandb)
-echo "$CMD" > "$R/trunk.cmd"
-log "trunk start"
-( eval "$CMD" ) > "$R/trunk.log" 2>&1 || { log "trunk FAILED"; tail -40 "$R/trunk.log"; sync_up; kill $SYNC; exit 1; }
-TRUNK=$(ls -d "$R"/trunk/*/final | tail -1)
+log "start $RUN on ${MC_IID:-$(hostname)} GPU ${CUDA_VISIBLE_DEVICES:-all}"
+if [ -n "$MC_BUCKET" ]; then
+  mkdir -p "$D/fineweb_edu_gpt2"
+  NSH=$(uv run python -c "import sys; sys.path.insert(0, '.'); from scripts.run_e33n import SIZES; print(int(float('${TT:-0}') or SIZES['$SIZE']['trunk']) // 100_000_000 + 2)")
+  aws s3 cp --only-show-errors "s3://$MC_BUCKET/data/fineweb_edu_gpt2/finewebedu_val_000000.bin" "$D/fineweb_edu_gpt2/"
+  for i in $(seq 1 "$NSH"); do
+    f=$(printf "finewebedu_train_%06d.bin" "$i")
+    aws s3 cp --only-show-errors "s3://$MC_BUCKET/data/fineweb_edu_gpt2/$f" "$D/fineweb_edu_gpt2/" || true
+  done
+  aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/tokenizer_gpt2/" "$D/tokenizer_gpt2/"
+  aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/longdocs_lite_gpt2/" "$D/longdocs_lite_gpt2/"
+fi
+log "data: $(ls "$D"/fineweb_edu_gpt2/finewebedu_train_*.bin | wc -l) FineWeb shards, $(ls "$D"/longdocs_lite_gpt2/*_train_*.bin | wc -l) LongDocs-lite shards"
+
+TRUNK=$(ls -d "$R"/trunk/*/final 2>/dev/null | tail -1)
+if [ -z "$TRUNK" ]; then
+  CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase trunk --data "$D" --out "$R" \
+        ${LR:+--lr $LR} ${TT:+--tokens $TT} ${E33N_MICRO_TRUNK:+--micro $E33N_MICRO_TRUNK} --eval_every 500 --wandb ${E33N_CMD_EXTRA:-})
+  echo "$CMD" > "$R/trunk.cmd"
+  log "trunk start"
+  phase trunk "$CMD" || { log "trunk FAILED"; tail -40 "$R/trunk.log"; finish; exit 1; }
+  TRUNK=$(ls -d "$R"/trunk/*/final | tail -1)
+fi
 log "trunk done: $TRUNK"
 sync_up
 
-CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase decay --data "$D" --out "$R" \
-      ${LR:+--lr $LR} --init "$TRUNK" --eval_every 200 --wandb)
-echo "$CMD" > "$R/decay.cmd"
-log "decay start"
-( eval "$CMD" ) > "$R/decay.log" 2>&1 || { log "decay FAILED"; tail -40 "$R/decay.log"; sync_up; kill $SYNC; exit 1; }
-DECAY=$(ls -d "$R"/decay/*/final | tail -1)
+DECAY=$(ls -d "$R"/decay/*/final 2>/dev/null | tail -1)
+if [ -z "$DECAY" ]; then
+  CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase decay --data "$D" --out "$R" \
+        ${LR:+--lr $LR} ${E33N_MICRO_DECAY:+--micro $E33N_MICRO_DECAY} --init "$TRUNK" --eval_every 200 --wandb ${E33N_CMD_EXTRA:-})
+  echo "$CMD" > "$R/decay.cmd"
+  log "decay start"
+  phase decay "$CMD" || { log "decay FAILED"; tail -40 "$R/decay.log"; finish; exit 1; }
+  DECAY=$(ls -d "$R"/decay/*/final | tail -1)
+fi
 log "decay done: $DECAY"
 sync_up
+[ -n "${E33N_SKIP_EVAL:-}" ] && { log "evals skipped"; finish; exit 0; }
 
 log "eval long-document loss"
 uv run python evaluation/long_doc_loss.py --checkpoint "$DECAY" --data "$D/longdocs_lite_gpt2" \
@@ -65,6 +105,5 @@ sync_up
 log "eval core"
 uv run python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" --suite core \
   --limit 0 --batch 32 --out "$R/eval_core.json" > "$R/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
-kill $SYNC 2>/dev/null
 log "done"
-sync_up
+finish

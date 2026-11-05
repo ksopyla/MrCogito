@@ -49,6 +49,7 @@ from training.concept_pretraining_factories import (
     load_pretraining_datasets,
 )
 from training.concept_pretraining_trainer import PerceiverDenoiseTrainer
+from training.wallclock_callback import StopAfterHoursCallback
 from training.utils_training import (
     init_wandb,
     is_main_process,
@@ -468,6 +469,9 @@ def main():
     callbacks = []
     if loss_config.warmup_steps > 0:
         callbacks.append(ConceptLossStepCallback())
+    wallclock = StopAfterHoursCallback(data_args.max_train_hours) if data_args.max_train_hours > 0 else None
+    if wallclock is not None:
+        callbacks.append(wallclock)
 
     if is_backbone:
         special_token_changes = align_special_tokens_for_training(model, tokenizer)
@@ -589,6 +593,13 @@ def main():
         )
     logger.info("=" * 60)
     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+    if wallclock is not None and wallclock.stopped:
+        logger.info(f"Wall-clock budget of {data_args.max_train_hours} h used at step {trainer.state.global_step}/"
+                    f"{trainer.state.max_steps}; checkpoint saved, no final model. Resume with "
+                    "--resume_from_checkpoint.")
+        if wandb.run and is_main_process():
+            wandb.finish()
+        sys.exit(3)
 
     final_path = os.path.join(training_args.output_dir, "final")
     trainer.save_model(final_path)

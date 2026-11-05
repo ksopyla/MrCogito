@@ -524,6 +524,14 @@ class DataTrainingArguments:
             "FineWeb-Edu trunk, 'doc' rows for the LongDocs decay). Replaces every other data route when set."
         },
     )
+    max_train_hours: float = field(
+        default=0.0,
+        metadata={
+            "help": "Wall-clock budget for this invocation (0 = none). When it runs out the trainer saves a "
+            "checkpoint, skips the final save and exits with code 3; rerun with --resume_from_checkpoint to "
+            "continue (heat-limited bursts on Polonez, interruptible machines)."
+        },
+    )
     pretokenized_manifest: Optional[str] = field(
         default=None,
         metadata={
