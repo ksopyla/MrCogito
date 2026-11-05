@@ -460,7 +460,7 @@ function explain(m,id){
     b=`<p>Every layer keeps a key and a value for every token, ${2*s.g*s.dh} numbers per token. At ${int(s.S)} tokens that is ${int(s.S*2*s.g*s.dh)} numbers per layer, and every query scores all earlier keys: ${fF(4*h*s.dh*avgWin(s.S,s.S))} per token per layer, growing with the row.</p><p>The dense recipe has no length method. Past the training length it reads nothing useful: at 16k dense scored 0 % on every task (11 Oct).</p>`;
     prow("numbers kept, all layers",int(s.S*2*s.g*s.dh*s.layers.length));prow("attention scores, all layers",`${fF(Fl.scores)} (${share(Fl.scores)})`)}
   else if(k==="w_pages"){t="Pages";
-    b=`<p>The row is cut into pages of ${G.W} tokens, a new one every ${G.st} (${G.n} pages at ${fK(s.S)}; neighbours share ${G.W-G.st} tokens). Tokens enter as their token-table rows, projected ${s.e} → ${s.wr.dw} and normed. A page never mixes documents.</p>`;
+    b=`<p>The row is cut into pages of ${G.W} tokens, a new one every ${G.st} (${G.n} pages at ${fK(s.S)}; neighbours share ${G.W-G.st} tokens). Tokens enter as rows of the model's one token table, the same table the input layer reads, so there is no second embedding. The only new weights here project them ${s.e} → ${s.wr.dw} and norm them. A page never mixes documents.</p>`;
     prow("pages per row",G.n);prow("parameters",int(P.N.w_pages),`e·dw + dw`)}
   else if(k==="w_enc"){t=`Page encoder × ${s.wr.enc}`;
     b=`<p>${s.wr.enc} two-way attention layers inside each page (width ${s.wr.dw}, ${s.wr.dw/64} heads). Every token sees its whole page in both directions, so “ Mar”“o” already knows it is the one who made a home in Kafabury before any latent reads it.</p>`;
@@ -621,7 +621,7 @@ function layout(m,O){
   for(let i=0;i<ns;i++){const a=nodes.find(z=>z.id==="L"+i),b=nodes.find(z=>z.id==="L"+(n-1-i));if(!a||!b||a===b)continue;
     const off=8+(ns-1-i)*(30/Math.max(ns-1,1));arcs.push(`M${X0},${a.y+a.h-8} C${X0-off},${a.y+a.h-8} ${X0-off},${b.y+8} ${X0},${b.y+8}`)}
   // writer
-  if(e33){const G=geo(s);const wn=[["w_pages","Pages",`${G.n} × ${G.W} tokens, every ${G.st}`],["w_enc",`Page encoder × ${s.wr.enc}`,`two-way, width ${s.wr.dw}`],
+  if(e33){const G=geo(s);const wn=[["w_pages","Pages · same token table",`${G.n} × ${G.W} tokens, every ${G.st}`],["w_enc",`Page encoder × ${s.wr.enc}`,`two-way, width ${s.wr.dw}`],
       ["w_lat",`${s.wr.K} latents × ${s.wr.rounds} reads`,`width ${s.wr.D}, ${s.wr.hl} heads`],["w_notes","Notes",`${int(G.C)} = ${G.tpn.toFixed(1)} tokens each`]];
     const notesY=readN.y+readN.h/2-HW/2,span=(notesY-wrStart)/3;
     wn.forEach(([id,lb,sb],k)=>put({id,x:RX,y:k<3?wrStart+k*span:notesY,w:RW,h:HW,cat:"writer",lb,sb,p:P.N[id],narrow:true}));
