@@ -1,5 +1,5 @@
 #!/bin/bash
-# E33n, one arm × size end to end on one GPU (spec docs/experiments_specs/ahead/E33n_lsa_testbed_topk_notes.md):
+# E33n, one arm × size end to end on one GPU (spec docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md):
 #   1. trunk  — FineWeb-Edu GPT-2 shards, rows of 4,096, warmup then constant learning rate
 #   2. decay  — from the trunk's final weights, fresh optimizer, LongDocs-lite rows of 16,384, 1−sqrt decay
 #   3. evals  — long-document loss by position at 4k–128k (notebook on / off), RULER (13 tasks, 4k–32k), core benchmarks

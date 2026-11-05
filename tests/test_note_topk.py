@@ -1,6 +1,6 @@
 """E33n — top-k note read: each query and head reads only its k best visible notes (plus the raw window).
 
-Spec: docs/experiments_specs/ahead/E33n_lsa_testbed_topk_notes.md.
+Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md.
 """
 from dataclasses import replace
 

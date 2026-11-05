@@ -1,13 +1,14 @@
 # E33n — E33 on the LSA testbed: natural long text at 30M → 100M → 300M, with a top-k note read
 
-- **Status:** approved by the author's request of 2026-11-04 ("write spec, implement, build the evaluation like the LSA
-  paper with the same datasets, build AWS infrastructure, start, train and stop; do not spend more than $2k").
-  Runs on AWS (one H100 per run). Spend is logged per stage in §Plan → Budget.
+- **Status:** **killed at stage 1 (K1), 2026-11-05.** Approved by the author's request of 2026-11-04 ("write spec,
+  implement, build the evaluation like the LSA paper with the same datasets, build AWS infrastructure, start, train and
+  stop; do not spend more than $2k"). Stage 1 (30M) ran on the home servers (no H100 capacity); stages 2–3 not run.
+  AWS spend $0.17.
 - **Serves:** vision priority 2 (long context through the notebook) on the way to priority 4 (agent-to-agent). First
   test of E33 on **natural** long text with a published protocol, so our numbers can be read next to a published
   architecture (Latent Sparse Attention, LSA).
 - **Implementation plan:** [E33n_plan.md](E33n_plan.md)
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-11-04 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-11-04 · closed 2026-11-05
 - **Research note behind it:** [hierarchy_lessons_hnet_ncm_mai_20261030.md](../../4_Research_Notes/hierarchy_lessons_hnet_ncm_mai_20261030.md)
   §1.4 (LSA) and §4 step 3; LSA review in
   [learned_kv_context_compression.md](../../literature_review/learned_kv_context_compression.md#latent-sparse-attention-lsa).
@@ -131,4 +132,13 @@ full 1.085 at 128k, a gap of 0.069 nats per token).
   a RULER runner on lm-eval for perceiver_ar, and the AWS scripts. All config-selectable and reusable.
 
 ## Result
-- (filled in by experiment-track)
+- **Runs (2026-11-05, 30M, home servers):** dense `perceiver_ar_perceiver_H576L2g1s5N128_20261105_123824`, window
+  `…_155729`, e33 `…_163042`, e33n `…_182321` (decay runs; trunks in the run report) · W&B
+  https://wandb.ai/ksopyla/MrCogito · report
+  [e33n_s30_lsa_testbed_20261105.md](../../2_Experiments_Registry/run_reports/e33n_s30_lsa_testbed_20261105.md) ·
+  results `docs/2_Experiments_Registry/results/evaluations/E33n_s30/`.
+- **Verdict: killed (K1).** At 16k, positions 2k–16k, G = 0.134 nats (95 % 0.099–0.176); the full read recovers 5.5 %
+  (3.9–7.5) and the top-k read 6.1 % (4.7–7.8) of it. K2 not met, S2 met (top-k − full = −0.0008). S1 failed. Copy split:
+  97 % of G sits on the 9.6 % of tokens whose 4-gram occurred earlier only beyond the 512-token window; the notebook
+  closes ~2 % of that part — the far-context value of natural text at 30M is exact copying, which compressed notes
+  cannot return. Stages 2–3 not run.

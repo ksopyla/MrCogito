@@ -52,6 +52,8 @@ never bother to use the notebook.**
 
 | metric | what it measures | good direction | scale |
 |---|---|---|---|
+| **far-context gap (G) and its share** | G = window control's loss − dense ceiling's loss on far positions of long documents (≥ 2k tokens in): how much reading the whole book is worth over the last pages. A model's *share* = how much of G it closes | share higher | in nats. E33n 30M at 16k: G 0.134; notes closed 6 % |
+| **copy split (near / far / no copy)** | sorts each scored word by whether its short phrase (4-gram) appeared earlier inside the local window (near), only further back (far), or never (no copy), then measures loss per group — shows whether far context is worth exact copying or meaning | — | E33n 30M: far-copy words are ~10 % of words and 97 % of G |
 | **loss / cross-entropy (CE), in nats** | how surprised the model is by the true next token | lower | 0 = certain. 0.69 = a coin flip. 1.39 = a blind guess among 4. Typical small-LM values: 2.5–4.5. A 0.05 difference is small; 0.5 is large. |
 | **perplexity (ppl)** | the same thing as "how many options is it choosing between" | lower | `exp(loss)`. ppl 50 ≈ picking among 50 words. |
 | **bits per byte (BPB)** | loss converted to a per-byte unit, so two models with different tokenizers can be compared | lower | ~1.5 = weak small model, ~1.0 = decent small model. The only fair ruler against public models. |

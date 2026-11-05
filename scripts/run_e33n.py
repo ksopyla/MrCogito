@@ -1,6 +1,6 @@
 """E33n runner: the four arms × sizes × phases of the LSA-shaped protocol, as trainer commands (one GPU per run).
 
-Spec: docs/experiments_specs/ahead/E33n_lsa_testbed_topk_notes.md · plan: E33n_plan.md.
+Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan: E33n_plan.md.
 
   arms   window  — reading layer sees only its last 512 raw tokens (E31c writer built, notes switched off)
          dense   — reading layer: full causal attention over every earlier raw token (E18-style raw global read)
