@@ -91,25 +91,31 @@ def main() -> None:
     tasks = [t for t in a.tasks.split(",") if t] or (RULER if a.suite == "ruler" else CORE)
     if "ruler_qa_hotpot" in tasks:
         redirect_hotpot_download()
-    metadata = {"tokenizer": a.tokenizer, "max_seq_lengths": lengths} if a.suite == "ruler" else None
     t0 = time.time()
-    res = lm_eval.simple_evaluate(
+    run = lambda md: lm_eval.simple_evaluate(
         model=lm, tasks=tasks, limit=a.limit if a.limit > 0 else None, log_samples=False,
-        task_manager=TaskManager(metadata=metadata) if metadata else None,
+        task_manager=TaskManager(metadata=md) if md else None,
         gen_kwargs=f"max_gen_toks={a.max_gen_toks}" if a.suite == "ruler" else None,
         bootstrap_iters=0,
-    )
+    )["results"]
     out = {"checkpoint": a.checkpoint, "suite": a.suite, "lengths": lengths if a.suite == "ruler" else None,
-           "limit": a.limit, "notes_off": a.notes_off, "seconds": round(time.time() - t0, 1),
-           "results": res["results"]}
-    if a.suite == "ruler":  # the LSA column: mean of the 13 tasks at each length
-        out["mean"] = {}
+           "limit": a.limit, "notes_off": a.notes_off}
+    if a.suite == "ruler":
+        # One call per length: lm-eval concatenates the lengths into one dataset per task and `limit` takes its first
+        # documents, so a single call with several lengths scored only the first length (found 2026-11-05).
+        out["results"], out["mean"] = {}, {}
         for L in lengths:
-            vals = [r.get(f"{L},none") for r in res["results"].values() if isinstance(r, dict)]
+            r = run({"tokenizer": a.tokenizer, "max_seq_lengths": [L]})
+            out["results"][L] = r
+            vals = [x.get(f"{L},none") for x in r.values() if isinstance(x, dict)]
             vals = [v for v in vals if isinstance(v, (int, float)) and v >= 0]
-            out["mean"][L] = sum(vals) / len(vals) if vals else None
+            out["mean"][L] = sum(vals) / len(vals) if vals else None  # the LSA column: mean of the 13 tasks
+            Path(a.out).write_text(json.dumps(out, indent=2, default=str))
+    else:
+        out["results"] = run(None)
+    out["seconds"] = round(time.time() - t0, 1)
     Path(a.out).write_text(json.dumps(out, indent=2, default=str))
-    print(json.dumps(out.get("mean") or {k: v for k, v in res["results"].items()}, indent=1, default=str)[:3000])
+    print(json.dumps(out.get("mean") or out["results"], indent=1, default=str)[:3000])
 
 
 if __name__ == "__main__":
