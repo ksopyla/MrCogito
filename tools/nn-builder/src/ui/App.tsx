@@ -7,38 +7,93 @@ import { parseGraph } from "../engine/serialize";
 import type { Graph } from "../engine/types";
 import { DragProvider, type Payload, type Target } from "./drag";
 import { CostPanel, LengthPanel, SummaryStrip, TrainingPanel } from "./Estimates";
-import { Frame, type Sel } from "./Frame";
-import { useHistory } from "./history";
+import { Frame, stackWidths, type Sel } from "./Frame";
+import { useWorkspace } from "./history";
+import { ComparePanel } from "./Compare";
+import { DesignTabs } from "./DesignTabs";
 import { Inspector } from "./Inspector";
 import { Palette } from "./Palette";
 import { TopBar } from "./TopBar";
 
 const AUTOSAVE = "nn-builder.current";
+const WORKSPACE = "nn-builder.workspace";
+const SIDE_W = "nn-builder.panelWidth";
+const sideDefault = (vw: number) => (vw >= 1400 ? 520 : 440);
 
-function initial(): Graph {
+// the width the user chose is kept (only once they choose one); the panel shows as much of it as the window allows
+const clampSide = (w: number, vw: number) => Math.round(Math.max(340, Math.min(w, vw - 200 - 360)));
+function storedSide(): number | null {
   try {
+    const v = Number(localStorage.getItem(SIDE_W));
+    return v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The designs open last time, with the key of each one's last save (or the single autosaved one from before tabs, or E33 30M). */
+function initial(): { graphs: Graph[]; active: number; saved: (string | null)[] } {
+  try {
+    const ws = JSON.parse(localStorage.getItem(WORKSPACE) ?? "null") as { graphs: unknown[]; active: number; saved?: (string | null)[] } | null;
+    const opened = (ws?.graphs ?? []).map((g, i) => ({ graph: parseGraph(JSON.stringify(g)).graph, saved: ws?.saved?.[i] ?? null })).filter((t): t is { graph: Graph; saved: string | null } => Boolean(t.graph));
+    if (opened.length) return { graphs: opened.map((t) => t.graph), active: Math.min(ws?.active ?? 0, opened.length - 1), saved: opened.map((t) => t.saved) };
     const raw = localStorage.getItem(AUTOSAVE);
     const res = raw ? parseGraph(raw) : null;
-    if (res?.graph) return res.graph;
+    if (res?.graph) return { graphs: [res.graph], active: 0, saved: [] };
   } catch {
     /* storage blocked: start fresh */
   }
-  return buildPreset("e33m_plain_30m");
+  return { graphs: [buildPreset("e33m_plain_30m")], active: 0, saved: [] };
 }
+const start = initial();
 
 const TABS: [string, string][] = [
   ["inspect", "Inspect"],
   ["cost", "Compute & memory"],
   ["train", "GPUs & time"],
   ["length", "Row length"],
+  ["compare", "Compare"],
 ];
 
 export function App() {
-  const hist = useHistory(initial);
+  const hist = useWorkspace(() => start.graphs, start.active, start.saved);
   const { graph, apply, undo, redo } = hist;
   const analysis = useMemo(() => analyze(graph), [graph]);
   const [sel, setSelRaw] = useState<Sel>(null);
   const [tab, setTab] = useState("inspect");
+  const [pref, setPrefRaw] = useState<number | null>(storedSide);
+  const [vw, setVw] = useState(window.innerWidth);
+  const [resizing, setResizing] = useState(false);
+  const sideW = clampSide(pref ?? sideDefault(vw), vw);
+  const setPref = useCallback((w: number | null) => {
+    setPrefRaw(w);
+    try {
+      if (w === null) localStorage.removeItem(SIDE_W);
+      else localStorage.setItem(SIDE_W, String(w));
+    } catch {
+      /* storage blocked */
+    }
+  }, []);
+
+  useEffect(() => {
+    const onResize = () => setVw(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const x0 = e.clientX, w0 = sideW;
+    setResizing(true);
+    const move = (ev: PointerEvent) => setPref(clampSide(w0 + (x0 - ev.clientX), window.innerWidth));
+    const up = () => {
+      setResizing(false);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const timer = useRef<number | undefined>(undefined);
 
@@ -55,10 +110,11 @@ export function App() {
   useEffect(() => {
     try {
       localStorage.setItem(AUTOSAVE, JSON.stringify(graph));
+      localStorage.setItem(WORKSPACE, JSON.stringify({ graphs: hist.tabs.map((t) => t.graph), saved: hist.tabs.map((t) => t.saved), active: hist.tabs.findIndex((t) => t.id === hist.active) }));
     } catch {
       /* storage blocked */
     }
-  }, [graph]);
+  }, [graph, hist.tabs, hist.active]);
 
   // a selection whose target was removed (undo, delete) is dropped
   useEffect(() => {
@@ -152,7 +208,10 @@ export function App() {
       const to = t.drop === "cell" ? { stack: graph.stacks.find((s) => s.rows.some((r) => r.cells.some((c) => c.id === t.cell)))!.id, cell: t.cell } : t.drop === "row" ? { stack: t.stack!, row: t.row } : { stack: t.stack! };
       const res = E.connect(graph, p.from, to);
       if (res.error) toast(res.error);
-      else apply(() => res.graph);
+      else {
+        apply(() => res.graph);
+        if (res.note) toast(res.note);
+      }
     }
   };
 
@@ -173,17 +232,47 @@ export function App() {
     }
   };
 
-  const load = (g: Graph) => {
-    apply(() => g);
+  const estimates = (k: string) => {
+    const props = { graph, analysis, apply, setSel };
+    if (k === "train") return <TrainingPanel {...props} />;
+    if (k === "length") return <LengthPanel {...props} />;
+    if (k === "compare") return <ComparePanel tabs={hist.tabs} active={hist.active} onSwitch={switchDesign} />;
+    return <CostPanel {...props} />;
+  };
+
+  const load = (g: Graph, onDisk = false) => {
+    hist.open(g, onDisk);
+    setSelRaw(null);
+  };
+  const closeDesign = (id: string) => {
+    const t = hist.tabs.find((x) => x.id === id);
+    // a design with edits that are not in the designs folder is lost on close; a fresh preset is not
+    if (t?.unsaved && (t.edited || t.saved) && !window.confirm(`"${t.graph.name}" has changes that are not saved. Close it anyway?`)) return;
+    hist.close(id, () => buildPreset("blank"));
+    setSelRaw(null);
+  };
+  const switchDesign = (id: string) => {
+    hist.switchTo(id);
     setSelRaw(null);
   };
 
   return (
     <DragProvider accepts={accepts} onDrop={onDrop}>
       <div className="app">
-        <TopBar graph={graph} load={load} apply={apply} undo={undo} redo={redo} canUndo={hist.canUndo} canRedo={hist.canRedo} toast={toast} />
+        <TopBar
+          graph={graph} load={load} apply={apply} undo={undo} redo={redo} canUndo={hist.canUndo} canRedo={hist.canRedo} toast={toast}
+          unsaved={hist.unsaved} neverSaved={hist.tabs.find((t) => t.id === hist.active)?.saved == null} onSaved={(g) => hist.markSaved(hist.active, g)}
+          panelWidth={sideW} panelMax={vw - 200 - 360} onPanelWidth={setPref}
+        />
+        <DesignTabs
+          tabs={hist.tabs}
+          active={hist.active}
+          onSwitch={switchDesign}
+          onClose={closeDesign}
+          onCopy={() => load({ ...structuredClone(graph), name: `${graph.name} (copy)` })}
+        />
         <SummaryStrip analysis={analysis} graph={graph} onOpen={setTab} />
-        <div className="main">
+        <div className="main" style={{ gridTemplateColumns: `200px minmax(0, 1fr) ${sideW}px` }}>
           <Palette onQuickAdd={quickAdd} />
           <Frame
             graph={graph}
@@ -195,8 +284,17 @@ export function App() {
               apply((g) => E.insertRow(g, stackId, s.rows.length, []));
             }}
             onGroupCount={(id, count) => apply((g) => E.updateGroup(g, id, { count }), `group:${id}`)}
+            onStackWidth={(id, w) =>
+              apply((g) => {
+                const widths = { ...stackWidths(g) };
+                if (w === null) delete widths[id];
+                else widths[id] = w;
+                return { ...g, ui: { ...(g.ui ?? {}), stackWidths: widths } };
+              }, `stackw:${id}`)
+            }
           />
           <aside className="side">
+            <div className={`splitter ${resizing ? "active" : ""}`} onPointerDown={startResize} onDoubleClick={() => setPref(null)} title="drag to resize; double-click for the default width" />
             <nav className="tabs">
               {TABS.map(([k, l]) => (
                 <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>
@@ -205,10 +303,7 @@ export function App() {
               ))}
             </nav>
             <div className="side-body">
-              {tab === "inspect" && <Inspector graph={graph} analysis={analysis} sel={sel} setSel={setSel} apply={apply} toast={toast} />}
-              {tab === "cost" && <CostPanel graph={graph} analysis={analysis} apply={apply} setSel={setSel} />}
-              {tab === "train" && <TrainingPanel graph={graph} analysis={analysis} apply={apply} setSel={setSel} />}
-              {tab === "length" && <LengthPanel graph={graph} analysis={analysis} apply={apply} setSel={setSel} />}
+              {tab === "inspect" ? <Inspector graph={graph} analysis={analysis} sel={sel} setSel={setSel} apply={apply} toast={toast} /> : estimates(tab)}
             </div>
           </aside>
         </div>

@@ -2,11 +2,13 @@
 import { cellCost, embeddingProjFlops, type Bytes, type CellCost, type NotesInfo, type Part, type SeqInfo, type SourceInfo } from "./cells";
 import { pageGeometry } from "./geometry";
 import { CAL, GiB, MEMORY_CAL, OPTIMIZERS, PRECISIONS, gpuById } from "./hardware";
+import { CHINCHILLA_PER_PARAM, trainingTokens } from "./tokens";
 import type { Cell, EmbeddingCell, Endpoint, Graph, Group, KvOutCell, LmHeadCell, Row, Stack } from "./types";
 
 export interface Issue {
   where: string; // a cell, row, stack, edge or group id
   msg: string;
+  level?: "error" | "warning"; // absent = error
 }
 
 export interface CellResult {
@@ -84,7 +86,13 @@ export interface MemoryResult {
 export interface Analysis {
   S: number;
   issues: Issue[];
-  params: { total: number; byType: Record<string, number>; byStack: Record<string, number> };
+  params: {
+    total: number;
+    trainable: number; // total minus frozen cells (frozen weights get no gradients or optimizer state)
+    active: number; // used in a matmul per token: no embedding lookups (unless tied to a head), only the routed experts in use
+    byType: Record<string, number>;
+    byStack: Record<string, number>;
+  };
   stacks: StackResult[];
   cells: Map<string, CellResult>;
   flops: {
@@ -98,6 +106,12 @@ export interface Analysis {
     irregularTrainPerToken: number;
   };
   memory: MemoryResult;
+  tokens: {
+    budget: number; // training tokens this run uses
+    rule: string; // "custom" or the preset that set it
+    perParam: number;
+    chinchillaMultiple: number; // budget / (20 × parameters)
+  };
   time: {
     tokensPerSecondPerGpu: number;
     tokensPerSecond: number;
@@ -153,9 +167,10 @@ function seqInfos(g: Graph, S: number, issues: Issue[]): Map<string, SeqInfo> {
       const pages = pageGeometry(base.P, q.window, q.stride);
       info = { kind: "pages", P: pages.count * pages.window, pages, pageWindowCfg: q.window, tokensOf: q.of };
     } else {
-      const base = visit(q.of);
-      if (base.kind !== "pages" || !base.pages) {
-        issues.push({ where: id, msg: "slots must sit on a pages stack" });
+      const base = byId.get(q.of)?.seq.kind === "pages" ? visit(q.of) : undefined;
+      if (!base?.pages) {
+        const anyPages = g.stacks.some((x) => x.seq.kind === "pages");
+        issues.push({ where: id, msg: anyPages ? "these slots sit on no page writer: choose one under \"Slots on the pages of\"" : "these slots read the pages of a page writer, and there is none yet: add one with + Stack → Pages over a stack, and they attach to it" });
         info = { kind: "slots", P: q.per_page, perPage: q.per_page, pageWindowCfg: 0 };
       } else
         info = {
@@ -237,12 +252,23 @@ function widths(g: Graph, ix: Index, issues: Issue[]) {
   return { rowIn, rowOut, stackOut, tapWidth };
 }
 
-function notesOf(s: Stack, seq: SeqInfo): NotesInfo | undefined {
+/** The exact drag that starts an unfed stack, where the design tells which one it is. */
+function howToStart(g: Graph, s: Stack): string {
+  const q = s.seq;
+  const base = q.kind === "pages" ? g.stacks.find((x) => x.id === q.of) : undefined;
+  if (!base) return "add an embedding or learned queries first, or wire an input onto its header";
+  return base.rows.some((r) => r.cells.some((c) => c.type === "embedding"))
+    ? `drag the token-table dot (lower right of ${base.name}'s embedding) onto this stack's header`
+    : `drag ${base.name}'s output dot onto this stack's header`;
+}
+
+function notesOf(s: Stack, seq: SeqInfo, seqs: Map<string, SeqInfo>): NotesInfo | undefined {
   const last = s.rows.flatMap((r) => r.cells).at(-1);
   if (!last || last.type !== "kv_out" || !seq.pages) return undefined;
   const kv = last as KvOutCell;
   const perPage = (seq.perPage ?? 0) * kv.entries;
-  return { total: seq.pages.count * perPage, perPage, pages: seq.pages, tokensOf: seq.tokensOf, kvHeads: kv.kv_heads, headDim: kv.head_dim };
+  const fromOtherText = seq.tokensOf !== undefined && seqs.get(seq.tokensOf)?.kind !== "tokens";
+  return { total: seq.pages.count * perPage, perPage, pages: seq.pages, tokensOf: seq.tokensOf, fromOtherText, kvHeads: kv.kv_heads, headDim: kv.head_dim };
 }
 
 // ------------------------------------------------------------------ the analysis
@@ -280,11 +306,12 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
     const home = ix.stacks.get(e.from.stack);
     const seq = seqs.get(e.from.stack);
     if (!home || !seq) return undefined;
-    return { stackId: home.id, width: W.tapWidth(e.from), P: seq.P, seq, notes: notesOf(home, seq) };
+    return { stackId: home.id, width: W.tapWidth(e.from), P: seq.P, seq, notes: notesOf(home, seq, seqs) };
   };
 
   const stackResults: StackResult[] = [];
   let fwd = 0, bwd = 0, recompute = 0, keysFwd = 0, irregularTrain = 0, irregularRecompute = 0;
+  let frozenParams = 0, inactive = 0;
   let actNoCkpt = 0, actCkptSaved = 0, actCkptPeakRow = 0, workspace = 0;
   const byType: Record<string, number> = {};
   const byStack: Record<string, number> = {};
@@ -340,8 +367,10 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
           embedding: embCell ? { cell: embCell, shared: Boolean(embCell.share_with) } : undefined,
           bytes,
         });
+        const frozen = Boolean(cell.frozen || s.frozen);
         const f = c.flops.reduce((n, t) => n + t.fwd, 0) * execs;
-        const b = c.flops.reduce((n, t) => n + t.fwd * t.bwd, 0) * execs;
+        // frozen weights: gradients still flow to the inputs, but no weight gradients are made
+        const b = c.flops.reduce((n, t) => n + t.fwd * (frozen && !t.keys ? Math.min(t.bwd, 1) : t.bwd), 0) * execs;
         const k = c.flops.filter((t) => t.keys).reduce((n, t) => n + t.fwd, 0) * execs;
         const res: CellResult = {
           id: cell.id,
@@ -360,8 +389,11 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
           irregular: c.irregular,
           issues: c.issues,
         };
-        if (cell.type === "lm_head" && cell.tied && embCell?.share_with) res.issues.push("the head is tied to a shared table");
+        if (frozen) frozenParams += res.params;
+        inactive += inactiveParams(cell, res, s);
         for (const m of c.issues) issues.push({ where: cell.id, msg: m });
+        for (const m of c.warnings) issues.push({ where: cell.id, msg: m, level: "warning" });
+        res.issues.push(...c.warnings);
         cells.set(cell.id, res);
         rowCells.push(res);
         rowParams += res.params;
@@ -421,12 +453,25 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
     stackResults.push({ id: s.id, name: s.name, role: s.role, P: seq.P, seq, widthOut: W.stackOut.get(s.id) ?? s.width, params: stackParams, fwdPerToken: stackFwd / S, rows, groups });
   }
 
+  // flow checks: every stack's stream must start somewhere, and its output should go somewhere
+  for (const s of g.stacks) {
+    const cellsOf = s.rows.flatMap((r) => r.cells);
+    const first = cellsOf.find((c) => c.type !== "positional");
+    const wiredIn = g.edges.some((e) => e.kind === "input" && e.to.stack === s.id);
+    if (!cellsOf.length) issues.push({ where: s.id, msg: "the stack is empty", level: "warning" });
+    else if (!wiredIn && first && first.type !== "embedding" && first.type !== "latent_init")
+      issues.push({ where: s.id, msg: `nothing starts this stack's stream: ${howToStart(g, s)}` });
+    const used = cellsOf.some((c) => c.type === "lm_head") || g.edges.some((e) => e.from.stack === s.id && e.kind !== "skip");
+    if (cellsOf.length && !used) issues.push({ where: s.id, msg: "its output is not used: no LM head, and no wire leaves it", level: "warning" });
+  }
+
   for (const e of g.edges) {
     if (!ix.stacks.has(e.from.stack) || !ix.stacks.has(e.to.stack)) issues.push({ where: e.id, msg: "a wire end points at a missing stack" });
     if (e.kind === "source" && (!e.to.cell || !ix.cellHome.has(e.to.cell))) issues.push({ where: e.id, msg: "a source wire must end on a cell" });
   }
 
   const total = Object.values(byStack).reduce((a, b) => a + b, 0);
+  const trainable = total - frozenParams;
   const ckpt = run.checkpointing;
   const fwdT = fwd / S, bwdT = bwd / S, recT = ckpt ? recompute / S : 0;
   const trainT = fwdT + bwdT + recT;
@@ -439,11 +484,12 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
   const actPerRow = ckpt ? ckptRow : actNoCkpt;
   const memFor = (b: number, N: number): MemoryResult => {
     const z = run.zero_stage;
-    const weights = (total * prec.weight) / (z >= 3 ? N : 1);
-    const grads = (total * prec.grad) / (z >= 2 ? N : 1);
-    const master = (total * prec.master) / (z >= 1 ? N : 1);
-    const optimizer = (total * opt.bytes * prec.optScale) / (z >= 1 ? N : 1);
-    const castCopies = (total * prec.cast) / (z >= 3 ? N : 1);
+    // frozen weights are kept in the activation format (bf16 unless fp32) and need nothing else
+    const weights = (trainable * prec.weight + frozenParams * prec.act) / (z >= 3 ? N : 1);
+    const grads = (trainable * prec.grad) / (z >= 2 ? N : 1);
+    const master = (trainable * prec.master) / (z >= 1 ? N : 1);
+    const optimizer = (trainable * opt.bytes * prec.optScale) / (z >= 1 ? N : 1);
+    const castCopies = (trainable * prec.cast) / (z >= 3 ? N : 1);
     const activations = b * actPerRow * MEMORY_CAL.activationOverhead;
     const ws = b * workspace;
     const context = gpu.contextGiB * GiB;
@@ -473,7 +519,8 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
   const tpsGpu = secPerToken > 0 ? 1 / secPerToken : 0;
   const dp = N > 1 ? run.dp_efficiency : 1;
   const tps = N * tpsGpu * dp;
-  const hours = tps > 0 ? run.token_budget / tps / 3600 : Infinity;
+  const budget = trainingTokens(run, total);
+  const hours = tps > 0 ? budget / tps / 3600 : Infinity;
   let minForMemory = Infinity;
   for (const n of [1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 256, 512, 1024]) {
     if (n > 1 && run.zero_stage === 0) break;
@@ -482,13 +529,13 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
       break;
     }
   }
-  const gpuSeconds = run.deadline_hours > 0 && tpsGpu > 0 ? run.token_budget / (run.deadline_hours * 3600 * tpsGpu) : 0;
+  const gpuSeconds = run.deadline_hours > 0 && tpsGpu > 0 ? budget / (run.deadline_hours * 3600 * tpsGpu) : 0;
   const forDeadline = gpuSeconds === 0 ? 0 : gpuSeconds <= 1 ? 1 : Math.ceil(gpuSeconds / run.dp_efficiency);
 
   return {
     S,
     issues,
-    params: { total, byType, byStack },
+    params: { total, trainable, active: total - inactive, byType, byStack },
     stacks: stackResults,
     cells,
     flops: {
@@ -498,19 +545,43 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
       trainPerToken: trainT,
       keysFwdPerToken: keysFwd / S,
       perStep: trainT * run.rows_per_step * S,
-      perRun: trainT * run.token_budget,
+      perRun: trainT * budget,
       irregularTrainPerToken: irrT,
     },
     memory,
+    tokens: {
+      budget,
+      rule: run.token_rule ?? "custom",
+      perParam: total > 0 ? budget / total : 0,
+      chinchillaMultiple: total > 0 ? budget / (CHINCHILLA_PER_PARAM * total) : 0,
+    },
     time: {
       tokensPerSecondPerGpu: tpsGpu,
       tokensPerSecond: tps,
       hours,
       gpuHours: hours * N,
-      steps: run.token_budget / (run.rows_per_step * S),
+      steps: budget / (run.rows_per_step * S),
       accumulation: Math.ceil(run.rows_per_step / (N * micro)),
       mfu,
     },
     gpus: { minForMemory, forDeadline },
   };
+}
+
+/** Parameters a cell holds that a token does not run through: embedding lookups (unless the table is tied to a head),
+ *  the routed experts a token skips, and sparse lookup tables. */
+function inactiveParams(cell: Cell, res: CellResult, s: Stack): number {
+  if (cell.type === "embedding") {
+    const tied = s.rows.some((r) => r.cells.some((c) => c.type === "lm_head" && c.tied));
+    const table = res.parts.filter((p) => p.name === "token table" || p.name === "n-gram tables").reduce((n, p) => n + p.params, 0);
+    const ngrams = res.parts.find((p) => p.name === "n-gram tables")?.params ?? 0;
+    return tied ? ngrams : table;
+  }
+  if (cell.type === "ffn" && cell.experts > 1) {
+    const routed = res.parts.find((p) => p.name.endsWith("routed experts"))?.params ?? 0;
+    const k = Math.min(Math.max(1, cell.top_k), cell.experts);
+    return (routed * (cell.experts - k)) / cell.experts;
+  }
+  if (cell.type === "custom" && cell.sparse) return res.params;
+  return 0;
 }

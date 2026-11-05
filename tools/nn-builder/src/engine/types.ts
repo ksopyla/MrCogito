@@ -1,6 +1,8 @@
 // The saved graph: a stable, documented JSON format (docs/schema.md, schema/graph.schema.json).
 // Everything a later code generator needs is here; `ui` is layout only and never changes the model.
 
+import type { TokenRule } from "./tokens";
+
 export const SCHEMA_ID = "nn-builder/graph";
 export const SCHEMA_VERSION = 1;
 
@@ -28,9 +30,11 @@ export interface EmbeddingCell {
 
 export interface PositionalCell {
   type: "positional";
-  kind: "rope" | "learned" | "sinusoidal" | "alibi" | "none";
+  kind: "rope" | "learned" | "sinusoidal" | "alibi" | "t5_bias" | "none";
   theta: number; // rope base
   max_len: number; // learned table length
+  buckets?: number; // t5_bias: relative-distance buckets
+  heads?: number; // t5_bias: one learned bias per bucket and head
 }
 
 export interface AttentionExtras {
@@ -59,6 +63,18 @@ export interface AttentionCell {
   nope: boolean; // skip the rotary position for this layer
   kernel: "flash" | "eager"; // eager stores the score matrix for backward
   extras: AttentionExtras;
+  mla?: MlaSpec | null; // DeepSeek multi-head latent attention: keys/values through a low-rank latent
+  q_rank?: number; // low-rank query projection with a norm in between (0 / absent = full; MLA uses mla.q_rank)
+  o_rank?: number; // low-rank output projection (0 / absent = full)
+}
+
+/** DeepSeek's multi-head latent attention (MLA). Head sizes replace head_dim / kv_heads. */
+export interface MlaSpec {
+  q_rank: number; // 0 = full query projection
+  kv_rank: number; // the cached latent
+  rope_dim: number; // rotary part of each query/key head (keys: one shared rotary head)
+  nope_dim: number; // position-free part of each query/key head
+  v_dim: number; // value head size
 }
 
 export interface FfnCell {
@@ -71,6 +87,8 @@ export interface FfnCell {
   top_k: number;
   norm: NormKind;
   residual: Residual;
+  shared_experts?: number; // always-on experts beside the routed ones (DeepSeek)
+  router_bias?: boolean; // a per-expert routing bias (DeepSeek-V3 style balancing)
 }
 
 export interface NormCell {
@@ -99,6 +117,15 @@ export interface KvOutCell {
   projections: number; // 2 = k, v; 4 = k, k_read, v, v_state (E33)
   in_norms: number;
   key_norm: boolean;
+  layers?: number; // keys/values for this many reader layers (E36: every layer of the frozen reader)
+  bias?: boolean;
+  gains?: boolean; // one learned gain per layer and projection
+}
+
+export interface PoolCell {
+  type: "pool"; // the first cell of a slots stack wired from a pages stack: each page becomes one vector
+  mode: "mean" | "attention";
+  heads: number; // attention pooling: one learned query per head
 }
 
 export interface LmHeadCell {
@@ -119,6 +146,7 @@ export interface CustomCell {
   act_bytes_per_position: number;
   out: number; // output width; 0 = keep
   note: string;
+  sparse?: boolean; // a table read by lookup: its parameters are not used per token (e.g. DeepSeek's Engram)
 }
 
 export type CellBody =
@@ -131,10 +159,11 @@ export type CellBody =
   | LatentInitCell
   | KvOutCell
   | LmHeadCell
+  | PoolCell
   | CustomCell;
 
 export type CellType = CellBody["type"];
-export type Cell = CellBody & { id: string; label?: string };
+export type Cell = CellBody & { id: string; label?: string; frozen?: boolean }; // frozen: weights kept, no gradients
 
 export interface Row {
   id: string;
@@ -150,6 +179,7 @@ export interface Stack {
   width: number;
   seq: SeqSpec;
   rows: Row[];
+  frozen?: boolean; // every cell frozen (e.g. a pretrained reader)
 }
 
 /** One end of a wire. A row means its output; a cell plus port means that cell's port; a stack alone means its output. */
@@ -189,7 +219,8 @@ export interface RunSetup {
   checkpointing: boolean;
   gpu: string;
   gpu_count: number;
-  token_budget: number;
+  token_budget: number; // used as typed when token_rule is "custom" (or absent)
+  token_rule?: TokenRule; // a preset that follows the model's size (Chinchilla, …) or "custom"
   deadline_hours: number;
   mfu: number; // 0 = the GPU's default
   irregular_ratio: number; // 0 = calibrated default; speed of masked / gathered / looped work relative to plain matmuls

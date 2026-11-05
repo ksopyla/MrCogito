@@ -1,5 +1,6 @@
 // Small form controls: a number with a slider (log-scaled for wide ranges), a switch, a select.
 import { useEffect, useState } from "react";
+import { TOKEN_STEPS, nearestTokenStep, parseTokens, tokens } from "./format";
 
 const toSlider = (v: number, min: number, max: number, log?: boolean) => {
   if (!log) return v;
@@ -107,6 +108,52 @@ export function TextField(p: { label: string; value: string; onChange: (v: strin
     <label className="field">
       <span className="field-label">{p.label}</span>
       <input className="text-input" value={text} onChange={(e) => setText(e.target.value)} onBlur={() => text !== p.value && p.onChange(text)} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
+    </label>
+  );
+}
+
+const TOKEN_TICKS = [1e8, 1e9, 1e10, 1e11, 1e12, 1e13];
+
+/** A token budget: a slider over round steps (… 0.5B, 1B, 1.5B, 2B …) and a box that reads and takes billions. */
+export function TokenField(p: { label: string; value: number; onChange: (v: number) => void; help?: string }) {
+  const [text, setText] = useState(tokens(p.value));
+  const [bad, setBad] = useState(false);
+  useEffect(() => {
+    setText(tokens(p.value));
+    setBad(false);
+  }, [p.value]);
+  const commit = (raw: string) => {
+    const v = parseTokens(raw);
+    if (v === null) return setBad(true);
+    setBad(false);
+    if (v !== p.value) p.onChange(v);
+    else setText(tokens(p.value));
+  };
+  const last = TOKEN_STEPS.length - 1;
+  return (
+    <label className="field token-field">
+      <span className="field-label" title={p.help}>
+        {p.label}
+        {p.help && <span className="help"> ⓘ</span>}
+      </span>
+      <div className="field-row">
+        <div className="token-slider">
+          <input type="range" min={0} max={last} step={1} value={nearestTokenStep(p.value)} onChange={(e) => p.onChange(TOKEN_STEPS[Number(e.target.value)])} aria-label={`${p.label}: ${tokens(p.value)}`} />
+          <div className="token-ticks" aria-hidden>
+            {TOKEN_TICKS.map((t) => (
+              <span key={t} style={{ left: `${(nearestTokenStep(t) / last) * 100}%` }}>{tokens(t)}</span>
+            ))}
+          </div>
+        </div>
+        <input
+          className={`num-input token-input ${bad ? "bad" : ""}`}
+          value={text}
+          title='type 1.5, 1.5B, 500M or 2T'
+          onChange={(e) => setText(e.target.value)}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && commit((e.target as HTMLInputElement).value)}
+        />
+      </div>
     </label>
   );
 }

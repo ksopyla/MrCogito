@@ -15,6 +15,7 @@ export interface SeqInfo {
 }
 
 export interface NotesInfo {
+  fromOtherText?: boolean; // written over a separate text (an encoder source), so all of them are readable
   total: number; // notes in one row
   perPage: number; // notes per page (slots × entries)
   pages: PageGeom;
@@ -65,7 +66,8 @@ export interface CellCost {
   workspace: number; // transient bytes per row
   widthOut: number;
   irregular: boolean; // masked / gathered work that runs slower than plain matmuls
-  issues: string[];
+  issues: string[]; // errors: the design cannot be built as drawn
+  warnings: string[]; // worth a look, but buildable
 }
 
 export const normParams = (kind: NormKind, d: number) => (kind === "rmsnorm" ? d : kind === "layernorm" ? 2 * d : 0);
@@ -84,6 +86,7 @@ function cost(c: Partial<CellCost> & { widthOut: number }): CellCost {
     widthOut: c.widthOut,
     irregular: c.irregular ?? false,
     issues: c.issues ?? [],
+    warnings: c.warnings ?? [],
   };
 }
 
@@ -98,8 +101,11 @@ export function cellCost(cell: Cell, ctx: CellCtx): CellCost {
       const learned = cell.kind === "learned";
       return cost({
         widthOut: ctx.width,
-        parts: [{ name: "position table", params: learned ? cell.max_len * ctx.width : 0 }],
-        issues: learned && ctx.seq.P > cell.max_len ? [`learned positions cover ${cell.max_len} tokens but the row has ${ctx.seq.P}`] : [],
+        parts: [
+          { name: "position table", params: learned ? cell.max_len * ctx.width : 0 },
+          { name: "relative-position bias (buckets × heads)", params: cell.kind === "t5_bias" ? (cell.buckets ?? 32) * (cell.heads ?? 1) : 0 },
+        ],
+        warnings: learned && ctx.seq.P > cell.max_len ? [`learned positions cover ${cell.max_len} tokens but the row has ${ctx.seq.P}`] : [],
       });
     }
     case "attention":
@@ -138,12 +144,15 @@ export function cellCost(cell: Cell, ctx: CellCtx): CellCost {
     }
     case "kv_out": {
       const d = ctx.width;
-      const out = cell.entries * cell.kv_heads * cell.head_dim;
+      const L = Math.max(1, cell.layers ?? 1);
+      const out = cell.entries * cell.kv_heads * cell.head_dim * L;
       return cost({
         widthOut: d,
         parts: [
           { name: "norms", params: cell.in_norms * d },
-          { name: `${cell.projections} projections`, params: cell.projections * d * out },
+          { name: `${cell.projections} projections${L > 1 ? ` for ${L} reader layers` : ""}`, params: cell.projections * d * out },
+          { name: "biases", params: cell.bias ? cell.projections * out : 0 },
+          { name: "gains", params: cell.gains ? cell.projections * L : 0 },
           { name: "key norm", params: cell.key_norm ? cell.head_dim : 0 },
         ],
         flops: [{ name: "projections", fwd: 2 * cell.projections * d * out * ctx.seq.P, bwd: 2 }],
@@ -168,6 +177,21 @@ export function cellCost(cell: Cell, ctx: CellCtx): CellCost {
         flops: [{ name: "logits", fwd: 2 * d * cell.vocab * P, bwd: 2 }],
         act: (normActs(cell.final_norm, d, ctx.bytes) + (cell.chunked ? 0 : 8 * cell.vocab)) * P,
         workspace: (cell.chunked ? Math.min(P, 1024) * 3 : P) * cell.vocab * 4,
+        issues,
+      });
+    }
+    case "pool": {
+      // each page of the wired pages stack becomes one vector: mean (no weights) or one learned query per head
+      const d = ctx.width;
+      const pages = ctx.seq.pages;
+      const tokens = pages ? pages.count * pages.window : ctx.seq.P;
+      const attn = cell.mode === "attention";
+      const issues = ctx.seq.kind !== "slots" ? ["pooling needs a slots stack wired from a pages stack"] : [];
+      return cost({
+        widthOut: d,
+        parts: [{ name: "pooling queries and maps", params: attn ? d + 3 * d * d : 0 }],
+        flops: attn ? [{ name: "pooling keys / values", fwd: 2 * 2 * d * d * tokens + 4 * d * tokens + 2 * d * d * ctx.seq.P, bwd: 2 }] : [],
+        act: attn ? ctx.bytes.act * 2 * d * tokens : 0,
         issues,
       });
     }
@@ -221,15 +245,18 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
   const P = ctx.seq.P;
   const b = ctx.bytes;
   const src = ctx.source;
+  const mla = cell.mla ?? null;
   const issues: string[] = [];
-  if (g < 1 || h % g !== 0) issues.push(`heads (${h}) must be a multiple of key/value heads (${g})`);
+  const warnings: string[] = [];
+  if (!mla && (g < 1 || h % g !== 0)) issues.push(`heads (${h}) must be a multiple of key/value heads (${g})`);
 
   const cross = cell.mode === "cross";
   const notes = !cross && cell.memory ? src?.notes : undefined;
   if (cross && !src) issues.push("cross-attention has no source: drag a wire from the stack it reads");
   if (cross && src?.notes) issues.push("the source hands over ready notes: read them with a memory read on self-attention");
   if (!cross && cell.memory && !notes) issues.push("memory read has no notes: drag a wire from a notes stack (one that ends in a kv_out cell)");
-  if (notes && (notes.kvHeads !== g || notes.headDim !== dh)) issues.push(`notes are ${notes.kvHeads} × ${notes.headDim} but this read uses ${g} × ${dh} key/value heads`);
+  if (notes && mla) issues.push("a notebook read needs plain (non-MLA) attention");
+  if (notes && (notes.kvHeads !== g || notes.headDim !== dh)) issues.push(`notes are ${notes.kvHeads} × ${notes.headDim} but this read uses ${g} × ${dh} key/value heads: drag the wire onto it again to match them`);
 
   const dSrc = cross ? src?.width ?? d : d;
   const Psrc = cross ? src?.P ?? 0 : P;
@@ -240,23 +267,35 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
   if (!cross) keys = selfKeys(cell, ctx.seq);
   else if (src) {
     pageRead = ctx.seq.kind === "slots" && src.seq.kind === "pages" && ctx.seq.pagesStack === src.stackId;
-    keys = pageRead && ctx.seq.pages ? ctx.seq.pages.count * (ctx.seq.perPage ?? 0) * ctx.seq.pages.window : P * Psrc;
+    const sameText = cell.causal && src.seq.kind === "tokens" && ctx.seq.kind === "tokens";
+    const perQuery = cell.window > 0 ? Math.min(cell.window, Psrc) : sameText ? avgCausalKeys(P, 0) : Psrc;
+    keys = pageRead && ctx.seq.pages ? ctx.seq.pages.count * (ctx.seq.perPage ?? 0) * ctx.seq.pages.window : P * perQuery;
   }
   let visibleNotes = 0;
   if (notes) {
     const sameRow = notes.tokensOf === ctx.stackId && ctx.seq.kind === "tokens";
-    if (!sameRow) issues.push("notes were written over another stack's tokens: every note counts as visible");
+    if (!sameRow && !notes.fromOtherText) warnings.push("notes were written over another stack's tokens: every note counts as visible");
     visibleNotes = sameRow ? avgVisibleNotes(P, notes.pages, notes.perPage) : notes.total;
   }
   const scoreCoef = notes && cell.dual_key ? 6 : 4;
   const keysPerQuery = P ? (keys + P * visibleNotes) / P : 0;
 
+  // query / value widths, and multiply-adds per position for each projection (MLA: through low-rank latents)
+  const qDim = mla ? h * (mla.nope_dim + mla.rope_dim) : h * dh;
+  const vDim = mla ? h * mla.v_dim : h * dh;
+  const qRank = mla ? mla.q_rank : cell.q_rank ?? 0;
+  const qMacs = qRank > 0 ? d * qRank + qRank * qDim : d * qDim;
+  const kvMacs = mla ? dSrc * (mla.kv_rank + mla.rope_dim) + mla.kv_rank * h * (mla.nope_dim + mla.v_dim) : 2 * dSrc * g * dh;
+  const oRank = cell.o_rank ?? 0;
+  const oMacs = oRank > 0 ? vDim * oRank + oRank * d : vDim * d;
+  const bias = cell.bias && !mla;
+
   const parts: Part[] = [
     { name: "pre-norm", params: normParams(cell.norm, d) },
-    { name: "query", params: d * h * dh + (cell.bias ? h * dh : 0) },
-    { name: "key/value", params: 2 * dSrc * g * dh + (cell.bias ? 2 * g * dh : 0) },
-    { name: "output", params: h * dh * d + (cell.bias ? d : 0) },
-    { name: "q/k norm", params: cell.qk_norm ? 2 * dh : 0 },
+    { name: qRank > 0 ? "query (low-rank + norm)" : "query", params: qMacs + (qRank > 0 ? qRank : 0) + (bias ? qDim : 0) },
+    { name: mla ? "key/value latent (down + norm + up)" : "key/value", params: kvMacs + (mla ? mla.kv_rank : 0) + (bias ? 2 * g * dh : 0) },
+    { name: oRank > 0 ? "output (low-rank)" : "output", params: oMacs + (bias ? d : 0) },
+    { name: "q/k norm", params: cell.qk_norm && !mla ? 2 * dh : 0 },
     { name: "source norm", params: cross ? normParams(cell.kv_norm, dSrc) : 0 },
     { name: "position prior", params: cell.extras.pos_prior ? (ctx.seq.perPage ?? 0) * h * (ctx.seq.pageWindowCfg ?? 0) : 0 },
     { name: "logit scale", params: cell.extras.logit_scale ? 1 : 0 },
@@ -264,9 +303,9 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
   if (cell.extras.pos_prior && !pageRead) issues.push("a position prior needs a slots stack reading its own pages");
 
   const flops: FlopTerm[] = [
-    { name: "q / out projections", fwd: 2 * 2 * d * h * dh * P, bwd: 2 },
-    { name: "k / v projections", fwd: 2 * 2 * dSrc * g * dh * Psrc, bwd: 2 },
-    { name: "scores + value reads", fwd: scoreCoef * h * dh * (keys + P * visibleNotes), bwd: 2, keys: true },
+    { name: "q / out projections", fwd: 2 * (qMacs + oMacs) * P, bwd: 2 },
+    { name: "k / v projections", fwd: 2 * kvMacs * Psrc, bwd: 2 },
+    { name: "scores + value reads", fwd: (mla ? 2 * h * (mla.nope_dim + mla.rope_dim + mla.v_dim) : scoreCoef * h * dh) * (keys + P * visibleNotes), bwd: 2, keys: true },
   ];
 
   const nc = cell.extras.count_heads;
@@ -279,14 +318,15 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
     parts.push({ name: "count heads", params: 2 * nc + d * nc * dh + dh + nc * (km + 2) * d });
     flops.push({ name: "count heads", fwd: (2 * nc * dh * (notes.total + Math.max(cell.window, 0)) + 2 * d * nc * dh + 2 * nc * (km + 2) * d) * P, bwd: 2, keys: true });
   }
-  if (!notes && (cell.extras.order_term || nc > 0)) issues.push("order term and count heads only act on a memory read");
+  if (!notes && (cell.extras.order_term || nc > 0)) warnings.push("order term and count heads only act on a memory read");
 
   // saved for backward
   const kvPos = cross ? Psrc : P;
-  let act =
-    (normActs(cell.norm, d, b) + b.act * (2 * h * dh + (cell.qk_norm ? h * dh : 0)) + 4 * h) * P +
-    b.act * g * dh * (2 + (cell.qk_norm ? 1 : 0)) * kvPos +
-    (cross && cell.kv_norm !== "none" ? (b.resid + b.act) * dSrc * Psrc : 0);
+  let act = mla
+    ? (normActs(cell.norm, d, b) + b.act * (2 * qDim + vDim) + 4 * h) * P + b.act * 2 * (mla.kv_rank + mla.rope_dim + h * (mla.nope_dim + mla.v_dim)) * kvPos
+    : (normActs(cell.norm, d, b) + b.act * (2 * h * dh + (cell.qk_norm ? h * dh : 0)) + 4 * h) * P +
+      b.act * g * dh * (2 + (cell.qk_norm ? 1 : 0)) * kvPos +
+      (cross && cell.kv_norm !== "none" ? (b.resid + b.act) * dSrc * Psrc : 0);
   if (cell.kernel === "eager") act += 4 * h * keysPerQuery * P;
   if (notes && nc > 0) act += 8 * nc * (notes.total + Math.max(cell.window, 0)) * P;
 
@@ -297,6 +337,7 @@ function attentionCost(cell: AttentionCell, ctx: CellCtx): CellCost {
     act,
     irregular: Boolean(notes) || cell.kernel === "eager" || ctx.seq.kind === "pages" || ctx.seq.kind === "slots",
     issues,
+    warnings,
   });
 }
 
@@ -308,19 +349,21 @@ function ffnCost(cell: FfnCell, ctx: CellCtx): CellCost {
   const gated = cell.kind !== "mlp";
   const E = Math.max(1, cell.experts);
   const k = E > 1 ? Math.min(Math.max(1, cell.top_k), E) : 1;
+  const shared = E > 1 ? Math.max(0, cell.shared_experts ?? 0) : 0;
   const perExpert = (gated ? 3 * d * F : 2 * d * F) + (cell.bias ? (gated ? 2 * F : F) + d : 0);
   return cost({
     widthOut: d,
     parts: [
       { name: "pre-norm", params: normParams(cell.norm, d) },
-      { name: E > 1 ? `${E} experts` : gated ? `${cell.kind} (3 matrices)` : "MLP (2 matrices)", params: E * perExpert },
-      { name: "router", params: E > 1 ? d * E : 0 },
+      { name: E > 1 ? `${E} routed experts` : gated ? `${cell.kind} (3 matrices)` : "MLP (2 matrices)", params: E * perExpert },
+      { name: `${shared} shared expert${shared > 1 ? "s" : ""}`, params: shared * perExpert },
+      { name: "router", params: E > 1 ? d * E + (cell.router_bias ? E : 0) : 0 },
     ],
     flops: [
-      { name: E > 1 ? `${k} active experts` : "feed-forward", fwd: k * (gated ? 6 : 4) * d * F * P, bwd: 2 },
+      { name: E > 1 ? `${k} routed${shared ? ` + ${shared} shared` : ""} experts` : "feed-forward", fwd: (k + shared) * (gated ? 6 : 4) * d * F * P, bwd: 2 },
       { name: "router", fwd: E > 1 ? 2 * d * E * P : 0, bwd: 2 },
     ],
-    act: (normActs(cell.norm, d, b) + k * b.act * (gated ? 4 : 2) * F) * P,
+    act: (normActs(cell.norm, d, b) + (k + shared) * b.act * (gated ? 4 : 2) * F) * P,
     irregular: E > 1,
   });
 }

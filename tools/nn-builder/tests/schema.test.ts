@@ -4,6 +4,7 @@ import schema from "../schema/graph.schema.json";
 import { analyze } from "../src/engine/analyze";
 import { PRESETS, buildPreset } from "../src/engine/presets";
 import { parseGraph, toExport } from "../src/engine/serialize";
+import { designHash } from "../src/engine/spec";
 
 const validate = new Ajv2020({ allErrors: true, strict: false }).compile(schema);
 
@@ -29,11 +30,18 @@ describe("export and import", () => {
     const out = toExport(buildPreset("dense_plain_30m"));
     expect(out.derived.params_total).toBe(30_293_140);
     expect(out.derived.cells["main.L0.attn"]).toMatchObject({ width_in: 576, width_out: 576 });
+    expect(out.derived.hash).toBe(designHash(buildPreset("dense_plain_30m")));
   });
 
   test("a file that is not a graph is refused with a reason", () => {
     expect(parseGraph('{"hello": 1}').error).toMatch(/not an nn-builder graph/);
     expect(parseGraph("not json").error).toMatch(/JSON/);
+  });
+
+  test("a token-budget preset is part of a valid file", () => {
+    const g = buildPreset("dense_plain_30m");
+    g.run.token_rule = "chinchilla";
+    expect(validate(toExport(g))).toBe(true);
   });
 
   test("the schema refuses a cell with a misspelled setting", () => {

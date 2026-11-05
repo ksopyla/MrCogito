@@ -4,8 +4,10 @@ import type { Analysis, CellResult } from "../engine/analyze";
 import * as E from "../engine/edit";
 import type { Cell, CellBody, Edge, Graph, SeqSpec, Stack } from "../engine/types";
 import { NumberField, Select, TextField, Toggle } from "./controls";
-import { cellTitle, edgeLabel } from "./describe";
-import { CELL_FIELDS, type Field } from "./fields";
+import { cellConnections, cellTitle, edgeLabel, stackIO } from "./describe";
+import { PRECISIONS } from "../engine/hardware";
+import { cellTensorSteps, edgeTensors, elements, fmtShape, rowInputShape, stackOutputShape, type TensorStep } from "../engine/shapes";
+import { CELL_FIELDS, COMMON_FIELDS, MLA_FIELDS, type Field } from "./fields";
 import type { Sel } from "./Frame";
 import * as F from "./format";
 
@@ -64,7 +66,33 @@ function FieldView({ f, cell, onChange }: { f: Field; cell: Record<string, unkno
   if (f.kind === "bool") return <Toggle label={f.label} value={Boolean(raw)} help={f.help} onChange={(v) => onChange(f.key, v, f.extras)} />;
   if (f.kind === "select") return <Select label={f.label} value={raw as string} options={f.options as [string, string][]} help={f.help} onChange={(v) => onChange(f.key, v, f.extras)} />;
   if (f.kind === "text") return <TextField label={f.label} value={String(raw ?? "")} onChange={(v) => onChange(f.key, v, f.extras)} />;
-  return <NumberField label={f.label} value={Number(raw)} min={f.min} max={f.max} step={f.step} log={f.log} int={f.kind === "int"} help={f.help} onChange={(v) => onChange(f.key, v, f.extras)} />;
+  return <NumberField label={f.label} value={raw === undefined || raw === null ? f.min ?? 0 : Number(raw)} min={f.min} max={f.max} step={f.step} log={f.log} int={f.kind === "int"} help={f.help} onChange={(v) => onChange(f.key, v, f.extras)} />;
+}
+
+/** The forward pass of one cell, tensor by tensor, at the run's micro-batch. */
+function TensorWalk({ graph, analysis, cellId }: { graph: Graph; analysis: Analysis; cellId: string }) {
+  const b = analysis.memory.microBatch;
+  return <StepList graph={graph} title={`Tensors · B = ${b} rows per GPU`} steps={cellTensorSteps(graph, analysis, cellId, b)} />;
+}
+
+function StepList({ graph, title, steps }: { graph: Graph; title: string; steps: TensorStep[] }) {
+  const bytes = PRECISIONS[graph.run.precision]?.act ?? 2;
+  if (!steps.length) return null;
+  return (
+    <>
+      <h3>{title}</h3>
+      <ol className="tensor-walk">
+        {steps.map((st, i) => (
+          <li key={i}>
+            <span className="tw-label">{st.label}</span>
+            <span className="tw-shape">{st.dims.length ? fmtShape(st.dims, "named") : "scalar"}</span>
+            <span className="tw-size muted">{st.dims.length ? F.bytes(elements(st.dims) * (i === 0 && st.label === "token ids" ? 8 : bytes)) : ""}</span>
+            {st.note && <span className="tw-note muted">{st.note}</span>}
+          </li>
+        ))}
+      </ol>
+    </>
+  );
 }
 
 function CellInspector(p: Props & { id: string }) {
@@ -83,6 +111,10 @@ function CellInspector(p: Props & { id: string }) {
       <h2>
         {cellTitle(c)} <span className="muted small">in {rowName(p.graph, home.row.id)}</span>
       </h2>
+      <h3>Connections</h3>
+      <Costs items={cellConnections(p.graph, c.id, r.widthIn)} />
+      <TensorWalk graph={p.graph} analysis={p.analysis} cellId={c.id} />
+      <h3>Cost</h3>
       <Costs items={cellCostItems(r, p.analysis)} />
       {r.parts.length > 1 && (
         <details className="parts">
@@ -109,6 +141,24 @@ function CellInspector(p: Props & { id: string }) {
       {fields.map((f) => (
         <FieldView key={f.key} f={f} cell={c as unknown as Record<string, unknown>} onChange={set} />
       ))}
+      {c.type === "attention" && (
+        <>
+          <Toggle
+            label="Multi-head latent attention (DeepSeek MLA)"
+            value={Boolean(c.mla)}
+            help="keys and values pass through a small cached latent"
+            onChange={(v) => set("mla", v ? { q_rank: 0, kv_rank: 512, rope_dim: 64, nope_dim: 128, v_dim: 128 } : null)}
+          />
+          {c.mla &&
+            MLA_FIELDS.map((f) => (
+              <NumberField key={f.key} label={f.label} value={c.mla![f.key]} min={0} max={16384} int onChange={(v) => set("mla", { ...c.mla!, [f.key]: v })} />
+            ))}
+        </>
+      )}
+      {COMMON_FIELDS.map((f) => (
+        <FieldView key={f.key} f={f} cell={c as unknown as Record<string, unknown>} onChange={set} />
+      ))}
+      {home.stack.frozen && <p className="small muted">The whole stack is frozen, so this slot is frozen too.</p>}
       {c.type === "embedding" && (
         <Select label="Share the token table with" value={c.share_with ?? ""} options={[["", "nobody (own table)"], ...embeddings]} onChange={(v) => set("share_with", v || undefined)} />
       )}
@@ -149,6 +199,7 @@ function RowInspector(p: Props & { ids: string[]; stack: string }) {
       <h2>{one ? rowName(p.graph, one.row.id) : `${rows.length} rows of ${rows[0].stack.name}`}</h2>
       <Costs
         items={[
+          ["Tensor in", fmtShape(rowInputShape(p.graph, p.analysis, rows[0].row.id, p.analysis.memory.microBatch), "named")],
           ["Parameters", F.exact(sum((r) => r.params))],
           ["Forward / token", F.flops(sum((r) => r.fwdPerToken))],
           ["Saved for backward", `${F.bytes(sum((r) => r.actBytesPerRow))} per row`],
@@ -220,7 +271,7 @@ function StackInspector(p: Props & { id: string }) {
     if (k === "source") setSeq({ kind: "source", length: 0 });
     if (k === "latents") setSeq({ kind: "latents", count: 256 });
     if (k === "pages") setSeq({ kind: "pages", of: others[0][0], window: 256, stride: 192 });
-    if (k === "slots") setSeq({ kind: "slots", of: pagesStacks[0][0], per_page: 32 });
+    if (k === "slots") setSeq({ kind: "slots", of: pagesStacks[0]?.[0] ?? "", per_page: 32 });
   };
   const issues = p.analysis.issues.filter((i) => i.where === s.id);
   return (
@@ -235,8 +286,18 @@ function StackInspector(p: Props & { id: string }) {
         ]}
       />
       {issues.length > 0 && <ul className="issues">{issues.map((i) => <li key={i.msg}>⚠ {i.msg}</li>)}</ul>}
+      <h3>Connections</h3>
+      <Costs
+        items={[
+          ["Input", stackIO(s, p.graph).input],
+          ["Tensor in", s.rows[0] ? fmtShape(rowInputShape(p.graph, p.analysis, s.rows[0].id, p.analysis.memory.microBatch), "named") : "—"],
+          ["Tensor out", fmtShape(stackOutputShape(p.graph, p.analysis, s.id, p.analysis.memory.microBatch), "named")],
+          ["Output", stackIO(s, p.graph).outputs.join("; ") || "not wired"],
+        ]}
+      />
       <h3>Stack</h3>
       <TextField label="Name" value={s.name} onChange={(v) => p.apply((g) => E.updateStack(g, s.id, { name: v }))} />
+      <Toggle label="Frozen stack (weights kept, not trained)" value={Boolean(s.frozen)} help="a pretrained part: no gradients or optimizer state for its weights" onChange={(v) => p.apply((g) => E.updateStack(g, s.id, { frozen: v || undefined }))} />
       <Select label="Role" value={s.role} options={[["decoder", "decoder"], ["encoder", "encoder"], ["writer", "writer"], ["latent", "latent / notes"], ["other", "other"]]} onChange={(v) => p.apply((g) => E.updateStack(g, s.id, { role: v }))} />
       <NumberField label="Width (d_model)" value={s.width} min={8} max={32768} step={8} log int help="full-width attention and FFN ratios follow the width" onChange={(v) => p.apply((g) => E.setStackWidth(g, s.id, v), `width:${s.id}`)} />
       <Select label="Sequence" value={q.kind} options={seqOptions(s, p.graph)} onChange={changeKind} />
@@ -274,10 +335,25 @@ function EdgeInspector(p: Props & { id: string }) {
   if (!e) return <p className="muted pad">Nothing selected.</p>;
   const issues = p.analysis.issues.filter((i) => i.where === e.id);
   const end = (x: Edge["from"]) => (x.cell ? `${p.graph.stacks.find((s) => s.id === x.stack)?.name} · ${x.port === "table" ? "token table" : cellTitle(E.findCell(p.graph, x.cell)?.cell as Cell)}` : x.row ? rowName(p.graph, x.row) : `${p.graph.stacks.find((s) => s.id === x.stack)?.name} output`);
+  const b = p.analysis.memory.microBatch;
+  const t = edgeTensors(p.graph, p.analysis, e.id, b);
+  const bytes = PRECISIONS[p.graph.run.precision]?.act ?? 2;
+  const tensor = (d: typeof t.from.dims) => (d.length ? `${fmtShape(d, "named")} · ${F.bytes(elements(d) * bytes)}` : "—");
   return (
     <div className="inspector">
       <h2>{edgeLabel(e, p.graph)}</h2>
-      <Costs items={[["From", end(e.from)], ["To", end(e.to)]]} />
+      {t.summary && <p className="lead">{t.summary}</p>}
+      <h3>Connects</h3>
+      <Costs
+        items={[
+          ["From", end(e.from)],
+          ["Carries", tensor(t.from.dims)],
+          ["To", t.to.label || end(e.to)],
+          ["Arrives as", tensor(t.to.dims)],
+          ["Parameters it adds", F.exact(t.params)],
+        ]}
+      />
+      <StepList graph={p.graph} title={`On the way · B = ${b} rows per GPU`} steps={t.steps} />
       {issues.length > 0 && <ul className="issues">{issues.map((i) => <li key={i.msg}>⚠ {i.msg}</li>)}</ul>}
       {e.kind === "skip" && (
         <Select
@@ -287,11 +363,6 @@ function EdgeInspector(p: Props & { id: string }) {
           onChange={(v) => p.apply((g) => E.updateEdge(g, e.id, { weight: v } as Partial<Edge>))}
         />
       )}
-      <p className="muted small">
-        {e.kind === "skip" && "The source row's output is added (times the weight) to this row's input."}
-        {e.kind === "source" && "The target cell reads its keys and values (or ready notes) from here."}
-        {e.kind === "input" && "The target stack's stream starts from this output."}
-      </p>
       <div className="actions">
         <button className="danger" onClick={() => (p.apply((g) => E.removeEdge(g, e.id)), p.setSel(null))}>Remove wire</button>
       </div>
@@ -341,6 +412,7 @@ function GraphInfo(p: Props) {
       </label>
       <h3>How to build</h3>
       <ul className="howto">
+        <li>Add a main block with <b>+ Stack</b> in the top bar: decoder, encoder, page writer, notes or fixed latents. A page writer starts from the decoder's token table by itself; notes need a page writer.</li>
         <li>Drag a layer from the left into a <b>+</b> slot (same row) or between rows (a new row).</li>
         <li>Drag a slot or a row handle <b>⋮⋮</b> to move it; drop it on the palette to remove it.</li>
         <li>Drag from a dot <span className="dot-inline" />: to a later row (skip), to a cross-attention or notebook read (keys/values), or onto a stack header (its input).</li>

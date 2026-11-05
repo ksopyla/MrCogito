@@ -29,7 +29,9 @@ export const CELL_FIELDS: Record<CellType, Field[]> = {
     { key: "ngram_buckets", label: "Buckets per n-gram table", kind: "int", min: 256, max: 1048576, log: true, show: (c) => Number(c.ngram_tables) > 0 },
   ],
   positional: [
-    { key: "kind", label: "Kind", kind: "select", options: [["rope", "rotary (RoPE)"], ["learned", "learned table"], ["sinusoidal", "sinusoidal"], ["alibi", "ALiBi"], ["none", "none (NoPE)"]] },
+    { key: "kind", label: "Kind", kind: "select", options: [["rope", "rotary (RoPE)"], ["learned", "learned table"], ["sinusoidal", "sinusoidal"], ["alibi", "ALiBi"], ["t5_bias", "T5 relative-position bias"], ["none", "none (NoPE)"]] },
+    { key: "buckets", label: "Distance buckets", kind: "int", min: 1, max: 1024, show: (c) => c.kind === "t5_bias" },
+    { key: "heads", label: "Heads (one bias each)", kind: "int", min: 1, max: 256, show: (c) => c.kind === "t5_bias" },
     { key: "theta", label: "RoPE base θ", kind: "num", min: 100, max: 10000000, log: true, show: (c) => c.kind === "rope" },
     { key: "max_len", label: "Table length", kind: "int", min: 16, max: 1048576, log: true, show: (c) => c.kind === "learned" },
   ],
@@ -49,6 +51,8 @@ export const CELL_FIELDS: Record<CellType, Field[]> = {
     { key: "residual", label: "Residual", kind: "select", options: RESID },
     { key: "nope", label: "Skip rotary positions here", kind: "bool" },
     { key: "kernel", label: "Kernel", kind: "select", options: [["flash", "flash / fused (no score matrix kept)"], ["eager", "eager (keeps the score matrix)"]] },
+    { key: "q_rank", label: "Low-rank query (0 = full)", kind: "int", min: 0, max: 16384, show: (c) => !c.mla },
+    { key: "o_rank", label: "Low-rank output (0 = full)", kind: "int", min: 0, max: 16384 },
     { key: "order_term", label: "Order term (E33)", kind: "bool", extras: true, show: (c) => Boolean(c.memory) },
     { key: "count_heads", label: "Count heads (E33)", kind: "int", min: 0, max: 16, extras: true, show: (c) => Boolean(c.memory) },
     { key: "count_max", label: "Count up to", kind: "int", min: 1, max: 64, extras: true, show: (c) => Boolean(c.memory) && Number(ex(c).count_heads) > 0 },
@@ -61,6 +65,8 @@ export const CELL_FIELDS: Record<CellType, Field[]> = {
     { key: "activation", label: "Activation", kind: "select", options: [["gelu", "GELU"], ["relu", "ReLU"], ["silu", "SiLU"]], show: (c) => c.kind === "mlp" },
     { key: "experts", label: "Experts (1 = dense)", kind: "int", min: 1, max: 512, log: true },
     { key: "top_k", label: "Active experts per token", kind: "int", min: 1, max: 64, show: (c) => Number(c.experts) > 1 },
+    { key: "shared_experts", label: "Shared (always-on) experts", kind: "int", min: 0, max: 16, show: (c) => Number(c.experts) > 1 },
+    { key: "router_bias", label: "Routing bias per expert", kind: "bool", show: (c) => Number(c.experts) > 1 },
     { key: "bias", label: "Biases", kind: "bool" },
     { key: "norm", label: "Pre-norm", kind: "select", options: NORM },
     { key: "residual", label: "Residual", kind: "select", options: RESID },
@@ -82,6 +88,13 @@ export const CELL_FIELDS: Record<CellType, Field[]> = {
     { key: "projections", label: "Projections", kind: "select", options: [[2, "2 (k, v)"], [4, "4 (k, k-read, v, v-state)"]] },
     { key: "in_norms", label: "Input norms", kind: "int", min: 0, max: 2 },
     { key: "key_norm", label: "Key norm", kind: "bool" },
+    { key: "layers", label: "Reader layers served (keys/values for each)", kind: "int", min: 1, max: 256 },
+    { key: "bias", label: "Biases", kind: "bool" },
+    { key: "gains", label: "A learned gain per layer and projection", kind: "bool" },
+  ],
+  pool: [
+    { key: "mode", label: "Pooling", kind: "select", options: [["mean", "mean of the page's tokens"], ["attention", "attention: learned queries per head"]] },
+    { key: "heads", label: "Heads", kind: "int", min: 1, max: 64, show: (c) => c.mode === "attention" },
   ],
   lm_head: [
     { key: "vocab", label: "Vocabulary", kind: "int", min: 2, max: 262144, log: true },
@@ -98,5 +111,18 @@ export const CELL_FIELDS: Record<CellType, Field[]> = {
     { key: "flops_per_position", label: "Forward FLOPs per position", kind: "num", min: 0, max: 1e12, log: true },
     { key: "act_bytes_per_position", label: "Saved bytes per position", kind: "num", min: 0, max: 1e8, log: true },
     { key: "out", label: "Output width (0 = same)", kind: "int", min: 0, max: 65536, log: true },
+    { key: "sparse", label: "A lookup table (its parameters are not used per token)", kind: "bool" },
   ],
 };
+
+/** Shown for every cell type. */
+export const COMMON_FIELDS: Field[] = [{ key: "frozen", label: "Frozen (weights kept, not trained)", kind: "bool" }];
+
+/** DeepSeek MLA settings live under attention.mla. */
+export const MLA_FIELDS: { key: "q_rank" | "kv_rank" | "rope_dim" | "nope_dim" | "v_dim"; label: string }[] = [
+  { key: "kv_rank", label: "Key/value latent (cached)" },
+  { key: "q_rank", label: "Query latent (0 = full)" },
+  { key: "nope_dim", label: "Head size without position" },
+  { key: "rope_dim", label: "Rotary head size" },
+  { key: "v_dim", label: "Value head size" },
+];

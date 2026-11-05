@@ -216,6 +216,10 @@
           "items": {
             "$ref": "#/$defs/row"
           }
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "every cell frozen (a pretrained part)"
         }
       }
     },
@@ -280,6 +284,9 @@
           "$ref": "#/$defs/lm_head"
         },
         {
+          "$ref": "#/$defs/pool"
+        },
+        {
           "$ref": "#/$defs/custom"
         }
       ]
@@ -331,6 +338,10 @@
         },
         "share_with": {
           "$ref": "#/$defs/id"
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
         }
       }
     },
@@ -360,6 +371,7 @@
             "learned",
             "sinusoidal",
             "alibi",
+            "t5_bias",
             "none"
           ]
         },
@@ -368,6 +380,16 @@
           "exclusiveMinimum": 0
         },
         "max_len": {
+          "$ref": "#/$defs/pos"
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
+        },
+        "buckets": {
+          "$ref": "#/$defs/pos"
+        },
+        "heads": {
           "$ref": "#/$defs/pos"
         }
       }
@@ -483,6 +505,26 @@
               "type": "boolean"
             }
           }
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
+        },
+        "mla": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/mla"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "q_rank": {
+          "$ref": "#/$defs/count"
+        },
+        "o_rank": {
+          "$ref": "#/$defs/count"
         }
       }
     },
@@ -542,6 +584,16 @@
         },
         "residual": {
           "$ref": "#/$defs/residual"
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
+        },
+        "shared_experts": {
+          "$ref": "#/$defs/count"
+        },
+        "router_bias": {
+          "type": "boolean"
         }
       }
     },
@@ -565,6 +617,10 @@
         },
         "kind": {
           "$ref": "#/$defs/norm"
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
         }
       }
     },
@@ -596,6 +652,10 @@
         },
         "out_norm": {
           "$ref": "#/$defs/norm"
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
         }
       }
     },
@@ -623,6 +683,10 @@
         },
         "norm": {
           "$ref": "#/$defs/norm"
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
         }
       }
     },
@@ -668,6 +732,19 @@
           "$ref": "#/$defs/count"
         },
         "key_norm": {
+          "type": "boolean"
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
+        },
+        "layers": {
+          "$ref": "#/$defs/pos"
+        },
+        "bias": {
+          "type": "boolean"
+        },
+        "gains": {
           "type": "boolean"
         }
       }
@@ -718,6 +795,10 @@
         },
         "chunked": {
           "type": "boolean"
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
         }
       }
     },
@@ -759,6 +840,14 @@
         },
         "note": {
           "type": "string"
+        },
+        "frozen": {
+          "type": "boolean",
+          "description": "weights kept but not trained"
+        },
+        "sparse": {
+          "type": "boolean",
+          "description": "a lookup table: its parameters are not used per token"
         }
       }
     },
@@ -969,6 +1058,79 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "token_rule": {
+          "enum": [
+            "custom",
+            "chinchilla",
+            "llama3_8b",
+            "tinyllama",
+            "smollm2_135m",
+            "pythia"
+          ],
+          "description": "A token-budget preset that follows the model's size; absent or \"custom\" = token_budget as typed."
+        }
+      }
+    },
+    "mla": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "q_rank",
+        "kv_rank",
+        "rope_dim",
+        "nope_dim",
+        "v_dim"
+      ],
+      "properties": {
+        "q_rank": {
+          "$ref": "#/$defs/count"
+        },
+        "kv_rank": {
+          "$ref": "#/$defs/count"
+        },
+        "rope_dim": {
+          "$ref": "#/$defs/count"
+        },
+        "nope_dim": {
+          "$ref": "#/$defs/count"
+        },
+        "v_dim": {
+          "$ref": "#/$defs/count"
+        }
+      },
+      "description": "DeepSeek multi-head latent attention: keys/values through a low-rank latent"
+    },
+    "pool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "mode",
+        "heads"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "const": "pool"
+        },
+        "frozen": {
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "mean",
+            "attention"
+          ]
+        },
+        "heads": {
+          "$ref": "#/$defs/pos"
         }
       }
     }

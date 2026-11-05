@@ -4,6 +4,8 @@ A saved design is one JSON file (`designs/<name>.json`, or a downloaded export).
 to rebuild the network in code. The machine-readable schema is [`schema/graph.schema.json`](../schema/graph.schema.json)
 (JSON Schema 2020-12); every preset is tested against it (`tests/schema.test.ts`). This page gives the meaning of
 each field — what the forward pass does — so a code generator can write a PyTorch `nn.Module` from the file alone.
+Coding agents usually read the generated spec instead (every setting resolved, shapes, execution order, a hash and
+diffs between versions): see [agent-spec.md](agent-spec.md).
 
 ## Top level
 
@@ -58,15 +60,32 @@ Residual sublayers (`attention`, `ffn`) use `norm` (`rmsnorm`, `layernorm` with 
 | type | settings → forward pass | parameters |
 |---|---|---|
 | `embedding` | `e = table[ids] + Σ ngram_k[hash_k(ids)]` (`ngram_tables` hashed n-gram tables of `ngram_buckets` rows, orders 2, 3, …); then `proj`: `none` (stream = e, width = `dim`), `linear` (`W·e`), `gated_mlp` (`up0(e) + up2(silu(up1(e)))`, the MrCogito input layer); then `out_norm`. Port `table` = `e` before the projection. `share_with` = id of another embedding whose token table is reused. | `vocab·dim` (0 if shared) + `ngram_tables·ngram_buckets·dim` + proj (`dim·d` or `2·dim·d + d²`) + norm |
-| `positional` | `rope`: rotary positions (base `theta`) for every later attention cell of the stack (unless that cell sets `nope`); `learned`: `x += P[pos]` with `max_len` rows; `sinusoidal`: fixed table added; `alibi`: linear distance bias in later attention; `none`. | `learned`: `max_len·width`; else 0 |
+| `positional` | `rope`: rotary positions (base `theta`) for every later attention cell of the stack (unless that cell sets `nope`); `learned`: `x += P[pos]` with `max_len` rows; `sinusoidal`: fixed table added; `alibi`: linear distance bias in later attention; `t5_bias`: T5's learned relative-position bias, `buckets` × `heads`, shared by the stack's attention; `none`. | `learned`: `max_len·width`; `t5_bias`: `buckets·heads`; else 0 |
 | `attention` | `mode: self` reads its own stream; `cross` reads keys/values from the stack wired into it (`source` wire). `heads` query heads of size `head_dim`, `kv_heads` key/value heads (grouped-query when fewer). `causal`; `window` > 0 = sliding window of that many keys (self only; 0 = the whole row). `qk_norm`: RMSNorm of size `head_dim` on queries and keys. `bias` on q, k, v, o. `kv_norm` (cross): norm on the source states. In a `pages` stack attention stays inside each page; in a `slots` stack inside each page's slots; a slots stack cross-attending to its own pages stack reads only its own page. `memory` (self): the keys also include the **notes** wired in from a notes stack (one ending in `kv_out`), each readable once its page is complete (`page start + window − 1 ≤ t`); notes are already keys/values in this cell's `kv_heads × head_dim` space, so they are not projected again. `dual_key`: each key is scored twice (E33's read and rank keys). `kernel`: `flash` or `eager` (memory only). `extras.order_term` (E33): a per-head order strength and a width → 1 order gate; `extras.count_heads` (E33): count heads over notes and recent keys, coded as a soft one-hot over 0..`count_max` (+ log(1 + n)) and projected back to the width; `extras.pos_prior`: learned bias `[slots per page, heads, page width]` on a slots → page read; `extras.logit_scale`: one learnable length-aware query scale. | `d·h·dh` (q) + `2·d_src·g·dh` (k, v) + `h·dh·d` (o) + biases + `2·dh` (q/k norm) + norms + extras: order `h + d + 1`, count `2·n + d·n·dh + dh + n·(count_max + 2)·d`, prior `slots·h·W`, scale 1 |
 | `ffn` | `swiglu`: `down(silu(gate(x)) · up(x))`; `geglu`: same with GELU; `mlp`: `down(act(up(x)))` with `activation`. `hidden` = inner width. `experts` > 1: a mixture of experts with a linear router (width → experts) choosing `top_k` per token. | `3·d·F` (gated) or `2·d·F`, × experts, + biases + router `d·E` + norm |
 | `norm` | `x = norm(x)`. | `d` (RMSNorm), `2d` (LayerNorm) |
 | `linear` | `x = W·x (+ b)`, width → `out` (0 = keep), then `out_norm`. | `d·out` + bias + norm |
 | `latent_init` | replaces the stream with learned queries, one per slot (slots stack: the same `per_page` queries on every page) or per latent, plus `address_feats` > 0: a linear map from page-address features; then `norm`. | `n·d + address_feats·d` + norm |
 | `kv_out` | turns slot states into notes a memory read uses directly: `entries` keys/values per slot, each `kv_heads × head_dim`. `projections: 2` = k, v; `4` = k, k-read, v, v-state as in MrCogito's `LatentMemoryWriter` (`nn/latent_memory.py`). `in_norms` norms on the inputs; `key_norm` = RMSNorm on keys. | `in_norms·d + projections·d·entries·kv_heads·head_dim` + key norm `head_dim` |
+| `pool` | the first cell of a `slots` stack wired (`input`) from a `pages` stack: each page becomes one vector. `mode: mean`, or `attention` with one learned query per head (`heads`). | mean 0; attention `d + 3d²` |
 | `lm_head` | `logits = W·final_norm(x) (+ b)`; `tied` reuses the stack's token table (needs `dim = width`, same vocab). Loss: cross-entropy, `softcap` > 0 → `cap·tanh(logits/cap)`, `z_loss` weight on `logsumexp²`; `chunked` = computed in chunks and recomputed in backward. | final norm + `vocab·d` (0 if tied) + bias |
 | `custom` | anything else: the builder only counts `params`, `flops_per_position` (forward) and `act_bytes_per_position`; `out` = output width (0 = keep). A code generator must ask what it is. | `params` |
+
+**Further settings** (all optional; absent = off):
+- every cell: `frozen` — weights kept but not trained (no gradients, no optimizer state; gradients still flow through
+  to earlier trainable parts). A stack's `frozen` freezes all its cells (e.g. a pretrained reader).
+- `attention.mla` — DeepSeek multi-head latent attention: `{q_rank, kv_rank, rope_dim, nope_dim, v_dim}`. Queries
+  through a `q_rank` latent with a norm (0 = full), keys and values rebuilt per head from a cached `kv_rank` latent
+  (+ one shared rotary key of `rope_dim`); replaces `head_dim` / `kv_heads`. Parameters: `d·q_rank + q_rank +
+  q_rank·h·(nope+rope)` (or `d·h·(nope+rope)`) + `d·(kv_rank+rope) + kv_rank + kv_rank·h·(nope+v)` + `h·v·d`.
+- `attention.q_rank` / `attention.o_rank` — low-rank query (with a norm in between) / output projection.
+- a cross-attention with `causal` reading a stack over the same tokens sees only earlier positions; its `window` > 0
+  limits it to that many keys (used for sparse top-k reads).
+- `ffn.shared_experts` — always-on experts beside the routed ones (same width); `ffn.router_bias` — one routing bias
+  per expert.
+- `kv_out.layers` — keys/values for that many reader layers at once (E36's expander), with optional `bias` and
+  `gains` (one per layer and projection).
+- `custom.sparse` — a lookup table (e.g. DeepSeek's Engram): its parameters are not counted as used per token.
 
 ## Wires (`edges`)
 
@@ -91,7 +110,9 @@ with `port: "table"` means an embedding's token table output.
 `row_length`, `rows_per_step` (rows per optimizer step), `micro_batch` (rows per GPU per pass; 0 = the largest that
 fits and splits the step evenly), `precision` (`amp_bf16` = PyTorch autocast with fp32 weights, `bf16_master`,
 `pure_bf16`, `fp32`), `optimizer`, `weight_decay`, `zero_stage` (sharding of optimizer state, gradients, weights),
-`checkpointing` (recompute every row in backward), `gpu`, `gpu_count`, `token_budget`, `deadline_hours`, and the
+`checkpointing` (recompute every row in backward), `gpu`, `gpu_count`, `token_budget` with an optional `token_rule`
+(`chinchilla` = 20 tokens per parameter, `llama3_8b`, `tinyllama`, `smollm2_135m` = those models' tokens per parameter,
+`pythia` = a fixed 300B; absent or `custom` = `token_budget` as typed), `deadline_hours`, and the
 speed calibration overrides `mfu`, `irregular_ratio`, `dp_efficiency` (0 = the built-in calibration).
 
 ## `derived` (export only)
@@ -99,6 +120,7 @@ speed calibration overrides `mfu`, `irregular_ratio`, `dp_efficiency` (0 = the b
 ```json
 "derived": {
   "exported_at": "2026-10-24T09:48:00.000Z",
+  "hash": "nnb1-039eea21ba3d7b130cce6edcb2f3",
   "row_length": 4096,
   "params_total": 29946402,
   "params_by_stack": { "main": 25960546, "pages": 1377792, "notes": 2608064 },
@@ -108,5 +130,5 @@ speed calibration overrides `mfu`, `irregular_ratio`, `dp_efficiency` (0 = the b
 ```
 
 A code generator should build the model, count its trainable parameters, and check them against `params_total`
-and the per-cell numbers. For the MrCogito presets these match the trainer exactly
+and the per-cell numbers. `hash` identifies the architecture's version (see [agent-spec.md](agent-spec.md)). For the MrCogito presets these match the trainer exactly
 (`evaluation/text_checks.count_params`).

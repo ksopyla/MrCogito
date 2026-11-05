@@ -74,6 +74,8 @@ export function defaultBody(type: CellType, width: number): CellBody {
       return { type, entries: 1, kv_heads: 1, head_dim: 64, projections: 2, in_norms: 1, key_norm: true };
     case "lm_head":
       return { type, vocab: 4096, tied: false, bias: false, final_norm: "rmsnorm", z_loss: 1e-4, softcap: 30, chunked: true };
+    case "pool":
+      return { type, mode: "mean", heads: Math.max(1, Math.round(width / 64)) };
     case "custom":
       return { type, params: 0, flops_per_position: 0, act_bytes_per_position: 0, out: 0, note: "custom block" };
   }
@@ -100,6 +102,7 @@ export const PALETTE: PaletteItem[] = [
   { key: "moe", group: "Feed-forward", label: "Mixture of experts", hint: "8 experts, top-2 active", make: (w) => ({ ...(defaultBody("ffn", w) as object), experts: 8, top_k: 2 }) as CellBody },
   { key: "latent_init", group: "Memory", label: "Learned queries", hint: "starts a slots / latents stack", make: (w) => defaultBody("latent_init", w) },
   { key: "kv_out", group: "Memory", label: "Notes out", hint: "slot states → ready keys/values for a reader", make: (w) => defaultBody("kv_out", w) },
+  { key: "pool", group: "Memory", label: "Pool each page", hint: "a page of tokens → one vector (mean or attention)", make: (w) => defaultBody("pool", w) },
   { key: "linear", group: "Memory", label: "Linear projection", hint: "change the width", make: (w) => defaultBody("linear", w) },
   { key: "norm", group: "Output", label: "Norm", hint: "RMSNorm or LayerNorm", make: (w) => defaultBody("norm", w) },
   { key: "lm_head", group: "Output", label: "LM head + loss", hint: "final norm, logits, cross-entropy", make: (w) => defaultBody("lm_head", w) },
