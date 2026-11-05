@@ -39,6 +39,7 @@ if ! command -v aws >/dev/null; then   # stock Ubuntu (CPU nodes) has no AWS CLI
   unzip -q /tmp/awscli.zip -d /tmp && /tmp/aws/install
 fi
 echo "MC_BUCKET=${MC_BUCKET}" > /etc/mrcogito.env
+echo "export AWS_DEFAULT_REGION=${MC_BUCKET_REGION}" >> /etc/mrcogito.env
 echo "MC_NAME=${NAME}" >> /etc/mrcogito.env
 echo "MC_DISK=\$DISK" >> /etc/mrcogito.env
 sudo -u ubuntu bash -lc '
@@ -53,8 +54,9 @@ sudo -u ubuntu bash -lc '
 EOF
 
 case "$TYPE" in p5.4xlarge) PRICE=6.88 ;; c7i.4xlarge) PRICE=0.714 ;; c7i.2xlarge) PRICE=0.357 ;; *) PRICE=$MC_PRICE_PER_HOUR ;; esac
-# H100 capacity differs per zone: try each zone's default subnet in turn (MC_ZONES overrides the order)
-ZONES="${MC_ZONES:-us-east-1a us-east-1b us-east-1c us-east-1d us-east-1f us-east-1e}"
+# H100 capacity differs per zone: try each zone that offers TYPE in this region, in turn (MC_ZONES overrides)
+ZONES="${MC_ZONES:-$(aws ec2 describe-instance-type-offerings --location-type availability-zone \
+  --filters "Name=instance-type,Values=$TYPE" --query 'InstanceTypeOfferings[].Location' --output text)}"
 ID=""
 for AZ in $ZONES; do
   SUBNET=$(aws ec2 describe-subnets --filters Name=default-for-az,Values=true "Name=availability-zone,Values=$AZ" \

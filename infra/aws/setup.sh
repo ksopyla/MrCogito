@@ -63,7 +63,14 @@ aws ec2 authorize-security-group-ingress --group-id "$SG" --protocol tcp --port 
 echo "SSH allowed from ${MYIP}/32"
 
 echo "== key pair ${MC_KEY}"
-if ! aws ec2 describe-key-pairs --key-names "$MC_KEY" >/dev/null 2>&1; then
+if ! aws ec2 describe-key-pairs --key-names "$MC_KEY" >/dev/null 2>&1 && [ -f "$MC_KEY_FILE" ]; then
+  # a second region: reuse the private key we already hold (key pairs are per region; never overwrite the file)
+  PUB=$(mktemp); ssh-keygen -y -f "$MC_KEY_FILE" > "$PUB"
+  aws ec2 import-key-pair --key-name "$MC_KEY" --public-key-material "fileb://$PUB" \
+    --tag-specifications "ResourceType=key-pair,Tags=[{Key=Project,Value=${MC_PROJECT_TAG}}]" >/dev/null
+  rm -f "$PUB"
+  echo "imported the public key of $MC_KEY_FILE into ${AWS_REGION}"
+elif ! aws ec2 describe-key-pairs --key-names "$MC_KEY" >/dev/null 2>&1; then
   umask 077
   aws ec2 create-key-pair --key-name "$MC_KEY" --key-type ed25519 \
     --tag-specifications "ResourceType=key-pair,Tags=[{Key=Project,Value=${MC_PROJECT_TAG}}]" \

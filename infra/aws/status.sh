@@ -24,17 +24,19 @@ if [ "${1:-}" = "--account" ]; then
   aws s3api head-bucket --bucket "$MC_BUCKET" >/dev/null 2>&1 && echo "exists" || echo "missing"
 fi
 
-echo "== instances tagged ${MC_PROJECT_TAG} (not terminated)"
-aws ec2 describe-instances \
-  --filters "Name=tag:Project,Values=${MC_PROJECT_TAG}" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
-  --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,InstanceId,InstanceType,State.Name,LaunchTime,PublicIpAddress]' \
-  --output text | while read -r name id type state launched ip; do
-    [ -z "${id:-}" ] && continue
-    start=$(date -u -j -f "%Y-%m-%dT%H:%M:%S" "${launched%%+*}" +%s 2>/dev/null || date -u -d "$launched" +%s)
-    hours=$(python3 -c "import time;print(f'{(time.time()-$start)/3600:.2f}')")
-    cost=$(python3 -c "print(f'{$hours*$MC_PRICE_PER_HOUR:.2f}')")
-    echo "$name $id $type $state up ${hours} h ≈ \$${cost} ip ${ip}"
-  done
+echo "== instances tagged ${MC_PROJECT_TAG} (not terminated) in ${MC_REGIONS}"
+for region in $MC_REGIONS; do
+  aws ec2 describe-instances --region "$region" \
+    --filters "Name=tag:Project,Values=${MC_PROJECT_TAG}" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+    --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,InstanceId,InstanceType,State.Name,LaunchTime,PublicIpAddress]' \
+    --output text | while read -r name id type state launched ip; do
+      [ -z "${id:-}" ] && continue
+      start=$(date -u -j -f "%Y-%m-%dT%H:%M:%S" "${launched%%+*}" +%s 2>/dev/null || date -u -d "$launched" +%s)
+      hours=$(python3 -c "import time;print(f'{(time.time()-$start)/3600:.2f}')")
+      cost=$(python3 -c "print(f'{$hours*$MC_PRICE_PER_HOUR:.2f}')")
+      echo "$region $name $id $type $state up ${hours} h ≈ \$${cost} ip ${ip}"
+    done
+done
 echo "== spend so far (every node's heartbeat in s3://${MC_BUCKET}/spend/, updated every 5 min)"
 TMP=$(mktemp -d)
 if aws s3 cp --only-show-errors --recursive "s3://${MC_BUCKET}/spend/" "$TMP/" 2>/dev/null; then

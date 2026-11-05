@@ -1,7 +1,11 @@
 # Shared settings for the AWS training scripts (sourced, not run).
 # Research account, us-east-1: on-demand H100 quota 64 vCPU = four p5.4xlarge (1 × H100 each) at once.
+# us-east-2: 32 vCPU requested 2026-11-05 (us-east-1 had no free H100 from 2026-11-04 21:50 UTC). Launch there with
+# AWS_REGION=us-east-2 (after `AWS_REGION=us-east-2 bash infra/aws/setup.sh` once); the bucket stays in us-east-1.
 export AWS_PROFILE="${AWS_PROFILE:-m21-research}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
+export MC_REGIONS="${MC_REGIONS:-us-east-1 us-east-2}"    # status.sh / terminate.sh look in all of these
+export MC_BUCKET_REGION="us-east-1"
 export AWS_PAGER=""
 
 export MC_PROJECT_TAG="mrcogito"
