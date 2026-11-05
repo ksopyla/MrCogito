@@ -339,6 +339,10 @@ def main():
         is_backbone=is_backbone,
         concept_num=model_args.concept_num,
     )
+    # RUN_ID_SUFFIX (e.g. the arm): runs of one architecture started in the same second otherwise get the same id —
+    # E33n s30 window and e33n trunks (2026-11-05 00:33:23) wrote into one W&B run.
+    if os.environ.get("RUN_ID_SUFFIX"):
+        run_identifier = f"{run_identifier}_{os.environ['RUN_ID_SUFFIX']}"
     setup_run_dirs(training_args, run_identifier)
     training_args.use_cpu = False
 

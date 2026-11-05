@@ -47,7 +47,8 @@ finish() { [ -n "$SYNC" ] && kill "$SYNC" 2>/dev/null; sync_up; }
 phase() {
   local name=$1 cmd=$2 ck="" rc
   while true; do
-    ( eval "$cmd${E33N_BURST_H:+ --max_train_hours $E33N_BURST_H}${ck:+ --resume_from_checkpoint $ck}" ) \
+    ( export RUN_ID_SUFFIX="${ARM}_${SIZE}_${name}"   # arms launched in the same second get distinct W&B runs
+      eval "$cmd${E33N_BURST_H:+ --max_train_hours $E33N_BURST_H}${ck:+ --resume_from_checkpoint $ck}" ) \
       >> "$R/$name.log" 2>&1
     rc=$?
     [ "$rc" = 3 ] || return "$rc"
