@@ -105,9 +105,8 @@ def main() -> None:
             continue
         r = {"notes_on": score(model, ds, a.rows, ks, a.window, a.min_pos, a.device)}
         if a.notes_off and has_notes:
-            model._message_override = "none"
-            r["notes_off"] = score(model, ds, a.rows, ks, a.window, a.min_pos, a.device)
-            model._message_override = "real"
+            with model.message_override("none"):  # restores the model's own setting afterwards
+                r["notes_off"] = score(model, ds, a.rows, ks, a.window, a.min_pos, a.device)
         res["sources"][src] = r
         print(src, json.dumps({m: {k: {c: v["loss"] for c, v in t.items()} for k, t in x["k"].items()}
                                for m, x in r.items()}), flush=True)

@@ -70,6 +70,17 @@ def score(model, ds, S: int, rows: int, device: str, per_row: bool = False) -> d
     return out
 
 
+def score_source(model, ds, S: int, rows: int, device: str, notes_off: bool, per_row: bool = False) -> dict:
+    """Notebook on (the model's own setting) and, if asked, off. The context manager restores the model's own setting:
+    forcing "real" afterwards (as before 2026-11-05) switched the notes ON for the window control — a model trained
+    with them off — from its second source on."""
+    r = {"notes_on": score(model, ds, S, rows, device, per_row)}
+    if notes_off:
+        with model.message_override("none"):
+            r["notes_off"] = score(model, ds, S, rows, device, per_row)
+    return r
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--checkpoint", required=True)
@@ -105,15 +116,10 @@ def main() -> None:
                 per_len[src] = {"rows": 0}
                 continue
             try:
-                per_len[src] = {"notes_on": score(model, ds, S, a.rows, a.device, a.per_row)}
-                if a.notes_off and has_notes:
-                    model._message_override = "none"
-                    per_len[src]["notes_off"] = score(model, ds, S, a.rows, a.device, a.per_row)
+                per_len[src] = score_source(model, ds, S, a.rows, a.device, a.notes_off and has_notes, a.per_row)
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:  # a length past what fits: record it, go on
                 per_len[src] = {"error": f"{type(e).__name__}: {str(e)[:300]}"}
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
-            finally:
-                model._message_override = "real"
             print(S, src, json.dumps({k: v.get("loss") if isinstance(v, dict) else v
                                       for k, v in per_len[src].items()}), flush=True)
         res["lengths"][S] = per_len
