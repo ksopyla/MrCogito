@@ -24,6 +24,40 @@ RULER = ["niah_single_1", "niah_single_2", "niah_single_3", "niah_multikey_1", "
          "niah_multiquery", "niah_multivalue", "ruler_vt", "ruler_cwe", "ruler_fwe", "ruler_qa_squad", "ruler_qa_hotpot"]
 CORE = ["hellaswag", "arc_easy", "arc_challenge", "piqa", "winogrande", "lambada_openai", "wikitext", "sciq"]
 
+# lm-eval's RULER HotpotQA task downloads the dev set (distractor) from this host, which no longer resolves
+# (2026-11-05, from Odra and Polonez). The same 7,405 questions are on the Hub as parquet.
+HOTPOT_URL = "http://curtis.ml.cmu.edu/datasets/hotpot/hotpot_dev_distractor_v1.json"
+
+
+def hotpot_dev_from_hub() -> list[dict]:
+    """HotpotQA dev (distractor) in the original JSON layout: question, answer, context = [[title, sentences], ...]."""
+    import datasets
+    ds = datasets.load_dataset("hotpotqa/hotpot_qa", "distractor", split="validation")
+    return [{"question": r["question"], "answer": r["answer"],
+             "context": [[t, s] for t, s in zip(r["context"]["title"], r["context"]["sentences"])]} for r in ds]
+
+
+def redirect_hotpot_download() -> None:
+    """Serve HOTPOT_URL from the Hub mirror. lm-eval loads task code as a fresh module (spec_from_file_location), so
+    the task's own functions cannot be patched; its download goes through the shared `requests.get`, which can."""
+    import requests
+    real_get = requests.get
+
+    class _Json:
+        def __init__(self, data):
+            self._data = data
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self):
+            return self._data
+
+    def get(url, *args, **kwargs):
+        return _Json(hotpot_dev_from_hub()) if url == HOTPOT_URL else real_get(url, *args, **kwargs)
+
+    requests.get = get
+
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -55,6 +89,8 @@ def main() -> None:
     if a.notes_off:
         lm.model._message_override = "none"
     tasks = [t for t in a.tasks.split(",") if t] or (RULER if a.suite == "ruler" else CORE)
+    if "ruler_qa_hotpot" in tasks:
+        redirect_hotpot_download()
     metadata = {"tokenizer": a.tokenizer, "max_seq_lengths": lengths} if a.suite == "ruler" else None
     t0 = time.time()
     res = lm_eval.simple_evaluate(

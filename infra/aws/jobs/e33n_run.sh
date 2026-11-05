@@ -11,6 +11,8 @@
 #   E33N_BURST_H=5.5 E33N_COOL_MIN=20: train in bursts of at most 5.5 h with a 20 min cooldown between them
 #   (Polonez heat rule); each burst ends with a checkpoint and the next resumes from it.
 # E33N_MICRO_TRUNK / E33N_MICRO_DECAY: micro-batch per GPU (default: the driver's, sized for an 80 GB H100).
+# E33N_CORE_BATCH (default 32) / E33N_RULER_BATCH (default 8): eval batch; on a 24 GB GPU use core 8 (batch 32 ×
+#   2,048 tokens × the 50k vocabulary needs a 12 GB log-softmax).
 # A rerun skips the phases that already have a final model.
 # Smoke tests: E33N_CMD_EXTRA="--local" (laptop trainer settings), E33N_SKIP_EVAL=1 (stop after the decay).
 set -uo pipefail
@@ -99,11 +101,11 @@ uv run python evaluation/long_doc_loss.py --checkpoint "$DECAY" --data "$D/longd
 sync_up
 log "eval RULER"
 uv run --with wonderwords python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" \
-  --suite ruler --lengths 4096,8192,16384,32768 --limit 100 --batch 8 --out "$R/eval_ruler.json" > "$R/eval_ruler.log" 2>&1 \
+  --suite ruler --lengths 4096,8192,16384,32768 --limit 100 --batch "${E33N_RULER_BATCH:-8}" --out "$R/eval_ruler.json" > "$R/eval_ruler.log" 2>&1 \
   || log "RULER FAILED (see eval_ruler.log)"
 sync_up
 log "eval core"
 uv run python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" --suite core \
-  --limit 0 --batch 32 --out "$R/eval_core.json" > "$R/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
+  --limit 0 --batch "${E33N_CORE_BATCH:-32}" --out "$R/eval_core.json" > "$R/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
 log "done"
 finish
