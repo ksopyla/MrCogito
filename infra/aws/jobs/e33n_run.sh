@@ -19,7 +19,8 @@
 #   grows with length; 4096 is LSA's headline column).
 # A rerun skips the phases that already have a final model.
 # Smoke tests: E33N_CMD_EXTRA="--local" (laptop trainer settings), E33N_SKIP_EVAL=1 (stop after the decay).
-# E33p: E33N_EXPERIMENT=E33p (W&B / run id), E33N_FLOW=1 (instrumentation + weight snapshots, plan §8).
+# E33p: E33N_EXPERIMENT=E33p (W&B / run id, S3 prefix runs/e33p/), E33N_FLOW=1 (instrumentation + weight
+#   snapshots, plan §8). E33N_SEED=N: trainer seed N (default 42), run folder gets _seedN.
 set -uo pipefail
 ARM="$1"; SIZE="$2"; LR="${3:-}"; TT="${4:-}"
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1
@@ -30,8 +31,9 @@ if [ -f /etc/mrcogito.env ]; then
 else
   D="${E33N_DATA:?set E33N_DATA}"; RUNS="${E33N_RUNS:?set E33N_RUNS}"; MC_BUCKET=""
 fi
-RUN="e33n_${SIZE}_${ARM}${LR:+_lr$LR}${TT:+_tok$TT}"
-R="$RUNS/$RUN"; S3R="${MC_BUCKET:+s3://$MC_BUCKET/runs/e33n/$RUN}"
+RUN="e33n_${SIZE}_${ARM}${LR:+_lr$LR}${TT:+_tok$TT}${E33N_SEED:+_seed$E33N_SEED}"
+EXP=$(echo "$EXPERIMENT_ID" | tr "[:upper:]" "[:lower:]")
+R="$RUNS/$RUN"; S3R="${MC_BUCKET:+s3://$MC_BUCKET/runs/$EXP/$RUN}"
 export WANDB_DIR="$R/wandb"
 mkdir -p "$R" "$WANDB_DIR"
 log() { echo "[e33n $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$R/events.log"; }
@@ -87,7 +89,7 @@ log "data: $(ls "$D"/fineweb_edu_gpt2/finewebedu_train_*.bin | wc -l) FineWeb sh
 TRUNK=$(ls -d "$R"/trunk/*/final 2>/dev/null | tail -1)
 if [ -z "$TRUNK" ]; then
   CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase trunk --data "$D" --out "$R" \
-        ${LR:+--lr $LR} ${TT:+--tokens $TT} ${E33N_MICRO_TRUNK:+--micro $E33N_MICRO_TRUNK} --eval_every 500 --wandb ${E33N_FLOW:+--flow} ${E33N_CMD_EXTRA:-})
+        ${LR:+--lr $LR} ${TT:+--tokens $TT} ${E33N_MICRO_TRUNK:+--micro $E33N_MICRO_TRUNK} --eval_every 500 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} ${E33N_CMD_EXTRA:-})
   echo "$CMD" > "$R/trunk.cmd"
   log "trunk start"
   phase trunk "$CMD" || { log "trunk FAILED"; tail -40 "$R/trunk.log"; finish; exit 1; }
@@ -99,7 +101,7 @@ sync_up
 DECAY=$(ls -d "$R"/decay/*/final 2>/dev/null | tail -1)
 if [ -z "$DECAY" ]; then
   CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase decay --data "$D" --out "$R" \
-        ${LR:+--lr $LR} ${E33N_MICRO_DECAY:+--micro $E33N_MICRO_DECAY} --init "$TRUNK" --eval_every 200 --wandb ${E33N_FLOW:+--flow} ${E33N_CMD_EXTRA:-})
+        ${LR:+--lr $LR} ${E33N_MICRO_DECAY:+--micro $E33N_MICRO_DECAY} --init "$TRUNK" --eval_every 200 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} ${E33N_CMD_EXTRA:-})
   echo "$CMD" > "$R/decay.cmd"
   log "decay start"
   phase decay "$CMD" || { log "decay FAILED"; tail -40 "$R/decay.log"; finish; exit 1; }

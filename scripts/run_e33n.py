@@ -219,6 +219,7 @@ def main() -> None:
     c.add_argument("--wandb", action="store_true")
     c.add_argument("--local", action="store_true", help="laptop pipeline check (sdpa, adamw_torch, no workers)")
     c.add_argument("--flow", action="store_true", help="E33p instrumentation (flow/grad/upd/read/select/lens keys)")
+    c.add_argument("--seed", type=int, default=42, help="trainer seed: initial weights and the order rows are drawn in")
     a = ap.parse_args()
     if a.what == "params":
         for size in ("s30", "m100", "l300"):
@@ -229,7 +230,7 @@ def main() -> None:
         return
     cmd = train_cmd(a.arm, a.size, a.phase, data=Path(a.data), out=Path(a.out), init=a.init, lr=a.lr,
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
-                    local=a.local, flow=a.flow)
+                    local=a.local, flow=a.flow, seed=a.seed)
     print(shlex.join(cmd))
 
 
