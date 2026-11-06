@@ -27,7 +27,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   the same 30M model and three retrained controls (dense now loops, as it should have in E33n), all with training
   instrumentation. Stage 0 passed 2026-11-06 (notes-open 0.79 × the full note read's speed); stage 1 launched
   2026-11-06 09:30 UTC (Odra: notes-open, pages-open, LSA-native; Polonez: dense, window, full read), runs in
-  `Cache/e33p_runs/`. Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
+  `Cache/e33p_runs/`. 15:41 UTC: the full-read control restarted from scratch (CUDA label assert at step ~35,
+  09:35 UTC, cause not found; not an instrumented step, and dense and window passed the same batches); dense resumed from checkpoint-2048 (its
+  first burst ended cleanly but lost exit code 3; the run script now detects that and resumes after a crash).
+  Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
 - **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
   ladder failed its pass mark.**
   - The frozen reader can take a whole 512-token span through one optimised key/value entry: 99.98 % of tokens,
