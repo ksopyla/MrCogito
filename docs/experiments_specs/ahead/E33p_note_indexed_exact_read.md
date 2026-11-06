@@ -63,7 +63,16 @@ one KV head) reads, per query i in query block b (128 queries):
   - **notes-open (main):** opens the member tokens of the 64 best notes.
   - **pages-open (coarser):** opens the 2 best pages whole (page score = the sum of its notes' block scores), again
     512 tokens. This tells whether the finer grouping matters.
-  - **controls:** E33n's dense ceiling, window control and full note read (not retrained).
+  - **LSA-native (published reference, added 2026-11-06 at the author's request):** the same 30M backbone with LSA's
+    native read in the reading layer instead of the notebook: the reading layer's own keys of each closed key block
+    clustered by Ward merging into buckets of about 8 (no parameters, no gradient), a query block scores one centre
+    per bucket, opens the best buckets' original keys within the same 512-token cap, plus LSA's sinks, and (LSA's
+    default two-path read) every unread bucket enters the softmax as one averaged term. Ported from LSA's Apache-2.0
+    code with attribution. E33p vs LSA-native isolates the question "is our learned writer a better index than
+    clustering the keys?".
+  - **controls:** E33n's dense ceiling, window control and full note read — **retrained with the instrumentation
+    below** so training dynamics are comparable (same seed and data order; their E33n numbers double as a
+    reproducibility check of G).
 - **Information budget:** in the read, one note is a single 64-number key and 64-number value (one key/value head),
   made from a 512-number writer state that summarises about 8 tokens; it cannot return which of 50,257 tokens came
   next. An opened token keeps its full per-token state; the 30M dense model shows that this size can copy
@@ -83,6 +92,36 @@ Identical to E33n s30: FineWeb-Edu GPT-2 1.5B tokens at 4k (constant LR 1e-3 aft
 E33n's suite on the same rows: long-document loss by position at 4k–128k (64 rows per source at 16k and 64k, with a
 bootstrap over documents); the copy split (near / far / no copy); RULER per length (4k, 16k); core benchmarks (SDPA);
 and two switches at eval inside each new model: notes off, and **opened tokens off** (the exact read's own value).
+
+## Instrumentation (added 2026-11-06 at the author's request; identical in every arm)
+Goal: compare training dynamics across arms — do the layers do similar work and get similar learning signals, how
+information flows through the network, and whether the reading layers pick the same things.
+
+**A. During training** (every 200 steps, computed inside that step on the GPU, one host sync when logged, ≤ 3 % of
+average step time; W&B keys under `flow/`, `grad/`, `read/`, `select/`, `writer/`):
+1. **Information flow per layer** (pre layers, reading layer, each stack layer and each loop round): residual-stream
+   norm and the relative update of each sublayer, ‖Δh‖ / ‖h‖, for attention and feed-forward separately.
+2. **Learning signal per layer:** gradient norm and update-to-weight ratio ‖ΔW‖ / ‖W‖ (after the optimizer step) for
+   each layer's attention and feed-forward weights, the writer, the embeddings and the output layer.
+3. **Where the reading layer reads:** attention mass and entropy per key source — window, notes, opened tokens,
+   LSA's unread-bucket terms, dense raw keys — split by query position (0–512, 512–2k, 2k–8k, 8k–16k).
+4. **Selection** (opening arms): share of query blocks that hit the 512-token cap, distinct pages opened per block,
+   window-only notes skipped, and how much the opened set changes between loop rounds (overlap of round r with r − 1).
+5. **Writer** (notebook arms): assignment entropy, note usage balance, address-key norm against raw-key norm.
+6. **Logit lens:** the next-token loss read from each layer's residual through the final norm and output layer, on
+   the last 1,024 positions of one logged row — where in the depth the prediction forms.
+
+**B. Across arms, after training** (`evaluation/flow_probe.py`, the same 16 held-out 16k rows for every arm, at the
+trunk's end and the decay's end, and on intermediate checkpoints kept every 1,000 steps):
+1. **Do they pick the same things:** for each query at position ≥ 2k, the dense ceiling's reading-layer top-32 keys
+   against the tokens each opening arm opened (recall of the dense choice, and the dense attention mass on the opened
+   set); for the notebook arms, the same with note mass mapped to pages.
+2. **Copy-source hit rate:** on far-copy tokens (the copy split), does the opened set contain the earlier occurrence
+   that the copy needs?
+3. **Do the layers behave alike:** linear CKA between every pair of arms' layer outputs on the same tokens, and
+   within an arm across loop rounds.
+4. **Per-layer loss (logit lens) and attention mass by distance** for the reading layer, on all probe rows.
+Outputs: JSON per arm and checkpoint in the registry, plus a comparison script that draws the curves.
 
 ## Success criteria (set BEFORE running)
 - **S1 (exact read carries far context):** the notes-open arm recovers ≥ 40 % of G at 16k on positions ≥ 2k
@@ -105,8 +144,9 @@ and two switches at eval inside each new model: notes off, and **opened tokens o
   keys; membership and dedupe across overlapping pages (stride 192); causality (only closed pages, window tokens not
   repeated); with m ≥ every note, the opened read equals the `raw` override restricted to closed pages; gradient
   reaches A and the key projection, none through the selection. Then a speed and memory check at 4k and 16k (K2).
-- **Stage 1 (free; Odra + Polonez):** the two new arms at 30M, about 20 RTX 3090 hours each, then E33n's evals. Gate:
-  S1–S4, K1.
+- **Stage 1:** six arms at 30M with the instrumentation — notes-open, pages-open, LSA-native, and the three retrained
+  controls — about 15–20 RTX 3090 hours each (about 100 in all: two days on the home servers, or about 36 H100 hours
+  ≈ $250 on AWS; the author picks), then E33n's evals and the cross-arm probe. Gate: S1–S4, K1.
 - **Stage 2 (only if S1 and S2 hold, and with the author's approval):** 100M on an AWS H100 against new 100M controls,
   within E33n's unspent stage-2 budget (≤ $850).
 - **Launch:** `E33N_DATA=… E33N_RUNS=… E33N_MICRO_TRUNK=4 E33N_MICRO_DECAY=1 CUDA_VISIBLE_DEVICES=<gpu> bash
