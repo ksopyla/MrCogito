@@ -1,0 +1,86 @@
+{
+  "checkpoint": "/home/ksopyla/dev/MrCogito-lsa/Cache/e33n_runs/e33n_s30_e33n/decay/perceiver_ar_perceiver_H576L2g1s5N128_20261105_182321/final",
+  "suite": "ruler",
+  "lengths": [
+    4096,
+    8192,
+    16384,
+    32768
+  ],
+  "limit": 100,
+  "notes_off": false,
+  "seconds": 12414.5,
+  "results": {
+    "niah_multikey_1": {
+      "alias": "niah_multikey_1",
+      "4096,none": 0.11,
+      "4096_stderr,none": "N/A"
+    },
+    "niah_multikey_2": {
+      "alias": "niah_multikey_2",
+      "4096,none": 0.0,
+      "4096_stderr,none": "N/A"
+    },
+    "niah_multikey_3": {
+      "alias": "niah_multikey_3",
+      "4096,none": 0.01,
+      "4096_stderr,none": "N/A"
+    },
+    "niah_multiquery": {
+      "alias": "niah_multiquery",
+      "4096,none": 0.02,
+      "4096_stderr,none": "N/A"
+    },
+    "niah_multivalue": {
+      "alias": "niah_multivalue",
+      "4096,none": 0.075,
+      "4096_stderr,none": "N/A"
+    },
+    "niah_single_1": {
+      "alias": "niah_single_1",
+      "4096,none": 0.11,
+      "4096_stderr,none": "N/A"
+    },
+    "niah_single_2": {
+      "alias": "niah_single_2",
+      "4096,none": 0.06,
+      "4096_stderr,none": "N/A"
+    },
+    "niah_single_3": {
+      "alias": "niah_single_3",
+      "4096,none": 0.04,
+      "4096_stderr,none": "N/A"
+    },
+    "ruler_cwe": {
+      "alias": "ruler_cwe",
+      "4096,none": 0.001,
+      "4096_stderr,none": "N/A"
+    },
+    "ruler_fwe": {
+      "alias": "ruler_fwe",
+      "4096,none": 0.0,
+      "4096_stderr,none": "N/A"
+    },
+    "ruler_qa_hotpot": {
+      "alias": "ruler_qa_hotpot",
+      "4096,none": 0.06,
+      "4096_stderr,none": "N/A"
+    },
+    "ruler_qa_squad": {
+      "alias": "ruler_qa_squad",
+      "4096,none": 0.05,
+      "4096_stderr,none": "N/A"
+    },
+    "ruler_vt": {
+      "alias": "ruler_vt",
+      "4096,none": 0.0,
+      "4096_stderr,none": "N/A"
+    }
+  },
+  "mean": {
+    "4096": 0.04123076923076923,
+    "8192": null,
+    "16384": null,
+    "32768": null
+  }
+}

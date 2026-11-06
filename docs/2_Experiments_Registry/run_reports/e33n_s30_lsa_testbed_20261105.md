@@ -70,16 +70,24 @@ context + itself) occurred earlier only beyond the 512-token window, *near* if i
 With an 8-gram test (7 tokens of context): far copy 5.2 % of tokens, 63 % of G, closed 1.0–1.2 %; the rest of G
 (38 %) sits on "no copy" tokens that still contain shorter repeats, closed 12–14 %.
 
-**3. RULER (13 tasks, 100 documents, string match), 4k only:** dense 0.061. The other arms are rerunning; lengths
-above 4k were not scored by any run (lm-eval's `limit` takes the first documents of a dataset that holds every
-length, first length first) — fixed for later runs.
+**3. RULER (13 tasks, 100 documents, string match), 4k only:** dense 0.061 · top-k 0.041 · window 0.030 · full read
+0.020 — all near the floor at this size. Lengths above 4k were not scored by any run (lm-eval's `limit` takes the
+first documents of a dataset that holds every length, first length first) — fixed for later runs (`b143938`).
 
-**4. Core benchmarks (SDPA attention), dense:** HellaSwag 0.278 (acc_norm), ARC-easy 0.418, ARC-challenge 0.235
-(acc_norm), PIQA 0.581, WinoGrande 0.506, SciQ 0.665, LAMBADA 0.140 (perplexity 610), WikiText word perplexity 71.5.
-Other arms pending.
+**4. Core benchmarks** (acc_norm where defined; WikiText word perplexity, lower is better):
 
-**5. Length transfer (32k–128k):** pending — the window control's numbers there carry the eval bug below and are
-being rerun.
+| arm | HellaSwag | ARC-e | ARC-c | PIQA | WinoGrande | SciQ | LAMBADA | WikiText |
+|---|---|---|---|---|---|---|---|---|
+| dense (SDPA) | 0.278 | 0.394 | 0.235 | 0.580 | 0.506 | 0.588 | 0.140 | 71.5 |
+| window (flex) | 0.279 | 0.386 | 0.259 | 0.581 | 0.521 | 0.567 | 0.159 | 72.8 |
+| full read (flex) | 0.280 | 0.394 | 0.249 | 0.569 | 0.500 | 0.599 | 0.171 | 72.6 |
+
+Ties within noise (these tasks never close a notebook page). Top-k arm rerunning (its pipeline used batch 32 and ran
+out of memory).
+
+**5. Length transfer** (positions ≥ 2k; window from the fixed eval): at 64k (64 rows, 61 documents) G = 0.102
+(0.071–0.148) and the shares are 3.7 % (1.6–6.4) full read, 4.5 % (2.9–6.5) top-k; with 8 rows: 4k 4.6 / 3.4 %,
+32k 4.9 / 5.5 %, 128k −2.6 / 1.1 % (G 0.081, 4 sources). The notebook's share does not grow with length.
 
 ## Interpretation
 K1 is met: both notebook arms recover about 6 % of the far-context gap at the training length, far below the 15 % stop
@@ -101,8 +109,9 @@ since 2026-11-04 21:50 UTC); spend $0.17 (data preparation).
 ## Notes
 - **Eval bug (fixed, `8c0beb6`):** `long_doc_loss.py` reset the notebook switch to "on" after each source, so the
   window control (trained with notes off) was scored reading notes for 4 of 5 sources and at every later length. It
-  inflated G (0.153 instead of 0.134) and the notebook shares (17 % instead of 6 %) reported in chat at 19:01 UTC. The
-  copy-split eval never had the bug; its window numbers are the ones used here.
+  inflated G (0.153 instead of 0.134) and the notebook shares (17 % instead of 6 %, and 37–49 % instead of ≤ 5 % at
+  64k–128k) reported in chat at 19:01 UTC. The copy-split eval never had the bug; the window's long-document files in
+  the registry are from the fixed rerun (2026-11-05 22:45 – 23:10 UTC, Odra).
 - **RULER HotpotQA:** lm-eval downloads it from `curtis.ml.cmu.edu`, which no longer resolves; served from
   `hotpotqa/hotpot_qa` (same 7,405 questions, same order).
 - **Core benchmarks:** batch 32 ran out of memory on 24 GB; flex attention's compiler then failed on their ragged
