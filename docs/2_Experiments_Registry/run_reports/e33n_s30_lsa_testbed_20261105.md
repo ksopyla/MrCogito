@@ -22,7 +22,7 @@ notebook arms recover < 15 % of the window − dense gap → stop them) and K2 (
 ## Configuration
 | Item | Value |
 |---|---|
-| Family | perceiver_ar, width 576, 2 pre + reading layer + 5 stack layers, E33 loop 4 rounds, FFN 1472, GPT-2 vocabulary |
+| Family | perceiver_ar, width 576, 2 pre + reading layer + 5 stack layers, E33 loop 4 rounds (the dense arm: 1, a factory bug; see Notes), FFN 1472, GPT-2 vocabulary |
 | Parameters | 30.2M non-embedding (dense 26.3M), 72.7M total |
 | Writer (notebook arms and window) | E31c: 32 notes / 256-token page, stride 192, closed read; window arm runs it with notes masked |
 | Data | trunk: FineWeb-Edu GPT-2 shards, 4k rows, 1.5B tokens; decay: LongDocs-lite (gutenberg, arxiv, doab, usgpo, hansard), one document per 16k row, 0.2B tokens |
@@ -81,9 +81,9 @@ first documents of a dataset that holds every length, first length first) — fi
 | dense (SDPA) | 0.278 | 0.394 | 0.235 | 0.580 | 0.506 | 0.588 | 0.140 | 71.5 |
 | window (flex) | 0.279 | 0.386 | 0.259 | 0.581 | 0.521 | 0.567 | 0.159 | 72.8 |
 | full read (flex) | 0.280 | 0.394 | 0.249 | 0.569 | 0.500 | 0.599 | 0.171 | 72.6 |
+| top-k (SDPA, batch 8; rerun 2026-11-06, Odra) | 0.278 | 0.388 | 0.238 | 0.567 | 0.511 | 0.573 | 0.175 | 72.2 |
 
-Ties within noise (these tasks never close a notebook page). Top-k arm rerunning (its pipeline used batch 32 and ran
-out of memory).
+Ties within noise (these tasks never close a notebook page).
 
 **5. Length transfer** (positions ≥ 2k; window from the fixed eval): at 64k (64 rows, 61 documents) G = 0.102
 (0.071–0.148) and the shares are 3.7 % (1.6–6.4) full read, 4.5 % (2.9–6.5) top-k; with 8 rows: 4k 4.6 / 3.4 %,
@@ -107,6 +107,12 @@ on the home servers with the same protocol and the copy split. AWS: nothing laun
 since 2026-11-04 21:50 UTC); spend $0.17 (data preparation).
 
 ## Notes
+- **The dense ceiling did not loop (found 2026-11-06, fixed in `7f64a09`):** the trainer's factory passed
+  `message_loop_rounds` only to notebook (latent-memory) configs, so the dense arm trained with **one** pass of
+  [reading layer + 1 local layer] while the other three arms looped it four times (its saved `config.json`:
+  `message_loop_rounds 1`). The arms therefore differed in more than the reading layer, and the dense arm's speed
+  (35k tokens/s) is partly the missing loop. K1 stands: the notebook arms recovered ~6 % of a gap measured against a
+  ceiling with less compute per token. E33p retrains the dense control with the loop.
 - **Eval bug (fixed, `8c0beb6`):** `long_doc_loss.py` reset the notebook switch to "on" after each source, so the
   window control (trained with notes off) was scored reading notes for 4 of 5 sources and at every later length. It
   inflated G (0.153 instead of 0.134) and the notebook shares (17 % instead of 6 %, and 37–49 % instead of ≤ 5 % at
