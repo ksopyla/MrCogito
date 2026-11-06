@@ -154,6 +154,13 @@ Outputs: JSON per arm and checkpoint in the registry, plus a comparison script t
   repeated); with m ≥ every note, the opened read equals the `raw` override restricted to closed pages; gradient
   reaches A and the key projection, none through the selection; the LSA port reproduces LSA's own code. Then a speed
   and memory check at 4k and 16k (K2).
+- **Stage 0 result (2026-11-06 08:39–09:18 UTC, Odra, one RTX 3090 per run, `infra/aws/jobs/e33p_stage0.sh` at
+  `3f0dec5`):** all unit and GPU tests pass (flex = reference read, forward and backward, worst relative gradient
+  difference 1.2e-4); the tiny pipeline check passes for all seven arms. Speed in tokens/s, trunk 4k micro 4 / decay
+  16k micro 1, peak memory: e33 28.2k / —, 21.3 GB · notes-open 22.1k / 10.8k, 21.4 GB · pages-open 22.7k / 13.9k,
+  21.3 GB · LSA-native 25.4k / 17.3k, 19.8 GB · dense (now looping) 30.5k / —, 19.8 GB. Projected stage-1 hours:
+  notes-open ≈ 24, pages-open ≈ 22, LSA-native ≈ 20, controls ≈ 16–18 each (≈ 117 in all). **K2 passes** (notes-open
+  at 0.79 × the E33 arm; every arm far under the 40-hour line).
 - **Stage 1:** six arms at 30M with the instrumentation — notes-open, pages-open, LSA-native, and the three retrained
   controls — about 25–35 RTX 3090 hours per opening arm and 13–17 per control (estimate, ~140 in all: about 1.5 days
   on the home servers, or roughly $300–350 of on-demand H100; the author picks after stage 0 measures it), then
