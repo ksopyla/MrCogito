@@ -259,6 +259,21 @@ class PerceiverARConfig(PretrainedConfig):
         lm_count_max: int = 10,           # E33h — the counts coded as a soft one-hot over 0..lm_count_max
         lm_count_aux: float = 0.0,        # E33k — weight: each count head's sum at a count question's decision position
                                           #   must equal the true number of visits (read-target quads, round base 100)
+        lm_note_key: str = "writer",      # E33p — "tied": a note's key in the read is κ_n = Σ_t A[t,n] k_t / Σ_t A[t,n],
+                                          #   the writer-assignment-weighted mean of the reading layer's own raw keys
+        lm_open: str = "none",            # E33p — "notes": each query opens the raw tokens of its best notes' members;
+                                          #   "pages": of its best whole pages; "none" = notes are read as gist only
+        lm_open_k: int = 0,               # E33p — notes (or pages) each query chooses
+        lm_open_cap: int = 512,           # E33p — opened raw tokens per query, at most
+        par_global_read: str = "dense",   # E33p — "lsa": LSA's released flat read on the global layer (nn/lsa_buckets.py)
+        lsa_window: int = 512,            # LSA read: raw window
+        lsa_sinks: int = 4,               # LSA read: first tokens of each document, always read
+        lsa_block: int = 512,             # LSA read: keys per clustered block
+        lsa_bucket: int = 8,              # LSA read: average keys per bucket (buckets per block = block / bucket)
+        lsa_pool: int = 4,                # LSA read: neighbouring keys summed into one pool before the merges
+        lsa_bucket_cap: int = 16,         # LSA read: most keys a bucket may hold
+        lsa_top_k: int = 512,             # LSA read: keys each query takes beyond its sinks and window
+        lsa_width: int = 0,               # LSA read: buckets each query ranks, at most (0 = 2 · top_k / bucket)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -388,6 +403,19 @@ class PerceiverARConfig(PretrainedConfig):
         self.lm_count_heads = int(lm_count_heads or 0)
         self.lm_count_max = int(lm_count_max)
         self.lm_count_aux = float(lm_count_aux or 0.0)
+        self.lm_note_key = str(lm_note_key or "writer")
+        self.lm_open = str(lm_open or "none")
+        self.lm_open_k = int(lm_open_k or 0)
+        self.lm_open_cap = int(lm_open_cap)
+        self.par_global_read = str(par_global_read or "dense")
+        self.lsa_window = int(lsa_window)
+        self.lsa_sinks = int(lsa_sinks)
+        self.lsa_block = int(lsa_block)
+        self.lsa_bucket = int(lsa_bucket)
+        self.lsa_pool = int(lsa_pool)
+        self.lsa_bucket_cap = int(lsa_bucket_cap)
+        self.lsa_top_k = int(lsa_top_k)
+        self.lsa_width = int(lsa_width or 0) or (2 * self.lsa_top_k // max(self.lsa_bucket, 1))
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -546,6 +574,7 @@ class PerceiverARConfig(PretrainedConfig):
                                  "lm_read='closed'")
             if self.lm_note_age != "none" or int(getattr(self, "lm_count_heads", 0) or 0) > 0:
                 raise ValueError("lm_read_topk is not combined with lm_note_age / lm_count_heads (scores would differ)")
+        self._validate_e33p()
         if self.message_raw_window < 0:
             raise ValueError("message_raw_window must be >= 0 (0 = full causal raw keys)")
         if self.message_raw_window and self.message_slots_inplace:
@@ -560,6 +589,57 @@ class PerceiverARConfig(PretrainedConfig):
             for tid in self.message_anchor_token_ids:
                 if tid < 0 or tid >= self.vocab_size:
                     raise ValueError("message_anchor_token_ids must be vocabulary ids")
+
+    def _validate_e33p(self):
+        """E33p: tied note keys, the opened read, and LSA's read on the global layer (plan §6)."""
+        if self.lm_note_key not in ("writer", "tied"):
+            raise ValueError(f"lm_note_key must be writer | tied, got {self.lm_note_key!r}")
+        if self.lm_open not in ("none", "notes", "pages"):
+            raise ValueError(f"lm_open must be none | notes | pages, got {self.lm_open!r}")
+        if self.lm_open_k < 0 or not 1 <= self.lm_open_cap <= 32767:
+            raise ValueError("lm_open_k must be >= 0 and lm_open_cap in [1, 32767]")
+        if self.lm_open != "none":
+            if self.lm_open_k < 1:
+                raise ValueError("lm_open needs lm_open_k >= 1")
+            if self.lm_note_key != "tied":
+                raise ValueError("lm_open needs lm_note_key='tied' (the notes are the index)")
+            if self.message_raw_window <= 0:
+                raise ValueError("lm_open needs message_raw_window > 0 (opened tokens lie beyond the window)")
+        if self.lm_note_key == "tied":
+            need = {
+                "message_write='latent_memory'": self.message_write == "latent_memory",
+                "lm_read='closed'": self.lm_read == "closed",
+                "lm_competition=True": bool(self.lm_competition),
+                "lm_null_latent=False": not bool(self.lm_null_latent),
+                "lm_reader_tokens=1": int(self.lm_reader_tokens) == 1,
+                "lm_slot_pos='reader'": self.lm_slot_pos == "reader",
+                "global_nope=True": bool(self.global_nope),
+                "lm_read_topk=0": self.lm_read_topk == 0,
+                "lm_note_age='none'": self.lm_note_age == "none",
+                "lm_count_heads=0": self.lm_count_heads == 0,
+                "message_read_rounds=1": self.message_read_rounds == 1,
+                "attn_backend != flash": self.attn_backend != "flash",
+            }
+            bad = [k for k, ok in need.items() if not ok]
+            if bad:
+                raise ValueError("lm_note_key='tied' (E33p) needs " + ", ".join(bad))
+        if self.par_global_read not in ("dense", "lsa"):
+            raise ValueError(f"par_global_read must be dense | lsa, got {self.par_global_read!r}")
+        if self.par_global_read == "lsa":
+            if self.message_enabled:
+                raise ValueError("par_global_read='lsa' is the no-notebook LSA arm: turn the message boundary off")
+            if not self.global_nope or self.num_kv_heads != 1:
+                raise ValueError("par_global_read='lsa' needs global_nope=True and num_kv_heads=1 (LSA's max rule)")
+            if self.attn_backend == "flash" or self.par_mode != "perceiver" or self.global_layers < 1:
+                raise ValueError("par_global_read='lsa' needs perceiver mode with a global layer, flex or sdpa")
+            if self.lsa_block % self.lsa_bucket or self.lsa_bucket % self.lsa_pool:
+                raise ValueError("lsa_bucket must divide lsa_block and lsa_pool must divide lsa_bucket")
+            if self.lsa_bucket_cap < 2 * self.lsa_bucket:
+                raise ValueError("lsa_bucket_cap must be >= 2 * lsa_bucket (Ward needs the room; LSA's ward_merge)")
+            if self.lsa_window < 1 or self.lsa_sinks < 0 or not 1 <= self.lsa_top_k <= 32767 or self.lsa_width < 1:
+                raise ValueError("lsa_window >= 1, lsa_sinks >= 0, lsa_top_k in [1, 32767], lsa_width >= 1")
+            if self.lsa_bucket_cap > 511:
+                raise ValueError("lsa_bucket_cap must be < 512 (member rank code)")
 
     @property
     def message_enabled(self) -> bool:
@@ -995,6 +1075,8 @@ class MessageCtx:
     slot_close: Optional[torch.Tensor] = None  # [B,nb] int64 — last token a slot's window wrote from (closed rule)
     slot_nope: bool = False       # E31c "reader": slot keys are un-rotated and met by the un-rotated query
     note_topk: int = 0            # E33n: each query and head reads only its k best visible notes (0 = all)
+    index: Optional[object] = None  # E33p: nn.exact_read.NoteOpen (tied keys; what opens), built after the writer
+    open_eval: str = "on"         # E33p eval switch: "on" | "off" (no opened tokens) | "gist_off" (notes masked)
     capture: Optional[dict] = None  # exam probe: {"q_pos": [B,P]} → appends each read's attention mass per note,
                                     # [B,P,nb] summed over heads, to capture["mass"] (`capture_note_mass`)
     # text multi-hop (2026-10-17), training only: per-round read targets [B,T,4] (answer position, round, first and
@@ -1106,7 +1188,8 @@ def exclusive_visible(replace: torch.Tensor, ctx: MessageCtx) -> torch.Tensor:
 _CLOSE_STRIDE = 1 << 22  # E31c closed read: slot code = doc · 2²² + close (int32: ≤ 4M tokens, ≤ 511 docs)
 
 
-def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor]):
+def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor], *, opened=None,
+                           gist: bool = True):
     """mask_mod over KV = raw keys [0, S) ‖ slot keys [S, S + nb) for the global read.
 
     The predicate captures two int32 tag buffers rather than the four int64 buffers
@@ -1116,13 +1199,16 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
     (M = 2·n_sides), "same document and same side" is one equality and "same document, earlier
     side" is the range test `0 < tag_q − slot_tag < n_sides`. `dense_message_mask` is the
     reference semantics.
+
+    E33p: `opened(b, q, j)` (nn.exact_read.open_term) also lets query q read raw key j of its own document beyond the
+    raw window; `gist=False` masks every slot (the "gist off" switch: opened tokens and window only).
     """
     nb = ctx.n_slots
     m = ctx.tag_stride()
     n_sides = m // 2
     tag, slot_tag = ctx.tags()
     raw_cross = ctx.override == "raw"
-    slots_on = ctx.override not in ("none", "raw")
+    slots_on = ctx.override not in ("none", "raw") and gist
     raw_window = int(ctx.raw_window or 0)
     anchor = ctx.anchor
     if anchor is None:
@@ -1153,9 +1239,12 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
             same = same_doc
         else:
             same = tj == tq
-        raw_ok = (j <= q) & same
+        causal_same = (j <= q) & same
+        raw_ok = causal_same
         if raw_window > 0:
             raw_ok = raw_ok & (q - j < raw_window)
+        if opened is not None:
+            raw_ok = raw_ok | (causal_same & opened(b, q, jr))
         if not raw_cross:
             dq = torch.div(tq, m, rounding_mode="floor")
             sq = tq - dq * m
@@ -1178,14 +1267,21 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
     return pred
 
 
-def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor], device) -> torch.Tensor:
-    """[B,1,S,S+nb] boolean mask (True = attend) — reference path used by `sdpa`."""
+def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor], device, *,
+                       opened: Optional[torch.Tensor] = None, gist: bool = True) -> torch.Tensor:
+    """[B,1,S,S+nb] boolean mask (True = attend) — reference path used by `sdpa`.
+
+    E33p: `opened` [B,S,S] bool (nn.exact_read.dense_open) adds raw keys beyond the window for the same document and
+    side; `gist=False` masks every slot."""
     side, doc = ctx.side, ctx.doc
     B = side.shape[0]
     q = torch.arange(S, device=device)[:, None]
     j = torch.arange(S, device=device)[None, :]
     causal = (j <= q) & (q - j < ctx.raw_window) if ctx.raw_window else (j <= q)
     causal_doc = causal[None, None] & (doc[:, None, :, None] == doc[:, None, None, :])
+    if opened is not None:
+        causal_doc = causal_doc | ((j <= q)[None, None] & (doc[:, None, :, None] == doc[:, None, None, :])
+                                   & opened[:, None])
     if ctx.override == "raw":
         raw = causal_doc
     else:
@@ -1214,7 +1310,7 @@ def dense_message_mask(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor
             & (ctx.slot_doc[:, None, None, :] == doc[:, None, :, None])
             & (ctx.slot_side[:, None, None, :] < side[:, None, :, None])
         )
-    if ctx.override in ("none", "raw"):
+    if ctx.override in ("none", "raw") or not gist:
         slot = torch.zeros_like(slot)
     return torch.cat([raw.expand(B, 1, S, S), slot], dim=-1)
 
@@ -1795,7 +1891,7 @@ def note_topk_threshold(q_slot: torch.Tensor, k_bar: torch.Tensor, ctx: MessageC
 
 
 def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, block_masks=None,
-                   q_slot=None, note_bias=None):
+                   q_slot=None, note_bias=None, opened=None, gist: bool = True):
     """Global read over raw keys ‖ message slots with the E21 mask. Returns [B,S,h,dh].
 
     `q_slot` (E31c "reader" slot keys): the query used against the slots instead of `q` (the
@@ -1806,11 +1902,19 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
     `note_bias` (E33d) = (slope [h], pos [B,S], slot_pos [B,C], unit, mode): adds `note_age_bias` to the
     slot logits only (flex `score_mod`, or a float mask on the SDPA path); raw logits are unchanged.
     E33e (mode "rank") = (slope [h], logcount [B,h,S,n_w], None, rep, "rank"): adds −slope[h] · logcount at
-    each note's page (`note_rank_logcount`)."""
+    each note's page (`note_rank_logcount`).
+
+    E33p: `opened` (nn.exact_read.OpenTable) lets each query also read the raw tokens it opened beyond the window (its
+    own per-query table; the kernel is exact, not sparse in compute: plan §0.2); `gist=False` masks the notes."""
     B, S, h, dh = q.shape
     g = k.shape[2]
     if backend == "flash":
         raise NotImplementedError("message boundary needs flex or sdpa")
+    if opened is not None or not gist:
+        if note_bias is not None or q_slot is not None or int(getattr(ctx, "note_topk", 0) or 0) > 0:
+            raise NotImplementedError("the E33p read is not combined with note_bias, reader slot queries or top-k")
+        return _attend_open(q, k, v, k_bar, v_bar, ctx=ctx, key_valid=key_valid, backend=backend, opened=opened,
+                            gist=gist)
     if getattr(ctx, "capture", None) is not None:
         capture_note_mass(q, k, k_bar, ctx, key_valid, q_slot=q_slot)
     if getattr(ctx, "read_losses", None) is not None and ctx.read_targets is not None:
@@ -1918,6 +2022,95 @@ def attend_message(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend
         # returns the QK width; CUDA flash needs them equal), so pad V with zeros and slice: exact.
         vt = F.pad(vt, (0, qt.shape[-1] - dv))
     out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask, scale=scale)[..., :dv]
+    return out.transpose(1, 2)
+
+
+def _attend_open(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, opened, gist: bool):
+    """E33p read: raw window ‖ opened raw tokens ‖ notes (gist) in one softmax. [B,S,h,dh] → [B,S,h,dh]."""
+    from nn.exact_read import dense_open, open_term
+
+    B, S, h, dh = q.shape
+    g = k.shape[2]
+    rw = int(ctx.raw_window or 0)
+    K = torch.cat([k, k_bar.to(k.dtype)], dim=1)
+    V = torch.cat([v, v_bar.to(v.dtype)], dim=1)
+    qt, kt, vt = (t.transpose(1, 2) for t in (q, K, V))
+    if backend == "flex":
+        term = open_term(opened.T, opened.index.codes, cap=opened.cap, raw_window=rw) if opened is not None else None
+        pred = make_message_mask_pred(S, ctx, key_valid, opened=term, gist=gist)
+        extra = []
+        if gist:
+            e = _message_extra_blocks(ctx, S)
+            if e is not None:
+                extra.append(e)
+        if opened is not None:
+            extra.append(opened.extra_blocks())
+        bm = _band_block_mask(pred, B=B, Q_LEN=S, KV_LEN=S + ctx.n_slots, window=rw, causal=True, device=q.device,
+                              extra_blocks=torch.cat(extra, dim=-1) if extra else None)
+        out = _get_flex()(qt.contiguous(), kt.contiguous(), vt.contiguous(), block_mask=bm, enable_gqa=(g != h))
+        return out.transpose(1, 2)
+    if g != h:
+        rep = h // g
+        kt = kt.repeat_interleave(rep, dim=1)
+        vt = vt.repeat_interleave(rep, dim=1)
+    od = dense_open(opened.T, opened.index.codes, cap=opened.cap, raw_window=rw) if opened is not None else None
+    mask = dense_message_mask(S, ctx, key_valid, q.device, opened=od, gist=gist)
+    out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask)
+    return out.transpose(1, 2)
+
+
+def attend_lsa(q, k, v, *, doc, key_valid, backend, opened, window: int, sink: torch.Tensor, ds: torch.Tensor,
+               n_sinks: int):
+    """LSA-native read on the global layer: sinks ‖ raw window ‖ the keys each query took (nn.lsa_buckets), one softmax
+    over raw keys only, within the query's document. q [B,S,h,dh], k/v [B,S,g,dh], doc [B,S] (−1 = pad),
+    `sink` [B,S] bool (the first tokens of each document), `ds` [B,S]: each token's document start."""
+    from nn.exact_read import dense_open, open_term
+
+    B, S, h, dh = q.shape
+    g = k.shape[2]
+    qt, kt, vt = (t.transpose(1, 2) for t in (q, k, v))
+    doc32 = doc.to(torch.int32)
+    rw = int(window)
+    if backend == "flex":
+        term = open_term(opened.T, opened.index.codes, cap=opened.cap, raw_window=rw) if opened is not None else None
+        sk = sink.to(torch.int32)
+
+        def pred(b, hh, qi, j):
+            same = (doc32[b, j] == doc32[b, qi]) & (doc32[b, qi] >= 0)
+            ok = (j <= qi) & same
+            keep = (qi - j < rw) | (sk[b, j] > 0)
+            if term is not None:
+                keep = keep | term(b, qi, j)
+            ok = ok & keep
+            if key_valid is not None:
+                ok = ok & (key_valid[b, j] | (j == qi))
+            return ok
+
+        nqb = -(-S // 128)
+        first_q = torch.arange(nqb, device=q.device) * 128
+        sink_lo = ds[:, first_q] // 128
+        sink_hi = torch.clamp(ds[:, first_q] + max(n_sinks - 1, 0), max=S - 1) // 128
+        extra = [torch.stack([sink_lo, sink_hi], dim=-1)]
+        if opened is not None:
+            extra.append(opened.extra_blocks())
+        bm = _band_block_mask(pred, B=B, Q_LEN=S, KV_LEN=S, window=rw, causal=True, device=q.device,
+                              extra_blocks=torch.cat(extra, dim=-1))
+        out = _get_flex()(qt.contiguous(), kt.contiguous(), vt.contiguous(), block_mask=bm, enable_gqa=(g != h))
+        return out.transpose(1, 2)
+    if g != h:
+        rep = h // g
+        kt = kt.repeat_interleave(rep, dim=1)
+        vt = vt.repeat_interleave(rep, dim=1)
+    qi = torch.arange(S, device=q.device)[:, None]
+    j = torch.arange(S, device=q.device)[None, :]
+    same = (doc[:, :, None] == doc[:, None, :]) & (doc[:, :, None] >= 0)
+    keep = (qi - j < rw)[None] | sink[:, None, :]
+    if opened is not None:
+        keep = keep | dense_open(opened.T, opened.index.codes, cap=opened.cap, raw_window=rw)
+    mask = (j <= qi)[None] & same & keep
+    if key_valid is not None:
+        mask = mask & (key_valid.bool()[:, None, :] | torch.eye(S, dtype=torch.bool, device=q.device)[None])
+    out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=mask[:, None])
     return out.transpose(1, 2)
 
 
@@ -2156,6 +2349,14 @@ class Attention(nn.Module):
             # E33i: a per-position switch on the order term (initialised in the model, after post_init)
             self.note_order_gate = (nn.Linear(cfg.hidden_size, 1) if bool(getattr(cfg, "lm_note_order_gate", False))
                                     and self.note_age_mode == "rank" else None)
+        # E33p: LSA's released flat read on the global layer (the LSA-native arm; nn/lsa_buckets.py)
+        self.lsa = None
+        self.lsa_off = False  # eval switch (`PerceiverARLM.open_override("off")`): sinks + window only
+        if pattern == "full" and str(getattr(cfg, "par_global_read", "dense") or "dense") == "lsa":
+            self.lsa = dict(window=int(cfg.lsa_window), sinks=int(cfg.lsa_sinks), block=int(cfg.lsa_block),
+                            per_block=int(cfg.lsa_block) // int(cfg.lsa_bucket), pool=int(cfg.lsa_pool),
+                            cap=int(cfg.lsa_bucket_cap), top_k=int(cfg.lsa_top_k), width=int(cfg.lsa_width))
+        self.flow = None  # E33p instrumentation (nn/flow_stats.FlowRecorder), set on the reading layer when armed
         # E33h: count heads (a summing read) on the latent-memory global read
         self.note_counter = None
         if (int(getattr(cfg, "lm_count_heads", 0) or 0) > 0 and pattern == "full" and write == "latent_memory"
@@ -2314,6 +2515,24 @@ class Attention(nn.Module):
             k_bar, v_bar = self.message_slots(x, k_raw, v, message, key_valid, rope_theta)
             if message.override == "swapped":
                 k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
+            opened, gist = None, True
+            ni = getattr(message, "index", None)
+            if ni is not None:  # E33p: tied note keys, and the raw tokens each query opens
+                from nn.exact_read import note_open_table, tied_note_keys
+
+                kappa = tied_note_keys(ni.assign, k, ni.page_tok)
+                if message.override == "swapped":
+                    kappa = kappa.roll(1, dims=0)
+                # the writer's own key is unused: a zero term keeps its parameters in the graph (DDP)
+                k_bar = kappa.to(k.dtype) + 0.0 * k_bar.sum()
+                ev = getattr(message, "open_eval", "on")
+                gist = ev != "gist_off"
+                if ni.mode != "none" and message.override == "real" and ev != "off":
+                    opened = note_open_table(q, k_bar, ni, doc=message.doc, slot_close=message.slot_close,
+                                             slot_doc=message.slot_doc, raw_window=int(message.raw_window or 0))
+                if self.flow is not None:
+                    self.flow.reading_open(self, q=q, k=k, v=v, k_bar=k_bar, v_bar=v_bar, ctx=message,
+                                           key_valid=key_valid, opened=opened, gist=gist, index=ni)
             # E31c "reader" slot keys: met by the un-rotated query (exact; see attend_message)
             q_slot = self._scale_q(q_un, pos) if (getattr(message, "slot_nope", False) and self.use_rope) else None
             note_bias = None
@@ -2335,7 +2554,8 @@ class Attention(nn.Module):
                 else:
                     note_bias = (self.note_age_slope, pos, message.slot_pos, self.note_age_unit, self.note_age_mode)
             o = attend_message(q, k, v, k_bar, v_bar, ctx=message, key_valid=key_valid,
-                               backend=self.backend, block_masks=block_masks, q_slot=q_slot, note_bias=note_bias)
+                               backend=self.backend, block_masks=block_masks, q_slot=q_slot, note_bias=note_bias,
+                               opened=opened, gist=gist)
             out = self.wo(o.reshape(B, S, self.h * self.dh))
             if self.note_age_slope is not None and note_bias is None:
                 out = out + 0.0 * self.note_age_slope.sum().to(out.dtype)
@@ -2363,17 +2583,50 @@ class Attention(nn.Module):
                 ),
                 rewrite_kv=_rewrite_concat if update_kv else None,
             )
-        o = attend(
-            q, k, v, pattern=self.pattern, window=self.window, key_valid=key_valid,
-            doc_ids=doc_ids, backend=self.backend, causal=self.causal, cu_seqlens=cu_seqlens,
-            block_masks=block_masks, sink=self.sink, sink_pos=sink_pos,
-        )
+        if self.lsa is not None:
+            o = self._lsa_read(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
+        else:
+            if self.flow is not None:
+                self.flow.reading_dense(self, q=q, k=k, v=v, doc_ids=doc_ids, key_valid=key_valid)
+            o = attend(
+                q, k, v, pattern=self.pattern, window=self.window, key_valid=key_valid,
+                doc_ids=doc_ids, backend=self.backend, causal=self.causal, cu_seqlens=cu_seqlens,
+                block_masks=block_masks, sink=self.sink, sink_pos=sink_pos,
+            )
         o = self.wo(o.reshape(B, S, self.h * self.dh))
         if self.compressor is not None:
             o = o + 0.0 * self.compressor.participation().to(o.dtype)
         if self.note_age_slope is not None:
             o = o + 0.0 * self.note_age_slope.sum().to(o.dtype)
         return o
+
+
+    def _lsa_read(self, q, k, v, *, doc_ids, key_valid):
+        """E33p LSA-native arm: buckets of this call's keys, each query's choice, one softmax (nn/lsa_buckets.py)."""
+        from nn.exact_read import doc_starts
+        from nn.lsa_buckets import lsa_groups, lsa_open_table
+
+        B, S = q.shape[:2]
+        c = self.lsa
+        doc = doc_ids.long() if doc_ids is not None else torch.zeros(B, S, dtype=torch.long, device=q.device)
+        if key_valid is not None:
+            doc = doc.masked_fill(~key_valid.bool(), -1)
+        ds = doc_starts(doc)
+        pos = torch.arange(S, device=q.device)[None]
+        sink = (pos - ds < c["sinks"]) & (doc >= 0)
+        opened, groups = None, None
+        if not self.lsa_off:
+            built = lsa_groups(k, doc, block=c["block"], per_block=c["per_block"], pool=c["pool"], cap=c["cap"],
+                               sinks=c["sinks"])
+            if built is not None:
+                centroids, groups = built
+                opened = lsa_open_table(q, centroids, groups, top_k=c["top_k"], width=c["width"],
+                                        raw_window=c["window"])
+        if self.flow is not None:
+            self.flow.reading_lsa(self, q=q, k=k, v=v, doc=doc, key_valid=key_valid, opened=opened, sink=sink,
+                                  window=c["window"])
+        return attend_lsa(q, k, v, doc=doc, key_valid=key_valid, backend=self.backend, opened=opened,
+                          window=c["window"], sink=sink, ds=ds, n_sinks=c["sinks"])
 
 
 class SwiGLU(nn.Module):
@@ -2704,6 +2957,7 @@ class PerceiverARLM(PreTrainedModel):
         # default "real"; a no-notebook control (E31c) keeps "none" in its saved config, so evals of
         # its checkpoint never switch on an untrained writer
         self._message_override = str(getattr(config, "message_override", "real") or "real")
+        self._open_eval = "on"  # E33p eval switch (`open_override`)
         self._last_message_ctx = None
         self._last_prefix_ae = None
         if cfg.message_prefix_ae:
@@ -2822,6 +3076,50 @@ class PerceiverARLM(PreTrainedModel):
             yield
         finally:
             self._message_override = prev
+
+    @contextmanager
+    def open_override(self, mode: Optional[str]):
+        """E33p eval switch for the exact read: `off` (no opened tokens: notes as gist + window; the LSA arm reads its
+        sinks + window only), `gist_off` (opened tokens + window, the notes masked; the index still scores with κ),
+        `on` / None (no-op). Combine with `message_override("none")` for the window only."""
+        if mode in (None, "on"):
+            yield
+            return
+        if mode not in ("off", "gist_off"):
+            raise ValueError(f"unknown open_override {mode!r}")
+        prev = self._open_eval
+        lsa = [l.attn for l in self.layers if getattr(l.attn, "lsa", None) is not None]
+        prev_lsa = [a.lsa_off for a in lsa]
+        self._open_eval = mode
+        for a in lsa:
+            a.lsa_off = mode == "off"
+        try:
+            yield
+        finally:
+            self._open_eval = prev
+            for a, v in zip(lsa, prev_lsa):
+                a.lsa_off = v
+
+    def _note_index(self, out: dict, msg: MessageCtx, S: int):
+        """E33p: the per-forward note index (tied keys' assignment, and what opens) after the writer."""
+        from nn.exact_read import NoteOpen, doc_starts, note_groups
+
+        cfg = self.config
+        geo = self.memory_writer.geometry(S)
+        B = msg.doc.shape[0]
+        n_w, K, W = geo.n_windows, geo.latents, geo.window
+        if out.get("assign") is None:
+            raise RuntimeError("lm_note_key='tied' needs the writer's competition assignment")
+        A = out["assign"].float().mean(1).reshape(B, n_w, K, W)
+        starts = torch.tensor(geo.starts, device=msg.doc.device, dtype=torch.long)
+        page_tok = (starts[:, None] + torch.arange(W, device=msg.doc.device)[None]).clamp(max=S - 1)
+        mode = str(cfg.lm_open)
+        groups = None
+        if mode != "none":
+            groups = note_groups(A, msg.window_valid, list(geo.starts), S=S, doc_start=doc_starts(msg.doc),
+                                 slot_close=msg.slot_close, slot_doc=msg.slot_doc, mode=mode)
+        return NoteOpen(assign=A, page_tok=page_tok, groups=groups, mode=mode, k=int(cfg.lm_open_k),
+                        cap=int(cfg.lm_open_cap), per_page=K)
 
     # -- E21 message geometry ---------------------------------------------------------
     @staticmethod
@@ -3012,7 +3310,8 @@ class PerceiverARLM(PreTrainedModel):
                           raw_window=int(getattr(cfg, "message_raw_window", 0) or 0),
                           read_rule="closed" if closed else "exclusive", slot_close=slot_close,
                           slot_nope=write == "latent_memory" and str(getattr(cfg, "lm_slot_pos", "read")) == "reader",
-                          note_topk=int(getattr(cfg, "lm_read_topk", 0) or 0) if closed else 0)
+                          note_topk=int(getattr(cfg, "lm_read_topk", 0) or 0) if closed else 0,
+                          open_eval=self._open_eval)
         self._last_message_ctx = ctx
         return ctx
 
@@ -3111,6 +3410,10 @@ class PerceiverARLM(PreTrainedModel):
                 if self._note_keep is not None:  # a hidden note's window never closes for anyone
                     msg.slot_close = msg.slot_close.masked_fill(~self._note_keep.to(msg.slot_close.device), -1)
                 msg.capture = self._note_capture
+                if str(getattr(cfg, "lm_note_key", "writer")) == "tied":
+                    if self._notes_override is not None:
+                        raise NotImplementedError("tied note keys (E33p) need this row's own writer pass")
+                    msg.index = self._note_index(out, msg, S)
             else:
                 x0 = x0 + self.memory_writer.participation().to(x0.dtype)  # DDP: no QUERY in batch
         if (msg is not None and msg.external is None and self.training and self._read_targets is not None
@@ -3214,6 +3517,8 @@ class PerceiverARLM(PreTrainedModel):
         if self.memory_writer is None:
             raise RuntimeError("write_notes needs a latent-memory model")
         cfg = self.config
+        if str(getattr(cfg, "lm_note_key", "writer")) == "tied":
+            raise NotImplementedError("tied note keys (E33p) are the reading layer's own keys: no stand-alone notebook")
         B, S = input_ids.shape
         W, st = int(cfg.lm_window), int(cfg.lm_stride)
 
@@ -3621,6 +3926,8 @@ class PerceiverARLM(PreTrainedModel):
         `forward(receiver_ids, message_kv=..., position_offset=S)`.
         """
         cfg = self.config
+        if str(getattr(cfg, "lm_note_key", "writer")) == "tied" or str(getattr(cfg, "par_global_read", "dense")) == "lsa":
+            raise NotImplementedError("prefix_kv is not defined for the E33p reads (tied notes, LSA)")
         if cfg.par_mode == "perceiver" and cfg.global_layers < 1:
             raise RuntimeError("prefix_kv needs a global read layer")
         gi = cfg.global_layer_index

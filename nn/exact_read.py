@@ -1,0 +1,324 @@
+"""E33p — the exact read: each query opens the raw keys of the groups it chose (notes, pages, LSA buckets).
+
+Spec: docs/experiments_specs/ahead/E33p_note_indexed_exact_read.md · plan: E33p_plan.md (§0, §3).
+
+A *group* is a set of earlier raw tokens: a note's member tokens (the page tokens whose largest writer assignment is
+that note), a page's picked tokens, or an LSA bucket. Groups live in *spans* (a page, an LSA block of keys); a token
+belongs to at most one group per span. Spans may overlap (pages, stride < window): the spans are split into `layers`
+whose members never overlap, and each layer gives every token one code (−1 = not a member there).
+
+Per query i, without gradient: rank the candidate groups, take the best m, fill `cap` places best group first, each
+group's members oldest first, counting only members in [doc_start(i), i − raw_window] (the rest are in i's window or
+in another document; sinks are never members). The result is one table T[b, i, g] = the places used before group g
+(`cap` when g is not chosen). Raw token j, a member of g at rank ord(j) (members of g in [doc_start(j), j)), is
+opened for i iff i − j ≥ raw_window and T[i, g] + ord(j) < cap. A token in two chosen groups opens once (an OR),
+counted in both (≤ cap distinct tokens per query). The attention kernel reads T through one 2-D gather per layer plus
+1-D lookups along the key axis; `dense_open` is the same rule as a dense mask (SDPA, tests, probes).
+
+Shapes (s30, 16k row): S = 16,384; notes G = 2,720 (85 pages × 32), pages G = 85, LSA buckets G = 2,048
+(32 closed 512-key blocks × 64); T [B, S, G] int16.
+"""
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Callable, Optional
+
+import torch
+import torch.nn.functional as F
+
+ORD_BITS = 9            # code = gid · 512 + ord (ord < 512: members of one group within a ≤ 512-token span)
+ORD_MOD = 1 << ORD_BITS
+SINK = -2               # code of an LSA sink token (layer 0)
+_BIG = 1 << 40
+
+
+@dataclass
+class GroupIndex:
+    """Groups of raw keys for one forward (or one loop round, for LSA). G = n_s · per_span groups, gid = s · per_span + l."""
+
+    span_start: torch.Tensor   # [n_s] long — first position of each span
+    span_len: int              # L
+    per_span: int              # groups per span
+    prefix: torch.Tensor       # [B, n_s, L + 1, per_span] int32 — members of group (s, l) at span offsets < o
+    codes: torch.Tensor        # [n_layers, B, S] int32 — gid · 512 + ord, −1 not a member, −2 sink (layer 0)
+    doc_start: torch.Tensor    # [B, S] long — first position of each token's document
+    g_close: torch.Tensor      # [B, G] long — the group is visible to queries i ≥ g_close (−1 = never)
+    g_doc: torch.Tensor        # [B, G] long — its document (−1 = none); `any_doc` groups are visible across documents
+    g_minpos: torch.Tensor     # [B, G] long — oldest member (≥ 2⁴⁰ when it has none)
+    g_kb: torch.Tensor         # [B, G, 2] long — first and last 128-key block holding a member (lo > hi when none)
+    any_doc: bool = False
+
+    @property
+    def n_groups(self) -> int:
+        return int(self.g_close.shape[1])
+
+
+def span_layers(starts: list[int], length: int) -> list[int]:
+    """Assign spans to layers so that spans of one layer never overlap (greedy, in start order). Static (Python)."""
+    ends: list[int] = []
+    out = []
+    for s in starts:
+        for li, e in enumerate(ends):
+            if e <= s:
+                ends[li] = s + length
+                out.append(li)
+                break
+        else:
+            ends.append(s + length)
+            out.append(len(ends) - 1)
+    return out
+
+
+def doc_starts(doc: torch.Tensor) -> torch.Tensor:
+    """[B, S] long: the first position of each token's document (contiguous documents; −1 ids count as documents)."""
+    B, S = doc.shape
+    idx = torch.arange(S, device=doc.device)[None].expand(B, S)
+    new = torch.ones_like(doc, dtype=torch.bool)
+    new[:, 1:] = doc[:, 1:] != doc[:, :-1]
+    return torch.cummax(torch.where(new, idx, torch.zeros_like(idx)), dim=1).values
+
+
+def groups_from_spans(member: torch.Tensor, span_start: list[int], *, S: int, per_span: int, doc_start: torch.Tensor,
+                      g_close: torch.Tensor, g_doc: torch.Tensor, any_doc: bool = False,
+                      sink: Optional[torch.Tensor] = None, block: int = 128) -> GroupIndex:
+    """Build a GroupIndex from each span's member labels.
+
+    member [B, n_s, L] long: the group (0 … per_span − 1) of the token at offset o of span s, −1 = not a member
+    (unpicked, out of range, sink); positions span_start[s] + o must be < S where member ≥ 0.
+    g_close / g_doc [B, G]: visibility of each group (set by the caller). sink [B, S] bool: LSA sinks (code −2)."""
+    B, n_s, L = member.shape
+    dev = member.device
+    st = torch.tensor(span_start, device=dev, dtype=torch.long)
+    pos = st[:, None] + torch.arange(L, device=dev)[None]                               # [n_s, L]
+    valid = (member >= 0) & (pos < S)[None]
+    ml = torch.where(valid, member, torch.zeros_like(member))
+    onehot = (ml[..., None] == torch.arange(per_span, device=dev)) & valid[..., None]   # [B, n_s, L, K]
+    prefix = F.pad(onehot.to(torch.int32).cumsum(2), (0, 0, 1, 0))                      # [B, n_s, L + 1, K]
+    # ord: members of the token's group in [doc_start(token), token)
+    pos_c = pos.clamp(max=S - 1)
+    before = prefix[:, :, :L].gather(-1, ml[..., None]).squeeze(-1)                      # [B, n_s, L]
+    ds = doc_start[:, pos_c.reshape(-1)].view(B, n_s, L)
+    o_ds = (ds - st[None, :, None]).clamp(0, L)
+    at_ds = prefix.gather(2, o_ds[..., None].expand(B, n_s, L, per_span)).gather(-1, ml[..., None]).squeeze(-1)
+    ordv = (before - at_ds).clamp(min=0)
+    gid = torch.arange(n_s, device=dev)[None, :, None] * per_span + ml
+    code = torch.where(valid, gid.to(torch.int32) * ORD_MOD + ordv.to(torch.int32), torch.full_like(ordv, -1,
+                                                                                                    dtype=torch.int32))
+    layers = span_layers(list(span_start), L)
+    n_layers = max(layers) + 1 if layers else 1
+    codes = torch.full((n_layers, B, S + 1), -1, dtype=torch.int32, device=dev)
+    for li in range(n_layers):
+        sel_l = [s for s, x in enumerate(layers) if x == li]  # static: no host sync
+        if not sel_l:
+            continue
+        sel = torch.tensor(sel_l, device=dev)
+        p = pos[sel].reshape(-1)
+        c = code[:, sel].reshape(B, -1)
+        v = valid[:, sel].reshape(B, -1)
+        dest = torch.where(v, p[None].expand(B, -1), torch.full_like(c, S, dtype=torch.long))
+        codes[li].scatter_(1, dest, c)
+    codes = codes[..., :S].contiguous()
+    if sink is not None:
+        codes[0] = torch.where(sink, torch.full_like(codes[0], SINK), codes[0])
+    big = torch.full_like(pos, _BIG)[None, :, :, None]
+    p4 = pos[None, :, :, None].expand(B, n_s, L, per_span)
+    minpos = torch.where(onehot, p4, big).amin(2).reshape(B, n_s * per_span)
+    maxpos = torch.where(onehot, p4, -torch.ones_like(p4)).amax(2).reshape(B, n_s * per_span)
+    kb = torch.stack([torch.where(minpos < _BIG, minpos // block, torch.full_like(minpos, 1)),
+                      torch.where(maxpos >= 0, maxpos // block, torch.zeros_like(maxpos))], dim=-1)
+    return GroupIndex(span_start=st, span_len=L, per_span=per_span, prefix=prefix, codes=codes, doc_start=doc_start,
+                      g_close=g_close, g_doc=g_doc, g_minpos=minpos, g_kb=kb, any_doc=any_doc)
+
+
+def counts(index: GroupIndex, gid: torch.Tensor, lo: torch.Tensor, hi: torch.Tensor) -> torch.Tensor:
+    """Members of each group `gid` [B, …] at positions in [lo, hi] (inclusive; broadcast to gid's shape), int32."""
+    B = gid.shape[0]
+    L, K = index.span_len, index.per_span
+    s = torch.div(gid, K, rounding_mode="floor")
+    l = gid - s * K
+    st = index.span_start[s]
+    o_hi = (hi + 1 - st).clamp(0, L)
+    o_lo = torch.minimum((lo - st).clamp(0, L), o_hi)
+    flat = index.prefix.reshape(B, -1)
+
+    def at(o):
+        i = ((s * (L + 1) + o) * K + l).reshape(B, -1)
+        return flat.gather(1, i).view(gid.shape)
+
+    return (at(o_hi) - at(o_lo)).clamp(min=0)
+
+
+@torch.no_grad()
+def choose(score: torch.Tensor, cand: torch.Tensor, index: GroupIndex, q_pos: torch.Tensor, *, m: int, cap: int,
+           raw_window: int) -> tuple[torch.Tensor, torch.Tensor]:
+    """One query chunk: top-m candidates, then the places each takes. score / cand [B, ch, G], q_pos [ch] long.
+
+    Returns ids [B, ch, m'] long (m' = min(m, G), best first) and off [B, ch, m'] int32: places used before each
+    chosen group, `cap` where the group is not a real choice or the cap is already full."""
+    B, ch, G = score.shape
+    mm = min(int(m), G)
+    top = score.masked_fill(~cand, float("-inf")).topk(mm, dim=-1)
+    ids = top.indices
+    valid = top.values > float("-inf")
+    lo = index.doc_start[:, q_pos][..., None].expand(B, ch, mm)
+    hi = (q_pos - int(raw_window))[None, :, None].expand(B, ch, mm)
+    cnt = torch.where(valid, counts(index, ids, lo, hi), torch.zeros_like(ids, dtype=torch.int32))
+    off = cnt.cumsum(-1) - cnt
+    off = torch.where(valid & (off < cap), off, torch.full_like(off, cap))
+    return ids, off.to(torch.int32)
+
+
+class OpenTable:
+    """The per-query table T [B, S, G] int16 and the key blocks each 128-query block may open, built chunk by chunk."""
+
+    def __init__(self, index: GroupIndex, B: int, S: int, *, cap: int, block: int = 128):
+        dev = index.codes.device
+        self.index, self.S, self.cap, self.block = index, S, int(cap), block
+        G = index.n_groups
+        self.T = torch.full((B, S, max(G, 1)), int(cap), dtype=torch.int16, device=dev)
+        self.nqb, self.nkb = -(-S // block), -(-S // block)
+        self.need = torch.zeros(B, self.nqb * self.nkb + 1, dtype=torch.bool, device=dev)
+        self.span_blocks = -(-index.span_len // block) + 1
+
+    def add(self, s0: int, ids: torch.Tensor, off: torch.Tensor) -> None:
+        B, ch, m = ids.shape
+        if m == 0:
+            return
+        self.T[:, s0:s0 + ch].scatter_(2, ids, off.to(torch.int16))
+        q_pos = torch.arange(s0, s0 + ch, device=ids.device)
+        qb = (q_pos // self.block)[None, :, None]
+        kb = self.index.g_kb.gather(1, ids.reshape(B, -1, 1).expand(B, ch * m, 2)).view(B, ch, m, 2)
+        live = off < self.cap
+        dummy = self.nqb * self.nkb
+        for d in range(self.span_blocks):
+            b_ = kb[..., 0] + d
+            ok = live & (b_ <= kb[..., 1]) & (b_ < self.nkb)
+            idx = torch.where(ok, qb * self.nkb + b_, torch.full_like(b_, dummy))
+            self.need.scatter_(1, idx.reshape(B, -1), True)
+
+    def extra_blocks(self) -> torch.Tensor:
+        """[B, nqb, nkb] long: raw key blocks with an opened token for some query of the block (−1 = none)."""
+        B = self.need.shape[0]
+        need = self.need[:, :-1].view(B, self.nqb, self.nkb)
+        ids = torch.arange(self.nkb, device=need.device)[None, None].expand_as(need)
+        return torch.where(need, ids, torch.full_like(ids, -1))
+
+
+def open_term(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: int) -> Callable:
+    """mask_mod piece (b, q, j) → bool for raw key j (already clamped to [0, S)): j opened for query q."""
+    n_layers = int(codes.shape[0])
+    G = int(T.shape[-1])
+    cap_i, rw = int(cap), int(raw_window)
+
+    def opened(b, q, j):
+        hit = None
+        for li in range(n_layers):
+            c = codes[li, b, j]
+            g = torch.div(c, ORD_MOD, rounding_mode="floor")
+            o = c - g * ORD_MOD
+            h = (c >= 0) & (T[b, q, torch.clamp(g, 0, G - 1)].to(torch.int32) + o < cap_i)
+            hit = h if hit is None else hit | h
+        return hit & (q - j >= rw)
+
+    return opened
+
+
+def dense_open(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: int,
+               q_idx: Optional[torch.Tensor] = None) -> torch.Tensor:
+    """[B, Q, S] bool — the same rule as `open_term` for the query rows `q_idx` (default: all)."""
+    B, S = codes.shape[1], codes.shape[2]
+    G = T.shape[-1]
+    if q_idx is None:
+        q_idx = torch.arange(S, device=T.device)
+    Tq = T[:, q_idx].to(torch.int32)                                                    # [B, Q, G]
+    Q = Tq.shape[1]
+    hit = torch.zeros(B, Q, S, dtype=torch.bool, device=T.device)
+    for li in range(codes.shape[0]):
+        c = codes[li].to(torch.int64)
+        g = torch.div(c, ORD_MOD, rounding_mode="floor")
+        o = c - g * ORD_MOD
+        tg = Tq.gather(2, g.clamp(0, G - 1)[:, None, :].expand(B, Q, S))
+        hit |= (c >= 0)[:, None, :] & (tg + o[:, None, :] < cap)
+    j = torch.arange(S, device=T.device)
+    return hit & ((q_idx[:, None] - j[None, :]) >= raw_window)[None]
+
+
+# --------------------------------------------------------------------------------------- E33p notes and pages
+@dataclass
+class NoteOpen:
+    """Per-forward state of the note-indexed read (built once after the writer, `PerceiverARLM._run_layers`)."""
+
+    assign: torch.Tensor          # [B, n_w, K, W] fp32 (grad) — A[t, n], last latent round, heads averaged
+    page_tok: torch.Tensor        # [n_w, W] long — row index of each page slot (clamped)
+    groups: GroupIndex            # what opens: the notes, or the pages
+    mode: str                     # "none" | "notes" | "pages"
+    k: int                        # groups chosen per query
+    cap: int
+    per_page: int                 # notes per page (K)
+
+
+def tied_note_keys(assign: torch.Tensor, k: torch.Tensor, page_tok: torch.Tensor) -> torch.Tensor:
+    """κ_n = Σ_t A[t, n] k_t / Σ_t A[t, n] over the note's page. assign [B, n_w, K, W], k [B, S, g, dh] → [B, n_w·K, g, dh]
+    (fp32, outside autocast; a note with no mass gets κ = 0)."""
+    B, n_w, K, W = assign.shape
+    g, dh = k.shape[2], k.shape[3]
+    with torch.autocast(device_type=k.device.type, enabled=False):
+        kp = k[:, page_tok.reshape(-1)].float().view(B, n_w, W, g, dh)
+        a = assign.float()
+        num = torch.einsum("bnkw,bnwgd->bnkgd", a, kp)
+        den = a.sum(-1)[..., None, None].clamp_min(1e-6)
+        return (num / den).reshape(B, n_w * K, g, dh)
+
+
+def note_groups(assign: torch.Tensor, pick: torch.Tensor, page_starts: list[int], *, S: int, doc_start: torch.Tensor,
+                slot_close: torch.Tensor, slot_doc: torch.Tensor, mode: str) -> GroupIndex:
+    """Notes (member = argmax_k A on picked tokens) or pages (member = picked) as groups. slot_* [B, n_w·K]."""
+    B, n_w, K, W = assign.shape
+    if mode == "pages":
+        member = torch.where(pick, torch.zeros_like(pick, dtype=torch.long), torch.full_like(pick, -1, dtype=torch.long))
+        g_close, g_doc, per = slot_close[:, ::K], slot_doc[:, ::K], 1
+    else:
+        best = assign.detach().argmax(dim=2)                                             # [B, n_w, W]
+        member = torch.where(pick, best, torch.full_like(best, -1))
+        g_close, g_doc, per = slot_close, slot_doc, K
+    return groups_from_spans(member, page_starts, S=S, per_span=per, doc_start=doc_start,
+                             g_close=g_close.contiguous(), g_doc=g_doc.contiguous())
+
+
+@torch.no_grad()
+def note_open_table(q: torch.Tensor, kappa: torch.Tensor, no: NoteOpen, *, doc: torch.Tensor, slot_close: torch.Tensor,
+                    slot_doc: torch.Tensor, raw_window: int, chunk: int = 0) -> OpenTable:
+    """E33p choice for every query: s_i(n) = Σ_h softmax_n(q_{i,h}·κ_n / √dh) over the notes visible to i (closed rule),
+    eligible = visible ∧ a member older than i's window; notes: top-k notes; pages: the page score is the sum of its
+    notes' scores, top-k eligible pages. q [B, S, h, dh], κ [B, C, 1, dh]."""
+    B, S, h, dh = q.shape
+    C = kappa.shape[1]
+    K = no.per_page
+    gi = no.groups
+    dev = q.device
+    G = gi.n_groups
+    if chunk <= 0:
+        chunk = max(128, min(1024, (1 << 25) // max(B * h * C, 1) // 128 * 128))
+    kb = kappa[:, :, 0].float()
+    sc = dh ** -0.5
+    tab = OpenTable(gi, B, S, cap=no.cap)
+    n_vis_ok = (slot_doc >= 0) & (slot_close >= 0)
+    for s0 in range(0, S, chunk):
+        s1 = min(S, s0 + chunk)
+        qp = torch.arange(s0, s1, device=dev)
+        dq = doc[:, s0:s1]
+        vis = (n_vis_ok[:, None, :] & (slot_doc[:, None, :] == dq[..., None]) & (dq[..., None] >= 0)
+               & (slot_close[:, None, :] <= qp[None, :, None]))                          # [B, ch, C]
+        lg = torch.einsum("bshd,bcd->bshc", q[:, s0:s1].float(), kb) * sc
+        p = torch.softmax(lg.masked_fill(~vis[:, :, None], float("-inf")), dim=-1)
+        s_note = torch.nan_to_num(p, nan=0.0).sum(2)                                      # [B, ch, C]
+        if no.mode == "pages":
+            score = s_note.view(B, s1 - s0, C // K, K).sum(-1)
+            gvis = vis.view(B, s1 - s0, C // K, K).any(-1)
+        else:
+            score, gvis = s_note, vis
+        cand = gvis & (gi.g_minpos[:, None, :] <= (qp - raw_window)[None, :, None])
+        ids, off = choose(score, cand, gi, qp, m=no.k, cap=no.cap, raw_window=raw_window)
+        tab.add(s0, ids, off)
+    return tab

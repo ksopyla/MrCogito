@@ -319,6 +319,7 @@ class LatentMemoryWriter(nn.Module):
         self.k_out_norm = nn.RMSNorm(self.dh)
         self.last_diag: dict = {}
         self._last_k_bar = None
+        self._last_assign = None
 
     # ------------------------------------------------------------------ helpers
     def participation(self) -> torch.Tensor:
@@ -340,6 +341,7 @@ class LatentMemoryWriter(nn.Module):
         if self.competition:
             a = torch.softmax(logits.float(), dim=2)  # compete over latents, per (head, token)
             a = a * m
+            self._last_assign = a  # E33p: the assignment over latents, before the renormalisation over tokens
             w = a / (a.sum(dim=-1, keepdim=True) + 1e-6)
         else:
             w = torch.softmax(logits.float().masked_fill(~m, float("-inf")), dim=-1)
@@ -461,6 +463,8 @@ class LatentMemoryWriter(nn.Module):
             # memory entries a transmitter reads; unused by the E31 / E33 notebook read
             "z": zo.reshape(B, n_w * K, self.D), "read": read.reshape(B, n_w * K, self.D),
             "latent_pos": p_abs.reshape(B, n_w * K), "latent_doc": slot_doc_w.repeat_interleave(K, dim=1),
+            # E33p: the last round's competition softmax over the real latents [Bn, hl, K, W] (None without competition)
+            "assign": self._last_assign[:, :, :K] if self.competition else None,
         }
 
     @torch.no_grad()
