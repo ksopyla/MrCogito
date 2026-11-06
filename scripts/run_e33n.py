@@ -149,7 +149,7 @@ def manifests(data: Path, out: Path, size: str) -> dict:
 def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: str | None = None,
               lr: float | None = None, tokens: float | None = None, micro: int | None = None, seed: int = 42,
               wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
-              flow: bool = False) -> list[str]:
+              flow: bool = False, gpus: int = 1) -> list[str]:
     z = SIZES[size]
     args, n = fit(arm, size)
     man = manifests(data, out, size)
@@ -159,10 +159,19 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     rows_per_step = max(1, rows_per_step)
     micro = micro or max(1, min(rows_per_step, (16 if phase == "trunk" else 4) if size == "s30" else
                                 (8 if phase == "trunk" else 2)))
-    accum = max(1, rows_per_step // micro)
-    steps = max(1, int(round(tokens / (micro * accum * seq))))
+    # gpus > 1: one model on several GPUs (data parallel, torchrun); each optimizer step still sees rows_per_step
+    # rows: micro × accum × gpus. When gpus does not divide the step (64 rows on 3 GPUs) the step is rounded down
+    # and the step count rises to keep the same total tokens.
+    gpus = max(1, int(gpus))
+    accum = max(1, rows_per_step // (micro * gpus))
+    if micro * accum * gpus != rows_per_step:
+        import sys
+        print(f"note: {micro}×{accum}×{gpus} = {micro * accum * gpus} rows per step instead of {rows_per_step}",
+              file=sys.stderr)
+    steps = max(1, int(round(tokens / (micro * accum * gpus * seq))))
     lr = lr or z["lr"]
-    cmd = ["uv", "run", "python", "training/train_concept_pretraining.py"]
+    launch = (["torchrun", "--standalone", f"--nproc_per_node={gpus}"] if gpus > 1 else ["python"])
+    cmd = ["uv", "run", *launch, "training/train_concept_pretraining.py"]
     for k, v in args.items():
         cmd += [f"--{k}", str(v)]
     if phase == "trunk":
@@ -220,6 +229,7 @@ def main() -> None:
     c.add_argument("--local", action="store_true", help="laptop pipeline check (sdpa, adamw_torch, no workers)")
     c.add_argument("--flow", action="store_true", help="E33p instrumentation (flow/grad/upd/read/select/lens keys)")
     c.add_argument("--seed", type=int, default=42, help="trainer seed: initial weights and the order rows are drawn in")
+    c.add_argument("--gpus", type=int, default=1, help="GPUs for one model (data parallel via torchrun)")
     a = ap.parse_args()
     if a.what == "params":
         for size in ("s30", "m100", "l300"):
@@ -230,7 +240,7 @@ def main() -> None:
         return
     cmd = train_cmd(a.arm, a.size, a.phase, data=Path(a.data), out=Path(a.out), init=a.init, lr=a.lr,
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
-                    local=a.local, flow=a.flow, seed=a.seed)
+                    local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus)
     print(shlex.join(cmd))
 
 

@@ -21,6 +21,10 @@
 # Smoke tests: E33N_CMD_EXTRA="--local" (laptop trainer settings), E33N_SKIP_EVAL=1 (stop after the decay).
 # E33p: E33N_EXPERIMENT=E33p (W&B / run id, S3 prefix runs/e33p/), E33N_FLOW=1 (instrumentation + weight
 #   snapshots, plan §8). E33N_SEED=N: trainer seed N (default 42), run folder gets _seedN.
+# E33N_GPUS=N: one model on N GPUs (data parallel, torchrun; same rows per optimizer step), and the three evals run
+#   side by side on separate GPUs. On a home server pair it with CUDA_VISIBLE_DEVICES=0,1,2.
+# E33N_CKPT_S3=1 (AWS spot nodes): checkpoints go to S3 with the rest, and a relaunched node first pulls the run
+#   folder back, so an interrupted run resumes from its newest checkpoint instead of starting over.
 set -uo pipefail
 ARM="$1"; SIZE="$2"; LR="${3:-}"; TT="${4:-}"
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1
@@ -39,14 +43,29 @@ mkdir -p "$R" "$WANDB_DIR"
 log() { echo "[e33n $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$R/events.log"; }
 sync_up() {
   [ -n "$S3R" ] || return 0
-  aws s3 sync --only-show-errors "$R/" "$S3R/" --exclude "*/checkpoint-*" --exclude "*optimizer.pt" \
-    --exclude "*rng_state*" --exclude "*.pth" || true
+  if [ -n "${E33N_CKPT_S3:-}" ]; then
+    aws s3 sync --only-show-errors "$R/" "$S3R/" || true
+  else
+    aws s3 sync --only-show-errors "$R/" "$S3R/" --exclude "*/checkpoint-*" --exclude "*optimizer.pt" \
+      --exclude "*rng_state*" --exclude "*.pth" || true
+  fi
 }
+if [ -n "$S3R" ] && [ -n "${E33N_CKPT_S3:-}" ]; then   # a relaunched spot node: take the run folder back first
+  aws s3 sync --only-show-errors "$S3R/" "$R/" || true
+fi
+G="${E33N_GPUS:-1}"
+IFS=, read -ra GL <<< "${CUDA_VISIBLE_DEVICES:-$(seq -s, 0 $((G - 1)))}"   # the GPUs this run may use
 SYNC=""
 if [ -n "$S3R" ]; then ( while sleep 900; do sync_up; done ) & SYNC=$!; fi
 finish() { [ -n "$SYNC" ] && kill "$SYNC" 2>/dev/null; sync_up; }
 
-newest_ck() { ls -d "$R/$1"/*/checkpoint-* 2>/dev/null | awk -F'checkpoint-' '{print $NF" "$0}' | sort -n | tail -1 | cut -d' ' -f2; }
+# newest complete checkpoint of a phase (trainer_state.json is written last; a half-copied one from S3 has none)
+newest_ck() {
+  local d
+  for d in $(ls -d "$R/$1"/*/checkpoint-* 2>/dev/null | awk -F'checkpoint-' '{print $NF" "$0}' | sort -rn | cut -d' ' -f2); do
+    [ -f "$d/trainer_state.json" ] && { echo "$d"; return; }
+  done
+}
 # the last invocation stopped on its wall-clock budget, even if exit code 3 was lost at shutdown
 # (Polonez dense arm, 2026-11-06 15:00 UTC: budget line logged and checkpoint saved, yet rc != 3)
 budget_hit() { awk '/STARTING TRAINING/{f=0} /Wall-clock budget of/{f=1} END{exit !f}' "$R/$1.log"; }
@@ -72,7 +91,7 @@ phase() {
   done
 }
 
-log "start $RUN on ${MC_IID:-$(hostname)} GPU ${CUDA_VISIBLE_DEVICES:-all}"
+log "start $RUN on ${MC_IID:-$(hostname)} GPU ${CUDA_VISIBLE_DEVICES:-all} ($G per model)"
 if [ -n "$MC_BUCKET" ]; then
   mkdir -p "$D/fineweb_edu_gpt2"
   NSH=$(uv run python -c "import sys; sys.path.insert(0, '.'); from scripts.run_e33n import SIZES; print(int(float('${TT:-0}') or SIZES['$SIZE']['trunk']) // 100_000_000 + 2)")
@@ -89,7 +108,7 @@ log "data: $(ls "$D"/fineweb_edu_gpt2/finewebedu_train_*.bin | wc -l) FineWeb sh
 TRUNK=$(ls -d "$R"/trunk/*/final 2>/dev/null | tail -1)
 if [ -z "$TRUNK" ]; then
   CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase trunk --data "$D" --out "$R" \
-        ${LR:+--lr $LR} ${TT:+--tokens $TT} ${E33N_MICRO_TRUNK:+--micro $E33N_MICRO_TRUNK} --eval_every 500 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} ${E33N_CMD_EXTRA:-})
+        ${LR:+--lr $LR} ${TT:+--tokens $TT} ${E33N_MICRO_TRUNK:+--micro $E33N_MICRO_TRUNK} --eval_every 500 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} --gpus "$G" ${E33N_CMD_EXTRA:-})
   echo "$CMD" > "$R/trunk.cmd"
   log "trunk start"
   phase trunk "$CMD" || { log "trunk FAILED"; tail -40 "$R/trunk.log"; finish; exit 1; }
@@ -101,7 +120,7 @@ sync_up
 DECAY=$(ls -d "$R"/decay/*/final 2>/dev/null | tail -1)
 if [ -z "$DECAY" ]; then
   CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase decay --data "$D" --out "$R" \
-        ${LR:+--lr $LR} ${E33N_MICRO_DECAY:+--micro $E33N_MICRO_DECAY} --init "$TRUNK" --eval_every 200 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} ${E33N_CMD_EXTRA:-})
+        ${LR:+--lr $LR} ${E33N_MICRO_DECAY:+--micro $E33N_MICRO_DECAY} --init "$TRUNK" --eval_every 200 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} --gpus "$G" ${E33N_CMD_EXTRA:-})
   echo "$CMD" > "$R/decay.cmd"
   log "decay start"
   phase decay "$CMD" || { log "decay FAILED"; tail -40 "$R/decay.log"; finish; exit 1; }
@@ -111,18 +130,33 @@ log "decay done: $DECAY"
 sync_up
 [ -n "${E33N_SKIP_EVAL:-}" ] && { log "evals skipped"; finish; exit 0; }
 
-log "eval long-document loss"
-uv run python evaluation/long_doc_loss.py --checkpoint "$DECAY" --data "$D/longdocs_lite_gpt2" \
-  --lengths 4096,16384,32768,65536,131072 --rows 8 --notes_off --open_off --gist_off --out "$R/eval_longdoc.json" > "$R/eval_longdoc.log" 2>&1 \
-  || log "long-document eval FAILED (see eval_longdoc.log)"
-sync_up
-log "eval RULER"
-uv run --with wonderwords python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" \
-  --suite ruler --lengths "${E33N_RULER_LENGTHS:-4096,8192,16384,32768}" --limit 100 --batch "${E33N_RULER_BATCH:-8}" --out "$R/eval_ruler.json" > "$R/eval_ruler.log" 2>&1 \
-  || log "RULER FAILED (see eval_ruler.log)"
-sync_up
-log "eval core"
-uv run python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" --suite core \
-  --limit 0 --batch "${E33N_CORE_BATCH:-32}" --backend "${E33N_CORE_BACKEND:-sdpa}" --out "$R/eval_core.json" > "$R/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
+ev_longdoc() {
+  log "eval long-document loss"
+  uv run python evaluation/long_doc_loss.py --checkpoint "$DECAY" --data "$D/longdocs_lite_gpt2" \
+    --lengths 4096,16384,32768,65536,131072 --rows 8 --notes_off --open_off --gist_off --out "$R/eval_longdoc.json" > "$R/eval_longdoc.log" 2>&1 \
+    || log "long-document eval FAILED (see eval_longdoc.log)"
+  sync_up
+}
+ev_ruler() {
+  log "eval RULER"
+  uv run --with wonderwords python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" \
+    --suite ruler --lengths "${E33N_RULER_LENGTHS:-4096,8192,16384,32768}" --limit 100 --batch "${E33N_RULER_BATCH:-8}" --out "$R/eval_ruler.json" > "$R/eval_ruler.log" 2>&1 \
+    || log "RULER FAILED (see eval_ruler.log)"
+  sync_up
+}
+ev_core() {
+  log "eval core"
+  uv run python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" --suite core \
+    --limit 0 --batch "${E33N_CORE_BATCH:-32}" --backend "${E33N_CORE_BACKEND:-sdpa}" --out "$R/eval_core.json" > "$R/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
+}
+if [ "$G" -gt 1 ]; then   # one eval per GPU, side by side
+  n=${#GL[@]}
+  ( export CUDA_VISIBLE_DEVICES="${GL[0]}"; ev_longdoc ) & P1=$!
+  ( export CUDA_VISIBLE_DEVICES="${GL[$((1 % n))]}"; ev_ruler ) & P2=$!
+  ( export CUDA_VISIBLE_DEVICES="${GL[$((2 % n))]}"; ev_core ) & P3=$!
+  wait "$P1" "$P2" "$P3"   # not a bare wait: the S3 sync loop runs in the background until finish
+else
+  ev_longdoc; ev_ruler; ev_core
+fi
 log "done"
 finish
