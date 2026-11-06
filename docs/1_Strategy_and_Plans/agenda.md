@@ -30,6 +30,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   `Cache/e33p_runs/`. 15:41 UTC: the full-read control restarted from scratch (CUDA label assert at step ~35,
   09:35 UTC, cause not found; not an instrumented step, and dense and window passed the same batches); dense resumed from checkpoint-2048 (its
   first burst ended cleanly but lost exit code 3; the run script now detects that and resumes after a crash).
+  18:24 UTC: a second seed (seed 1) of all six arms on one AWS spot node, 4 × L40S (`g6e.12xlarge`, ≤ $7.6/h,
+  hard stop 36 h ≈ $275), the arms one after another, each on all four GPUs (new: one model on several GPUs, the
+  three evals side by side, checkpoints in S3 so a spot interruption resumes); full-read control first, as it ends
+  last at home. No on-demand H100 in us-east-1 since 2026-11-04; the us-east-2 quota request is still open.
   Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
 - **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
   ladder failed its pass mark.**
