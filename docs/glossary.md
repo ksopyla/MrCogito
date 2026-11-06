@@ -99,6 +99,9 @@ meaningless without knowing which slice it came from.
 | **cross-attention** | the mechanism for looking things up in the notebook; the "read". |
 | **indexed notebook / opened tokens (E33p)** | the notebook used as a table of contents: the reader picks its best notes, then rereads the original tokens those notes summarise ("opened tokens") — exact words, not a summary. Like LSA's buckets: the summary only says where to look. |
 | **tied address key** | a note's lookup key built as the average of the reader's own keys for the tokens it summarises, so a question that matches those tokens also matches the note. |
+| **per-query choice** | every token picks its own notes to open (not one pick shared by a block of 128 tokens, which would let a token see what later tokens wanted: a leak of the next word). |
+| **LSA-native arm** | our 30M model with LSA's released read in the reading layer: the reader's own keys grouped into buckets of about 8 by similarity, each token opens its best buckets' tokens. No notebook. |
+| **update ratio / logit lens / CKA** | training probes: how much one optimizer step changes a layer's weights (relative); the next-word loss read straight from a layer's output (where in depth the prediction forms); a 0–1 similarity of two layers' outputs on the same tokens (do two models' layers do the same work). |
 | **self-attention** | tokens looking at each other. |
 | **sliding-window attention (SWA)** | each token can only see the last *K* tokens. Cheap; limits how far back a single layer sees. |
 | **reach** | how far back information can actually travel through a stack of windows: roughly `layers × window`. |

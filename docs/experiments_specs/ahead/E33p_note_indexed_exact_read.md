@@ -5,11 +5,13 @@
   as shown there and the two open questions settled as recommended: (1) a chosen note whose member tokens all lie
   inside the query's window is skipped and the next-best note takes its place, so every one of the m places opens new
   tokens; (2) the opened set is a **hard cap of 512 tokens per query block** (best notes first; a note that would cross
-  the cap is cut at the cap).
+  the cap is cut at the cap). **Changed 2026-11-06 (author: "Per query"):** each query chooses its own notes; the
+  one-set-per-128-query-block score let a query's read depend on later queries of its block (a leak of the next
+  token), and per query is also LSA's rule. K2 is revised with it (below).
 - **Serves:** vision priority 2 (long context through the notebook) on the way to priority 4 (agent-to-agent: the
   notes become the table of contents another agent can query, the raw pages what it asks for). Direct follow-up of
   E33n's finding.
-- **Implementation plan:** E33p_plan.md *(after alignment, by `implementation-plan`)*
+- **Implementation plan:** [E33p_plan.md](E33p_plan.md)
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-11-05 · closed —
 - **Evidence behind it:** E33n run report
   [e33n_s30_lsa_testbed_20261105.md](../../2_Experiments_Registry/run_reports/e33n_s30_lsa_testbed_20261105.md) (the
@@ -43,12 +45,13 @@ budget per query that does not grow with the document's length.
 ## The architectural bet
 The writer is unchanged: E31c, 32 notes per closed 256-token page, stride 192. Its slot competition gives each page
 token an assignment over the page's notes (A[t, n], a softmax over notes — soft k-means). The reading layer (no RoPE,
-one KV head) reads, per query i in query block b (128 queries):
+one KV head) reads, per query i:
 
 1. **window:** the last 512 raw tokens (as in every arm);
 2. **notes (gist):** every note of every closed page (E33's full read);
-3. **opened tokens (new):** the block's best m notes are chosen by the block score
-   s_b(n) = Σ_{i∈b} softmax_n(q_i · κ_n), computed without gradient. κ_n is the note's **tied address key**:
+3. **opened tokens (new):** query i's best m notes are chosen by its own score
+   s_i(n) = Σ_h softmax_n(q_{i,h} · κ_n) (summed over its query heads, one choice shared by them), computed without
+   gradient. κ_n is the note's **tied address key**:
    κ_n = Σ_t A[t, n] k_t / Σ_t A[t, n], where k_t is the reading layer's own raw key of token t. The raw keys and
    values of the chosen notes' member tokens (t whose largest assignment is n) join the read. Tokens already inside
    i's window are not repeated, and only closed pages open (causality as in E33);
@@ -56,12 +59,12 @@ one KV head) reads, per query i in query block b (128 queries):
    read trains the index (the assignment A and the raw key projection) through the gist entries. Values: the writer's
    note value for gist entries, the raw value for opened tokens.
 
-- **Budget:** m = 64 notes per query block, about 8 member tokens each, so about 512 opened tokens, the same as the
+- **Budget:** m = 64 notes per query, about 8 member tokens each, so about 512 opened tokens, the same as the
   window. The read per query is about 512 + 512 + (number of notes), flat in length apart from the note count, which
   E33n's top-64 can cap later.
 - **Arms (30M, E33n's s30 shape: width 576, 2 pre + reading + 5 stack layers, loop 4, FFN 1472):**
   - **notes-open (main):** opens the member tokens of the 64 best notes.
-  - **pages-open (coarser):** opens the 2 best pages whole (page score = the sum of its notes' block scores), again
+  - **pages-open (coarser):** opens the 2 best pages whole (page score = the sum of its notes' scores), again
     512 tokens. This tells whether the finer grouping matters.
   - **LSA-native (published reference, added 2026-11-06 at the author's request):** the same 30M backbone with LSA's
     released native read (`pretrain_fineweb_lsa.yaml` → `kind: lsa`, flat, `coarse: false`; read at HEAD 5ebea73) in
@@ -137,8 +140,11 @@ Outputs: JSON per arm and checkpoint in the registry, plus a comparison script t
 
 ## Kill criteria (set BEFORE running)
 - **K1:** after the long decay both new arms recover < 15 % of G at 16k → stop E33p.
-- **K2 (speed):** a training step of the notes-open arm is slower than 60 % of the E33 arm's throughput (26.7k tokens/s
-  on one RTX 3090) after the kernel work in stage 0 → fix the kernel before stage 1.
+- **K2 (cost; revised 2026-11-06 with the per-query choice):** the exact per-query read is not sparse in compute
+  (each block of 128 queries opens tokens on nearly every earlier page, so the kernel visits near-dense key blocks;
+  LSA's own non-Hopper path does the same). The old line (60 % of the E33 arm's 26.7k tokens/s) becomes a cost line
+  measured in stage 0: if an opening arm's stage-1 run (trunk + decay) would take more than 40 RTX 3090 hours, fix
+  the kernel before stage 1.
 - **K3 (health):** loss spikes > 0.5 that do not recover within 1k steps, or a trunk loss more than 0.1 above the window
   control at 25 % of the run → stop that run and debug.
 
@@ -146,22 +152,26 @@ Outputs: JSON per arm and checkpoint in the registry, plus a comparison script t
 - **Stage 0 (free; Mac + one 3090):** correctness tests — the tied key equals the assignment-weighted mean of raw
   keys; membership and dedupe across overlapping pages (stride 192); causality (only closed pages, window tokens not
   repeated); with m ≥ every note, the opened read equals the `raw` override restricted to closed pages; gradient
-  reaches A and the key projection, none through the selection. Then a speed and memory check at 4k and 16k (K2).
+  reaches A and the key projection, none through the selection; the LSA port reproduces LSA's own code. Then a speed
+  and memory check at 4k and 16k (K2).
 - **Stage 1:** six arms at 30M with the instrumentation — notes-open, pages-open, LSA-native, and the three retrained
-  controls — about 15–20 RTX 3090 hours each (about 100 in all: two days on the home servers, or about 36 H100 hours
-  ≈ $250 on AWS; the author picks), then E33n's evals and the cross-arm probe. Gate: S1–S4, K1.
+  controls — about 25–35 RTX 3090 hours per opening arm and 13–17 per control (estimate, ~140 in all: about 1.5 days
+  on the home servers, or roughly $300–350 of on-demand H100; the author picks after stage 0 measures it), then
+  E33n's evals and the cross-arm probe. Gate: S1–S4, K1.
 - **Stage 2 (only if S1 and S2 hold, and with the author's approval):** 100M on an AWS H100 against new 100M controls,
   within E33n's unspent stage-2 budget (≤ $850).
 - **Launch:** `E33N_DATA=… E33N_RUNS=… E33N_MICRO_TRUNK=4 E33N_MICRO_DECAY=1 CUDA_VISIBLE_DEVICES=<gpu> bash
   infra/aws/jobs/e33n_run.sh notes_open s30` (and `pages_open`), new arms in `scripts/run_e33n.py`.
 - **New foundation code:** `lm_open` (`none` | `notes` | `pages`), `lm_open_k`, `lm_note_key` (`writer` | `tied`),
   and the eval switch for the opened branch, in the closed-read path of `nn/perceiver_ar_lm.py` (a flex `mask_mod`
-  over raw tokens with a per-query-block selection table; block-sparse at 128-token blocks); tests in
-  `tests/test_note_open.py`.
+  over raw tokens with a per-query table over notes, `nn/exact_read.py`); LSA's read on the global layer
+  (`par_global_read = lsa`, `nn/lsa_buckets.py`, ported); the instrumentation (`nn/flow_stats.py`,
+  `training/flow_callback.py`, `evaluation/flow_probe.py`); tests in `tests/test_note_open.py`,
+  `tests/test_lsa_read.py`.
 
 ## Risks
-- One selection per 128-query block is coarser than LSA's per-query choice; per-query selection is a later option if
-  the block choice misses.
+- The per-query choice makes the read exact but not cheap: the kernel is near-dense at this size (K2 measures it).
+  A gather kernel that reads only the chosen keys is a later engineering step if the bet works.
 - The member rule (largest assignment) is a hard cut: no gradient flows through membership itself; values still flow
   through the opened raw tokens, and keys through κ.
 - The opened read needs the raw keys and values of closed pages in memory (the dense ceiling's cost at 16k); the
