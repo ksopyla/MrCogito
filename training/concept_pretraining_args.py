@@ -430,6 +430,22 @@ class ModelArguments:
     lm_count_aux: float = field(default=0.0, metadata={"help": "E33k: weight of the count heads' sum matching the "
                                                                "true number of visits (count questions)."})
     lm_count_max: int = field(default=10, metadata={"help": "E33h: counts coded as a soft one-hot over 0..max."})
+    lm_note_key: str = field(default="writer", metadata={"help": "E33p: writer | tied (a note's key = the writer-"
+                                                                  "assignment-weighted mean of the reading layer's keys)."})
+    lm_open: str = field(default="none", metadata={"help": "E33p: none | notes | pages — each query opens the raw "
+                                                            "tokens of its best notes' members (or best pages)."})
+    lm_open_k: int = field(default=0, metadata={"help": "E33p: notes (or pages) each query chooses."})
+    lm_open_cap: int = field(default=512, metadata={"help": "E33p: opened raw tokens per query, at most."})
+    par_global_read: str = field(default="dense", metadata={"help": "E33p: dense | lsa (LSA's released flat read on "
+                                                                     "the global layer, nn/lsa_buckets.py)."})
+    lsa_window: int = field(default=512, metadata={"help": "LSA read: raw window."})
+    lsa_sinks: int = field(default=4, metadata={"help": "LSA read: first tokens of each document, always read."})
+    lsa_block: int = field(default=512, metadata={"help": "LSA read: keys per clustered block."})
+    lsa_bucket: int = field(default=8, metadata={"help": "LSA read: average keys per bucket."})
+    lsa_pool: int = field(default=4, metadata={"help": "LSA read: neighbouring keys per pool."})
+    lsa_bucket_cap: int = field(default=16, metadata={"help": "LSA read: most keys per bucket."})
+    lsa_top_k: int = field(default=512, metadata={"help": "LSA read: keys each query takes beyond sinks and window."})
+    lsa_width: int = field(default=0, metadata={"help": "LSA read: buckets each query ranks (0 = 2·top_k/bucket)."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(
@@ -523,6 +539,16 @@ class DataTrainingArguments:
             "data/bin_token_dataset.py — fixed rows of max_seq_length with per-token doc_ids ('stream' rows for the "
             "FineWeb-Edu trunk, 'doc' rows for the LongDocs decay). Replaces every other data route when set."
         },
+    )
+    flow_every: int = field(
+        default=0,
+        metadata={"help": "E33p instrumentation: every N optimizer steps, log training dynamics (flow/, grad/, upd/, "
+                          "read/, select/, writer/, lens/; training/flow_callback.py). 0 = off."},
+    )
+    snapshot_every: int = field(
+        default=0,
+        metadata={"help": "E33p: save model weights every N optimizer steps to output_dir/snapshots/step_N "
+                          "(for evaluation/flow_probe.py). 0 = off."},
     )
     max_train_hours: float = field(
         default=0.0,

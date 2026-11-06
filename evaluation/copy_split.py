@@ -83,6 +83,7 @@ def main() -> None:
     ap.add_argument("--window", type=int, default=512, help="raw tokens every arm sees (the reading layer's window)")
     ap.add_argument("--min_pos", type=int, default=2048, help="score positions >= this (the far-context range)")
     ap.add_argument("--notes_off", action="store_true")
+    ap.add_argument("--open_off", action="store_true", help="E33p: also score with the opened tokens off")
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", required=True)
@@ -90,6 +91,7 @@ def main() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from data.bin_token_dataset import BinRowDataset
     from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval
+    from evaluation.long_doc_loss import opens
 
     model = load_perceiver_ar_for_eval(a.checkpoint, device=a.device, attn_backend=a.backend)
     has_notes = getattr(model, "memory_writer", None) is not None and \
@@ -107,6 +109,9 @@ def main() -> None:
         if a.notes_off and has_notes:
             with model.message_override("none"):  # restores the model's own setting afterwards
                 r["notes_off"] = score(model, ds, a.rows, ks, a.window, a.min_pos, a.device)
+        if a.open_off and opens(model):
+            with model.open_override("off"):
+                r["open_off"] = score(model, ds, a.rows, ks, a.window, a.min_pos, a.device)
         res["sources"][src] = r
         print(src, json.dumps({m: {k: {c: v["loss"] for c, v in t.items()} for k, t in x["k"].items()}
                                for m, x in r.items()}), flush=True)

@@ -476,6 +476,13 @@ def main():
     wallclock = StopAfterHoursCallback(data_args.max_train_hours) if data_args.max_train_hours > 0 else None
     if wallclock is not None:
         callbacks.append(wallclock)
+    if int(getattr(data_args, "flow_every", 0) or 0) > 0 or int(getattr(data_args, "snapshot_every", 0) or 0) > 0:
+        from training.flow_callback import FlowCallback, SnapshotCallback
+
+        if int(data_args.flow_every or 0) > 0:
+            callbacks.append(FlowCallback(int(data_args.flow_every)))
+        if int(data_args.snapshot_every or 0) > 0:
+            callbacks.append(SnapshotCallback(int(data_args.snapshot_every)))
 
     if is_backbone:
         special_token_changes = align_special_tokens_for_training(model, tokenizer)

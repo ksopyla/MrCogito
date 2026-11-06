@@ -451,5 +451,31 @@ def test_trains_two_steps(kw):
         out.loss.backward()
         opt.step()
         opt.zero_grad()
-        losses.append(float(out.loss))
+        losses.append(float(out.loss.detach()))
     assert all(map(lambda x: x == x, losses))
+
+
+# ------------------------------------------------------------------ T13 the driver's arms through the trainer's factory
+def test_driver_arms_count_like_their_controls_and_every_arm_loops():
+    from types import SimpleNamespace
+
+    from scripts.run_e33n import EOT, VOCAB, count, model_args
+    from training.concept_pretraining_args import ModelArguments
+    from training.concept_pretraining_factories import _build_perceiver_ar_model
+
+    assert count(model_args("notes_open", "s30")) == count(model_args("e33", "s30"))
+    assert count(model_args("pages_open", "s30")) == count(model_args("e33", "s30"))
+    assert count(model_args("lsa", "s30")) == count(model_args("dense", "s30"))
+    fields = set(ModelArguments.__dataclass_fields__)
+    tok = type("T", (), {"pad_token_id": EOT, "bos_token_id": EOT, "eos_token_id": EOT,
+                         "__len__": lambda self: VOCAB})()
+    for arm in ("dense", "lsa", "e33", "notes_open"):
+        ma = ModelArguments(**{k: v for k, v in model_args(arm, "tiny").items() if k in fields})
+        ma.attn_backend, ma.use_liger = "sdpa", False
+        with torch.device("meta"):
+            m, _, _ = _build_perceiver_ar_model(tok, ma, SimpleNamespace(max_seq_length=512, tokenizer_name="gpt2"))
+        assert m.config.message_loop_rounds == 4, arm      # E33n's dense arm was built with 1 (factory bug)
+        if arm == "notes_open":
+            assert m.config.lm_open == "notes" and m.config.lm_note_key == "tied"
+        if arm == "lsa":
+            assert m.config.par_global_read == "lsa" and m.config.lsa_top_k == 64

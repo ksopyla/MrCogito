@@ -140,7 +140,7 @@ def counts(index: GroupIndex, gid: torch.Tensor, lo: torch.Tensor, hi: torch.Ten
     st = index.span_start[s]
     o_hi = (hi + 1 - st).clamp(0, L)
     o_lo = torch.minimum((lo - st).clamp(0, L), o_hi)
-    flat = index.prefix.reshape(B, -1)
+    flat = index.prefix[:B].reshape(B, -1)  # the first B rows (probes pass one row)
 
     def at(o):
         i = ((s * (L + 1) + o) * K + l).reshape(B, -1)

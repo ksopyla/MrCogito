@@ -2530,9 +2530,9 @@ class Attention(nn.Module):
                 if ni.mode != "none" and message.override == "real" and ev != "off":
                     opened = note_open_table(q, k_bar, ni, doc=message.doc, slot_close=message.slot_close,
                                              slot_doc=message.slot_doc, raw_window=int(message.raw_window or 0))
-                if self.flow is not None:
-                    self.flow.reading_open(self, q=q, k=k, v=v, k_bar=k_bar, v_bar=v_bar, ctx=message,
-                                           key_valid=key_valid, opened=opened, gist=gist, index=ni)
+            if self.flow is not None and message.read_rule == "closed":
+                self.flow.reading_open(self, q=q, k=k, v=v, k_bar=k_bar, v_bar=v_bar, ctx=message,
+                                       key_valid=key_valid, opened=opened, gist=gist, index=ni)
             # E31c "reader" slot keys: met by the un-rotated query (exact; see attend_message)
             q_slot = self._scale_q(q_un, pos) if (getattr(message, "slot_nope", False) and self.use_rope) else None
             note_bias = None
@@ -2586,7 +2586,7 @@ class Attention(nn.Module):
         if self.lsa is not None:
             o = self._lsa_read(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
         else:
-            if self.flow is not None:
+            if self.flow is not None and self.pattern == "full":
                 self.flow.reading_dense(self, q=q, k=k, v=v, doc_ids=doc_ids, key_valid=key_valid)
             o = attend(
                 q, k, v, pattern=self.pattern, window=self.window, key_valid=key_valid,
@@ -2660,6 +2660,8 @@ class Block(nn.Module):
         self.round_emb = nn.Parameter(torch.zeros(self.read_rounds, cfg.hidden_size)) if self.read_rounds > 1 else None
         self._collect_rounds = False
         self._round_outs: list = []
+        self.layer_idx = layer_idx
+        self.flow = None  # E33p instrumentation (nn/flow_stats.FlowRecorder) while armed
 
     def mix(self, x, x0, skip):
         """The residual-stream input this block's attention actually sees: x0 re-injection plus
@@ -2681,10 +2683,16 @@ class Block(nn.Module):
         for r in range(rounds):
             if self.round_emb is not None:
                 x = x + self.round_emb[r]
-            x = x + self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
-                              doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos,
-                              pos=pos, message=message, rope_theta=rope_theta)
-            x = x + self.mlp(self.mlp_norm(x))
+            a = self.attn(self.attn_norm(x), ids=ids, cos=cos, sin=sin, key_valid=key_valid,
+                          doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos,
+                          pos=pos, message=message, rope_theta=rope_theta)
+            if self.flow is not None:
+                self.flow.sublayer(self.layer_idx, "attn", x, a)
+            x = x + a
+            f = self.mlp(self.mlp_norm(x))
+            if self.flow is not None:
+                self.flow.sublayer(self.layer_idx, "ffn", x, f)
+            x = x + f
             if self._collect_rounds and r < rounds - 1:
                 self._round_outs.append(x)
             if frozen and r == 0:  # later rounds re-read the memory written in round 1
@@ -2958,6 +2966,7 @@ class PerceiverARLM(PreTrainedModel):
         # its checkpoint never switch on an untrained writer
         self._message_override = str(getattr(config, "message_override", "real") or "real")
         self._open_eval = "on"  # E33p eval switch (`open_override`)
+        self.flow_recorder = None  # E33p instrumentation: armed for one forward by training/flow_callback.py
         self._last_message_ctx = None
         self._last_prefix_ae = None
         if cfg.message_prefix_ae:
@@ -3099,6 +3108,11 @@ class PerceiverARLM(PreTrainedModel):
             self._open_eval = prev
             for a, v in zip(lsa, prev_lsa):
                 a.lsa_off = v
+
+    def _set_flow(self, rec) -> None:
+        for layer in self.layers:
+            layer.flow = rec
+            layer.attn.flow = rec
 
     def _note_index(self, out: dict, msg: MessageCtx, S: int):
         """E33p: the per-forward note index (tied keys' assignment, and what opens) after the writer."""
@@ -3401,6 +3415,11 @@ class PerceiverARLM(PreTrainedModel):
                     )
                     msg.slots = (out["k"], out["v"])
                     msg.slot_pos = out["slot_pos"]
+                    if self.layers[0].flow is not None and out.get("assign") is not None:
+                        geo_f = self.memory_writer.geometry(S)
+                        self.layers[0].flow.writer_assign(
+                            out["assign"].float().mean(1).reshape(B, geo_f.n_windows, geo_f.latents, geo_f.window),
+                            msg.window_valid)
                     if self.note_readback is not None and self.training:
                         self._readback_inputs = (out["v"], out["slot_pos"], msg.slot_doc)
                 if self._note_capture is not None or self._notes_override is not None:
@@ -3449,6 +3468,8 @@ class PerceiverARLM(PreTrainedModel):
                 x = torch_checkpoint(fn, x, x0, skip, use_reentrant=False)
             else:
                 x = layer(x, x0, skip, **kwargs)
+            if layer.flow is not None:
+                layer.flow.residual(i, x)
             if i < n_skip:
                 skips.append(x)
             return x
@@ -3480,8 +3501,12 @@ class PerceiverARLM(PreTrainedModel):
                 if u is not None:
                     x = x + u
                 s = list(skips0)
+                if self.layers[gi].flow is not None:
+                    self.layers[gi].flow.round = r
                 for i in core:
                     x = run_layer(i, x, s)
+                if self.layers[gi].flow is not None:
+                    self.layers[gi].flow.round = None
                 if u is not None:
                     x = x - u  # round r's instruction is its own; the next round gets the next one
                 states.append((x, s))
@@ -3628,8 +3653,17 @@ class PerceiverARLM(PreTrainedModel):
         input_ids, attention_mask, labels, doc_ids, S_orig = self._pad_inputs(
             input_ids, attention_mask, labels, doc_ids
         )
-        x = self._run_layers(input_ids, attention_mask, doc_ids, cu_seqlens,
-                             message_kv=message_kv, position_offset=position_offset, prefix_embeds=prefix_embeds)
+        rec = self.flow_recorder if (self.flow_recorder is not None and self.flow_recorder.armed) else None
+        if rec is not None:  # E33p: one instrumented forward
+            rec.begin(input_ids)
+            self._set_flow(rec)
+        try:
+            x = self._run_layers(input_ids, attention_mask, doc_ids, cu_seqlens,
+                                 message_kv=message_kv, position_offset=position_offset, prefix_embeds=prefix_embeds)
+        finally:
+            if rec is not None:
+                self._set_flow(None)
+                rec.armed = False
         h = self.final_norm(x)
 
         if labels is None or return_logits:

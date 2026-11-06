@@ -430,9 +430,27 @@ def _latent_memory_kwargs(model_args) -> dict:
             "lm_key_grad", "message_loop_name_lens", "message_loop_feedback", "message_loop_feedback_temp",
             "lm_writer_input", "lm_note_rank_gate", "lm_note_order_gate", "message_loop_control",
             "message_loop_control_window", "message_loop_control_dim", "message_loop_control_heads",
-            "message_loop_control_words")
+            "message_loop_control_words", "lm_note_key", "lm_open", "lm_open_k", "lm_open_cap")
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
+    return out
+
+
+def _plain_loop_kwargs(model_args) -> dict:
+    """E33p (2026-11-06): the tied loop and the LSA read for models WITHOUT a notebook (the dense ceiling, the
+    LSA-native arm). Until then `message_loop_rounds` reached only latent-memory configs, so E33n's dense ceiling was
+    built with one round while its notebook arms looped four times. Empty for every config that does not ask for
+    a loop or LSA, so older configs are built exactly as before."""
+    if str(getattr(model_args, "message_write", "block_mean") or "block_mean") == "latent_memory":
+        return {}
+    out = {}
+    if int(getattr(model_args, "message_loop_rounds", 1) or 1) > 1:
+        out["message_loop_rounds"] = int(model_args.message_loop_rounds)
+        out["message_loop_exit_aux"] = float(getattr(model_args, "message_loop_exit_aux", 0.0) or 0.0)
+    if str(getattr(model_args, "par_global_read", "dense") or "dense") != "dense":
+        for k in ("par_global_read", "lsa_window", "lsa_sinks", "lsa_block", "lsa_bucket", "lsa_pool",
+                  "lsa_bucket_cap", "lsa_top_k", "lsa_width"):
+            out[k] = getattr(model_args, k)
     return out
 
 
@@ -551,6 +569,7 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
         message_raw_window=int(getattr(model_args, "message_raw_window", 0) or 0),
         message_override=str(getattr(model_args, "message_override", "real") or "real"),
         **_latent_memory_kwargs(model_args),
+        **_plain_loop_kwargs(model_args),
         pad_token_id=tokenizer.pad_token_id,
         bos_token_id=tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id,
         eos_token_id=tokenizer.eos_token_id,

@@ -70,15 +70,29 @@ def score(model, ds, S: int, rows: int, device: str, per_row: bool = False) -> d
     return out
 
 
-def score_source(model, ds, S: int, rows: int, device: str, notes_off: bool, per_row: bool = False) -> dict:
+def score_source(model, ds, S: int, rows: int, device: str, notes_off: bool, per_row: bool = False,
+                 open_off: bool = False, gist_off: bool = False) -> dict:
     """Notebook on (the model's own setting) and, if asked, off. The context manager restores the model's own setting:
     forcing "real" afterwards (as before 2026-11-05) switched the notes ON for the window control — a model trained
-    with them off — from its second source on."""
+    with them off — from its second source on. E33p: `open_off` (no opened tokens; LSA: sinks + window only) and
+    `gist_off` (opened tokens + window, the notes masked)."""
     r = {"notes_on": score(model, ds, S, rows, device, per_row)}
     if notes_off:
         with model.message_override("none"):
             r["notes_off"] = score(model, ds, S, rows, device, per_row)
+    if open_off:
+        with model.open_override("off"):
+            r["open_off"] = score(model, ds, S, rows, device, per_row)
+    if gist_off:
+        with model.open_override("gist_off"):
+            r["gist_off"] = score(model, ds, S, rows, device, per_row)
     return r
+
+
+def opens(model) -> bool:
+    """E33p: the model opens raw tokens (notes / pages arms, or the LSA-native read)."""
+    c = model.config
+    return str(getattr(c, "lm_open", "none")) != "none" or str(getattr(c, "par_global_read", "dense")) == "lsa"
 
 
 def main() -> None:
@@ -88,6 +102,8 @@ def main() -> None:
     ap.add_argument("--lengths", default="4096,16384,32768,65536")
     ap.add_argument("--rows", type=int, default=16, help="rows per source and length")
     ap.add_argument("--notes_off", action="store_true")
+    ap.add_argument("--open_off", action="store_true", help="E33p: also score with the opened tokens off")
+    ap.add_argument("--gist_off", action="store_true", help="E33p: also score with the notes masked (opened kept)")
     ap.add_argument("--per_row", action="store_true",
                     help="also save every row's bucket sums with its document key (for a bootstrap over documents)")
     ap.add_argument("--backend", default="flex")
@@ -116,7 +132,9 @@ def main() -> None:
                 per_len[src] = {"rows": 0}
                 continue
             try:
-                per_len[src] = score_source(model, ds, S, a.rows, a.device, a.notes_off and has_notes, a.per_row)
+                per_len[src] = score_source(model, ds, S, a.rows, a.device, a.notes_off and has_notes, a.per_row,
+                                            open_off=a.open_off and opens(model),
+                                            gist_off=a.gist_off and opens(model) and has_notes)
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:  # a length past what fits: record it, go on
                 per_len[src] = {"error": f"{type(e).__name__}: {str(e)[:300]}"}
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None

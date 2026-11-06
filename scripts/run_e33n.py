@@ -6,6 +6,11 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
          dense   — reading layer: full causal attention over every earlier raw token (E18-style raw global read)
          e33     — E33: last 512 raw tokens + every note of every closed 256-token page (full note read)
          e33n    — E33n: last 512 raw tokens + the 64 best notes per query and head (top-k note read)
+         notes_open / pages_open — E33p: tied note keys; each query opens the raw tokens of its 64 best notes'
+                   members (its 2 best pages), ≤ 512 tokens, plus every note as gist and the 512-token window
+         lsa     — E33p: LSA's released flat read on the dense arm (sinks + window + 512 keys from its best buckets)
+         Note (2026-11-06): before then the trainer passed the loop only to notebook models, so E33n's dense arm
+         trained with one round; it now loops 4 times like every other arm.
          All: E33's loop (prelude → [reading layer + 1 local layer] × 4 tied → coda), exits off, local windows 128,
          plain input (no n-gram tables / value embeddings), GPT-2 vocabulary (50,257), tied factorised embedding.
   sizes  s30 (30M) · m100 (100M) · l300 (300M) — FFN width fitted to the target with the trainer's own factory.
@@ -52,7 +57,16 @@ ARMS = {
     "dense": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP},
     "e33": {**_WRITER, **_LOOP},
     "e33n": {**_WRITER, **_LOOP, "lm_read_topk": 64},
+    # E33p (docs/experiments_specs/ahead/E33p_note_indexed_exact_read.md): the notes as an index, per-query choice
+    "notes_open": {**_WRITER, **_LOOP, "lm_note_key": "tied", "lm_open": "notes", "lm_open_k": 64, "lm_open_cap": 512},
+    "pages_open": {**_WRITER, **_LOOP, "lm_note_key": "tied", "lm_open": "pages", "lm_open_k": 2, "lm_open_cap": 512},
+    # LSA's released flat read on the dense arm's reading layer (nn/lsa_buckets.py), budget matched at 512 keys
+    "lsa": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "lsa",
+            "lsa_window": 512, "lsa_sinks": 4, "lsa_block": 512, "lsa_bucket": 8, "lsa_pool": 4, "lsa_bucket_cap": 16,
+            "lsa_top_k": 512},
 }
+TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"lm_open_k": 1, "lm_open_cap": 64},
+             "lsa": {"lsa_window": 64, "lsa_block": 64, "lsa_top_k": 64}}
 TINY_WRITER = {"lm_latents": 8, "lm_latent_dim": 64, "lm_heads": 2, "lm_writer_dim": 64, "lm_enc_layers": 1,
                "lm_rounds": 1, "message_raw_window": 64, "lm_window": 64, "lm_stride": 48}
 
@@ -72,6 +86,8 @@ def model_args(arm: str, size: str, ffn: int | None = None) -> dict:
         a.update(TINY_WRITER)
         if "lm_read_topk" in a:
             a["lm_read_topk"] = 4
+    if size == "tiny" and arm in TINY_OPEN:
+        a.update(TINY_OPEN[arm])
     a["num_attention_heads"] = z["hidden"] // a["head_dim"]
     a["intermediate_size"] = ffn or max(64, round(z["hidden"] * 8 / 3 / 64) * 64)
     return a
@@ -132,7 +148,8 @@ def manifests(data: Path, out: Path, size: str) -> dict:
 
 def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: str | None = None,
               lr: float | None = None, tokens: float | None = None, micro: int | None = None, seed: int = 42,
-              wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False) -> list[str]:
+              wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
+              flow: bool = False) -> list[str]:
     z = SIZES[size]
     args, n = fit(arm, size)
     man = manifests(data, out, size)
@@ -171,6 +188,9 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     ]
     if init:
         cmd += ["--model_name_or_path", init]
+    if flow:  # E33p instrumentation: dynamics every 200 steps (decay: 50 of ~763) and weight snapshots
+        cmd += ["--flow_every", "200" if phase == "trunk" else "50",
+                "--snapshot_every", "1000" if phase == "trunk" else "500"]
     if local:  # laptop pipeline check (Apple GPU / CPU): reference attention, plain AdamW, no worker processes
         import torch
 
@@ -198,6 +218,7 @@ def main() -> None:
     c.add_argument("--backend", default="flex")
     c.add_argument("--wandb", action="store_true")
     c.add_argument("--local", action="store_true", help="laptop pipeline check (sdpa, adamw_torch, no workers)")
+    c.add_argument("--flow", action="store_true", help="E33p instrumentation (flow/grad/upd/read/select/lens keys)")
     a = ap.parse_args()
     if a.what == "params":
         for size in ("s30", "m100", "l300"):
@@ -208,7 +229,7 @@ def main() -> None:
         return
     cmd = train_cmd(a.arm, a.size, a.phase, data=Path(a.data), out=Path(a.out), init=a.init, lr=a.lr,
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
-                    local=a.local)
+                    local=a.local, flow=a.flow)
     print(shlex.join(cmd))
 
 
