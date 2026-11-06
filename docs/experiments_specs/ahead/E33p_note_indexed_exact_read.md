@@ -64,12 +64,15 @@ one KV head) reads, per query i in query block b (128 queries):
   - **pages-open (coarser):** opens the 2 best pages whole (page score = the sum of its notes' block scores), again
     512 tokens. This tells whether the finer grouping matters.
   - **LSA-native (published reference, added 2026-11-06 at the author's request):** the same 30M backbone with LSA's
-    native read in the reading layer instead of the notebook: the reading layer's own keys of each closed key block
-    clustered by Ward merging into buckets of about 8 (no parameters, no gradient), a query block scores one centre
-    per bucket, opens the best buckets' original keys within the same 512-token cap, plus LSA's sinks, and (LSA's
-    default two-path read) every unread bucket enters the softmax as one averaged term. Ported from LSA's Apache-2.0
-    code with attribution. E33p vs LSA-native isolates the question "is our learned writer a better index than
-    clustering the keys?".
+    released native read (`pretrain_fineweb_lsa.yaml` → `kind: lsa`, flat, `coarse: false`; read at HEAD 5ebea73) in
+    the reading layer instead of the notebook. Every forward, without gradient: the reading layer's own keys,
+    L2-normalised and summed in fours, are merged per closed 512-key block into 64 buckets (mutual-cheapest-pair
+    merges, at most 16 keys, centre = normalised key sum). **Each query** scores every centre by cosine, max over its
+    query heads (one choice per query, shared by its heads), and takes keys from the best buckets until the cap; one
+    softmax over 4 sinks ‖ the 512-token window ‖ the chosen keys. No extra loss, no parameters, sparse from step 0.
+    The cap is E33p's 512 tokens so the budgets match (LSA's own default at 4k is 1,024: a later budget check runs both
+    arms at 1,024). Ported from LSA's Apache-2.0 code (licence text and notices kept, changes marked). E33p against
+    LSA-native isolates the question "is our learned writer a better index than clustering the keys?".
   - **controls:** E33n's dense ceiling, window control and full note read — **retrained with the instrumentation
     below** so training dynamics are comparable (same seed and data order; their E33n numbers double as a
     reproducibility check of G).
