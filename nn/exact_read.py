@@ -206,7 +206,8 @@ class OpenTable:
 
 
 def open_term(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: int) -> Callable:
-    """mask_mod piece (b, q, j) → bool for raw key j (already clamped to [0, S)): j opened for query q."""
+    """mask_mod piece (b, q, j) → bool for raw key j (already clamped to [0, S)): j opened for query q. It does not
+    test documents: every caller ANDs it with its own causal same-document test (LSA buckets may mix documents)."""
     n_layers = int(codes.shape[0])
     G = int(T.shape[-1])
     cap_i, rw = int(cap), int(raw_window)
@@ -225,8 +226,9 @@ def open_term(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: int
 
 
 def dense_open(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: int,
-               q_idx: Optional[torch.Tensor] = None) -> torch.Tensor:
-    """[B, Q, S] bool — the same rule as `open_term` for the query rows `q_idx` (default: all)."""
+               q_idx: Optional[torch.Tensor] = None, doc: Optional[torch.Tensor] = None) -> torch.Tensor:
+    """[B, Q, S] bool — the same rule as `open_term` for the query rows `q_idx` (default: all); with `doc` [B, S],
+    also the same-document test, i.e. exactly the opened tokens the read uses."""
     B, S = codes.shape[1], codes.shape[2]
     G = T.shape[-1]
     if q_idx is None:
@@ -241,7 +243,10 @@ def dense_open(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: in
         tg = Tq.gather(2, g.clamp(0, G - 1)[:, None, :].expand(B, Q, S))
         hit |= (c >= 0)[:, None, :] & (tg + o[:, None, :] < cap)
     j = torch.arange(S, device=T.device)
-    return hit & ((q_idx[:, None] - j[None, :]) >= raw_window)[None]
+    hit = hit & ((q_idx[:, None] - j[None, :]) >= raw_window)[None]
+    if doc is not None:
+        hit = hit & (doc[:, q_idx][:, :, None] == doc[:, None, :]) & (doc[:, q_idx] >= 0)[:, :, None]
+    return hit
 
 
 # --------------------------------------------------------------------------------------- E33p notes and pages
