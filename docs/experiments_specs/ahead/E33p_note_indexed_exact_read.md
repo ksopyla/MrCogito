@@ -1,7 +1,11 @@
 # E33p — note-indexed exact read: the notes point, the reading layer opens the raw tokens behind them
 
-- **Status:** draft 2026-11-05 — awaiting the author's alignment (page
-  [e33p_architecture.html](../../3_Evaluations_and_Baselines/e33p_architecture.html)) before any code.
+- **Status:** **approved 2026-11-06** ("Aligned, build it") on the alignment page
+  [e33p_architecture.html](../../3_Evaluations_and_Baselines/e33p_architecture.html), with its "my reading" choices
+  as shown there and the two open questions settled as recommended: (1) a chosen note whose member tokens all lie
+  inside the query's window is skipped and the next-best note takes its place, so every one of the m places opens new
+  tokens; (2) the opened set is a **hard cap of 512 tokens per query block** (best notes first; a note that would cross
+  the cap is cut at the cap).
 - **Serves:** vision priority 2 (long context through the notebook) on the way to priority 4 (agent-to-agent: the
   notes become the table of contents another agent can query, the raw pages what it asks for). Direct follow-up of
   E33n's finding.
