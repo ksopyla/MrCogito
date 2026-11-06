@@ -78,8 +78,13 @@ class FlowRecorder:
             self.resid.append((self._tag(f"lens/L{layer_idx}"), x[0, -T - 1:-1].detach().clone()))
 
     # ------------------------------------------------------------------ the reading layer
-    def _mass(self, logits: torch.Tensor, allowed: torch.Tensor, sources: dict[str, torch.Tensor], parts) -> None:
-        """logits [h, Q, KV] fp32, allowed [Q, KV] bool, sources name → [Q, KV] bool; per bucket mass and entropy."""
+    def _capture(self, **kw) -> None:
+        """Hook for evaluation/flow_probe.py (ProbeRecorder): the reading layer's probabilities and sets, per call."""
+
+    def _mass(self, logits: torch.Tensor, allowed: torch.Tensor, sources: dict[str, torch.Tensor],
+              parts) -> torch.Tensor:
+        """logits [h, Q, KV] fp32, allowed [Q, KV] bool, sources name → [Q, KV] bool; per bucket mass and entropy.
+        Returns the probabilities [h, Q, KV]."""
         p = torch.softmax(logits.masked_fill(~allowed[None], float("-inf")), dim=-1)
         p = torch.nan_to_num(p, nan=0.0)
         ent = -(p * (p + 1e-12).log()).sum(-1).mean(0)                                   # [Q]
@@ -89,6 +94,7 @@ class FlowRecorder:
             self._put(f"{base}/entropy", ent[sl].mean())
             for k, v in mass.items():
                 self._put(f"{base}/mass_{k}", v[sl].mean())
+        return p
 
     @torch.no_grad()
     def reading_open(self, attn, *, q, k, v, k_bar, v_bar, ctx, key_valid, opened, gist, index) -> None:
@@ -113,8 +119,9 @@ class FlowRecorder:
         lg = torch.einsum("qhd,kd->hqk", q[0, rows].float(), K) * dh ** -0.5
         allowed = torch.cat([window | op, nv], -1)
         z = torch.zeros_like(nv)
-        self._mass(lg, allowed, {"window": torch.cat([window, z], -1), "opened": torch.cat([op & ~window, z], -1),
-                                 "notes": torch.cat([torch.zeros_like(window), nv], -1)}, parts)
+        pr = self._mass(lg, allowed, {"window": torch.cat([window, z], -1), "opened": torch.cat([op & ~window, z], -1),
+                                      "notes": torch.cat([torch.zeros_like(window), nv], -1)}, parts)
+        self._capture(kind="notebook", rows=rows, p=pr, S=S, opened=op & ~window, ctx=ctx, index=index)
         if index is not None:
             self._writer(index, k, k_bar)
         if opened is not None:
@@ -131,7 +138,8 @@ class FlowRecorder:
         causal = (j[None] <= rows[:, None]) & (doc[None] == doc[rows][:, None])
         window = causal & ((rows[:, None] - j[None]) < 512)
         lg = torch.einsum("qhd,kd->hqk", q[0, rows].float(), k[0, :, 0].float()) * dh ** -0.5
-        self._mass(lg, causal, {"window": window, "beyond": causal & ~window}, parts)
+        pr = self._mass(lg, causal, {"window": window, "beyond": causal & ~window}, parts)
+        self._capture(kind="dense", rows=rows, p=pr, S=S, opened=causal & ~window, ctx=None, index=None)
 
     @torch.no_grad()
     def reading_lsa(self, attn, *, q, k, v, doc, key_valid, opened, sink, window) -> None:
@@ -147,7 +155,8 @@ class FlowRecorder:
         op = (dense_open(opened.T[:1], opened.index.codes[:, :1], cap=opened.cap, raw_window=window, q_idx=rows,
                          doc=doc[:1])[0] & causal & ~win & ~sk) if opened is not None else torch.zeros_like(win)
         lg = torch.einsum("qhd,kd->hqk", q[0, rows].float(), k[0, :, 0].float()) * dh ** -0.5
-        self._mass(lg, win | sk | op, {"window": win, "sinks": sk, "opened": op}, parts)
+        pr = self._mass(lg, win | sk | op, {"window": win, "sinks": sk, "opened": op}, parts)
+        self._capture(kind="lsa", rows=rows, p=pr, S=S, opened=op, ctx=None, index=None)
         if opened is not None:
             self._selection(opened, rows, doc_start=opened.index.doc_start[0, rows], rw=window, index=None, q=None,
                             k_bar=None, nv=None)

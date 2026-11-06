@@ -29,16 +29,24 @@ CATS = ("none", "near", "far")
 
 def copy_categories(ids, k: int, window: int) -> np.ndarray:
     """Per position: 0 none / 1 near / 2 far (see the module doc). Positions < k are 'none'."""
+    return copy_sources(ids, k, window)[0]
+
+
+def copy_sources(ids, k: int, window: int) -> tuple[np.ndarray, np.ndarray]:
+    """(categories as `copy_categories`, source position q per position: the most recent earlier end of the same
+    (k+1)-gram, so ids[q] == ids[p]; −1 where there is none)."""
     a = np.ascontiguousarray(np.asarray(ids, dtype=np.int64))
     cat = np.zeros(len(a), dtype=np.int8)
+    src = np.full(len(a), -1, dtype=np.int64)
     last: dict[bytes, int] = {}
     for p in range(k, len(a)):
         key = a[p - k: p + 1].tobytes()
         q = last.get(key)
         if q is not None:
             cat[p] = 1 if p - q <= window - k else 2
+            src[p] = q
         last[key] = p
-    return cat
+    return cat, src
 
 
 @torch.no_grad()
