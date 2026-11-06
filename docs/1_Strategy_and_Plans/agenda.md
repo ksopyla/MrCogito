@@ -20,11 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-11-05 — E33p, a note-indexed exact read on the LSA testbed (draft, awaiting alignment).** E33n closed at 30M
-  (see below): the far-context value of natural long text is exact copying, which notes cannot return. E33p uses the
-  notes as the index (address keys tied to the reading layer's own raw keys) and lets each block of queries open the
-  raw tokens behind its 64 best notes (LSA-style), same protocol and evals, 30M on the home servers first, E33n's
-  controls reused. Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
+- **2026-11-06 — E33p, a note-indexed exact read on the LSA testbed: stage 1 training (six arms, 30M, home
+  servers).** E33n closed at 30M (see below): the far-context value of natural long text is exact copying, which notes
+  cannot return. E33p uses the notes as the index (address keys tied to the reading layer's own raw keys) and lets each
+  query open the raw tokens behind its 64 best notes (per-query choice, LSA's rule), against LSA's own read ported to
+  the same 30M model and three retrained controls (dense now loops, as it should have in E33n), all with training
+  instrumentation. Stage 0 passed 2026-11-06 (notes-open 0.79 × the full note read's speed); stage 1 launched
+  2026-11-06 09:30 UTC (Odra: notes-open, pages-open, LSA-native; Polonez: dense, window, full read), runs in
+  `Cache/e33p_runs/`. Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
 - **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
   ladder failed its pass mark.**
   - The frozen reader can take a whole 512-token span through one optimised key/value entry: 99.98 % of tokens,
