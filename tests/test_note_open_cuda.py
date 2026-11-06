@@ -14,10 +14,12 @@ from tests.test_note_open import NOTES, PAGES
 
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA (flex attention kernels)")
 
+# flex kernels need head dims of at least 16 (the tiny CPU geometry uses 8; s30 uses 64)
+WIDE = dict(head_dim=16, hidden_size=64, num_attention_heads=4)
 CASES = {
-    "notes_open": (lm_cfg, dict(NOTES, lm_open_k=8, lm_open_cap=64)),
-    "pages_open": (lm_cfg, dict(PAGES, lm_open_cap=64)),
-    "lsa": (cfg, dict(LSA, lsa_top_k=32)),
+    "notes_open": (lm_cfg, dict(NOTES, **WIDE, lm_open_k=8, lm_open_cap=64)),
+    "pages_open": (lm_cfg, dict(PAGES, **WIDE, lm_open_cap=64)),
+    "lsa": (cfg, dict(LSA, **WIDE, lsa_top_k=32)),
 }
 
 
