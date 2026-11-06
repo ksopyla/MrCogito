@@ -44,16 +44,25 @@ SYNC=""
 if [ -n "$S3R" ]; then ( while sleep 900; do sync_up; done ) & SYNC=$!; fi
 finish() { [ -n "$SYNC" ] && kill "$SYNC" 2>/dev/null; sync_up; }
 
-# phase NAME CMD: run a training phase; with E33N_BURST_H, in bursts that resume from the newest checkpoint
+newest_ck() { ls -d "$R/$1"/*/checkpoint-* 2>/dev/null | awk -F'checkpoint-' '{print $NF" "$0}' | sort -n | tail -1 | cut -d' ' -f2; }
+# the last invocation stopped on its wall-clock budget, even if exit code 3 was lost at shutdown
+# (Polonez dense arm, 2026-11-06 15:00 UTC: budget line logged and checkpoint saved, yet rc != 3)
+budget_hit() { awk '/STARTING TRAINING/{f=0} /Wall-clock budget of/{f=1} END{exit !f}' "$R/$1.log"; }
+
+# phase NAME CMD: run a training phase; with E33N_BURST_H, in bursts that resume from the newest checkpoint.
+# A relaunch after a failure also continues from this phase's newest checkpoint instead of starting over.
 phase() {
-  local name=$1 cmd=$2 ck="" rc
+  local name=$1 cmd=$2 ck rc
+  ck=$(newest_ck "$name")
+  [ -n "$ck" ] && log "$name restarts from ${ck##*/}"
   while true; do
     ( export RUN_ID_SUFFIX="${ARM}_${SIZE}_${name}"   # arms launched in the same second get distinct W&B runs
       eval "$cmd${E33N_BURST_H:+ --max_train_hours $E33N_BURST_H}${ck:+ --resume_from_checkpoint $ck}" ) \
       >> "$R/$name.log" 2>&1
     rc=$?
-    [ "$rc" = 3 ] || return "$rc"
-    ck=$(ls -d "$R/$name"/*/checkpoint-* | awk -F'checkpoint-' '{print $NF" "$0}' | sort -n | tail -1 | cut -d' ' -f2)
+    [ "$rc" = 0 ] && return 0
+    [ "$rc" = 3 ] || budget_hit "$name" || return "$rc"
+    ck=$(newest_ck "$name")
     log "$name burst ended at ${ck##*/}; cooldown ${E33N_COOL_MIN:-20} min"
     sync_up
     sleep $(( ${E33N_COOL_MIN:-20} * 60 ))
