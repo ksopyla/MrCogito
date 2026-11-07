@@ -2693,7 +2693,7 @@ class Attention(nn.Module):
     def _concept_read(self, q, k, v, x, *, doc_ids, key_valid):
         """E37: concepts of this call's keys (encoder), the reasoner's value update, each query's exact choice, and
         one softmax over sinks ‖ block-aligned window ‖ opened members ‖ concept summaries (nn/concept_memory.py)."""
-        from nn.concept_memory import attend_concepts, build_concepts, concept_open_table
+        from nn.concept_memory import attend_concepts, build_concepts, concept_open_table, token_update
         from nn.exact_read import doc_starts
 
         B, S = q.shape[:2]
@@ -2704,13 +2704,14 @@ class Attention(nn.Module):
         ds = doc_starts(doc)
         pos = torch.arange(S, device=q.device)[None]
         sink = (pos - ds < c["sinks"]) & (doc >= 0)
-        cidx, opened, dv = None, None, None
+        cidx, opened, dv, dv_tok = None, None, None, None
         if not self.concept_off:
             cidx = build_concepts(k, v, x if self.concept_reasoner is not None else None, doc, sink,
                                   block=c["block"], per_block=c["per_block"], iters=c["iters"], tau=c["tau"])
             if cidx is not None:
                 if self.concept_reasoner is not None:
                     dv = self.concept_reasoner(cidx.z, cidx.block_of, cidx.c_doc)
+                    dv_tok = token_update(cidx, dv, S)
                 opened = concept_open_table(q, cidx, top_k=c["top_k"], width=c["width"], variance=c["variance"])
         if self.concept_stats is not None and cidx is not None:
             self.concept_stats = _concept_read_stats(q, cidx, opened, c)
@@ -2718,7 +2719,7 @@ class Attention(nn.Module):
             self.flow.reading_concept(self, q=q, k=k, v=v, doc=doc, cidx=cidx, opened=opened, sink=sink)
         return attend_concepts(q, k, v, cidx=cidx, dv=dv, doc=doc, key_valid=key_valid, backend=self.backend,
                                opened=opened, sink=sink, ds=ds, n_sinks=c["sinks"], summaries=c["summaries"],
-                               variance=c["variance"])
+                               variance=c["variance"], dv_tok=dv_tok)
 
 
 @torch.no_grad()

@@ -200,6 +200,36 @@ def test_gradients_reach_members_and_the_reasoner_learns():
     assert att.concept_reasoner.inp.weight.grad.abs().sum() == 0                         # nothing flows yet (out = 0)
 
 
+def test_reasoner_update_reaches_opened_members_and_summaries():
+    """dv = 0 leaves the read unchanged (the two copies agree); a nonzero dv changes the read of old queries through
+    both the opened members and the summaries, and never the queries whose memory is empty."""
+    torch.manual_seed(8)
+    S, d, h = 96, 8, 3
+    doc = torch.zeros(1, S, dtype=torch.long)
+    sink, ds = _sink(doc, 2)
+    q, k, v = torch.randn(1, S, h, d), torch.randn(1, S, 1, d), torch.randn(1, S, 1, d)
+    ci = build_concepts(k, v, None, doc, sink, block=BLK, per_block=PER)
+    op = concept_open_table(q, ci, top_k=8, width=ci.n_concepts)
+    kw = dict(cidx=ci, doc=doc, key_valid=None, backend="sdpa", opened=op, sink=sink, ds=ds, n_sinks=2)
+    base = attend_concepts(q, k, v, dv=None, **kw)
+    zero = torch.zeros(1, ci.n_concepts, d)
+    same = attend_concepts(q, k, v, dv=zero, dv_tok=cm.token_update(ci, zero, S), **kw)
+    torch.testing.assert_close(same, base, atol=1e-6, rtol=1e-5)
+    dv = torch.randn(1, ci.n_concepts, d)
+    tok = cm.token_update(ci, dv, S)
+    moved = attend_concepts(q, k, v, dv=dv, dv_tok=tok, **kw)
+    # the first block reads only itself (raw copy); from block 1 on, the previous block carries its update
+    assert (moved[0, :BLK] - base[0, :BLK]).abs().max() < 1e-6
+    assert (moved[0, 3 * BLK:] - base[0, 3 * BLK:]).abs().max() > 1e-3
+    # members get their own concept's update; tokens outside concept blocks and sinks get none
+    nb = ci.labels.shape[1]
+    for t in (5, 20, 40):
+        lab = ci.labels[0].reshape(-1)[t]
+        want = dv[0, (t // BLK) * PER + lab] if lab >= 0 else torch.zeros(d)
+        torch.testing.assert_close(tok[0, t, 0], want)
+    assert tok[0, nb * BLK:].abs().max() == 0 and tok[0, :2].abs().max() == 0
+
+
 def test_eval_switch_reads_window_and_sinks_only():
     m = _model()
     att = m.layers[m.config.global_layer_index].attn

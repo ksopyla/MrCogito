@@ -111,6 +111,7 @@ class ConceptIndex:
     z: Optional[torch.Tensor]    # [B, C, H] mean state of the members (the reasoner's input), or None
     block_of: torch.Tensor       # [C] long, the block of each concept
     c_doc: torch.Tensor          # [B, C] long, the document of the concept's block (−1: mixed, padding or empty)
+    labels: torch.Tensor         # [B, n_blocks, block] long, each key's concept within its block (−1: sink / pad)
     block: int
     per_block: int
 
@@ -167,7 +168,21 @@ def build_concepts(k: torch.Tensor, v: torch.Tensor, x: Optional[torch.Tensor], 
     mu_k = mu_k.reshape(B, nb * per_block, d)
     return ConceptIndex(groups=gi, centroid=F.normalize(mu_k.detach(), dim=-1), n=n_flat,
                         mu_k=mu_k, var=var.reshape(B, nb * per_block), mu_v=mu_v.reshape(B, nb * per_block, d),
-                        z=z, block_of=block_of, c_doc=c_doc, block=block, per_block=per_block)
+                        z=z, block_of=block_of, c_doc=c_doc, labels=labels, block=block, per_block=per_block)
+
+
+def token_update(cidx: ConceptIndex, dv: torch.Tensor, S: int) -> torch.Tensor:
+    """The reasoner's concept updates spread to the member tokens: [B, C, d] → [B, S, 1, d], zero for tokens outside
+    the concept blocks and for sinks / padding."""
+    B, C, d = dv.shape
+    nb, blk = cidx.labels.shape[1], cidx.block
+    cid = cidx.labels + (torch.arange(nb, device=dv.device) * cidx.per_block)[None, :, None]
+    cid = torch.where(cidx.labels >= 0, cid, torch.full_like(cid, C)).reshape(B, nb * blk)
+    padded = torch.cat([dv, torch.zeros_like(dv[:, :1])], dim=1)                       # index C = no update
+    out = padded.gather(1, cid[..., None].expand(B, nb * blk, d))
+    if S > nb * blk:
+        out = torch.cat([out, torch.zeros(B, S - nb * blk, d, dtype=out.dtype, device=out.device)], dim=1)
+    return out[:, :, None]
 
 
 def summary_logit(q: torch.Tensor, cidx: ConceptIndex, *, variance: bool = True) -> torch.Tensor:
@@ -269,9 +284,16 @@ def _chosen_lookup(opened: Optional[OpenTable]):
 
 def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch.Tensor], doc, key_valid, backend,
                     opened: Optional[OpenTable], sink: torch.Tensor, ds: torch.Tensor, n_sinks: int,
-                    summaries: bool = True, variance: bool = True):
+                    summaries: bool = True, variance: bool = True, dv_tok: Optional[torch.Tensor] = None):
     """The decoder's read: sinks ‖ block-aligned window ‖ opened members ‖ concept summaries, one softmax.
-    q [B,S,h,d], k/v [B,S,1,d], doc [B,S] (−1 = pad), sink [B,S] bool, ds [B,S] document starts. Returns [B,S,h,d]."""
+    q [B,S,h,d], k/v [B,S,1,d], doc [B,S] (−1 = pad), sink [B,S] bool, ds [B,S] document starts. Returns [B,S,h,d].
+
+    With the reasoner (`dv` [B,C,d] per concept, `dv_tok` [B,S,1,d] the same spread to the member tokens), every
+    read from memory carries the reasoned update: summaries get μ_v + dv, and older tokens (previous block, sinks,
+    opened members) get v + dv_tok. The query's own block is read from a second, raw copy of its keys and values: a
+    token's update draws on its whole block, which is in the future of the queries inside that block.
+
+    KV layout: [raw tokens with the update (S) ‖ raw tokens, own block only (S, with the reasoner) ‖ summaries (C)]."""
     from nn.exact_read import dense_open, open_term
     from nn.perceiver_ar_lm import _band_block_mask, _get_flex
 
@@ -280,17 +302,24 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
     blk = cidx.block if cidx is not None else 512
     use_sum = summaries and cidx is not None
     C = cidx.n_concepts if use_sum else 0
+    two = dv_tok is not None
+    off_sum = 2 * S if two else S
+    v1 = v + dv_tok.to(v.dtype) if two else v
+    Ks, Vs = [k], [v1]
+    if two:
+        Ks.append(k)
+        Vs.append(v)
     if use_sum:
         vs = cidx.mu_v if dv is None else cidx.mu_v + dv.to(cidx.mu_v.dtype)
-        K = torch.cat([k, cidx.mu_k[:, :, None].to(k.dtype)], dim=1)
-        V = torch.cat([v, vs[:, :, None].to(v.dtype)], dim=1)
+        Ks.append(cidx.mu_k[:, :, None].to(k.dtype))
+        Vs.append(vs[:, :, None].to(v.dtype))
         logn = torch.where(cidx.n > 0, cidx.n.clamp_min(1.0).log(), torch.zeros_like(cidx.n)).contiguous()
         vhalf = (0.5 * cidx.var).contiguous() if variance else torch.zeros_like(cidx.var)
         qn2 = (q.float() ** 2).sum(-1).transpose(1, 2).contiguous() / d                # [B, h, S]
         c_from = ((cidx.block_of + 2) * blk)[None].expand(B, -1).to(torch.int32).contiguous()
         c_doc = cidx.c_doc.to(torch.int32).contiguous()
-    else:
-        K, V = k, v
+    K, V = (torch.cat(Ks, dim=1), torch.cat(Vs, dim=1)) if len(Ks) > 1 else (k, v1)
+    KV = K.shape[1]
     qt, kt, vt = (t.transpose(1, 2) for t in (q, K, V))
     doc32 = doc.to(torch.int32)
     sk = sink.to(torch.int32)
@@ -299,18 +328,28 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
         chosen = _chosen_lookup(opened) if use_sum else None
 
         def pred(b, hh, qi, j):
+            own_lo = (qi // blk) * blk
             jr = torch.clamp(j, max=S - 1)
             same = (doc32[b, jr] == doc32[b, qi]) & (doc32[b, qi] >= 0)
-            keep = (j >= (qi // blk - 1) * blk) | (sk[b, jr] > 0)
+            keep = (jr >= own_lo - blk) | (sk[b, jr] > 0)
             if term is not None:
                 keep = keep | term(b, qi, jr)
+            if two:
+                keep = keep & (jr < own_lo)                                            # own block: second copy
             ok = (jr <= qi) & same & keep & (j < S)
             if key_valid is not None:
                 ok = ok & (key_valid[b, jr] | (jr == qi))
+            if two:
+                j2 = torch.clamp(j - S, 0, S - 1)
+                ok2 = ((j >= S) & (j < 2 * S) & (j2 <= qi) & (j2 >= own_lo) & (doc32[b, j2] == doc32[b, qi])
+                       & (doc32[b, qi] >= 0))
+                if key_valid is not None:
+                    ok2 = ok2 & (key_valid[b, j2] | (j2 == qi))
+                ok = ok | ok2
             if not use_sum:
                 return ok
-            c = torch.clamp(j - S, 0, C - 1)
-            vis = (j >= S) & (qi >= c_from[b, c]) & (c_doc[b, c] == doc32[b, qi]) & (doc32[b, qi] >= 0)
+            c = torch.clamp(j - off_sum, 0, C - 1)
+            vis = (j >= off_sum) & (qi >= c_from[b, c]) & (c_doc[b, c] == doc32[b, qi]) & (doc32[b, qi] >= 0)
             if chosen is not None:
                 vis = vis & ~chosen(b, qi, c)
             return ok | vis
@@ -318,24 +357,31 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
         score_mod = None
         if use_sum:
             def score_mod(score, b, hh, qi, j):
-                c = torch.clamp(j - S, 0, C - 1)
-                return torch.where(j >= S, score + logn[b, c] + qn2[b, hh, qi] * vhalf[b, c], score)
+                c = torch.clamp(j - off_sum, 0, C - 1)
+                return torch.where(j >= off_sum, score + logn[b, c] + qn2[b, hh, qi] * vhalf[b, c], score)
 
         nqb = -(-S // 128)
         first_q = torch.arange(nqb, device=q.device) * 128
+        q_hi = torch.clamp(first_q + 127, max=S - 1)
         extra = [torch.stack([ds[:, first_q] // 128,
                               torch.clamp(ds[:, first_q] + max(n_sinks - 1, 0), max=S - 1) // 128], dim=-1)]
         if opened is not None:
             extra.append(opened.extra_blocks())
+        if two:  # the own block in the second copy: KV blocks from S + own-block start to S + the block's last query
+            E = (blk + 127) // 128 + 2
+            lo = (S + (first_q // blk) * blk) // 128
+            hi = (S + q_hi) // 128
+            ids2 = lo[:, None] + torch.arange(E, device=q.device)[None]
+            extra.append(torch.where(ids2 <= hi[:, None], ids2, torch.full_like(ids2, -1))[None].expand(B, -1, -1))
         if use_sum:
-            first, last = S // 128, (S + C - 1) // 128
+            first, last = off_sum // 128, (off_sum + C - 1) // 128
             ids = torch.arange(first, last + 1, device=q.device)
             # a slot KV block is needed by a query block once its earliest concept is old enough
-            cf = F.pad(c_from[0], (S - first * 128, (last + 1) * 128 - S - C), value=2 ** 30).view(-1, 128).amin(-1)
-            q_hi = torch.clamp(first_q + 127, max=S - 1)
+            cf = F.pad(c_from[0], (off_sum - first * 128, (last + 1) * 128 - off_sum - C), value=2 ** 30)
+            cf = cf.view(-1, 128).amin(-1)
             need = cf[None, :] <= q_hi[:, None]
             extra.append(torch.where(need, ids[None], torch.full_like(ids[None], -1))[None].expand(B, -1, -1))
-        bm = _band_block_mask(pred, B=B, Q_LEN=S, KV_LEN=S + C, window=2 * blk, causal=True, device=q.device,
+        bm = _band_block_mask(pred, B=B, Q_LEN=S, KV_LEN=KV, window=2 * blk, causal=True, device=q.device,
                               extra_blocks=torch.cat(extra, dim=-1))
         out = _get_flex()(qt.contiguous(), kt.contiguous(), vt.contiguous(), block_mask=bm, enable_gqa=(g != h),
                           score_mod=score_mod)
@@ -346,21 +392,32 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
         vt = vt.repeat_interleave(h // g, dim=1)
     qi = torch.arange(S, device=q.device)[:, None]
     j = torch.arange(S, device=q.device)[None, :]
+    own_lo = (qi // blk) * blk
     same = (doc[:, :, None] == doc[:, None, :]) & (doc[:, :, None] >= 0)
-    keep = (j >= (qi // blk - 1) * blk)[None] | sink[:, None, :]
+    keep = (j >= own_lo - blk)[None] | sink[:, None, :]
     if opened is not None:
         keep = keep | dense_open(opened.T, opened.index.codes, cap=opened.cap, raw_window=blk)
+    if two:
+        keep = keep & (j < own_lo)[None]
+    eye = torch.eye(S, dtype=torch.bool, device=q.device)[None]
     mask = (j <= qi)[None] & same & keep
     if key_valid is not None:
-        mask = mask & (key_valid.bool()[:, None, :] | torch.eye(S, dtype=torch.bool, device=q.device)[None])
-    bias = torch.zeros(B, h, S, S + C, device=q.device, dtype=torch.float32)
+        mask = mask & (key_valid.bool()[:, None, :] | eye)
+    parts = [mask]
+    if two:
+        m2 = (j <= qi)[None] & same & (j >= own_lo)[None]
+        if key_valid is not None:
+            m2 = m2 & (key_valid.bool()[:, None, :] | eye)
+        parts.append(m2)
+    bias = torch.zeros(B, h, S, KV, device=q.device, dtype=torch.float32)
     if use_sum:
         cf = c_from.long()
         vis = ((qi >= cf[:, None, :]) & (cidx.c_doc[:, None, :] == doc[:, :, None]) & (doc[:, :, None] >= 0))
         if opened is not None:
             vis = vis & ~(opened.T[:, :, :C].to(torch.int32) < int(opened.cap))
-        mask = torch.cat([mask, vis], dim=-1)
-        bias[..., S:] = logn[:, None, None, :] + qn2[..., None] * vhalf[:, None, None, :]
+        parts.append(vis)
+        bias[..., off_sum:] = logn[:, None, None, :] + qn2[..., None] * vhalf[:, None, None, :]
+    mask = torch.cat(parts, dim=-1)
     bias = bias.masked_fill(~mask[:, None], float("-inf"))
     out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=bias.to(qt.dtype))
     return out.transpose(1, 2)
