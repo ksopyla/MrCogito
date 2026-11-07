@@ -34,6 +34,15 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   hard stop 36 h ≈ $275), the arms one after another, each on all four GPUs (new: one model on several GPUs, the
   three evals side by side, checkpoints in S3 so a spot interruption resumes); full-read control first, as it ends
   last at home. No on-demand H100 in us-east-1 since 2026-11-04; the us-east-2 quota request is still open.
+  2026-11-07 07:20 UTC, first results (notes-open and full read: seed 1 on AWS; controls and LSA-native: seed 42 at
+  home): share of the window→dense gap on positions ≥ 2k at 16k — LSA-native 99 %, notes-open 39 % (S1 mark 40 %),
+  full read 6 %; notes-open fades 47 → 21 % from 4k to 64k (S3 fails), LSA-native 127 % at 64k. Measured limits:
+  30 % empty notes, budget full for 8–19 % of queries (LSA 66 %), note summaries take 37 % of first-pass mass at
+  8–16k, passes re-pick 37–47 % (LSA 18–25 %), 10.6k vs 17.6k (LSA) vs 25k (dense) tokens/s at 16k. Analysis and
+  the proposed catalogue read (notes as index only + sinks, balanced filing, budget by words, new places per pass,
+  no page overlap, two-level search, choice as a list): [e33p_vs_lsa.html](../3_Evaluations_and_Baselines/e33p_vs_lsa.html).
+  Eval fixes (561fe26): RULER 16k ran out of memory on every arm (flex recompiled per generated token, fell back to
+  eager), notes-open crashed at 128k (opening table > 2³¹ elements); finished runs rerun.
   Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
 - **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
   ladder failed its pass mark.**
