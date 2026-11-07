@@ -167,6 +167,7 @@ td.l{color:var(--lsa)} td.o{color:var(--open)}
 
 <section id="design">
 <h2>The new design: notes as a card catalogue</h2>
+<p class="col small">Written up as experiment E33s: <a href="https://claude.ai/artifact/8nvSB2tGfPL4RgVi92RGUz">alignment page</a> (step-by-step flow, worked example, decision checklist); spec in docs/experiments_specs/ahead/E33s_catalogue_read.md.</p>
 <p class="col">One coherent change to our read, keeping what is ours (a trained writer that reads a whole page and names its contents) and dropping what the measurements show is hurting. The notes stop being reading material and become a catalogue: small, balanced, never empty, organised in two levels, and searched afresh in every pass so that four passes can follow a chain of references. It is simpler than the current read (no summary path, no overlapping pages, no full choice table) and its index cost grows with pages, not with words.</p>
 <div class="props" id="props"></div>
 <div class="fig">
@@ -175,7 +176,7 @@ td.l{color:var(--lsa)} td.o{color:var(--open)}
   <li><b>A learned index.</b> LSA groups keys by geometry alone, with no parameters. Our writer sees the whole page in both directions and can group words by meaning (a name and its later pronoun, a defined symbol and its uses). The balanced filing keeps that learned grouping and fixes its holes.</li>
   <li><b>Two levels from the start.</b> Pages and notes already form a catalogue with drawers and cards. LSA needs a separate coarse mode to go past a single level.</li>
   <li><b>Passes as lookups.</b> Each pass searches only where earlier passes did not look. That is a small, testable form of reasoning over memory: read A, find it points to B, read B.</li>
-  <li><b>Optional, later: the index learns from the reads.</b> A small extra loss that asks each note's score to predict how much attention its words actually received once opened, so the writer learns what future queries will need.</li>
+  <li><b>The index learns from the reads.</b> A small extra loss asks each note's score to predict how much attention its words actually receive once opened, so the writer learns what future queries will need. LSA's grouping is never trained.</li>
  </ul>
 </div>
 </section>
@@ -446,7 +447,7 @@ function drawStage() {
 (function analogies() {
   const rows = [
     ["A shelf", "block of 512 keys", "page of 256 words (new page every 192)", "Pages without overlap: one word, one page, one note. Simpler, and 25 % fewer notes."],
-    ["A box of similar cards", "bucket: ≤ 16 keys merged by similarity", "note: words the writer files under it", "Balanced filing: at most 16 words per note, none empty; the writer proposes the topics, the keys decide the filing."],
+    ["A box of similar cards", "bucket: ≤ 16 keys merged by similarity", "note: words the writer files under it", "Balanced filing: about 8 words per note, at most 16, none empty; the writer still files, and learns from the reads where to file."],
     ["The label on a box", "unit sum of member keys", "weighted mean of member keys (tied)", "Keep ours; it is already in the reader's key space."],
     ["Checking labels", "cosine, best head", "sum over heads of a softmax", "Try best head; it lets one specialised head claim a note."],
     ["Taking cards until the hand is full", "boxes until 512 keys", "64 notes, cap 512 words", "Count words, not notes."],
@@ -462,7 +463,8 @@ function drawStage() {
 (function props() {
   const P = [
     ["A", "Notes become a catalogue only", "Drop the summary path from the read; add 4 start-of-document slots for attention that finds nothing. The notes still choose what to open.", "Limits: summaries crowd out words, fades with length."],
-    ["B", "Balanced filing", "Each word is filed under the note whose key it matches best, at most 16 words per note, seeded by the writer's notes (two quick refinement steps, no gradient). No empty notes, no overflowing ones.", "Limit: a third of the index is empty."],
+    ["B", "Balanced filing", "The writer's filing is balanced (three Sinkhorn steps) so every note gets about 8 words, at most 16. No empty notes, no overflowing ones, and the writer stays the one who files.", "Limit: a third of the index is empty."],
+    ["H", "The index learns from the reads", "Each note's score learns to predict how much of the read's attention its words receive once opened (a small extra loss, with a few unchosen notes as negatives). Once summaries leave the read, this is what trains the catalogue.", "LSA's index is never trained; this is our main new ingredient."],
     ["C", "Fill the budget by words", "Keep taking notes, best first, until 512 words are opened (raise the note count from 64 to as many as needed).", "Limit: budget unused."],
     ["D", "Each pass looks somewhere new", "A pass skips notes opened by earlier passes, so four passes read up to four different sets. A pass can follow a reference that the previous pass found.", "Limit: passes repeat. Reasoning over memory."],
     ["E", "Pages without overlap", "A new 256-word page every 256 words. One word sits in exactly one page and one note; the code loses its overlap layers.", "Simplicity; 25 % fewer notes."],
@@ -523,7 +525,7 @@ function calc() {
 (function plan() {
   const rows = [
     ["Now", "Finish stage 1", "Second seed of all six models on AWS; our notes model at home (same seed as the controls); copy test; probe on every model.", "Today", "≈ $120 left of stage 1"],
-    ["Stage A", "Catalogue read, 30M", "One model with A + B + C + E + G against the stage-1 controls; then the same with D (passes look somewhere new).", "2 models, ≈ 10 h", "≈ $60"],
+    ["Stage A", "Catalogue read, 30M (spec E33s)", "Two models against the seed-1 controls: A + B + C + D + E + H with a flat search, and the same with the two-level search (F).", "2 models, ≈ 10 h", "≈ $60"],
     ["Pass mark", "", "≥ 80 % of the gap at 16k; no more than 5 points lost from 16k to 64k; at least LSA's speed at 16k; no harm on short positions.", "", ""],
     ["Stage B", "Page and note sizes", "Around the stage-A winner: 4, 8 and 16 words per note at 256-word pages, and 512-word pages with 64 notes.", "4 models, ≈ 20 h", "≈ $120"],
     ["Stage C", "Two levels and long documents", "Add F; train at 16k plus a short 64k stage; test at 128k, 1M and beyond (test-only past 64k).", "2 models", "≈ $80"],

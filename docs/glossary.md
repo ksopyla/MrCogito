@@ -101,6 +101,12 @@ meaningless without knowing which slice it came from.
 | **tied address key** | a note's lookup key built as the average of the reader's own keys for the tokens it summarises, so a question that matches those tokens also matches the note. |
 | **per-query choice** | every token picks its own notes to open (not one pick shared by a block of 128 tokens, which would let a token see what later tokens wanted: a leak of the next word). |
 | **LSA-native arm** | our 30M model with LSA's released read in the reading layer: the reader's own keys grouped into buckets of about 8 by similarity, each token opens its best buckets' tokens. No notebook. |
+| **catalogue read (E33s)** | the notebook used only as a library catalogue: notes decide which original tokens a query opens, but their summaries are no longer read. Pages are drawers, notes are cards. |
+| **balanced filing** | every page token is filed under exactly one note, with each note holding about the same number of tokens (none empty, at most 16); done by balancing the writer's assignment (Sinkhorn iterations). E33p's unbalanced filing left 30 % of notes empty. |
+| **index loss** | a small extra loss that teaches each note's score to predict how much of the read's attention its tokens actually receive once opened, so the catalogue learns where queries look. LSA's index has no such training. |
+| **empty slots (sinks)** | a few extra keys in the read with no content, where attention can go when nothing fits. LSA uses the first 4 tokens of the document; E33s uses 4 learned slots. |
+| **a new place per pass** | in the reading loop, each pass may only open notes that the same query has not opened in earlier passes, so four passes are four lookups that can follow a chain of references. |
+| **two-level search** | a query scores page keys first, keeps its best pages, then scores only those pages' notes: the work per query grows with the number of pages, not tokens (the route past 1M tokens). |
 | **update ratio / logit lens / CKA** | training probes: how much one optimizer step changes a layer's weights (relative); the next-word loss read straight from a layer's output (where in depth the prediction forms); a 0–1 similarity of two layers' outputs on the same tokens (do two models' layers do the same work). |
 | **self-attention** | tokens looking at each other. |
 | **sliding-window attention (SWA)** | each token can only see the last *K* tokens. Cheap; limits how far back a single layer sees. |

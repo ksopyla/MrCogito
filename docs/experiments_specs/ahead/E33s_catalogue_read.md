@@ -1,0 +1,191 @@
+# E33s — the catalogue read: notes index the text, they are not read; balanced filing, a trained index, a new place per pass, two levels
+
+- **Status:** draft 2026-11-07 (author asked for it: "Yes, write the spec"). Waiting for the alignment page
+  [e33s_architecture.html](../../3_Evaluations_and_Baselines/e33s_architecture.html) and the go-ahead.
+- **Serves:** vision priority 2 (long context through the notebook) and the author's 2026-11-07 aim: chase LSA's
+  quality with a simpler design of our own that can reason over memory and reach > 10M tokens (tested smaller first),
+  then scale to 100–200M if 30M matches. Direct follow-up of E33p stage 1.
+- **Implementation plan:** [E33s_plan.md](E33s_plan.md) *(to be written by `implementation-plan` after alignment)*
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-11-07 · closed —
+- **ID:** next free E33 letter (E33q / E33r are text-check runs, E33w / E33x the iCoT runs; E33s–v unused).
+- **Evidence behind it:** E33p stage 1 analysis page
+  [e33p_vs_lsa.html](../../3_Evaluations_and_Baselines/e33p_vs_lsa.html) (2026-11-07): the measured limits L1–L6
+  below. LSA (arXiv 2610.42147) as the reference read; SwAV's equipartition (balanced soft assignment by Sinkhorn
+  iterations) for the filing; the E33a/E33c loop as the place where lookups chain.
+
+## What E33p stage 1 measured (the limits this spec answers)
+30M, 16k rows, positions ≥ 2k; share of the gap G between the window control (0 %) and the dense ceiling (100 %).
+Notes-open and the full note read are seed 1 on AWS; dense, window and LSA-native are seed 42 at home (same-seed
+controls on AWS follow during stage 1).
+
+| measure | notes-open (E33p) | LSA-native | source |
+|---|---|---|---|
+| share of G at 4k / 16k / 32k / 64k | 47 / 39 / 31 / 21 % | 97 / 99 / 100 / 127 % | long-document eval, G(16k) = 0.199 nats |
+| **L1** notes with no member token | 30.4 % (largest note per page ≈ 14 of 8 on average) | 0 % (≤ 16 keys by construction) | `writer/empty_notes`, `writer/members_max_mean` |
+| **L2** queries whose 512-token budget is full | 8–19 % (≈ 44 valid of 64 notes) | 66 % | `select/*/cap_full`, `select/*/groups` |
+| **L3** reading-layer mass at 8–16k, pass 1 | summaries 37 %, opened 35 %, window 28 % | opened 67 %, sinks 5 %, window 29 % | `read/r0/8192-16384/*` |
+| **L4** picks repeated from the previous pass | 37–47 % | 18–25 % | `select/r*/overlap` |
+| **L5** fade with length | −26 points from 4k to 64k | +30 points | as above; the summary softmax grows with the note count |
+| **L6** training speed at 16k (one RTX 3090) | 10.6k tokens/s | 17.6k (dense 25.0k) | `perf/real_tokens_per_second` |
+
+The full note read (E33) recovers 6 %, so opening exact tokens is what works; how they are found is what is weak.
+
+## Hypothesis
+If the notes stop being read and become only a **catalogue** for the reading layer, with every page token filed under
+exactly one balanced note (none empty, none over 16), the catalogue trained to predict where the read's attention
+lands, the 512-token budget filled by tokens instead of by note count, and each loop pass searching only where the
+same query's earlier passes did not look, then the 30M model recovers **≥ 80 % of the window→dense gap at 16k**
+(E33p notes-open: 39 %; LSA-native shows 99 % is reachable at this size) and **keeps it to 64k**, while a two-level
+search (pages first, then the notes inside the best pages) holds that quality with a per-query search that grows
+with the number of pages rather than tokens.
+
+## Builds-on
+- **Foundation:** `nn/perceiver_ar_lm.py` (perceiver_ar, the E31c page writer, the closed read, the E33a loop),
+  `nn/exact_read.py` (groups, per-query choice, the flex `open_term`, chunked table lookup since 561fe26),
+  `nn/lsa_buckets.py` (the reference read), the LSA testbed (`scripts/run_e33n.py`, `infra/aws/jobs/e33n_run.sh` with
+  multi-GPU and spot support since 7d8222f), the instrumentation (`nn/flow_stats.py`, `training/flow_callback.py`,
+  `evaluation/flow_probe.py`), evals `evaluation/long_doc_loss.py`, `evaluation/copy_split.py`,
+  `evaluation/run_lsa_suite.py`. One trainer entrypoint; the new arms are config.
+- **Init / checkpoint:** random init, E33p's protocol unchanged.
+- **Baseline to beat (E33p stage 1, 16k, positions ≥ 2k):** notes-open 2.4696 (39.4 % of G) · LSA-native 2.3503
+  (99.2 %) · dense 2.3488 · window 2.5480. Same-seed values replace these when the AWS seed-1 controls finish.
+- **Materially new:** vs E33p, the notes leave the read (they only choose what to open) and gain a training signal
+  of their own; filing is balanced; the budget counts tokens; passes are made to look in new places; pages stop
+  overlapping; a two-level search. Vs LSA, the index is a **trained writer** (it sees the whole page both ways and
+  is taught by the read where queries actually look), not a parameter-free clustering of keys, and the two levels
+  come from pages and notes instead of a separate coarse mode.
+
+## The architectural bet
+The backbone, data and loop are E33p's (30M: width 576, 2 pre + reading + 5 stack layers, loop of 4 over [reading
+layer + 1 local layer], one KV head of 64 in the reading layer, no RoPE there). The writer is E31c's latent-memory
+page writer (2 layers, 32 latents, 2 rounds); only its role changes. Per closed page and per loop pass:
+
+1. **Pages without overlap.** Pages of 256 tokens with stride 256 (E33p: stride 192). A token belongs to exactly one
+   page and one note; at 16k: 64 pages, 2,048 notes (E33p: 85 pages, 2,720 notes).
+2. **Balanced filing.** The writer's assignment A[t, n] (softmax over the page's 32 notes) is balanced by 3 Sinkhorn
+   iterations so every note receives on average 256 / 32 = 8 tokens (SwAV's equipartition), giving Â. Each token
+   is filed under its largest Â entry, with a hard cap of 16 per note (overflow goes to the next-best note with
+   room). No note is empty unless its page has fewer live tokens than notes (document ends).
+3. **Note keys.** κ_n = Σ_t Â[t, n] k_t / Σ_t Â[t, n] over the page, k_t the reading layer's own key of token t in
+   this pass (E33p's tied key, now on the balanced assignment). Page key: π_p = mean of its tokens' keys.
+4. **Choice per query and pass** (no gradient): score s_i(n) = max over query heads of cos(q_{i,h}, κ_n) (one head
+   with a match is enough). Candidates are notes of closed pages of the query's document with a member older than
+   its window, **minus every note the same query opened in an earlier pass** (a pass looks somewhere new). Notes are
+   taken best first, their members oldest first, **until 512 tokens are held** (no fixed note count; at most 128
+   notes for the kernel's bounds).
+   - **Two-level arm:** the query first scores page keys π_p (same rule), keeps its best 16 pages, and scores only
+     their notes (16 × 32 = 512 note scores instead of all of them).
+5. **One softmax** over **4 learned empty slots** (a key and a value each, shared by all positions: a place for
+   attention that finds nothing; LSA uses the first 4 tokens of the document instead) ‖ the last 512 raw tokens ‖
+   the opened raw tokens. No note summaries in the read.
+6. **Index loss (new).** The note scores learn to predict where the read's attention lands. Per query (a sample of
+   256 query positions per row and pass): target t_g = attention mass of the read on group g's opened tokens, for
+   the chosen groups, plus the mass the same query would give to 32 sampled unchosen eligible groups (their members'
+   keys scored with the query, no values needed), renormalised over that set; prediction p_g = softmax_g(τ · s_i(g))
+   with a learned temperature. L_index = KL(t ‖ p), target without gradient, weight λ = 0.1 of the LM loss. Its
+   gradient reaches the writer's assignment through κ (via Â) and the reading layer's keys; the LM loss still trains
+   everything else. Without it the writer would get no signal once the summaries leave the read.
+
+- **Budget per query:** 4 + 512 + 512 keys, flat in length. Search cost per query: all notes (flat) or pages + 512
+  notes (two-level). Memory for the reading layer: one 64-number key and value per token (256 bytes in bf16:
+  2.6 GB at 10M tokens).
+- **Arms (stage A, 30M):**
+  - **catalogue (main):** steps 1–6, flat search.
+  - **catalogue, two-level:** the same with the page-first search.
+  - **controls:** E33p's seed-1 dense, window and LSA-native, trained on the same AWS node and protocol.
+- **Information budget:** an opened token keeps its full key and value (exactly what the dense ceiling reads); the
+  catalogue's job is only to point. What can be lost is recall: the share of the tokens the dense ceiling reads most
+  that the 512 opened tokens contain (E33p probe B1), and the copy source on far-copy tokens (probe B2).
+
+## Why this is not a safe retread
+It is not a knob on E33p. It removes the summary read that every notebook arm since E30 kept (the notebook becomes
+an index only), gives the index its own training signal from the read (LSA's index is untrained; E33p's learned only
+through the summaries), and uses the loop passes as successive lookups over a two-level catalogue. Analogy: a
+library catalogue: drawers (pages) and cards (notes); the catalogue is never read for content, it is only searched;
+each card covers about the same number of books; a librarian who learns from which books readers actually opened;
+and a reader who, after the first visit, searches the drawers not yet opened.
+
+## Training protocol
+E33p's: FineWeb-Edu GPT-2 1.5B tokens at 4k (constant LR 1e-3 after 1 % warmup), then LongDocs-lite 0.2B tokens at
+16k (3 % warmup, 1 − sqrt decay to 0.1 ×, fresh optimizer); 64 rows of 4k per optimizer step (micro 4 × accumulation
+4 × 4 GPUs on the AWS node). Seed 1, the same as the AWS controls.
+
+## Evaluation
+E33p's suite, all on the fixed code (561fe26): long-document loss by position at 4k–128k (8 rows per source; 64 rows
+at 16k and 64k for the verdict, bootstrap over documents), the copy split (near / far / no copy), RULER at 4k and
+16k, core benchmarks, and the flow probe against the seed-1 dense reference (recall of its top-32, dense mass in the
+opened set, copy-source hit rate, attention by distance). Eval switches inside each new model: opened tokens off,
+pass exclusion off (every pass may re-pick), index loss's temperature reported. Speed at 4k and 16k on the same node.
+
+## Instrumentation
+E33p's A and B unchanged, plus: filing balance (members per note: min, max, share empty), index-loss value and the
+KL per pass, the rank correlation between note score and read mass on the chosen notes, distinct tokens opened over
+the 4 passes, and for the two-level arm the share of the dense top-32 that falls in the 16 kept pages (page recall).
+
+## Success criteria (set BEFORE running)
+Shares of G use same-seed controls (AWS seed 1) on positions ≥ 2k; the dense ceiling (100 %) and LSA-native (99 %
+at 16k in E33p) show the marks are reachable at this size and data.
+- **S1 (quality):** the main arm recovers ≥ 80 % of G at 16k.
+- **S2 (no fade):** its share at 64k is at least its share at 16k minus 5 points (LSA-native: +28 points).
+- **S3 (it finds what matters):** recall of the dense top-32 in pass 4 ≥ 0.9 × LSA-native's, and on far-copy tokens
+  it closes ≥ 0.8 × the share LSA-native closes (pre-flight: the copy split on E33p's LSA-native and notes-open).
+- **S4 (two levels hold):** the two-level arm is within 5 points of the main arm's share at 16k and at 64k.
+- **S5 (cost):** training speed at 16k ≥ 0.9 × LSA-native's on the same node (E33p notes-open: 0.60 ×).
+- **S6 (no harm):** loss on positions < 512 at 16k within 0.01 nats of the window control; 4k held-out loss after
+  the trunk ≤ the window control's; core benchmark mean within 1 point of the window control's.
+
+## Kill criteria (set BEFORE running)
+- **K1:** after the decay the main arm recovers < 50 % of G at 16k → stop E33s; the catalogue changes do not explain
+  the gap to LSA (then test LSA's key clustering inside our writer as the index, a new spec).
+- **K2 (index not learning):** by 25 % of the trunk the rank correlation between note score and read mass on the
+  chosen notes is < 0.2 → stop and debug the index loss before spending the run.
+- **K3 (health):** loss spikes > 0.5 that do not recover within 1k steps, or a trunk loss more than 0.1 above the
+  window control at 25 % of the run → stop that run and debug.
+- **K4 (cost):** a stage-A run takes more than 1.3 × LSA-native's wall time on the same node → fix the kernel before
+  stage B.
+
+## Plan
+- **Pre-flight (free, home servers, during stage 1):** the copy split on E33p's LSA-native and notes-open (S3's
+  ceiling); the flow probe on every E33p model (recall of the dense top-32 per pass).
+- **Stage 0 (Mac + one GPU):** tests — Sinkhorn filing gives ≤ 16 and ≥ 1 members per note on full pages; the cap's
+  overflow rule; pass exclusion never re-opens a note within a query; with the budget ≥ all eligible tokens the read
+  equals the dense read restricted to closed pages plus the window; no future leak (content and row length); the
+  index loss's gradient reaches the writer and the keys and none flows through the choice; the two-level search with
+  16 ≥ all pages equals the flat search. Then speed and memory at 4k and 16k on one GPU (K4 early check), and a tiny
+  pipeline check on the Mac.
+- **Stage A (30M, AWS 4 × L40S spot):** the main arm and the two-level arm after the seed-1 controls of stage 1
+  (queue order dense, window, LSA-native, then pages-open), about 5 hours and $30 per model. Gate: S1–S6, K1–K4.
+- **Capability checks (if S1 holds):** the core package on the home servers (C0–C5 from scratch, seeds 0–2, ladders
+  to 128k), no-harm rule against the E31 champion; targets `C1.lookup-16k` ≥ 75 % first letter at 64k and
+  `C4.chain4-1k` ≥ 75 % first letter (the passes-as-lookups claim).
+- **Stage B (if S1 holds): page and note sizes.** Around the stage-A winner: 4, 8 and 16 tokens per note at
+  256-token pages (64 / 32 / 16 notes), and 512-token pages with 64 notes. Four runs, about $120.
+- **Stage C: long documents.** The winner with the two-level search, its choice stored as a short list (a gather
+  read instead of the [S × G] table), trained at 16k plus a short 64k stage; evaluated at 128k, 1M and beyond.
+  Two runs, about $80.
+- **Stage D (if A–C match LSA-native at 30M, with the author's approval):** 100M (`m100`: 3B + 0.4B tokens) — the
+  winner, LSA-native and the two controls, about 20–25 hours each on the 4 × L40S node, $500–600 in all.
+- **Budget:** about $800–900 for A–D on top of stage 1 (≈ $220 in all), inside the $2,000 AWS goal.
+- **Launch (stage A, AWS):** `MC_SPOT=1 bash infra/aws/launch.sh e33s-a 20 "infra/aws/jobs/e33p_s1_multi.sh 1
+  catalogue catalogue_2l" e33n-lsa-testbed g6e.12xlarge` with `E33N_EXPERIMENT=E33s` (new arms in
+  `scripts/run_e33n.py`).
+- **New foundation code:** in `nn/exact_read.py` and the closed-read path of `nn/perceiver_ar_lm.py`:
+  `lm_note_read` (`gist` | `index`: summaries in the read or not), `lm_filing` (`argmax` | `balanced`, Sinkhorn
+  iterations and cap), `lm_open_score` (`sum_softmax` | `max_cos`), `lm_open_fill` (`notes` | `tokens`),
+  `lm_open_new_per_pass` (bool), `lm_open_levels` (1 | 2, pages kept), `lm_sinks` (count of learned empty slots),
+  `lm_index_loss` (weight, sampled queries and negatives) through `nn/loss_manager.py`; non-overlapping pages are the
+  existing `lm_stride = lm_window`. Defaults reproduce E33p bit for bit (tests). Stage C adds the gather read.
+
+## Risks
+- **Pass exclusion may hurt** where rereading the same tokens helps; the eval switch (exclusion off) measures it
+  without a retrain, and the instrumentation shows distinct tokens per query over the passes.
+- **The index loss may teach the scores to follow the read without improving recall** (a self-fulfilling loop:
+  the read only sees what was chosen). The 32 sampled unchosen groups per query are there to break it; K2 watches it.
+- **Sinkhorn balancing could split a coherent group** (a long name spread over two notes); the cap of 16 and the
+  probe's recall show whether this costs anything.
+- **Learned empty slots** are a different sink than LSA's first tokens; if attention collapses onto them (> 50 % of
+  the mass at far positions) the read is idle: watched in `read/*/mass_sinks`.
+- **Two levels can drop a needed page** before its notes are scored; page recall is logged, and S4 decides.
+
+## Result
+- (filled in by experiment-track)
