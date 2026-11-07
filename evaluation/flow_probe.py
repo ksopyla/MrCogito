@@ -162,6 +162,9 @@ def main() -> None:
                     help="planted-password rows instead of plain documents: per row a 5-digit pass key at an even "
                          "spread of depths (needle ≥ 640 tokens before the question), the queries are the answer "
                          "tokens and their source the key inside the needle; adds greedy correctness per row")
+    ap.add_argument("--open_eval", default="on", choices=["on", "reuse", "off", "gist_off"],
+                    help="opening arms: the read's eval switch (model.open_override); E33t 'reuse' lets a loop pass "
+                         "re-open the notes it opened in earlier passes")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -189,6 +192,11 @@ def main() -> None:
         tok_pk = AutoTokenizer.from_pretrained(resolve_tokenizer_name(a.checkpoint))
         rng_pk = random.Random(7)
         top_depth = 1.0 - 640 / S                                       # the needle stays beyond the 512 window
+    import contextlib
+
+    switch = contextlib.ExitStack()
+    if a.open_eval != "on":
+        switch.enter_context(model.open_override(a.open_eval))
     for r_i, (src, i) in enumerate(order):
         item = dss[src][i]
         ids, doc = item["input_ids"][:S], item["doc_ids"][:S]
@@ -236,8 +244,9 @@ def main() -> None:
                         **{k: float(np.mean(v)) for k, v in rec.metrics.items()}})
         print(r_i, src, i, json.dumps({**(correct or {}), **{k: round(float(np.mean(v)), 4)
                                                                for k, v in rec.metrics.items()}}), flush=True)
+    switch.close()
     res = {"checkpoint": a.checkpoint, "length": a.length, "rows": a.rows, "queries": a.queries,
-           "mode": "passkey" if a.passkey else "documents",
+           "mode": "passkey" if a.passkey else "documents", "open_eval": a.open_eval,
            "metrics": {k: float(np.mean(v)) for k, v in metrics.items()},
            "scalars": {k: float(np.mean(v)) for k, v in scal.items()},
            "dist_mass": {f"r{r}": (d / d.sum().clamp_min(1e-12)).tolist() for r, d in sorted(dist_tot.items())},
