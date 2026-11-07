@@ -205,12 +205,37 @@ class OpenTable:
         return torch.where(need, ids, torch.full_like(ids, -1))
 
 
+# Flex attention addresses the buffers a mask_mod captures with 32-bit offsets: a buffer of 2³¹ elements or more is
+# read out of bounds (illegal memory access; E33p notes at 128k: T is 131,072 × ~21,800 ≈ 2.9e9, 2026-11-07).
+_FLEX_MAX_NUMEL = 2**31 - 1
+
+
+def _split_queries(T: torch.Tensor) -> tuple[list[torch.Tensor], int]:
+    """T [B, S, G] as query chunks of fewer than 2³¹ elements each (fresh tensors), and the chunk length. One chunk
+    (T itself, no copy) up to that size, i.e. at every length the models train on; beyond it, one extra copy of T."""
+    B, S, G = (int(x) for x in T.shape)
+    if B * S * G <= _FLEX_MAX_NUMEL:
+        return [T], S
+    qc = max(1, _FLEX_MAX_NUMEL // (B * G))
+    return [T[:, i:i + qc].clone() for i in range(0, S, qc)], qc
+
+
 def open_term(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: int) -> Callable:
     """mask_mod piece (b, q, j) → bool for raw key j (already clamped to [0, S)): j opened for query q. It does not
     test documents: every caller ANDs it with its own causal same-document test (LSA buckets may mix documents)."""
     n_layers = int(codes.shape[0])
     G = int(T.shape[-1])
     cap_i, rw = int(cap), int(raw_window)
+    parts, qc = _split_queries(T)
+
+    def t_at(b, q, g):
+        if len(parts) == 1:
+            return parts[0][b, q, g]
+        out = None
+        for ci, P in enumerate(parts):  # static: one lookup per chunk, the query's own chunk wins
+            v = P[b, torch.clamp(q - ci * qc, 0, int(P.shape[1]) - 1), g]
+            out = v if out is None else torch.where(q >= ci * qc, v, out)
+        return out
 
     def opened(b, q, j):
         hit = None
@@ -218,7 +243,7 @@ def open_term(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: int
             c = codes[li, b, j]
             g = torch.div(c, ORD_MOD, rounding_mode="floor")
             o = c - g * ORD_MOD
-            h = (c >= 0) & (T[b, q, torch.clamp(g, 0, G - 1)].to(torch.int32) + o < cap_i)
+            h = (c >= 0) & (t_at(b, q, torch.clamp(g, 0, G - 1)).to(torch.int32) + o < cap_i)
             hit = h if hit is None else hit | h
         return hit & (q - j >= rw)
 
