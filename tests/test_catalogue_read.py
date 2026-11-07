@@ -282,3 +282,25 @@ def test_training_forward_adds_the_index_loss_and_reaches_the_writer():
     l1 = m(ids, labels=ids).loss
     l0 = m0(ids, labels=ids).loss
     assert not torch.allclose(l1, l0)
+
+
+def test_reuse_arm_trains_and_equals_the_reuse_switch():
+    """catalogue_reuse (scripts/run_e33n.py): the pass exclusion off in training. Same weights as the catalogue; its
+    forward equals the catalogue's under open_override("reuse"), and it trains (finite loss, gradient to the index)."""
+    cat = make(**CAT)
+    reuse = make(**dict(CAT, lm_open_new_per_pass=False))
+    reuse.load_state_dict(cat.state_dict())
+    ids = row(160)
+    with torch.no_grad():
+        h_reuse = reuse.hidden_states(ids)
+        with cat.open_override("reuse"):
+            h_switch = cat.hidden_states(ids)
+        h_cat = cat.hidden_states(ids)
+    assert torch.allclose(h_reuse, h_switch, atol=1e-5)
+    assert not torch.allclose(h_reuse, h_cat, atol=1e-5)                       # the exclusion changes what opens
+    m = make(train=True, **dict(CAT, lm_open_new_per_pass=False))
+    out = m(ids, labels=ids)
+    assert torch.isfinite(out.loss)
+    out.loss.backward()
+    att = m.layers[m.config.global_layer_index].attn
+    assert att.index_log_tau.grad is not None and float(att.index_log_tau.grad.abs()) > 0

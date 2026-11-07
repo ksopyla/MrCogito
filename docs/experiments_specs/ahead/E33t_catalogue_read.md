@@ -171,6 +171,17 @@ at 16k in E33p) show the marks are reachable at this size and data.
   (S5 asks ≥ 0.9, judged after stage A).
 - **Stage A (30M, AWS 4 × L40S spot):** the main arm and the two-level arm after the seed-1 controls of stage 1
   (queue order dense, window, LSA-native, then pages-open), about 5 hours and $30 per model. Gate: S1–S6, K1–K4.
+- **Stage A follow-up, the pass exclusion off in training (arm `catalogue_reuse`, approved by the author
+  2026-11-07 ~21:00 UTC):** the catalogue with `lm_open_new_per_pass` False and nothing else changed (same 72,687,765
+  parameters), seed 1, the stage-A recipe, then the planted-password probe on it (`infra/aws/jobs/e33t_reuse.sh`,
+  chained on the AWS node after the stage-1 seed-1 window and LSA-native controls, about $31). Why — the probe
+  (`evaluation/flow_probe.py --passkey`, 2026-11-07 20:17–20:23 UTC, 40 rows at 4k, 20 at 16k; S3
+  `runs/e33t/probe_passkey/`): the catalogue opens the key on pass 1 (94 % at 4k, 71 % at 16k, a third of its read on
+  it) but returns on passes 2–4 only 7–14 % of the time, while the LSA port and dense put 37–41 % of their read on the
+  key on pass 4; first answer token right 10 % (LSA port 25 %, dense 30 %, notes-open 0 %). The exclusion switched off
+  only at test time reopens it (85 %) but gives it 6 % of the read and lifts answers to 20 %: the passes must learn it.
+  Preliminary stage-A main arm (scored 2026-11-07 19:58 UTC against the home seed-42 controls): 75 % of G at 16k,
+  99 % at 64k. Same gates S1–S6 as the main arm; plus the probe's first-token score against the LSA port's.
 - **Capability checks (if S1 holds):** the core package on the home servers (C0–C5 from scratch, seeds 0–2, ladders
   to 128k), no-harm rule against the E31 champion; targets `C1.lookup-16k` ≥ 75 % first letter at 64k and
   `C4.chain4-1k` ≥ 75 % first letter (the passes-as-lookups claim).
@@ -194,7 +205,8 @@ at 16k in E33p) show the marks are reachable at this size and data.
 
 ## Risks
 - **Pass exclusion may hurt** where rereading the same tokens helps; the eval switch (exclusion off) measures it
-  without a retrain, and the instrumentation shows distinct tokens per query over the passes.
+  without a retrain, and the instrumentation shows distinct tokens per query over the passes. Seen 2026-11-07 on
+  planted passwords (stage A follow-up above); the switch alone did not recover it, so `catalogue_reuse` retrains.
 - **The index loss may teach the scores to follow the read without improving recall** (a self-fulfilling loop:
   the read only sees what was chosen). The 32 sampled unchosen groups per query are there to break it; K2 watches it.
 - **Sinkhorn balancing could split a coherent group** (a long name spread over two notes); the cap of 16 and the

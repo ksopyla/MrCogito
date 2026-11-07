@@ -12,6 +12,9 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
          catalogue / catalogue_2l — E33t: the notes only choose what opens (4 learned empty slots, no summaries in the
                    read), balanced filing (≤ 16 per note), max-head cosine, up to 128 notes until 512 tokens, a new
                    place per loop pass, an index loss; pages of 256 without overlap; _2l searches pages first
+         catalogue_reuse — E33t: the catalogue with the pass exclusion off (a loop pass may re-open notes earlier
+                   passes opened). The planted-password probe (2026-11-07) found the catalogue opens the key on
+                   pass 1 (94 % at 4k) but may not return to it on passes 2–4, where the LSA port and dense copy it
          Note (2026-11-06): before then the trainer passed the loop only to notebook models, so E33n's dense arm
          trained with one round; it now loops 4 times like every other arm.
          All: E33's loop (prelude → [reading layer + 1 local layer] × 4 tied → coda), exits off, local windows 128,
@@ -74,12 +77,14 @@ ARMS = {
                   "lm_open_new_per_pass": True, "lm_sinks": 4, "lm_index_loss": 0.1},
 }
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
+ARMS["catalogue_reuse"] = {**ARMS["catalogue"], "lm_open_new_per_pass": False}  # every pass may re-open any note
 TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"lm_open_k": 1, "lm_open_cap": 64},
              "lsa": {"lsa_window": 64, "lsa_block": 64, "lsa_top_k": 64},
              "catalogue": {"lm_open_k": 16, "lm_open_cap": 64, "lm_index_queries": 32, "lm_index_negatives": 4,
                            "lm_stride": 64},
              "catalogue_2l": {"lm_open_k": 16, "lm_open_cap": 64, "lm_index_queries": 32, "lm_index_negatives": 4,
                               "lm_stride": 64, "lm_open_pages": 2}}
+TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_WRITER = {"lm_latents": 8, "lm_latent_dim": 64, "lm_heads": 2, "lm_writer_dim": 64, "lm_enc_layers": 1,
                "lm_rounds": 1, "message_raw_window": 64, "lm_window": 64, "lm_stride": 48}
 
