@@ -27,8 +27,13 @@ controls on AWS follow during stage 1).
 | **L4** picks repeated from the previous pass | 37–47 % | 18–25 % | `select/r*/overlap` |
 | **L5** fade with length | −26 points from 4k to 64k | +30 points | as above; the summary softmax grows with the note count |
 | **L6** training speed at 16k (one RTX 3090) | 10.6k tokens/s | 17.6k (dense 25.0k) | `perf/real_tokens_per_second` |
+| **L7** dense top-32 far keys opened, pass 1 → 4 | 28 → 27 % (full read: 19 → 13 %) | 40 → 68 % | flow probe B1, 16 rows × 512 queries, dense s42 reference |
+| **L7** copy source opened on far-copy queries, pass 1 → 4 | 12 → 36 % | 31 → 87 % (92 % in pass 2) | flow probe B2 |
+| **L7** reading-layer mass on the copy source, pass 4 | 3.6 % | 9.7 % (dense 9.9 %) | flow probe B2 |
 
-The full note read (E33) recovers 6 %, so opening exact tokens is what works; how they are found is what is weak.
+The full note read (E33) recovers 6 %, so opening exact tokens is what works; how they are found is what is weak
+(L7: our search finds the copy source a third as often as LSA's, and does not improve over the passes, while LSA's
+goes from 31 % in pass 1 to 92 % in pass 2: its passes already work as successive lookups).
 
 ## Hypothesis
 If the notes stop being read and become only a **catalogue** for the reading layer, with every page token filed under
@@ -127,8 +132,10 @@ Shares of G use same-seed controls (AWS seed 1) on positions ≥ 2k; the dense c
 at 16k in E33p) show the marks are reachable at this size and data.
 - **S1 (quality):** the main arm recovers ≥ 80 % of G at 16k.
 - **S2 (no fade):** its share at 64k is at least its share at 16k minus 5 points (LSA-native: +28 points).
-- **S3 (it finds what matters):** recall of the dense top-32 in pass 4 ≥ 0.9 × LSA-native's, and on far-copy tokens
-  it closes ≥ 0.8 × the share LSA-native closes (pre-flight: the copy split on E33p's LSA-native and notes-open).
+- **S3 (it finds what matters):** recall of the dense top-32 in pass 4 ≥ 0.9 × LSA-native's (E33p: 0.68, so ≥ 0.61;
+  notes-open 0.27), copy source opened in pass 4 ≥ 0.9 × LSA-native's (0.87, so ≥ 0.78; notes-open 0.36), and on
+  far-copy tokens it closes ≥ 0.8 × the share LSA-native closes (pre-flight: the copy split on E33p's LSA-native and
+  notes-open).
 - **S4 (two levels hold):** the two-level arm is within 5 points of the main arm's share at 16k and at 64k.
 - **S5 (cost):** training speed at 16k ≥ 0.9 × LSA-native's on the same node (E33p notes-open: 0.60 ×).
 - **S6 (no harm):** loss on positions < 512 at 16k within 0.01 nats of the window control; 4k held-out loss after
