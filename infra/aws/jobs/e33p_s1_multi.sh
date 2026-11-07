@@ -11,7 +11,7 @@
 set -uo pipefail
 SEED="${1:?seed}"; shift
 G=$(nvidia-smi -L | wc -l)
-# E33N_EXPERIMENT / E33N_RULER_LENGTHS may be set by a wrapper (E33s stage A: e33s_a.sh)
+# E33N_EXPERIMENT / E33N_RULER_LENGTHS may be set by a wrapper (E33t stage A: e33t_a.sh)
 export E33N_EXPERIMENT="${E33N_EXPERIMENT:-E33p}" E33N_FLOW=1 E33N_SEED="$SEED" \
   E33N_RULER_LENGTHS="${E33N_RULER_LENGTHS:-4096,16384}" E33N_GPUS="$G" \
   E33N_CKPT_S3=1 E33N_MICRO_TRUNK=4 E33N_MICRO_DECAY=1

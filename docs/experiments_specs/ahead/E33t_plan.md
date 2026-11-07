@@ -1,7 +1,7 @@
-# E33s — Implementation Plan (the catalogue read)
+# E33t — Implementation Plan (the catalogue read)
 
-- **Spec:** [E33s_catalogue_read.md](E33s_catalogue_read.md) (approved 2026-11-07, alignment page
-  `docs/3_Evaluations_and_Baselines/e33s_architecture.html`).
+- **Spec:** [E33t_catalogue_read.md](E33t_catalogue_read.md) (approved 2026-11-07, alignment page
+  `docs/3_Evaluations_and_Baselines/e33t_architecture.html`).
 - **Builds on:** [E33p_plan.md](E33p_plan.md) — the per-query exact read (`nn/exact_read.py`), the tied note key, the
   flex `open_term`, the LSA arm's mask pattern (`attend_lsa`), the instrumentation (`nn/flow_stats.py`).
 - **Bet, restated:** the notes leave the read and only choose what to open (4 learned empty slots take the
@@ -66,7 +66,7 @@ reason = the 4-pass loop (passes as successive lookups); decode / loss unchanged
 | `ModelArguments`, factory pass-through | extend | `training/concept_pretraining_args.py`, `training/concept_pretraining_factories.py` |
 | `ARMS` | extend: `catalogue`, `catalogue_2l` (+ tiny) | `scripts/run_e33n.py` |
 | long-doc loss | extend: `--open_reuse` | `evaluation/long_doc_loss.py` |
-| `infra/aws/jobs/e33p_s1_multi.sh` | reuse with `E33N_EXPERIMENT=E33s` (wrapper `e33s_a.sh`) | `infra/aws/jobs/` |
+| `infra/aws/jobs/e33p_s1_multi.sh` | reuse with `E33N_EXPERIMENT=E33t` (wrapper `e33t_a.sh`) | `infra/aws/jobs/` |
 
 New parameters: `sink_k`, `sink_v` (4 × 64 each) and `log_tau` (1) in the reading layer: 513 in all. Everything
 else has the E33p notes-open shape; the window control's FFN fit is unchanged (`run_e33n.fit`).
@@ -126,9 +126,9 @@ Arms (`scripts/run_e33n.py`):
 "catalogue_2l": {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16},
 # tiny: lm_open_k 8, lm_open_cap 64, lm_open_pages 2, lm_index_queries 32, lm_index_negatives 4, lm_stride = window
 ```
-Launch (stage A, after the seed-1 controls): `MC_SPOT=1 bash infra/aws/launch.sh e33s-a 14
-"infra/aws/jobs/e33s_a.sh" e33n-lsa-testbed g6e.12xlarge`, where `e33s_a.sh` runs `e33p_s1_multi.sh 1 catalogue
-catalogue_2l` with `E33N_EXPERIMENT=E33s` (results under `runs/e33s/`).
+Launch (stage A, after the seed-1 controls): `MC_SPOT=1 bash infra/aws/launch.sh e33t-a 14
+"infra/aws/jobs/e33t_a.sh" e33n-lsa-testbed g6e.12xlarge`, where `e33t_a.sh` runs `e33p_s1_multi.sh 1 catalogue
+catalogue_2l` with `E33N_EXPERIMENT=E33t` (results under `runs/e33t/`).
 
 ## 7. Tests (`tests/test_catalogue_read.py`) & stage 0
 1. Defaults: the E33p golden logits stay bit-identical (`tests/test_note_open.py` golden test runs unchanged).

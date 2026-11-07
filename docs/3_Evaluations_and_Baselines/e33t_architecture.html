@@ -1,4 +1,4 @@
-<title>E33s Catalogue Read</title>
+<title>E33t Catalogue Read</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>
 /* Layout: one column (alignment page), sticky model switch; colours as on the E33p pages:
@@ -69,8 +69,8 @@ textarea{width:100%;min-height:150px;margin-top:10px;font:13px/1.5 ui-monospace,
 </style>
 
 <main>
-<div class="kicker">E33s · alignment page · draft spec 2026-11-07</div>
-<h1>E33s Catalogue Read</h1>
+<div class="kicker">E33t · alignment page · draft spec 2026-11-07</div>
+<h1>E33t Catalogue Read</h1>
 <p class="sub">The notes stop being read and become a catalogue: they only decide which original tokens each query opens. Every token is filed under one balanced note, the catalogue is trained by where the read's attention actually lands, the 512-token budget is filled by tokens, and each of the four loop passes opens notes the query has not opened yet. A second arm searches pages first, then notes. Check that this page says what you mean, then return the checklist at the end.</p>
 
 <div class="controls">
@@ -117,7 +117,7 @@ textarea{width:100%;min-height:150px;margin-top:10px;font:13px/1.5 ui-monospace,
  <div class="row" style="margin-top:12px"><button class="btn" id="collect" type="button">Collect answers</button><button class="btn ghost" id="allagree" type="button">Mark unmarked as agree</button><button class="btn ghost" id="copy" type="button">Copy</button><span class="small muted" id="copymsg"></span></div>
  <textarea id="out" readonly placeholder="Your answers appear here as plain text to paste into the chat."></textarea>
 </div>
-<p class="small muted">Spec: docs/experiments_specs/ahead/E33s_catalogue_read.md · evidence: docs/3_Evaluations_and_Baselines/e33p_vs_lsa.html.</p>
+<p class="small muted">Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md · evidence: docs/3_Evaluations_and_Baselines/e33p_vs_lsa.html.</p>
 </main>
 
 <script>
@@ -134,8 +134,8 @@ const $ = (s) => document.querySelector(s);
 
 /* ---------------- models ---------------- */
 const ARMS = [
-  {id: "cat", name: "Catalogue (main)", line: "E33s main arm: notes only choose what to open; balanced filing; index loss; budget by tokens; a new place per pass; flat search over all notes."},
-  {id: "cat2", name: "Catalogue, two-level", line: "E33s second arm: the same, but a query scores pages first, keeps its best 16, and scores only their notes."},
+  {id: "cat", name: "Catalogue (main)", line: "E33t main arm: notes only choose what to open; balanced filing; index loss; budget by tokens; a new place per pass; flat search over all notes."},
+  {id: "cat2", name: "Catalogue, two-level", line: "E33t second arm: the same, but a query scores pages first, keeps its best 16, and scores only their notes."},
   {id: "e33p", name: "E33p notes-open (as built)", line: "The baseline being replaced: summaries of every note in the read, argmax filing (30 % of notes empty), 64 notes per query, the same notes may be re-picked every pass, overlapping pages."},
   {id: "lsa", name: "LSA-native (reference)", line: "LSA's released read in our model: the reading layer's keys clustered into boxes of ≤ 16 every pass, no writer, no training signal for the index, 4 first-of-document tokens as empty slots."},
 ];
@@ -434,7 +434,7 @@ const CHK = [
      <td><input type="text" id="n${i}" aria-label="note for decision ${i + 1}"></td></tr>`).join("") + "</tbody>";
   $("#allagree").onclick = () => CHK.forEach((_, i) => { if (!document.querySelector(`input[name=c${i}]:checked`)) document.getElementById(`c${i}-agree`).checked = true; });
   $("#collect").onclick = () => {
-    const lines = ["E33s alignment answers:"];
+    const lines = ["E33t alignment answers:"];
     CHK.forEach((c, i) => {
       const v = (document.querySelector(`input[name=c${i}]:checked`) || {}).value || "unmarked";
       const n = document.getElementById("n" + i).value.trim();

@@ -21,7 +21,7 @@ CASES = {
     "notes_open": (lm_cfg, dict(NOTES, **WIDE, lm_open_k=8, lm_open_cap=64)),
     "pages_open": (lm_cfg, dict(PAGES, **WIDE, lm_open_cap=64)),
     "lsa": (cfg, dict(LSA, **WIDE, lsa_top_k=32)),
-    # E33s: the catalogue read (slots, balanced filing, max-cos, new place per pass, index loss)
+    # E33t: the catalogue read (slots, balanced filing, max-cos, new place per pass, index loss)
     "catalogue": (lm_cfg, dict(CAT, **WIDE, lm_open_k=16, lm_open_cap=64)),
     "catalogue_2l": (lm_cfg, dict(CAT2, **WIDE, lm_open_k=16, lm_open_cap=64)),
 }
@@ -52,7 +52,7 @@ def test_flex_equals_sdpa_forward_and_backward(name, packed):
     if packed:
         doc = torch.zeros(2, S, dtype=torch.long, device="cuda")
         doc[1, 300:] = 1
-    torch.manual_seed(11)  # the E33s index loss samples negatives: the same draws for both backends
+    torch.manual_seed(11)  # the E33t index loss samples negatives: the same draws for both backends
     lf = flex(ids, labels=ids, doc_ids=doc)
     torch.manual_seed(11)
     lr = ref(ids, labels=ids, doc_ids=doc)

@@ -286,7 +286,7 @@ class NoteOpen:
     k: int                        # groups chosen per query
     cap: int
     per_page: int                 # notes per page (K)
-    # E33s, the catalogue read (defaults = E33p)
+    # E33t, the catalogue read (defaults = E33p)
     read: str = "gist"            # "index": the notes only choose what opens
     score: str = "sum_softmax"    # "max_cos": cosine, best query head
     levels: int = 1               # 2: pages first, then their notes
@@ -297,7 +297,7 @@ class NoteOpen:
 
 
 def balance_assign(A: torch.Tensor, valid: torch.Tensor, iters: int = 3, eps: float = 1e-6) -> torch.Tensor:
-    """E33s balanced filing, soft part: Sinkhorn iterations on each page's assignment so every note receives about the
+    """E33t balanced filing, soft part: Sinkhorn iterations on each page's assignment so every note receives about the
     same mass (SwAV's equipartition). A [B, n_w, K, W] (a distribution over the K notes per token), valid [B, n_w, W]
     bool → Â [B, n_w, K, W]: per page, each note's mass → n_valid / K, each valid token's mass over notes → 1 (exact
     after the last step); invalid tokens 0. Differentiable."""
@@ -313,7 +313,7 @@ def balance_assign(A: torch.Tensor, valid: torch.Tensor, iters: int = 3, eps: fl
 
 @torch.no_grad()
 def file_capped(A_hat: torch.Tensor, valid: torch.Tensor, cap: int = 16) -> torch.Tensor:
-    """E33s balanced filing, hard part: each valid page slot is filed under one note, at most `cap` per note.
+    """E33t balanced filing, hard part: each valid page slot is filed under one note, at most `cap` per note.
     Tokens propose their notes best first (by Â); a note accepts its proposers best first until full; a rejected token
     proposes its next note in the next round. With K · cap ≥ W every token is filed within K rounds (a token rejected
     by all K notes would need all K full). A_hat [B, n_w, K, W], valid [B, n_w, W] → labels [B, n_w, W] long, −1 =
@@ -348,7 +348,7 @@ def file_capped(A_hat: torch.Tensor, valid: torch.Tensor, cap: int = 16) -> torc
 
 
 def page_keys(k: torch.Tensor, page_tok: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
-    """E33s two-level search: π_p = mean of the page's valid tokens' keys. k [B, S, 1, dh], page_tok [n_w, W],
+    """E33t two-level search: π_p = mean of the page's valid tokens' keys. k [B, S, 1, dh], page_tok [n_w, W],
     valid [B, n_w, W] → [B, n_w, dh] fp32 (no gradient needed: the choice is made without one)."""
     B = k.shape[0]
     n_w, W = page_tok.shape
@@ -395,7 +395,7 @@ def note_open_table(q: torch.Tensor, kappa: torch.Tensor, no: NoteOpen, *, doc: 
     eligible = visible ∧ a member older than i's window; notes: top-k notes; pages: the page score is the sum of its
     notes' scores, top-k eligible pages. q [B, S, h, dh], κ [B, C, 1, dh].
 
-    E33s: `no.score = "max_cos"` scores s_i(n) = max_h cos(q_{i,h}, κ_n); `exclude` [B, S, G] bool removes the groups a
+    E33t: `no.score = "max_cos"` scores s_i(n) = max_h cos(q_{i,h}, κ_n); `exclude` [B, S, G] bool removes the groups a
     query opened in earlier passes; `page_key` [B, n_w, dh] with `no.levels = 2` keeps, per query, the
     `no.keep_pages` best visible pages holding an eligible note (same score rule on the page keys) and lets only their
     notes compete."""
@@ -471,7 +471,7 @@ def index_loss(q: torch.Tensor, k: torch.Tensor, sink_k: Optional[torch.Tensor],
                opened: "OpenTable", *, doc: torch.Tensor, raw_window: int, n_queries: int, n_neg: int,
                log_tau: torch.Tensor, seen: Optional[torch.Tensor] = None,
                generator: Optional[torch.Generator] = None) -> tuple[torch.Tensor, dict]:
-    """E33s index loss for one pass of the catalogue read: the notes' scores learn to predict where the read's
+    """E33t index loss for one pass of the catalogue read: the notes' scores learn to predict where the read's
     attention lands. For `n_queries` query positions per row (evenly spaced from the window on): the read's softmax
     over sinks ‖ its window ‖ its opened tokens is recomputed (fp32, detached: the target); target mass of a chosen
     note = the probability on its opened tokens; of a negative (one of `n_neg` sampled choosable, unchosen notes, not in

@@ -1,7 +1,7 @@
-"""E33s — the catalogue read: the notes only choose what opens; balanced filing, max-head cosine choice, a new place per
+"""E33t — the catalogue read: the notes only choose what opens; balanced filing, max-head cosine choice, a new place per
 loop pass, a two-level page → note search, learned empty slots, the index loss.
 
-Spec: docs/experiments_specs/ahead/E33s_catalogue_read.md · plan: E33s_plan.md (§7).
+Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md · plan: E33t_plan.md (§7).
 """
 from __future__ import annotations
 

@@ -1,13 +1,15 @@
-# E33s — the catalogue read: notes index the text, they are not read; balanced filing, a trained index, a new place per pass, two levels
+# E33t — the catalogue read: notes index the text, they are not read; balanced filing, a trained index, a new place per pass, two levels
 
 - **Status:** **approved 2026-11-07** ("Aligned, build it") on the alignment page
-  [e33s_architecture.html](../../3_Evaluations_and_Baselines/e33s_architecture.html), every decision as shown there.
+  [e33t_architecture.html](../../3_Evaluations_and_Baselines/e33t_architecture.html), every decision as shown there.
 - **Serves:** vision priority 2 (long context through the notebook) and the author's 2026-11-07 aim: chase LSA's
   quality with a simpler design of our own that can reason over memory and reach > 10M tokens (tested smaller first),
   then scale to 100–200M if 30M matches. Direct follow-up of E33p stage 1.
-- **Implementation plan:** [E33s_plan.md](E33s_plan.md)
+- **Implementation plan:** [E33t_plan.md](E33t_plan.md)
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-11-07 · closed —
-- **ID:** next free E33 letter (E33q / E33r are text-check runs, E33w / E33x the iCoT runs; E33s–v unused).
+- **ID:** E33t. Drafted as "E33s" on 2026-11-07 (commits 56ce7d5 … 2179a9d on `e33n-lsa-testbed`), but `dev` has
+  owned E33s since 2026-10-21 (multi-hop on real text taught by written reasoning, `E33s_written_chains_real_data.md`);
+  renamed the same day before any run. E33q / E33r are text-check runs, E33w / E33x the iCoT runs; E33u, E33v unused.
 - **Evidence behind it:** E33p stage 1 analysis page
   [e33p_vs_lsa.html](../../3_Evaluations_and_Baselines/e33p_vs_lsa.html) (2026-11-07): the measured limits L1–L6
   below. LSA (arXiv 2610.42147) as the reference read; SwAV's equipartition (balanced soft assignment by Sinkhorn
@@ -142,7 +144,7 @@ at 16k in E33p) show the marks are reachable at this size and data.
   the trunk ≤ the window control's; core benchmark mean within 1 point of the window control's.
 
 ## Kill criteria (set BEFORE running)
-- **K1:** after the decay the main arm recovers < 50 % of G at 16k → stop E33s; the catalogue changes do not explain
+- **K1:** after the decay the main arm recovers < 50 % of G at 16k → stop E33t; the catalogue changes do not explain
   the gap to LSA (then test LSA's key clustering inside our writer as the index, a new spec).
 - **K2 (index not learning):** by 25 % of the trunk the rank correlation between note score and read mass on the
   chosen notes is < 0.2 → stop and debug the index loss before spending the run.
@@ -173,8 +175,8 @@ at 16k in E33p) show the marks are reachable at this size and data.
 - **Stage D (if A–C match LSA-native at 30M, with the author's approval):** 100M (`m100`: 3B + 0.4B tokens) — the
   winner, LSA-native and the two controls, about 20–25 hours each on the 4 × L40S node, $500–600 in all.
 - **Budget:** about $800–900 for A–D on top of stage 1 (≈ $220 in all), inside the $2,000 AWS goal.
-- **Launch (stage A, AWS):** `MC_SPOT=1 bash infra/aws/launch.sh e33s-a 20 "infra/aws/jobs/e33p_s1_multi.sh 1
-  catalogue catalogue_2l" e33n-lsa-testbed g6e.12xlarge` with `E33N_EXPERIMENT=E33s` (new arms in
+- **Launch (stage A, AWS):** `MC_SPOT=1 bash infra/aws/launch.sh e33t-a 20 "infra/aws/jobs/e33p_s1_multi.sh 1
+  catalogue catalogue_2l" e33n-lsa-testbed g6e.12xlarge` with `E33N_EXPERIMENT=E33t` (new arms in
   `scripts/run_e33n.py`).
 - **New foundation code:** in `nn/exact_read.py` and the closed-read path of `nn/perceiver_ar_lm.py`:
   `lm_note_read` (`gist` | `index`: summaries in the read or not), `lm_filing` (`argmax` | `balanced`, Sinkhorn

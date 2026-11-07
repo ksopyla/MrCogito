@@ -265,18 +265,18 @@ class PerceiverARConfig(PretrainedConfig):
                                           #   "pages": of its best whole pages; "none" = notes are read as gist only
         lm_open_k: int = 0,               # E33p — notes (or pages) each query chooses
         lm_open_cap: int = 512,           # E33p — opened raw tokens per query, at most
-        lm_note_read: str = "gist",       # E33s — "index": the notes only choose what opens; they are not keys of the read
-        lm_filing: str = "argmax",        # E33s — "balanced": Sinkhorn-balanced assignment, ≤ lm_filing_cap tokens per note
-        lm_filing_iters: int = 3,         # E33s — Sinkhorn iterations of the balanced filing
-        lm_filing_cap: int = 16,          # E33s — most tokens filed under one note
-        lm_open_score: str = "sum_softmax",  # E33s — "max_cos": cosine of query and note key, best query head
-        lm_open_new_per_pass: bool = False,  # E33s — a loop pass may not open notes the query opened in earlier passes
-        lm_open_levels: int = 1,          # E33s — 2: a query keeps its best pages first, then chooses among their notes
-        lm_open_pages: int = 16,          # E33s — pages kept by the two-level search
-        lm_sinks: int = 0,                # E33s — learned empty slots in the catalogue read (a key and a value each)
-        lm_index_loss: float = 0.0,       # E33s — weight of the index loss (note scores predict the read's mass)
-        lm_index_queries: int = 256,      # E33s — sampled query positions per row and pass for the index loss
-        lm_index_negatives: int = 32,     # E33s — sampled unchosen notes per query in the index loss
+        lm_note_read: str = "gist",       # E33t — "index": the notes only choose what opens; they are not keys of the read
+        lm_filing: str = "argmax",        # E33t — "balanced": Sinkhorn-balanced assignment, ≤ lm_filing_cap tokens per note
+        lm_filing_iters: int = 3,         # E33t — Sinkhorn iterations of the balanced filing
+        lm_filing_cap: int = 16,          # E33t — most tokens filed under one note
+        lm_open_score: str = "sum_softmax",  # E33t — "max_cos": cosine of query and note key, best query head
+        lm_open_new_per_pass: bool = False,  # E33t — a loop pass may not open notes the query opened in earlier passes
+        lm_open_levels: int = 1,          # E33t — 2: a query keeps its best pages first, then chooses among their notes
+        lm_open_pages: int = 16,          # E33t — pages kept by the two-level search
+        lm_sinks: int = 0,                # E33t — learned empty slots in the catalogue read (a key and a value each)
+        lm_index_loss: float = 0.0,       # E33t — weight of the index loss (note scores predict the read's mass)
+        lm_index_queries: int = 256,      # E33t — sampled query positions per row and pass for the index loss
+        lm_index_negatives: int = 32,     # E33t — sampled unchosen notes per query in the index loss
         par_global_read: str = "dense",   # E33p — "lsa": LSA's released flat read on the global layer (nn/lsa_buckets.py)
         lsa_window: int = 512,            # LSA read: raw window
         lsa_sinks: int = 4,               # LSA read: first tokens of each document, always read
@@ -647,7 +647,7 @@ class PerceiverARConfig(PretrainedConfig):
             bad = [k for k, ok in need.items() if not ok]
             if bad:
                 raise ValueError("lm_note_key='tied' (E33p) needs " + ", ".join(bad))
-        # E33s: the catalogue read (spec docs/experiments_specs/ahead/E33s_catalogue_read.md)
+        # E33t: the catalogue read (spec docs/experiments_specs/ahead/E33t_catalogue_read.md)
         if self.lm_note_read not in ("gist", "index"):
             raise ValueError(f"lm_note_read must be gist | index, got {self.lm_note_read!r}")
         if self.lm_filing not in ("argmax", "balanced"):
@@ -658,18 +658,18 @@ class PerceiverARConfig(PretrainedConfig):
             raise ValueError("lm_open_levels must be 1 or 2 and lm_open_pages >= 1")
         if self.lm_sinks < 0 or self.lm_index_loss < 0 or self.lm_index_queries < 1 or self.lm_index_negatives < 0:
             raise ValueError("lm_sinks, lm_index_loss, lm_index_negatives >= 0 and lm_index_queries >= 1")
-        e33s = {
+        e33t = {
             "lm_note_read='index'": self.lm_note_read == "index",
             "lm_filing='balanced'": self.lm_filing == "balanced",
             "lm_open_score='max_cos'": self.lm_open_score == "max_cos",
             "lm_open_new_per_pass": self.lm_open_new_per_pass,
             "lm_open_levels=2": self.lm_open_levels == 2,
         }
-        used = [k for k, on in e33s.items() if on]
+        used = [k for k, on in e33t.items() if on]
         if used and self.lm_open != "notes":
-            raise ValueError(", ".join(used) + " need lm_open='notes' (E33s)")
+            raise ValueError(", ".join(used) + " need lm_open='notes' (E33t)")
         if (self.lm_sinks > 0 or self.lm_index_loss > 0) and self.lm_note_read != "index":
-            raise ValueError("lm_sinks and lm_index_loss need lm_note_read='index' (E33s)")
+            raise ValueError("lm_sinks and lm_index_loss need lm_note_read='index' (E33t)")
         if self.lm_filing == "balanced":
             if self.lm_filing_iters < 0 or self.lm_filing_cap < 1 or self.lm_filing_cap > 511:
                 raise ValueError("lm_filing_iters >= 0 and lm_filing_cap in [1, 511]")
@@ -1129,9 +1129,9 @@ class MessageCtx:
     note_topk: int = 0            # E33n: each query and head reads only its k best visible notes (0 = all)
     index: Optional[object] = None  # E33p: nn.exact_read.NoteOpen (tied keys; what opens), built after the writer
     open_eval: str = "on"         # E33p eval switch: "on" | "off" (no opened tokens) | "gist_off" (notes masked)
-                                  #   E33s: | "reuse" (a pass may re-open notes opened by earlier passes)
-    open_seen: Optional[torch.Tensor] = None  # E33s: [B,S,G] bool, notes each query opened in earlier passes
-    index_losses: Optional[list] = None       # E33s: index-loss terms of this forward (training)
+                                  #   E33t: | "reuse" (a pass may re-open notes opened by earlier passes)
+    open_seen: Optional[torch.Tensor] = None  # E33t: [B,S,G] bool, notes each query opened in earlier passes
+    index_losses: Optional[list] = None       # E33t: index-loss terms of this forward (training)
     capture: Optional[dict] = None  # exam probe: {"q_pos": [B,P]} → appends each read's attention mass per note,
                                     # [B,P,nb] summed over heads, to capture["mass"] (`capture_note_mass`)
     # text multi-hop (2026-10-17), training only: per-round read targets [B,T,4] (answer position, round, first and
@@ -2115,7 +2115,7 @@ def _attend_open(q, k, v, k_bar, v_bar, *, ctx: MessageCtx, key_valid, backend, 
 
 
 def _attend_catalogue(q, k, v, sink_k, sink_v, *, ctx: MessageCtx, key_valid, backend, opened):
-    """E33s catalogue read: one softmax over the raw window ‖ the raw tokens this query opened ‖ the learned empty slots.
+    """E33t catalogue read: one softmax over the raw window ‖ the raw tokens this query opened ‖ the learned empty slots.
     The notes do not appear (they only chose what opened). q [B,S,h,dh], k / v [B,S,g,dh], sink_k / sink_v [n,dh] or
     None, `opened` (nn.exact_read.OpenTable) or None → [B,S,h,dh]. A slot is readable by every valid query."""
     from nn.exact_read import dense_open, open_term
@@ -2458,7 +2458,7 @@ class Attention(nn.Module):
                             per_block=int(cfg.lsa_block) // int(cfg.lsa_bucket), pool=int(cfg.lsa_pool),
                             cap=int(cfg.lsa_bucket_cap), top_k=int(cfg.lsa_top_k), width=int(cfg.lsa_width))
         self.flow = None  # E33p instrumentation (nn/flow_stats.FlowRecorder), set on the reading layer when armed
-        # E33s: the catalogue read's learned empty slots (keys through k_norm, values from zero) and the index loss's
+        # E33t: the catalogue read's learned empty slots (keys through k_norm, values from zero) and the index loss's
         # temperature, on the reading layer only
         self.sink_k = self.sink_v = self.index_log_tau = None
         if (pattern == "full" and write == "latent_memory" and getattr(cfg, "message_enabled", False)
@@ -2631,7 +2631,7 @@ class Attention(nn.Module):
                 k_bar, v_bar = k_bar.roll(1, dims=0), v_bar.roll(1, dims=0)
             opened, gist = None, True
             ni = getattr(message, "index", None)
-            catalogue = ni is not None and getattr(ni, "read", "gist") == "index"   # E33s
+            catalogue = ni is not None and getattr(ni, "read", "gist") == "index"   # E33t
             sink_keys = self.k_norm(self.sink_k).to(k.dtype) if (catalogue and self.sink_k is not None) else None
             if ni is not None:  # E33p: tied note keys, and the raw tokens each query opens
                 from nn.exact_read import note_open_table, page_keys, tied_note_keys
@@ -2650,7 +2650,7 @@ class Attention(nn.Module):
                     opened = note_open_table(q, k_bar, ni, doc=message.doc, slot_close=message.slot_close,
                                              slot_doc=message.slot_doc, raw_window=int(message.raw_window or 0),
                                              exclude=message.open_seen if excl else None, page_key=pkey)
-                    if excl:  # E33s: a later pass looks somewhere new
+                    if excl:  # E33t: a later pass looks somewhere new
                         seen = opened.T < opened.cap
                         message.open_seen = seen if message.open_seen is None else (message.open_seen | seen)
                     if (catalogue and self.training and self.index_log_tau is not None
@@ -2688,7 +2688,7 @@ class Attention(nn.Module):
                         note_bias = (self.note_age_slope, lc, None, self.note_rank_rep, "rank")
                 else:
                     note_bias = (self.note_age_slope, pos, message.slot_pos, self.note_age_unit, self.note_age_mode)
-            if catalogue:  # E33s: raw window ‖ opened tokens ‖ empty slots; the notes only chose
+            if catalogue:  # E33t: raw window ‖ opened tokens ‖ empty slots; the notes only chose
                 o = _attend_catalogue(q, k, v, sink_keys,
                                       self.sink_v.to(v.dtype) if self.sink_v is not None else None,
                                       ctx=message, key_valid=key_valid, backend=self.backend, opened=opened)
@@ -3235,7 +3235,7 @@ class PerceiverARLM(PreTrainedModel):
         """E33p eval switch for the exact read: `off` (no opened tokens: notes as gist + window; the LSA arm reads its
         sinks + window only), `gist_off` (opened tokens + window, the notes masked; the index still scores with κ),
         `on` / None (no-op). Combine with `message_override("none")` for the window only.
-        E33s: `reuse` (a loop pass may re-open the notes earlier passes opened: the pass exclusion off)."""
+        E33t: `reuse` (a loop pass may re-open the notes earlier passes opened: the pass exclusion off)."""
         if mode in (None, "on"):
             yield
             return
@@ -3276,7 +3276,7 @@ class PerceiverARLM(PreTrainedModel):
         pick = msg.window_valid.bool() if msg.window_valid is not None else torch.ones(B, n_w, W, dtype=torch.bool,
                                                                                          device=A.device)
         labels = None
-        if str(getattr(cfg, "lm_filing", "argmax")) == "balanced":  # E33s: balanced filing (κ uses the balanced Â)
+        if str(getattr(cfg, "lm_filing", "argmax")) == "balanced":  # E33t: balanced filing (κ uses the balanced Â)
             from nn.exact_read import balance_assign, file_capped
 
             A = balance_assign(A, pick, int(cfg.lm_filing_iters))
@@ -3593,7 +3593,7 @@ class PerceiverARLM(PreTrainedModel):
                         raise NotImplementedError("tied note keys (E33p) need this row's own writer pass")
                     msg.index = self._note_index(out, msg, S)
                     if self.training and float(getattr(cfg, "lm_index_loss", 0.0) or 0.0) > 0:
-                        msg.index_losses = []  # E33s: filled by the reading layer, one term per pass
+                        msg.index_losses = []  # E33t: filled by the reading layer, one term per pass
             else:
                 x0 = x0 + self.memory_writer.participation().to(x0.dtype)  # DDP: no QUERY in batch
         if (msg is not None and msg.external is None and self.training and self._read_targets is not None
@@ -3888,7 +3888,7 @@ class PerceiverARLM(PreTrainedModel):
         if rls:
             loss = loss + cfg.message_loop_read_aux * torch.cat(rls).mean()
         ils = getattr(mctx, "index_losses", None) if mctx is not None else None
-        if ils:  # E33s: the catalogue learns where the read's attention lands
+        if ils:  # E33t: the catalogue learns where the read's attention lands
             loss = loss + float(cfg.lm_index_loss) * torch.stack(ils).mean()
         if mctx is not None:
             mctx.read_losses, mctx.read_targets = None, None

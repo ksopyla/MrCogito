@@ -98,7 +98,7 @@ class FlowRecorder:
 
     @torch.no_grad()
     def reading_open(self, attn, *, q, k, v, k_bar, v_bar, ctx, key_valid, opened, gist, index, sink_k=None) -> None:
-        """Notebook arms (window, e33, notes_open, pages_open, E33s catalogue): mass on window / opened / notes (or the
+        """Notebook arms (window, e33, notes_open, pages_open, E33t catalogue): mass on window / opened / notes (or the
         catalogue's empty slots, `sink_k` [n, dh]), and the choice."""
         from nn.exact_read import counts, dense_open
 
@@ -112,7 +112,7 @@ class FlowRecorder:
         op = (dense_open(opened.T[:1], opened.index.codes[:, :1], cap=opened.cap, raw_window=rw, q_idx=rows,
                          doc=ctx.doc[:1])[0] & causal) if opened is not None else torch.zeros_like(causal)
         notes_ok = ctx.override not in ("none", "raw") and gist
-        if sink_k is not None:  # E33s: the slots are the empty slots, readable by every valid query
+        if sink_k is not None:  # E33t: the slots are the empty slots, readable by every valid query
             nv = (doc[rows] >= 0)[:, None].expand(rows.numel(), sink_k.shape[0])
             K = torch.cat([k[0, :, 0], sink_k.to(k.dtype)], 0).float()
             slot_name = "sinks"
@@ -220,7 +220,7 @@ class FlowRecorder:
 
     @torch.no_grad()
     def filing(self, labels: torch.Tensor, pick: torch.Tensor, K: int) -> None:
-        """E33s balanced filing, once per forward (row 0): share of empty notes and the largest note on full pages."""
+        """E33t balanced filing, once per forward (row 0): share of empty notes and the largest note on full pages."""
         lab, on = labels[0], pick[0].bool()
         full = on.all(-1)
         if bool(full.any()):
@@ -231,7 +231,7 @@ class FlowRecorder:
 
     @torch.no_grad()
     def index_stats(self, st: dict, log_tau) -> None:
-        """E33s index loss, per pass: KL, Spearman of note score and read mass on the chosen notes, set size, τ."""
+        """E33t index loss, per pass: KL, Spearman of note score and read mass on the chosen notes, set size, τ."""
         base = self._tag("index")
         for k_, v_ in st.items():
             self._put(f"{base}/{k_}", v_)
