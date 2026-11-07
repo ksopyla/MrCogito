@@ -133,7 +133,7 @@ sync_up
 ev_longdoc() {
   log "eval long-document loss"
   uv run python evaluation/long_doc_loss.py --checkpoint "$DECAY" --data "$D/longdocs_lite_gpt2" \
-    --lengths 4096,16384,32768,65536,131072 --rows 8 --notes_off --open_off --gist_off --out "$R/eval_longdoc.json" > "$R/eval_longdoc.log" 2>&1 \
+    --lengths 4096,16384,32768,65536,131072 --rows 8 --notes_off --open_off --gist_off --open_reuse --out "$R/eval_longdoc.json" > "$R/eval_longdoc.log" 2>&1 \
     || log "long-document eval FAILED (see eval_longdoc.log)"
   sync_up
 }

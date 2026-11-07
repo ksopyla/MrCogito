@@ -11,11 +11,14 @@
 set -uo pipefail
 SEED="${1:?seed}"; shift
 G=$(nvidia-smi -L | wc -l)
-export E33N_EXPERIMENT=E33p E33N_FLOW=1 E33N_SEED="$SEED" E33N_RULER_LENGTHS=4096,16384 E33N_GPUS="$G" \
+# E33N_EXPERIMENT / E33N_RULER_LENGTHS may be set by a wrapper (E33s stage A: e33s_a.sh)
+export E33N_EXPERIMENT="${E33N_EXPERIMENT:-E33p}" E33N_FLOW=1 E33N_SEED="$SEED" \
+  E33N_RULER_LENGTHS="${E33N_RULER_LENGTHS:-4096,16384}" E33N_GPUS="$G" \
   E33N_CKPT_S3=1 E33N_MICRO_TRUNK=4 E33N_MICRO_DECAY=1
 source /etc/mrcogito.env
 for ARM in "$@"; do
-  if aws s3 ls "s3://$MC_BUCKET/runs/e33p/e33n_s30_${ARM}_seed${SEED}/eval_core.json" >/dev/null 2>&1; then
+  EXP=$(echo "$E33N_EXPERIMENT" | tr "[:upper:]" "[:lower:]")
+  if aws s3 ls "s3://$MC_BUCKET/runs/$EXP/e33n_s30_${ARM}_seed${SEED}/eval_core.json" >/dev/null 2>&1; then
     echo "[e33p_s1_multi] $ARM seed $SEED already has its evals in S3, skipped"; continue
   fi
   echo "[e33p_s1_multi] $(date -u +%Y-%m-%dT%H:%M:%SZ) $ARM seed $SEED on $G GPUs"
