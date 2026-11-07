@@ -97,8 +97,9 @@ class FlowRecorder:
         return p
 
     @torch.no_grad()
-    def reading_open(self, attn, *, q, k, v, k_bar, v_bar, ctx, key_valid, opened, gist, index) -> None:
-        """Notebook arms (window, e33, notes_open, pages_open): mass on window / opened / notes, and the choice."""
+    def reading_open(self, attn, *, q, k, v, k_bar, v_bar, ctx, key_valid, opened, gist, index, sink_k=None) -> None:
+        """Notebook arms (window, e33, notes_open, pages_open, E33s catalogue): mass on window / opened / notes (or the
+        catalogue's empty slots, `sink_k` [n, dh]), and the choice."""
         from nn.exact_read import counts, dense_open
 
         B, S, h, dh = q.shape
@@ -111,16 +112,25 @@ class FlowRecorder:
         op = (dense_open(opened.T[:1], opened.index.codes[:, :1], cap=opened.cap, raw_window=rw, q_idx=rows,
                          doc=ctx.doc[:1])[0] & causal) if opened is not None else torch.zeros_like(causal)
         notes_ok = ctx.override not in ("none", "raw") and gist
-        nv = ((ctx.slot_doc[0][None] == doc[rows][:, None]) & (ctx.slot_close[0][None] >= 0)
-              & (ctx.slot_close[0][None] <= rows[:, None]))
-        if not notes_ok:
-            nv = torch.zeros_like(nv)
-        K = torch.cat([k[0, :, 0], k_bar[0, :, 0].to(k.dtype)], 0).float()                 # [S+C, dh]
+        if sink_k is not None:  # E33s: the slots are the empty slots, readable by every valid query
+            nv = (doc[rows] >= 0)[:, None].expand(rows.numel(), sink_k.shape[0])
+            K = torch.cat([k[0, :, 0], sink_k.to(k.dtype)], 0).float()
+            slot_name = "sinks"
+        else:
+            nv = ((ctx.slot_doc[0][None] == doc[rows][:, None]) & (ctx.slot_close[0][None] >= 0)
+                  & (ctx.slot_close[0][None] <= rows[:, None]))
+            if not notes_ok:
+                nv = torch.zeros_like(nv)
+            K = torch.cat([k[0, :, 0], k_bar[0, :, 0].to(k.dtype)], 0).float()             # [S+C, dh]
+            slot_name = "notes"
         lg = torch.einsum("qhd,kd->hqk", q[0, rows].float(), K) * dh ** -0.5
         allowed = torch.cat([window | op, nv], -1)
         z = torch.zeros_like(nv)
         pr = self._mass(lg, allowed, {"window": torch.cat([window, z], -1), "opened": torch.cat([op & ~window, z], -1),
-                                      "notes": torch.cat([torch.zeros_like(window), nv], -1)}, parts)
+                                      slot_name: torch.cat([torch.zeros_like(window), nv], -1)}, parts)
+        if sink_k is not None:  # the selection statistics below score notes, which are not slots here
+            nv = ((ctx.slot_doc[0][None] == doc[rows][:, None]) & (ctx.slot_close[0][None] >= 0)
+                  & (ctx.slot_close[0][None] <= rows[:, None]))
         self._capture(kind="notebook", rows=rows, p=pr, S=S, opened=op & ~window, ctx=ctx, index=index)
         if index is not None:
             self._writer(index, k, k_bar)
@@ -207,6 +217,25 @@ class FlowRecorder:
         if mem.numel():
             self._put("writer/empty_notes", (mem == 0).float().mean())
             self._put("writer/members_max_mean", mem.max() / mem.mean().clamp_min(1e-6))
+
+    @torch.no_grad()
+    def filing(self, labels: torch.Tensor, pick: torch.Tensor, K: int) -> None:
+        """E33s balanced filing, once per forward (row 0): share of empty notes and the largest note on full pages."""
+        lab, on = labels[0], pick[0].bool()
+        full = on.all(-1)
+        if bool(full.any()):
+            cnt = F.one_hot(lab[full].clamp_min(0), K).mul(on[full][..., None]).sum(1).float()   # [pages, K]
+            self._put("writer/filed_empty", (cnt == 0).float().mean())
+            self._put("writer/filed_max", cnt.max(-1).values.mean())
+            self._put("writer/filed_min", cnt.min(-1).values.mean())
+
+    @torch.no_grad()
+    def index_stats(self, st: dict, log_tau) -> None:
+        """E33s index loss, per pass: KL, Spearman of note score and read mass on the chosen notes, set size, τ."""
+        base = self._tag("index")
+        for k_, v_ in st.items():
+            self._put(f"{base}/{k_}", v_)
+        self._put("index/tau", log_tau.detach().exp())
 
     def _writer(self, index, k, k_bar) -> None:
         """Tied arms, every round: ‖κ_n‖ against the assignment-weighted mean ‖k_t‖ of its tokens."""

@@ -10,6 +10,7 @@ import torch
 from nn.perceiver_ar_lm import PerceiverARLM
 from tests.test_latent_memory import cfg, lm_cfg
 from tests.test_lsa_read import LSA
+from tests.test_catalogue_read import CAT, CAT2
 from tests.test_note_open import NOTES, PAGES
 
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA (flex attention kernels)")
@@ -20,6 +21,9 @@ CASES = {
     "notes_open": (lm_cfg, dict(NOTES, **WIDE, lm_open_k=8, lm_open_cap=64)),
     "pages_open": (lm_cfg, dict(PAGES, **WIDE, lm_open_cap=64)),
     "lsa": (cfg, dict(LSA, **WIDE, lsa_top_k=32)),
+    # E33s: the catalogue read (slots, balanced filing, max-cos, new place per pass, index loss)
+    "catalogue": (lm_cfg, dict(CAT, **WIDE, lm_open_k=16, lm_open_cap=64)),
+    "catalogue_2l": (lm_cfg, dict(CAT2, **WIDE, lm_open_k=16, lm_open_cap=64)),
 }
 
 
@@ -48,7 +52,9 @@ def test_flex_equals_sdpa_forward_and_backward(name, packed):
     if packed:
         doc = torch.zeros(2, S, dtype=torch.long, device="cuda")
         doc[1, 300:] = 1
+    torch.manual_seed(11)  # the E33s index loss samples negatives: the same draws for both backends
     lf = flex(ids, labels=ids, doc_ids=doc)
+    torch.manual_seed(11)
     lr = ref(ids, labels=ids, doc_ids=doc)
     assert torch.allclose(lf.loss, lr.loss, atol=2e-4, rtol=1e-4), (float(lf.loss), float(lr.loss))
     lf.loss.backward()

@@ -286,6 +286,75 @@ class NoteOpen:
     k: int                        # groups chosen per query
     cap: int
     per_page: int                 # notes per page (K)
+    # E33s, the catalogue read (defaults = E33p)
+    read: str = "gist"            # "index": the notes only choose what opens
+    score: str = "sum_softmax"    # "max_cos": cosine, best query head
+    levels: int = 1               # 2: pages first, then their notes
+    keep_pages: int = 16
+    new_per_pass: bool = False    # a pass may not open notes the query opened earlier
+    labels: Optional[torch.Tensor] = None   # [B, n_w, W] filed note per page slot (balanced filing), −1 = none
+    pick: Optional[torch.Tensor] = None     # [B, n_w, W] valid page slots
+
+
+def balance_assign(A: torch.Tensor, valid: torch.Tensor, iters: int = 3, eps: float = 1e-6) -> torch.Tensor:
+    """E33s balanced filing, soft part: Sinkhorn iterations on each page's assignment so every note receives about the
+    same mass (SwAV's equipartition). A [B, n_w, K, W] (a distribution over the K notes per token), valid [B, n_w, W]
+    bool → Â [B, n_w, K, W]: per page, each note's mass → n_valid / K, each valid token's mass over notes → 1 (exact
+    after the last step); invalid tokens 0. Differentiable."""
+    m = valid[:, :, None, :].to(A.dtype)
+    a = A * m
+    K = A.shape[2]
+    target = m.sum(-1, keepdim=True) / K                                                 # [B, n_w, 1, 1]
+    for _ in range(int(iters)):
+        a = a * (target / a.sum(-1, keepdim=True).clamp_min(eps))
+        a = a / a.sum(2, keepdim=True).clamp_min(eps) * m
+    return a
+
+
+@torch.no_grad()
+def file_capped(A_hat: torch.Tensor, valid: torch.Tensor, cap: int = 16) -> torch.Tensor:
+    """E33s balanced filing, hard part: each valid page slot is filed under one note, at most `cap` per note.
+    Tokens propose their notes best first (by Â); a note accepts its proposers best first until full; a rejected token
+    proposes its next note in the next round. With K · cap ≥ W every token is filed within K rounds (a token rejected
+    by all K notes would need all K full). A_hat [B, n_w, K, W], valid [B, n_w, W] → labels [B, n_w, W] long, −1 =
+    not valid."""
+    B, n_w, K, W = A_hat.shape
+    a = A_hat.detach().float().permute(0, 1, 3, 2).reshape(-1, W, K)                    # [P, W, K]
+    v = valid.reshape(-1, W).bool()
+    P = a.shape[0]
+    dev = a.device
+    labels = torch.full((P, W), -1, dtype=torch.long, device=dev)
+    fill = torch.zeros(P, K + 1, dtype=torch.long, device=dev)
+    order = a.argsort(dim=-1, descending=True)                                           # [P, W, K]
+    idx = torch.arange(W, device=dev)[None].expand(P, W)
+    for r in range(K):
+        todo = v & (labels < 0)
+        if not bool(todo.any()):
+            break
+        prop = order[..., r]                                                             # [P, W]
+        sc = a.gather(-1, prop[..., None]).squeeze(-1).clamp(0.0, 1.0)
+        key = torch.where(todo, prop, torch.full_like(prop, K))                          # K = not proposing
+        srt = torch.argsort(key.float() * 2.0 - sc, dim=-1)                              # note asc, score desc
+        sk = key.gather(-1, srt)
+        new = torch.ones_like(sk, dtype=torch.bool)
+        new[:, 1:] = sk[:, 1:] != sk[:, :-1]
+        start = torch.cummax(torch.where(new, idx, torch.zeros_like(idx)), dim=-1).values
+        rank = torch.empty_like(idx).scatter_(-1, srt, idx - start)                      # rank among its note's proposers
+        room = (cap - fill).gather(-1, key)
+        accept = todo & (rank < room)
+        labels = torch.where(accept, prop, labels)
+        fill.scatter_add_(-1, torch.where(accept, prop, torch.full_like(prop, K)), accept.long())
+    return labels.view(B, n_w, W)
+
+
+def page_keys(k: torch.Tensor, page_tok: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+    """E33s two-level search: π_p = mean of the page's valid tokens' keys. k [B, S, 1, dh], page_tok [n_w, W],
+    valid [B, n_w, W] → [B, n_w, dh] fp32 (no gradient needed: the choice is made without one)."""
+    B = k.shape[0]
+    n_w, W = page_tok.shape
+    kp = k[:, page_tok.reshape(-1), 0].detach().float().view(B, n_w, W, -1)
+    m = valid.to(kp.dtype)[..., None]
+    return (kp * m).sum(2) / m.sum(2).clamp_min(1.0)
 
 
 def tied_note_keys(assign: torch.Tensor, k: torch.Tensor, page_tok: torch.Tensor) -> torch.Tensor:
@@ -302,14 +371,16 @@ def tied_note_keys(assign: torch.Tensor, k: torch.Tensor, page_tok: torch.Tensor
 
 
 def note_groups(assign: torch.Tensor, pick: torch.Tensor, page_starts: list[int], *, S: int, doc_start: torch.Tensor,
-                slot_close: torch.Tensor, slot_doc: torch.Tensor, mode: str) -> GroupIndex:
-    """Notes (member = argmax_k A on picked tokens) or pages (member = picked) as groups. slot_* [B, n_w·K]."""
+                slot_close: torch.Tensor, slot_doc: torch.Tensor, mode: str,
+                labels: Optional[torch.Tensor] = None) -> GroupIndex:
+    """Notes (member = argmax_k A on picked tokens, or the given filing `labels` [B, n_w, W]) or pages (member =
+    picked) as groups. slot_* [B, n_w·K]."""
     B, n_w, K, W = assign.shape
     if mode == "pages":
         member = torch.where(pick, torch.zeros_like(pick, dtype=torch.long), torch.full_like(pick, -1, dtype=torch.long))
         g_close, g_doc, per = slot_close[:, ::K], slot_doc[:, ::K], 1
     else:
-        best = assign.detach().argmax(dim=2)                                             # [B, n_w, W]
+        best = labels if labels is not None else assign.detach().argmax(dim=2)          # [B, n_w, W]
         member = torch.where(pick, best, torch.full_like(best, -1))
         g_close, g_doc, per = slot_close, slot_doc, K
     return groups_from_spans(member, page_starts, S=S, per_span=per, doc_start=doc_start,
@@ -318,10 +389,16 @@ def note_groups(assign: torch.Tensor, pick: torch.Tensor, page_starts: list[int]
 
 @torch.no_grad()
 def note_open_table(q: torch.Tensor, kappa: torch.Tensor, no: NoteOpen, *, doc: torch.Tensor, slot_close: torch.Tensor,
-                    slot_doc: torch.Tensor, raw_window: int, chunk: int = 0) -> OpenTable:
+                    slot_doc: torch.Tensor, raw_window: int, chunk: int = 0, exclude: Optional[torch.Tensor] = None,
+                    page_key: Optional[torch.Tensor] = None) -> OpenTable:
     """E33p choice for every query: s_i(n) = Σ_h softmax_n(q_{i,h}·κ_n / √dh) over the notes visible to i (closed rule),
     eligible = visible ∧ a member older than i's window; notes: top-k notes; pages: the page score is the sum of its
-    notes' scores, top-k eligible pages. q [B, S, h, dh], κ [B, C, 1, dh]."""
+    notes' scores, top-k eligible pages. q [B, S, h, dh], κ [B, C, 1, dh].
+
+    E33s: `no.score = "max_cos"` scores s_i(n) = max_h cos(q_{i,h}, κ_n); `exclude` [B, S, G] bool removes the groups a
+    query opened in earlier passes; `page_key` [B, n_w, dh] with `no.levels = 2` keeps, per query, the
+    `no.keep_pages` best visible pages holding an eligible note (same score rule on the page keys) and lets only their
+    notes compete."""
     B, S, h, dh = q.shape
     C = kappa.shape[1]
     K = no.per_page
@@ -332,6 +409,11 @@ def note_open_table(q: torch.Tensor, kappa: torch.Tensor, no: NoteOpen, *, doc: 
         chunk = max(128, min(1024, (1 << 25) // max(B * h * C, 1) // 128 * 128))
     kb = kappa[:, :, 0].float()
     sc = dh ** -0.5
+    cos = no.score == "max_cos"
+    if cos:
+        kb = F.normalize(kb, dim=-1)
+    two = no.levels == 2 and page_key is not None and no.mode == "notes"
+    pk = F.normalize(page_key.float(), dim=-1) if two else None
     tab = OpenTable(gi, B, S, cap=no.cap)
     n_vis_ok = (slot_doc >= 0) & (slot_close >= 0)
     for s0 in range(0, S, chunk):
@@ -340,15 +422,128 @@ def note_open_table(q: torch.Tensor, kappa: torch.Tensor, no: NoteOpen, *, doc: 
         dq = doc[:, s0:s1]
         vis = (n_vis_ok[:, None, :] & (slot_doc[:, None, :] == dq[..., None]) & (dq[..., None] >= 0)
                & (slot_close[:, None, :] <= qp[None, :, None]))                          # [B, ch, C]
-        lg = torch.einsum("bshd,bcd->bshc", q[:, s0:s1].float(), kb) * sc
-        p = torch.softmax(lg.masked_fill(~vis[:, :, None], float("-inf")), dim=-1)
-        s_note = torch.nan_to_num(p, nan=0.0).sum(2)                                      # [B, ch, C]
+        qc = q[:, s0:s1].float()
+        if cos:
+            qc = F.normalize(qc, dim=-1)
+            s_note = torch.einsum("bshd,bcd->bshc", qc, kb).amax(2)                       # [B, ch, C]
+        else:
+            lg = torch.einsum("bshd,bcd->bshc", qc, kb) * sc
+            p = torch.softmax(lg.masked_fill(~vis[:, :, None], float("-inf")), dim=-1)
+            s_note = torch.nan_to_num(p, nan=0.0).sum(2)                                  # [B, ch, C]
         if no.mode == "pages":
             score = s_note.view(B, s1 - s0, C // K, K).sum(-1)
             gvis = vis.view(B, s1 - s0, C // K, K).any(-1)
         else:
             score, gvis = s_note, vis
         cand = gvis & (gi.g_minpos[:, None, :] <= (qp - raw_window)[None, :, None])
+        if exclude is not None:
+            cand = cand & ~exclude[:, s0:s1]
+        if two:
+            n_w = C // K
+            ps = torch.einsum("bshd,bpd->bshp", qc, pk).amax(2)                            # [B, ch, n_w]
+            pok = cand.view(B, s1 - s0, n_w, K).any(-1)
+            kp = min(int(no.keep_pages), n_w)
+            top = ps.masked_fill(~pok, float("-inf")).topk(kp, dim=-1)
+            keep = torch.zeros_like(pok).scatter_(-1, top.indices, top.values > float("-inf"))
+            cand = cand & keep.repeat_interleave(K, dim=-1)
         ids, off = choose(score, cand, gi, qp, m=no.k, cap=no.cap, raw_window=raw_window)
         tab.add(s0, ids, off)
     return tab
+
+
+def _masked_rank_corr(a: torch.Tensor, b: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    """Mean over rows with ≥ 3 masked entries of the Spearman correlation of a and b on the masked entries. [Q, G]."""
+    big = torch.finfo(torch.float32).max
+    def ranks(x):
+        x = x.float().masked_fill(~mask, -big)
+        return x.argsort(-1).argsort(-1).float()
+    ra, rb = ranks(a), ranks(b)
+    n = mask.sum(-1, keepdim=True).clamp_min(1).float()
+    m = mask.float()
+    ma, mb = (ra * m).sum(-1, keepdim=True) / n, (rb * m).sum(-1, keepdim=True) / n
+    da, db = (ra - ma) * m, (rb - mb) * m
+    c = (da * db).sum(-1) / ((da.pow(2).sum(-1) * db.pow(2).sum(-1)).sqrt().clamp_min(1e-9))
+    ok = mask.sum(-1) >= 3
+    return c[ok].mean() if bool(ok.any()) else torch.zeros((), device=a.device)
+
+
+def index_loss(q: torch.Tensor, k: torch.Tensor, sink_k: Optional[torch.Tensor], kappa: torch.Tensor,
+               opened: "OpenTable", *, doc: torch.Tensor, raw_window: int, n_queries: int, n_neg: int,
+               log_tau: torch.Tensor, seen: Optional[torch.Tensor] = None,
+               generator: Optional[torch.Generator] = None) -> tuple[torch.Tensor, dict]:
+    """E33s index loss for one pass of the catalogue read: the notes' scores learn to predict where the read's
+    attention lands. For `n_queries` query positions per row (evenly spaced from the window on): the read's softmax
+    over sinks ‖ its window ‖ its opened tokens is recomputed (fp32, detached: the target); target mass of a chosen
+    note = the probability on its opened tokens; of a negative (one of `n_neg` sampled choosable, unchosen notes, not in
+    `seen`) = the probability its eligible members would get with the same normaliser; both averaged over heads and
+    renormalised over the set. Prediction = softmax over the set of τ · max_h cos(q_{i,h}, κ_n), q detached, κ with
+    gradient, τ = exp(log_tau). Loss = KL(target ‖ prediction), mean over queries with ≥ 2 notes in the set.
+    q [B, S, h, dh], k [B, S, 1, dh], sink_k [n, dh] or None, κ [B, G, 1, dh], doc [B, S] (−1 = pad),
+    seen [B, S, G] bool. Returns (loss, stats) with stats `kl`, `corr` (Spearman of score and target mass on the
+    chosen notes) and `set` (notes per query)."""
+    B, S, h, dh = q.shape
+    gi = opened.index
+    G = gi.n_groups
+    cap = opened.cap
+    dev = q.device
+    rw = int(raw_window)
+    lo = min(rw, S - 1)
+    rows = torch.linspace(lo, S - 1, max(1, min(int(n_queries), S - lo)), device=dev).round().long().unique()
+    Q = rows.numel()
+    scale = dh ** -0.5
+    losses, corrs, sizes = [], [], []
+    tau = log_tau.exp()
+    j = torch.arange(S, device=dev)
+    with torch.autocast(device_type=dev.type, enabled=False):
+        for b in range(B):
+            d = doc[b]
+            ok_q = d[rows] >= 0
+            qb = q[b, rows].detach().float()                                             # [Q, h, dh]
+            lg = torch.einsum("qhd,sd->hqs", qb, k[b, :, 0].detach().float()) * scale     # [h, Q, S]
+            causal = (j[None] <= rows[:, None]) & (d[None] == d[rows][:, None]) & ok_q[:, None]
+            win = causal & ((rows[:, None] - j[None]) < rw)
+            op = dense_open(opened.T[b:b + 1], gi.codes[:, b:b + 1], cap=cap, raw_window=rw, q_idx=rows,
+                            doc=doc[b:b + 1])[0] & causal & ~win
+            allowed = win | op
+            parts = [lg.masked_fill(~allowed[None], float("-inf"))]
+            if sink_k is not None and sink_k.shape[0] > 0:
+                parts.append(torch.einsum("qhd,nd->hqn", qb, sink_k.detach().float()) * scale)
+            lse = torch.logsumexp(torch.cat(parts, -1), dim=-1)                           # [h, Q]
+            pw = torch.exp(lg - lse[..., None]).mean(0)                                   # [Q, S] would-be, head mean
+            elig = causal & ~win
+            m_open = torch.zeros(Q, G + 1, device=dev)
+            m_elig = torch.zeros(Q, G + 1, device=dev)
+            for li in range(gi.codes.shape[0]):
+                c = gi.codes[li, b]
+                gid = torch.where(c >= 0, torch.div(c, ORD_MOD, rounding_mode="floor"), torch.full_like(c, G)).long()
+                gq = gid[None].expand(Q, S)
+                m_open.scatter_add_(1, torch.where(op, gq, torch.full_like(gq, G)), pw * op)
+                m_elig.scatter_add_(1, torch.where(elig, gq, torch.full_like(gq, G)), pw * elig)
+            m_open, m_elig = m_open[:, :G], m_elig[:, :G]
+            chosen = (opened.T[b, rows].to(torch.int32) < cap) & (m_open > 0)
+            neg_ok = (m_elig > 0) & ~chosen
+            if seen is not None:
+                neg_ok = neg_ok & ~seen[b, rows]
+            neg = torch.zeros_like(chosen)
+            if n_neg > 0 and bool(neg_ok.any()):
+                r = torch.rand(Q, G, device=dev, generator=generator).masked_fill(~neg_ok, -1.0)
+                top = r.topk(min(int(n_neg), G), dim=-1)
+                neg.scatter_(1, top.indices, top.values >= 0)
+            in_set = chosen | neg
+            t = torch.where(chosen, m_open, torch.where(neg, m_elig, torch.zeros_like(m_open)))
+            t = t / t.sum(-1, keepdim=True).clamp_min(1e-12)
+            qn = F.normalize(qb, dim=-1)
+            kn = F.normalize(kappa[b, :, 0].float(), dim=-1)                              # grad → κ
+            s = torch.einsum("qhd,gd->qhg", qn, kn).amax(1)                              # [Q, G]
+            logp = torch.log_softmax((tau * s).masked_fill(~in_set, float("-inf")), dim=-1)
+            use = ok_q & (in_set.sum(-1) >= 2)
+            if bool(use.any()):
+                kl = (t * (torch.log(t.clamp_min(1e-12)) - logp)).masked_fill(~in_set, 0.0).sum(-1)
+                losses.append(kl[use].mean())
+                corrs.append(_masked_rank_corr(s.detach(), m_open, chosen & use[:, None]))
+                sizes.append(in_set[use].sum(-1).float().mean())
+    if not losses:
+        z = (kappa.sum() + log_tau) * 0.0
+        return z, {"kl": z.detach(), "corr": z.detach(), "set": z.detach()}
+    loss = torch.stack(losses).mean()
+    return loss, {"kl": loss.detach(), "corr": torch.stack(corrs).mean(), "set": torch.stack(sizes).mean()}
