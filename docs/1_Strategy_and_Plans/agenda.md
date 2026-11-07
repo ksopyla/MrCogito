@@ -26,7 +26,10 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   filled by tokens, each loop pass opens notes the query has not opened before, pages without overlap, and a
   two-level page→note search arm. Pass mark ≥ 80 % of the gap at 16k with no fade to 64k (LSA-native: 99 %), kill
   < 50 %. Stage A on the AWS 4 × L40S node after the seed-1 controls (~$60), then note sizes, long documents and
-  100M if 30M matches. Spec [E33t](../experiments_specs/ahead/E33t_catalogue_read.md).
+  100M if 30M matches. Spec [E33t](../experiments_specs/ahead/E33t_catalogue_read.md). (Drafted as "E33s"; renamed
+  2026-11-07: dev owns E33s.) Approved and built 2026-11-07 (`47339bf`); stage 0 passed 08:35 UTC (GPU tests, pipeline,
+  K4: ≈ 1.12 × LSA's run time). Stage A chained on the AWS node (`infra/aws/chain_job.sh`): after the dense seed-1
+  control (≈ 12:20 UTC) the two catalogue arms (≈ 18:00 and 23:30 UTC), then window and LSA-native seed 1.
 - **2026-11-06 — E33p, a note-indexed exact read on the LSA testbed: stage 1 training (six arms, 30M, home
   servers).** E33n closed at 30M (see below): the far-context value of natural long text is exact copying, which notes
   cannot return. E33p uses the notes as the index (address keys tied to the reading layer's own raw keys) and lets each

@@ -162,6 +162,13 @@ at 16k in E33p) show the marks are reachable at this size and data.
   index loss's gradient reaches the writer and the keys and none flows through the choice; the two-level search with
   16 ≥ all pages equals the flat search. Then speed and memory at 4k and 16k on one GPU (K4 early check), and a tiny
   pipeline check on the Mac.
+- **Stage 0 result (2026-11-07 07:55–08:35 UTC, Polonez GPU 1, RTX 3090, `infra/aws/jobs/e33t_stage0.sh` at
+  `47339bf`):** 66 GPU tests pass (flex = SDPA reference, forward and backward; worst relative gradient difference
+  2e-6 catalogue, 8e-6 two-level); the tiny pipeline check passes for both arms (trunk then decay, instrumentation
+  on). Speed, tokens/s: catalogue trunk 4k (micro 4) 23,571, 21.2 GB · decay 16k (micro 1): catalogue 13,854,
+  two-level 15,485, LSA-native 18,697 (same GPU), E33p notes-open 10.8k (stage 0, Odra). Projected full run
+  (1.5B at 4k + 0.2B at 16k) ≈ 1.12 × LSA-native's time: **K4 passes**; at 16k alone the catalogue is 0.74 × LSA
+  (S5 asks ≥ 0.9, judged after stage A).
 - **Stage A (30M, AWS 4 × L40S spot):** the main arm and the two-level arm after the seed-1 controls of stage 1
   (queue order dense, window, LSA-native, then pages-open), about 5 hours and $30 per model. Gate: S1–S6, K1–K4.
 - **Capability checks (if S1 holds):** the core package on the home servers (C0–C5 from scratch, seeds 0–2, ladders
