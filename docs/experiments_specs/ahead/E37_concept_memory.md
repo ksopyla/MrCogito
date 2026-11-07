@@ -115,6 +115,18 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
 - **Stage 0 (laptop + one GPU, free):** unit tests (done, 9 + the E33p suites, 43 pass); tiny pipeline check of
   e37a / e37b / lsa through trunk and decay (done, 2026-11-07); GPU check: flex = reference read, forward and
   backward, at the tiny size and 4k / 16k at 100M; speed and peak memory against the LSA arm (S5's projection).
+- **Stage 0 result (2026-11-07, Polonez GPU 1, RTX 3090):** 18 GPU tests pass (flex = the reference read, forward
+  and backward, worst relative gradient difference 4e-4). Speed went through three passes (training tokens per
+  second, from `infra/aws/jobs/speed_check.sh`; LSA arm in brackets):
+  1. d106c24: e37a 3.8k [14.8k] at 100M / 4k, 1.9k [16.5k] at 30M / 16k — the score_mod's captured bias buffers
+     carried gradients, accumulated with atomic adds into the same summary entries by every query and head;
+  2. 4b1c908 (bias buffers detached): 12.3k at 100M / 4k, 12.0k at 30M / 16k; the reasoner arm 4.5k at 16k — the
+     forward kernel still 4.4× LSA's, one score_mod over all keys;
+  3. 63feb08 (two flex calls merged by log-sum-exp: raw tokens without score_mod, summaries alone): **e37a 12.6k
+     (0.85 ×) and e37b 11.5k (0.78 ×) at 100M / 4k; at 30M / 16k e37a 13.1k (0.79 ×), e37b 11.3k (0.69 ×) [16.5k]**;
+     peak memory within 1.5 GB of the LSA arm.
+  S5 (≥ 0.8 × LSA) is met by e37a at 100M and missed narrowly by e37b; the remaining gap is the summary call's
+  score_mod, the per-pass clustering and the merge. Further kernel work waits for the read to prove itself.
 - **Stage A:** six arms at 100M with the screening protocol, on one 4 × L40S spot node (each arm on all four
   GPUs, ~8–10 h, ≈ $60 per arm; ≈ $360) or H100s when available. Gate: S1–S5, K1–K3.
 - **Stage B (if S1 holds):** the full m100 protocol for e37 (a or b), lsa and dense (+ original LSA if its stack
