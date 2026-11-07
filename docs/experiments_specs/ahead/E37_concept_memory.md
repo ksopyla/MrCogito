@@ -136,7 +136,10 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
   runs compare directly with E33p's six seed-42 controls (`infra/aws/jobs/e37_home.sh`):
   - e37a on Polonez GPUs 0+1 (from 10:21 UTC);
   - e37b on Odra GPUs 0+1 (from 11:51 UTC);
-  - e37a_c32 and e37a_c128 on one card each (Odra GPU 2, Polonez GPU 2).
+  - e37a_c128 on Polonez GPU 2 (from 11:53 UTC);
+  - e37a_c32 started on Odra GPU 2 at 11:53 UTC but was stopped at 12:12 UTC, because with three cards busy the
+    card reached 80 °C (the author's heat rule for Odra while Polonez trains). It is queued on Polonez GPUs 0+1 for
+    when e37a finishes.
   
   At the controls' 30M scale the share of the gap at 16k is 99 % for LSA-native, 34 % for pages_open, 31 % for
   notes_open and 4 % for e33. Three GPUs would break the 64-row step, so the reasoner arm uses two.
