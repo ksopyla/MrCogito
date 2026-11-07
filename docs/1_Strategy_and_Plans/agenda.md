@@ -20,6 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-07 — E37, concept memory: an encoder, a reasoner and a decoder read for 10M-token context
+  (exploration program, draft spec; code + unit tests done, GPU check and 100M runs pending compute).** Encoder:
+  each closed 512-key block of the reading layer grouped into 64 balanced content concepts with links to their tokens
+  and additive statistics. Reasoner: a small looped transformer over the concepts. Decoder read: exact tokens for the
+  concepts with the largest estimated attention mass (512 per query), one calibrated second-order kernel summary per
+  other concept (log n + q·μ + |q|²σ²/2), every past token counted once. Stage A at 100M against dense, window, LSA's
+  read (our port), notes-open and the e37 arms; pass mark ≥ 90 % of the window→dense gap at 16k with no fade to 64k.
+  Branch `arch-10m`; spec [E37](../experiments_specs/ahead/E37_concept_memory.md).
 - **2026-11-07 — E33s, the catalogue read (draft spec, awaiting alignment).** Answers E33p stage 1's measured limits:
   the notes leave the read and only choose what to open (4 learned empty slots instead), balanced filing (Sinkhorn,
   none empty, ≤ 16 per note), an index loss that teaches note scores where the read's attention lands, the budget
