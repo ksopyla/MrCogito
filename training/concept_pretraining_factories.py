@@ -452,6 +452,12 @@ def _plain_loop_kwargs(model_args) -> dict:
         for k in ("par_global_read", "lsa_window", "lsa_sinks", "lsa_block", "lsa_bucket", "lsa_pool",
                   "lsa_bucket_cap", "lsa_top_k", "lsa_width"):
             out[k] = getattr(model_args, k)
+        if str(model_args.par_global_read) == "concept":  # E37
+            for k in ("concept_block", "concept_per_block", "concept_iters", "concept_tau", "concept_sinks",
+                      "concept_top_k", "concept_width", "concept_summaries", "concept_variance",
+                      "concept_reasoner_layers", "concept_reasoner_dim", "concept_reasoner_heads",
+                      "concept_reasoner_loops"):
+                out[k] = getattr(model_args, k)
     return out
 
 

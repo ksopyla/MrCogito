@@ -64,9 +64,21 @@ ARMS = {
     "lsa": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "lsa",
             "lsa_window": 512, "lsa_sinks": 4, "lsa_block": 512, "lsa_bucket": 8, "lsa_pool": 4, "lsa_bucket_cap": 16,
             "lsa_top_k": 512},
+    # E37 (docs/experiments_specs/ahead/E37_concept_memory.md): concept memory on the dense arm's reading layer —
+    # balanced content concepts of 8 keys per 512-key block, exact reads of the largest estimated contributions
+    # (512 tokens), one summary entry per other concept; e37b adds the looped concept reasoner
+    "e37a": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "concept",
+             "concept_block": 512, "concept_per_block": 64, "concept_sinks": 4, "concept_top_k": 512},
+    "e37b": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "concept",
+             "concept_block": 512, "concept_per_block": 64, "concept_sinks": 4, "concept_top_k": 512,
+             "concept_reasoner_layers": 2, "concept_reasoner_dim": 512, "concept_reasoner_heads": 8,
+             "concept_reasoner_loops": 2},
 }
 TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"lm_open_k": 1, "lm_open_cap": 64},
-             "lsa": {"lsa_window": 64, "lsa_block": 64, "lsa_top_k": 64}}
+             "lsa": {"lsa_window": 64, "lsa_block": 64, "lsa_top_k": 64},
+             "e37a": {"concept_block": 64, "concept_per_block": 8, "concept_top_k": 64},
+             "e37b": {"concept_block": 64, "concept_per_block": 8, "concept_top_k": 64, "concept_reasoner_dim": 64,
+                      "concept_reasoner_heads": 2}}
 TINY_WRITER = {"lm_latents": 8, "lm_latent_dim": 64, "lm_heads": 2, "lm_writer_dim": 64, "lm_enc_layers": 1,
                "lm_rounds": 1, "message_raw_window": 64, "lm_window": 64, "lm_stride": 48}
 

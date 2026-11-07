@@ -274,6 +274,20 @@ class PerceiverARConfig(PretrainedConfig):
         lsa_bucket_cap: int = 16,         # LSA read: most keys a bucket may hold
         lsa_top_k: int = 512,             # LSA read: keys each query takes beyond its sinks and window
         lsa_width: int = 0,               # LSA read: buckets each query ranks, at most (0 = 2 · top_k / bucket)
+        # E37 concept memory (par_global_read="concept", nn/concept_memory.py): encoder → reasoner → decoder read
+        concept_block: int = 512,         # E37: keys per clustered block (the window covers the query's block + one)
+        concept_per_block: int = 64,      # E37: concepts per block (balanced soft k-means on the unit keys)
+        concept_iters: int = 3,           # E37: k-means rounds (each a Sinkhorn-balanced plan)
+        concept_tau: float = 0.05,        # E37: assignment temperature
+        concept_sinks: int = 4,           # E37: first tokens of each document, always read
+        concept_top_k: int = 512,         # E37: member tokens each query opens exactly, at most
+        concept_width: int = 0,           # E37: concepts each query ranks for opening (0 = 2 · top_k · per_block / block)
+        concept_summaries: bool = True,   # E37: every concept not opened enters the read as one summary entry
+        concept_variance: bool = True,    # E37: the summary logit's second-order term |q|² σ² / 2d
+        concept_reasoner_layers: int = 0,  # E37: transformer layers of the concept reasoner (0 = none)
+        concept_reasoner_dim: int = 512,  # E37: reasoner width
+        concept_reasoner_heads: int = 8,  # E37: reasoner heads
+        concept_reasoner_loops: int = 2,  # E37: reasoner loops (input injection each loop)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -416,6 +430,20 @@ class PerceiverARConfig(PretrainedConfig):
         self.lsa_bucket_cap = int(lsa_bucket_cap)
         self.lsa_top_k = int(lsa_top_k)
         self.lsa_width = int(lsa_width or 0) or (2 * self.lsa_top_k // max(self.lsa_bucket, 1))
+        self.concept_block = int(concept_block)
+        self.concept_per_block = int(concept_per_block)
+        self.concept_iters = int(concept_iters)
+        self.concept_tau = float(concept_tau)
+        self.concept_sinks = int(concept_sinks)
+        self.concept_top_k = int(concept_top_k)
+        self.concept_width = int(concept_width or 0) or max(
+            1, 2 * self.concept_top_k * self.concept_per_block // max(self.concept_block, 1))
+        self.concept_summaries = bool(concept_summaries)
+        self.concept_variance = bool(concept_variance)
+        self.concept_reasoner_layers = int(concept_reasoner_layers or 0)
+        self.concept_reasoner_dim = int(concept_reasoner_dim)
+        self.concept_reasoner_heads = int(concept_reasoner_heads)
+        self.concept_reasoner_loops = int(concept_reasoner_loops)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -623,8 +651,23 @@ class PerceiverARConfig(PretrainedConfig):
             bad = [k for k, ok in need.items() if not ok]
             if bad:
                 raise ValueError("lm_note_key='tied' (E33p) needs " + ", ".join(bad))
-        if self.par_global_read not in ("dense", "lsa"):
-            raise ValueError(f"par_global_read must be dense | lsa, got {self.par_global_read!r}")
+        if self.par_global_read not in ("dense", "lsa", "concept"):
+            raise ValueError(f"par_global_read must be dense | lsa | concept, got {self.par_global_read!r}")
+        if self.par_global_read == "concept":
+            if self.message_enabled:
+                raise ValueError("par_global_read='concept' (E37) is its own memory: turn the message boundary off")
+            if not self.global_nope or self.num_kv_heads != 1:
+                raise ValueError("par_global_read='concept' needs global_nope=True and num_kv_heads=1")
+            if self.attn_backend == "flash" or self.par_mode != "perceiver" or self.global_layers < 1:
+                raise ValueError("par_global_read='concept' needs perceiver mode with a global layer, flex or sdpa")
+            if self.concept_block % self.concept_per_block or self.concept_block > 511 * self.concept_per_block:
+                raise ValueError("concept_per_block must divide concept_block")
+            if self.concept_block > 512:
+                raise ValueError("concept_block must be <= 512 (member rank code, nn.exact_read)")
+            if not 1 <= self.concept_top_k <= 32767 or self.concept_sinks < 0 or self.concept_iters < 1:
+                raise ValueError("concept_top_k in [1, 32767], concept_sinks >= 0, concept_iters >= 1")
+            if self.concept_reasoner_layers and self.concept_reasoner_dim % self.concept_reasoner_heads:
+                raise ValueError("concept_reasoner_heads must divide concept_reasoner_dim")
         if self.par_global_read == "lsa":
             if self.message_enabled:
                 raise ValueError("par_global_read='lsa' is the no-notebook LSA arm: turn the message boundary off")
@@ -2356,6 +2399,23 @@ class Attention(nn.Module):
             self.lsa = dict(window=int(cfg.lsa_window), sinks=int(cfg.lsa_sinks), block=int(cfg.lsa_block),
                             per_block=int(cfg.lsa_block) // int(cfg.lsa_bucket), pool=int(cfg.lsa_pool),
                             cap=int(cfg.lsa_bucket_cap), top_k=int(cfg.lsa_top_k), width=int(cfg.lsa_width))
+        # E37: the concept memory read on the global layer (nn/concept_memory.py): encoder → reasoner → decoder read
+        self.concept = None
+        self.concept_reasoner = None
+        self.concept_off = False  # eval switch: sinks + window only (no opened tokens, no summaries)
+        self.concept_stats = None  # last forward's read statistics when armed (dict), for probes
+        if pattern == "full" and str(getattr(cfg, "par_global_read", "dense") or "dense") == "concept":
+            self.concept = dict(block=int(cfg.concept_block), per_block=int(cfg.concept_per_block),
+                                iters=int(cfg.concept_iters), tau=float(cfg.concept_tau), sinks=int(cfg.concept_sinks),
+                                top_k=int(cfg.concept_top_k), width=int(cfg.concept_width),
+                                summaries=bool(cfg.concept_summaries), variance=bool(cfg.concept_variance))
+            if int(getattr(cfg, "concept_reasoner_layers", 0) or 0) > 0:
+                from nn.concept_memory import ConceptReasoner
+
+                self.concept_reasoner = ConceptReasoner(
+                    cfg.hidden_size, g * dh, dim=int(cfg.concept_reasoner_dim),
+                    layers=int(cfg.concept_reasoner_layers), heads=int(cfg.concept_reasoner_heads),
+                    loops=int(cfg.concept_reasoner_loops))
         self.flow = None  # E33p instrumentation (nn/flow_stats.FlowRecorder), set on the reading layer when armed
         # E33h: count heads (a summing read) on the latent-memory global read
         self.note_counter = None
@@ -2585,6 +2645,8 @@ class Attention(nn.Module):
             )
         if self.lsa is not None:
             o = self._lsa_read(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
+        elif self.concept is not None:
+            o = self._concept_read(q, k, v, x, doc_ids=doc_ids, key_valid=key_valid)
         else:
             if self.flow is not None and self.pattern == "full":
                 self.flow.reading_dense(self, q=q, k=k, v=v, doc_ids=doc_ids, key_valid=key_valid)
@@ -2627,6 +2689,48 @@ class Attention(nn.Module):
                                   window=c["window"])
         return attend_lsa(q, k, v, doc=doc, key_valid=key_valid, backend=self.backend, opened=opened,
                           window=c["window"], sink=sink, ds=ds, n_sinks=c["sinks"])
+
+    def _concept_read(self, q, k, v, x, *, doc_ids, key_valid):
+        """E37: concepts of this call's keys (encoder), the reasoner's value update, each query's exact choice, and
+        one softmax over sinks ‖ block-aligned window ‖ opened members ‖ concept summaries (nn/concept_memory.py)."""
+        from nn.concept_memory import attend_concepts, build_concepts, concept_open_table
+        from nn.exact_read import doc_starts
+
+        B, S = q.shape[:2]
+        c = self.concept
+        doc = doc_ids.long() if doc_ids is not None else torch.zeros(B, S, dtype=torch.long, device=q.device)
+        if key_valid is not None:
+            doc = doc.masked_fill(~key_valid.bool(), -1)
+        ds = doc_starts(doc)
+        pos = torch.arange(S, device=q.device)[None]
+        sink = (pos - ds < c["sinks"]) & (doc >= 0)
+        cidx, opened, dv = None, None, None
+        if not self.concept_off:
+            cidx = build_concepts(k, v, x if self.concept_reasoner is not None else None, doc, sink,
+                                  block=c["block"], per_block=c["per_block"], iters=c["iters"], tau=c["tau"])
+            if cidx is not None:
+                if self.concept_reasoner is not None:
+                    dv = self.concept_reasoner(cidx.z, cidx.block_of, cidx.c_doc)
+                opened = concept_open_table(q, cidx, top_k=c["top_k"], width=c["width"], variance=c["variance"])
+        if self.concept_stats is not None and cidx is not None:
+            self.concept_stats = _concept_read_stats(q, cidx, opened, c)
+        if self.flow is not None:
+            self.flow.reading_concept(self, q=q, k=k, v=v, doc=doc, cidx=cidx, opened=opened, sink=sink)
+        return attend_concepts(q, k, v, cidx=cidx, dv=dv, doc=doc, key_valid=key_valid, backend=self.backend,
+                               opened=opened, sink=sink, ds=ds, n_sinks=c["sinks"], summaries=c["summaries"],
+                               variance=c["variance"])
+
+
+@torch.no_grad()
+def _concept_read_stats(q, cidx, opened, c) -> dict:
+    """E37 probe scalars: concept sizes (empty share, largest), and the share of queries whose budget is full."""
+    n = cidx.n
+    out = {"concept/empty": float((n == 0).float().mean()), "concept/max_members": float(n.amax(-1).mean()),
+           "concept/size_std": float(n.std(-1).mean())}
+    if opened is not None:
+        used = (opened.T.to(torch.int32) < int(opened.cap)).sum(-1).float()           # concepts opened per query
+        out["concept/opened_concepts"] = float(used.mean())
+    return out
 
 
 class SwiGLU(nn.Module):
@@ -2988,6 +3092,8 @@ class PerceiverARLM(PreTrainedModel):
         for layer in self.layers:
             if layer.attn.compressor is not None and getattr(layer.attn.compressor, "delta", None) is not None:
                 nn.init.zeros_(layer.attn.compressor.delta.weight)   # post_init re-inits Linears
+            if getattr(layer.attn, "concept_reasoner", None) is not None:
+                nn.init.zeros_(layer.attn.concept_reasoner.out.weight)  # E37: the read starts as the summary read
         if self.memory_writer is not None:
             nn.init.zeros_(self.memory_writer.to_v_state.weight)   # E31: values start as content
             if getattr(self.memory_writer, "keyread_out", None) is not None:
