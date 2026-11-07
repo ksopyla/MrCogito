@@ -294,8 +294,7 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
     token's update draws on its whole block, which is in the future of the queries inside that block.
 
     KV layout: [raw tokens with the update (S) ‖ raw tokens, own block only (S, with the reasoner) ‖ summaries (C)]."""
-    from nn.exact_read import dense_open, open_term
-    from nn.perceiver_ar_lm import _band_block_mask, _get_flex
+    from nn.exact_read import dense_open
 
     B, S, h, d = q.shape
     g = k.shape[2]
@@ -328,68 +327,11 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
     doc32 = doc.to(torch.int32)
     sk = sink.to(torch.int32)
     if backend == "flex":
-        term = open_term(opened.T, opened.index.codes, cap=opened.cap, raw_window=blk) if opened is not None else None
-        chosen = _chosen_lookup(opened) if use_sum else None
-
-        def pred(b, hh, qi, j):
-            own_lo = (qi // blk) * blk
-            jr = torch.clamp(j, max=S - 1)
-            same = (doc32[b, jr] == doc32[b, qi]) & (doc32[b, qi] >= 0)
-            keep = (jr >= own_lo - blk) | (sk[b, jr] > 0)
-            if term is not None:
-                keep = keep | term(b, qi, jr)
-            if two:
-                keep = keep & (jr < own_lo)                                            # own block: second copy
-            ok = (jr <= qi) & same & keep & (j < S)
-            if key_valid is not None:
-                ok = ok & (key_valid[b, jr] | (jr == qi))
-            if two:
-                j2 = torch.clamp(j - S, 0, S - 1)
-                ok2 = ((j >= S) & (j < 2 * S) & (j2 <= qi) & (j2 >= own_lo) & (doc32[b, j2] == doc32[b, qi])
-                       & (doc32[b, qi] >= 0))
-                if key_valid is not None:
-                    ok2 = ok2 & (key_valid[b, j2] | (j2 == qi))
-                ok = ok | ok2
-            if not use_sum:
-                return ok
-            c = torch.clamp(j - off_sum, 0, C - 1)
-            vis = (j >= off_sum) & (qi >= c_from[b, c]) & (c_doc[b, c] == doc32[b, qi]) & (doc32[b, qi] >= 0)
-            if chosen is not None:
-                vis = vis & ~chosen(b, qi, c)
-            return ok | vis
-
-        score_mod = None
-        if use_sum:
-            def score_mod(score, b, hh, qi, j):
-                c = torch.clamp(j - off_sum, 0, C - 1)
-                return torch.where(j >= off_sum, score + logn[b, c] + qn2[b, hh, qi] * vhalf[b, c], score)
-
-        nqb = -(-S // 128)
-        first_q = torch.arange(nqb, device=q.device) * 128
-        q_hi = torch.clamp(first_q + 127, max=S - 1)
-        extra = [torch.stack([ds[:, first_q] // 128,
-                              torch.clamp(ds[:, first_q] + max(n_sinks - 1, 0), max=S - 1) // 128], dim=-1)]
-        if opened is not None:
-            extra.append(opened.extra_blocks())
-        if two:  # the own block in the second copy: KV blocks from S + own-block start to S + the block's last query
-            E = (blk + 127) // 128 + 2
-            lo = (S + (first_q // blk) * blk) // 128
-            hi = (S + q_hi) // 128
-            ids2 = lo[:, None] + torch.arange(E, device=q.device)[None]
-            extra.append(torch.where(ids2 <= hi[:, None], ids2, torch.full_like(ids2, -1))[None].expand(B, -1, -1))
-        if use_sum:
-            first, last = off_sum // 128, (off_sum + C - 1) // 128
-            ids = torch.arange(first, last + 1, device=q.device)
-            # a slot KV block is needed by a query block once its earliest concept is old enough
-            cf = F.pad(c_from[0], (off_sum - first * 128, (last + 1) * 128 - off_sum - C), value=2 ** 30)
-            cf = cf.view(-1, 128).amin(-1)
-            need = cf[None, :] <= q_hi[:, None]
-            extra.append(torch.where(need, ids[None], torch.full_like(ids[None], -1))[None].expand(B, -1, -1))
-        bm = _band_block_mask(pred, B=B, Q_LEN=S, KV_LEN=KV, window=2 * blk, causal=True, device=q.device,
-                              extra_blocks=torch.cat(extra, dim=-1))
-        out = _get_flex()(qt.contiguous(), kt.contiguous(), vt.contiguous(), block_mask=bm, enable_gqa=(g != h),
-                          score_mod=score_mod)
-        return out.transpose(1, 2)
+        return _attend_concepts_flex(q, k, v, K=K, V=V, cidx=cidx, use_sum=use_sum, two=two, doc32=doc32, sk=sk,
+                                     ds=ds, n_sinks=n_sinks, key_valid=key_valid, opened=opened, blk=blk, C=C,
+                                     logn=logn if use_sum else None, vhalf=vhalf if use_sum else None,
+                                     qn2=qn2 if use_sum else None, c_from=c_from if use_sum else None,
+                                     c_doc=c_doc if use_sum else None)
     # reference path (CPU / MPS tests): the same rule as a dense mask and an additive bias
     if g != h:
         kt = kt.repeat_interleave(h // g, dim=1)
@@ -425,3 +367,89 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
     bias = bias.masked_fill(~mask[:, None], float("-inf"))
     out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=bias.to(qt.dtype))
     return out.transpose(1, 2)
+
+
+def _attend_concepts_flex(q, k, v, *, K, V, cidx, use_sum, two, doc32, sk, ds, n_sinks, key_valid, opened, blk, C,
+                          logn, vhalf, qn2, c_from, c_doc):
+    """Flex path in two calls merged by their log-sum-exp: (1) the raw tokens (window, sinks, opened members, and
+    the own-block raw copy with the reasoner), no score_mod — the LSA arm's kernel shape; (2) the concept summaries
+    only, with the bias in score_mod. One score_mod over the whole key range made the forward 4.4× slower than the
+    LSA arm (E37 stage 0, 2026-11-07): it gathers its buffers for every raw entry too. Exact: the merge is the
+    single softmax over both."""
+    from torch.nn.attention.flex_attention import AuxRequest, create_block_mask
+
+    from nn.exact_read import open_term
+    from nn.perceiver_ar_lm import _band_block_mask, _chunked_block_mask, _CHUNKED_MASK_PAIRS, _get_flex
+
+    B, S, h, d = q.shape
+    g = k.shape[2]
+    flex = _get_flex()
+    nraw = 2 * S if two else S
+    Kr, Vr = K[:, :nraw], V[:, :nraw]
+    qt = q.transpose(1, 2).contiguous()
+    term = open_term(opened.T, opened.index.codes, cap=opened.cap, raw_window=blk) if opened is not None else None
+
+    def pred(b, hh, qi, j):
+        own_lo = (qi // blk) * blk
+        jr = torch.clamp(j, max=S - 1)
+        same = (doc32[b, jr] == doc32[b, qi]) & (doc32[b, qi] >= 0)
+        keep = (jr >= own_lo - blk) | (sk[b, jr] > 0)
+        if term is not None:
+            keep = keep | term(b, qi, jr)
+        if two:
+            keep = keep & (jr < own_lo)                                                # own block: second copy
+        ok = (jr <= qi) & same & keep & (j < S)
+        if key_valid is not None:
+            ok = ok & (key_valid[b, jr] | (jr == qi))
+        if two:
+            j2 = torch.clamp(j - S, 0, S - 1)
+            ok2 = ((j >= S) & (j2 <= qi) & (j2 >= own_lo) & (doc32[b, j2] == doc32[b, qi]) & (doc32[b, qi] >= 0))
+            if key_valid is not None:
+                ok2 = ok2 & (key_valid[b, j2] | (j2 == qi))
+            ok = ok | ok2
+        return ok
+
+    nqb = -(-S // 128)
+    first_q = torch.arange(nqb, device=q.device) * 128
+    q_hi = torch.clamp(first_q + 127, max=S - 1)
+    extra = [torch.stack([ds[:, first_q] // 128,
+                          torch.clamp(ds[:, first_q] + max(n_sinks - 1, 0), max=S - 1) // 128], dim=-1)]
+    if opened is not None:
+        extra.append(opened.extra_blocks())
+    if two:  # the own block in the second copy: KV blocks from S + own-block start to S + the block's last query
+        E = (blk + 127) // 128 + 2
+        lo = (S + (first_q // blk) * blk) // 128
+        hi = (S + q_hi) // 128
+        ids2 = lo[:, None] + torch.arange(E, device=q.device)[None]
+        extra.append(torch.where(ids2 <= hi[:, None], ids2, torch.full_like(ids2, -1))[None].expand(B, -1, -1))
+    bm = _band_block_mask(pred, B=B, Q_LEN=S, KV_LEN=nraw, window=2 * blk, causal=True, device=q.device,
+                          extra_blocks=torch.cat(extra, dim=-1))
+    o1, aux1 = flex(qt, Kr.transpose(1, 2).contiguous(), Vr.transpose(1, 2).contiguous(), block_mask=bm,
+                    enable_gqa=(g != h), return_aux=AuxRequest(lse=True))
+    if not use_sum:
+        return o1.transpose(1, 2)
+    Ks, Vs = K[:, nraw:], V[:, nraw:]
+    chosen = _chosen_lookup(opened)
+
+    def spred(b, hh, qi, c):
+        vis = (qi >= c_from[b, c]) & (c_doc[b, c] == doc32[b, qi]) & (doc32[b, qi] >= 0)
+        if chosen is not None:
+            vis = vis & ~chosen(b, qi, c)
+        return vis
+
+    def smod(score, b, hh, qi, c):
+        return score + logn[b, c] + qn2[b, hh, qi] * vhalf[b, c]
+
+    if S * C > _CHUNKED_MASK_PAIRS:
+        bm2 = _chunked_block_mask(spred, B=B, Q_LEN=S, KV_LEN=C, device=q.device)
+    else:
+        bm2 = create_block_mask(spred, B=B, H=None, Q_LEN=S, KV_LEN=C, device=q.device,
+                                _compile=torch.cuda.is_available())
+    o2, aux2 = flex(qt, Ks.transpose(1, 2).contiguous(), Vs.transpose(1, 2).contiguous(), block_mask=bm2,
+                    score_mod=smod, enable_gqa=(g != h), return_aux=AuxRequest(lse=True))
+    l1, l2 = aux1.lse.float(), aux2.lse.float()                                        # [B, h, S]
+    m = torch.maximum(l1, l2)
+    w1 = torch.exp(l1 - m)
+    w2 = torch.where(torch.isfinite(l2), torch.exp(l2 - m), torch.zeros_like(l2))
+    out = (o1.float() * w1[..., None] + o2.float() * w2[..., None]) / (w1 + w2)[..., None]
+    return out.to(q.dtype).transpose(1, 2)
