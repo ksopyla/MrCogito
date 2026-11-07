@@ -313,9 +313,13 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
         vs = cidx.mu_v if dv is None else cidx.mu_v + dv.to(cidx.mu_v.dtype)
         Ks.append(cidx.mu_k[:, :, None].to(k.dtype))
         Vs.append(vs[:, :, None].to(v.dtype))
-        logn = torch.where(cidx.n > 0, cidx.n.clamp_min(1.0).log(), torch.zeros_like(cidx.n)).contiguous()
-        vhalf = (0.5 * cidx.var).contiguous() if variance else torch.zeros_like(cidx.var)
-        qn2 = (q.float() ** 2).sum(-1).transpose(1, 2).contiguous() / d                # [B, h, S]
+        # The bias terms are read by flex's score_mod as captured buffers. They carry no gradient: a captured
+        # buffer's gradient is accumulated with atomic adds, and every query and head adds into the same few
+        # summary entries (E37 stage 0, 2026-11-07: 4× slower than the LSA arm at 4k, 8.5× at 16k with gradients
+        # on them). The summaries' keys and values, which carry the read's gradient, are ordinary K / V entries.
+        logn = torch.where(cidx.n > 0, cidx.n.clamp_min(1.0).log(), torch.zeros_like(cidx.n)).detach().contiguous()
+        vhalf = ((0.5 * cidx.var) if variance else torch.zeros_like(cidx.var)).detach().contiguous()
+        qn2 = ((q.detach().float() ** 2).sum(-1).transpose(1, 2) / d).contiguous()       # [B, h, S]
         c_from = ((cidx.block_of + 2) * blk)[None].expand(B, -1).to(torch.int32).contiguous()
         c_doc = cidx.c_doc.to(torch.int32).contiguous()
     K, V = (torch.cat(Ks, dim=1), torch.cat(Vs, dim=1)) if len(Ks) > 1 else (k, v1)
