@@ -78,6 +78,10 @@ Stage A, 100M (`m100`), all with E33's loop (4 passes) and one KV head, no posit
 - **dense** (ceiling), **window** (floor: the last 512 tokens only), **lsa** (LSA's read, our port: E33p's LSA-native),
 - **notes_open** (best E33-family read on natural long text, E33p; the parent session's catalogue read joins if ready),
 - **e37a** (encoder + decoder read), **e37b** (+ reasoner).
+- **Compression ladder** (30M home screen): **e37a_c32** and **e37a_c128** are e37a with 16 and 4 concepts per
+  512-key block (32 and 128 keys per concept), with the same 512 opened tokens. Only the far field gets coarser, so
+  the ladder measures how much of the read the summaries carry, and whether few rich summaries are enough. A 10M
+  context needs few, rich summaries. K1's "summaries off" fallback is the end of this ladder.
 - **Original LSA** (their trainer `lsa native train`, the `qwen35_0_8b_gpt2/lsa_mqa8` preset scaled to ~100M,
   Gated DeltaNet hybrid) — stage B, only if their stack runs on our GPUs (torch 2.13, CUTLASS DSL; kernels target
   H200 / B300; a reference path exists). Our port reproduces their read exactly (E33p T12), so stage A already
@@ -127,6 +131,15 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
      peak memory within 1.5 GB of the LSA arm.
   S5 (≥ 0.8 × LSA) is met by e37a at 100M and missed narrowly by e37b; the remaining gap is the summary call's
   score_mod, the per-pass clustering and the merge. Further kernel work waits for the read to prove itself.
+- **30M home screen (2026-11-07, while the AWS node runs E33p stage 1 and no H100 is free):** E33p's exact
+  stage-1 protocol (1.5B FineWeb-Edu at 4k, 0.2B LongDocs-lite at 16k, 64 rows of 4k per step, seed 42), so the
+  runs compare directly with E33p's six seed-42 controls (`infra/aws/jobs/e37_home.sh`):
+  - e37a on Polonez GPUs 0+1 (from 10:21 UTC);
+  - e37b on Odra GPUs 0+1 (from 11:51 UTC);
+  - e37a_c32 and e37a_c128 on one card each (Odra GPU 2, Polonez GPU 2).
+  
+  At the controls' 30M scale the share of the gap at 16k is 99 % for LSA-native, 34 % for pages_open, 31 % for
+  notes_open and 4 % for e33. Three GPUs would break the 64-row step, so the reasoner arm uses two.
 - **Stage A:** six arms at 100M with the screening protocol, on one 4 × L40S spot node (each arm on all four
   GPUs, ~8–10 h, ≈ $60 per arm; ≈ $360) or H100s when available. Gate: S1–S5, K1–K3.
 - **Stage B (if S1 holds):** the full m100 protocol for e37 (a or b), lsa and dense (+ original LSA if its stack

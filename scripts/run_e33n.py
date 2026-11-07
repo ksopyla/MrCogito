@@ -73,6 +73,12 @@ ARMS = {
              "concept_block": 512, "concept_per_block": 64, "concept_sinks": 4, "concept_top_k": 512,
              "concept_reasoner_layers": 2, "concept_reasoner_dim": 512, "concept_reasoner_heads": 8,
              "concept_reasoner_loops": 2},
+    # E37 compression ladder: e37a with coarser concepts (32 and 128 keys per concept); the same 512 opened tokens,
+    # so only the far field (the summaries) gets coarser — a 10M context needs few, rich summaries
+    "e37a_c32": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "concept",
+                 "concept_block": 512, "concept_per_block": 16, "concept_sinks": 4, "concept_top_k": 512},
+    "e37a_c128": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "concept",
+                  "concept_block": 512, "concept_per_block": 4, "concept_sinks": 4, "concept_top_k": 512},
 }
 TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"lm_open_k": 1, "lm_open_cap": 64},
              "lsa": {"lsa_window": 64, "lsa_block": 64, "lsa_top_k": 64},
