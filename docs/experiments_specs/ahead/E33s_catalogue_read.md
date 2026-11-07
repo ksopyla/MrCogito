@@ -1,11 +1,11 @@
 # E33s — the catalogue read: notes index the text, they are not read; balanced filing, a trained index, a new place per pass, two levels
 
-- **Status:** draft 2026-11-07 (author asked for it: "Yes, write the spec"). Waiting for the alignment page
-  [e33s_architecture.html](../../3_Evaluations_and_Baselines/e33s_architecture.html) and the go-ahead.
+- **Status:** **approved 2026-11-07** ("Aligned, build it") on the alignment page
+  [e33s_architecture.html](../../3_Evaluations_and_Baselines/e33s_architecture.html), every decision as shown there.
 - **Serves:** vision priority 2 (long context through the notebook) and the author's 2026-11-07 aim: chase LSA's
   quality with a simpler design of our own that can reason over memory and reach > 10M tokens (tested smaller first),
   then scale to 100–200M if 30M matches. Direct follow-up of E33p stage 1.
-- **Implementation plan:** [E33s_plan.md](E33s_plan.md) *(to be written by `implementation-plan` after alignment)*
+- **Implementation plan:** [E33s_plan.md](E33s_plan.md)
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-11-07 · closed —
 - **ID:** next free E33 letter (E33q / E33r are text-check runs, E33w / E33x the iCoT runs; E33s–v unused).
 - **Evidence behind it:** E33p stage 1 analysis page
