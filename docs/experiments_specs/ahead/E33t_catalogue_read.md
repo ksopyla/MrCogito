@@ -216,4 +216,36 @@ at 16k in E33p) show the marks are reachable at this size and data.
 - **Two levels can drop a needed page** before its notes are scored; page recall is logged, and S4 decides.
 
 ## Result
-- (filled in by experiment-track)
+- **Stage A + follow-up, scored 2026-11-08 ~16:50 UTC against the same-seed controls** (AWS seed 1, 4 × L40S;
+  share of G on positions ≥ 2k, token-weighted over sources; 128k: loss, lower is better, dense is worse than the
+  window there). Runs: catalogue 2026-11-07 11:24–15:50 UTC, catalogue_2l 15:51–20:49, window s1 2026-11-07 20:49 –
+  11-08 01:03, LSA port s1 01:03–05:05 (evals to 06:12), catalogue_reuse 07:22–12:03 (probe to 12:04); results in
+  `s3://…/runs/e33t/` and `runs/e33p/`.
+
+  | model | 4k | 16k | 32k | 64k | 128k loss |
+  |---|---|---|---|---|---|
+  | window | 0 | 0 | 0 | 0 | 2.2765 |
+  | dense | 100 | 100 | 100 | 100 | 2.3209 |
+  | LSA port (`lsa`) | 98.2 | 95.3 | 99.3 | 153.3 | 2.1441 |
+  | notes-open | 42.8 | 37.4 | 30.1 | 23.4 | — |
+  | catalogue | 70.0 | 71.1 | 72.3 | 115.2 | 2.1738 |
+  | catalogue_2l | 67.4 | 67.9 | 67.0 | 99.5 | 2.1933 |
+  | **catalogue_reuse** | **96.9** | **91.4** | **94.0** | **151.6** | **2.1395** |
+
+- **Main arm (catalogue):** S1 missed (71.1 < 80); S2 passes; K1 not hit. **S4:** the two-level arm is 3.2 points
+  behind at 16k (holds) and 15.7 behind at 64k (fails).
+- **catalogue_reuse (pass exclusion off in training, nothing else changed):** S1 passes (91.4); S2 passes; S5 0.91 ×
+  the LSA port's 16k speed (decay 39.4 vs 35.9 min; passes narrowly); the whole run 1.11 × the LSA port's wall time
+  (K4 passes); S6 passes (16k loss on positions < 512: 2.6082 vs the window's 2.6095; core mean 40.78 vs 40.83).
+  S3 not measured in its spec form (the flow probe's dense top-32 recall was not run on it).
+- **RULER at 4k (mean of tasks):** catalogue_reuse 14.1 (single needle 94 %), catalogue 6.0, catalogue_2l 1.2, LSA
+  port 15.2, dense 16.0, notes-open 5.0, window 4.1. Core benchmark means all 40.1–41.0 (no harm anywhere).
+- **Planted-password probe on catalogue_reuse:** pass 1 now rarely opens the key (23 % at 4k; catalogue 94 %), passes
+  2–4 open it 95–97 % at 4k (63–67 % at 16k) and the last pass puts 0.38 of its read on it (LSA port s42 0.37, dense
+  s1 0.41): the passes return to the key the way the LSA port's do. First answer token right 15 % at 4k (6/40) and
+  10 % at 16k (2/20), below the LSA port's 25 % / 30 % (seed 42) and dense's 30 % / 15 %; with 40 and 20 rows the
+  difference is within sampling noise (about ±7 points at 4k).
+- **Verdict:** the per-pass exclusion was the main cause of the gap to LSA. Switching it off in training (same
+  72,687,765 parameters) moves the catalogue read from 71 % to 91 % of G at 16k, level with the LSA port at 64k, and
+  gives the best 128k loss of all models. It does not beat the LSA port at ≤ 32k (1–5 points behind) and trains
+  about 10 % slower. catalogue_reuse is the stage-A winner for stages B–C.
