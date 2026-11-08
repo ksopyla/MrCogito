@@ -1,0 +1,255 @@
+{
+  "schema": "nn-builder/graph",
+  "version": 1,
+  "name": "LSA paper native 752M (0.50B core)",
+  "description": "LSA as published, native version (Kubicek et al., arXiv 2610.42147, 30 Oct 2026; code github.com/Prefrontal-AI/latent-sparse-attention, native config default flavor Qwen3.5-0.8B, text only). 24 layers, width 1024: three Gated DeltaNet layers then one attention layer, six times. Only the attention layers use the LSA read (window 512, 4 sinks, buckets of ~8 inside 512-key blocks, top 1,024 keys in the code default; the paper reports 2,048–4,096 at long lengths). No notebook, no loop. Trained on 100B FineWeb-Edu tokens at 4k, then a 12B-token decay at 128k. Result in the paper: matches full attention at 128k (validation loss 1.085 = 1.085; RULER 32.2 vs 34.7). Dimensions from Qwen/Qwen3.5-0.8B config.json; the multi-token-prediction layer and vision tower are left out. We never trained this model. Parameters: 752,393,024 (text model, tied output), 498,113,344 without the word table (254,279,680). Check against the Hub: Qwen/Qwen3.5-0.8B lists 873.4M = this + the vision tower 100,592,896 + the prediction layer 20,452,864 (873,438,784; the safetensors index's 1,746,882,752 bytes match once the 18 linear layers' A_log and norm weights, stored in float32, are counted at 4 bytes).",
+  "stacks": [
+    {
+      "id": "main",
+      "name": "Decoder",
+      "role": "decoder",
+      "width": 1024,
+      "seq": {
+        "kind": "tokens"
+      },
+      "rows": [
+        {
+          "id": "main.input",
+          "x0_mix": false,
+          "label": "input",
+          "cells": [
+            {
+              "type": "embedding",
+              "vocab": 248320,
+              "dim": 1024,
+              "ngram_tables": 0,
+              "ngram_buckets": 8192,
+              "proj": "none",
+              "out_norm": "none",
+              "id": "main.input.emb",
+              "label": "Qwen3.5 token table 248,320 × 1024 (tied with the output)"
+            },
+            {
+              "type": "positional",
+              "kind": "rope",
+              "theta": 10000000,
+              "max_len": 131072,
+              "id": "main.input.pos",
+              "label": "RoPE θ 10M on a quarter of each attention head's dims"
+            }
+          ]
+        },
+        {
+          "id": "main.L0",
+          "x0_mix": false,
+          "label": "linear attention 1 of 3 (Gated DeltaNet)",
+          "cells": [
+            {
+              "type": "custom",
+              "id": "main.L0.gdn",
+              "label": "Gated DeltaNet: 16 heads × 128, conv 4, recurrent state",
+              "params": 10544288,
+              "flops_per_position": 23183360,
+              "act_bytes_per_position": 40000,
+              "out": 0,
+              "note": "Qwen3.5 linear attention: in_proj qkvz 1024→8192, in_proj ba 1024→32, conv1d 6144×4, gated RMSNorm 128, out 2048→1024, input norm 1024. A fixed-size recurrent state per head (128×128) instead of a key cache. Parameters exact from the config; FLOPs and activations approximate."
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 3584,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L0.ffn",
+              "label": "SwiGLU 3584"
+            }
+          ]
+        },
+        {
+          "id": "main.L1",
+          "x0_mix": false,
+          "label": "linear attention 2 of 3 (Gated DeltaNet)",
+          "cells": [
+            {
+              "type": "custom",
+              "id": "main.L1.gdn",
+              "label": "Gated DeltaNet: 16 heads × 128, conv 4, recurrent state",
+              "params": 10544288,
+              "flops_per_position": 23183360,
+              "act_bytes_per_position": 40000,
+              "out": 0,
+              "note": "Qwen3.5 linear attention: in_proj qkvz 1024→8192, in_proj ba 1024→32, conv1d 6144×4, gated RMSNorm 128, out 2048→1024, input norm 1024. A fixed-size recurrent state per head (128×128) instead of a key cache. Parameters exact from the config; FLOPs and activations approximate."
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 3584,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L1.ffn",
+              "label": "SwiGLU 3584"
+            }
+          ]
+        },
+        {
+          "id": "main.L2",
+          "x0_mix": false,
+          "label": "linear attention 3 of 3 (Gated DeltaNet)",
+          "cells": [
+            {
+              "type": "custom",
+              "id": "main.L2.gdn",
+              "label": "Gated DeltaNet: 16 heads × 128, conv 4, recurrent state",
+              "params": 10544288,
+              "flops_per_position": 23183360,
+              "act_bytes_per_position": 40000,
+              "out": 0,
+              "note": "Qwen3.5 linear attention: in_proj qkvz 1024→8192, in_proj ba 1024→32, conv1d 6144×4, gated RMSNorm 128, out 2048→1024, input norm 1024. A fixed-size recurrent state per head (128×128) instead of a key cache. Parameters exact from the config; FLOPs and activations approximate."
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 3584,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L2.ffn",
+              "label": "SwiGLU 3584"
+            }
+          ]
+        },
+        {
+          "id": "main.L3",
+          "x0_mix": false,
+          "label": "attention layer · LSA read",
+          "cells": [
+            {
+              "type": "custom",
+              "id": "main.L3.index",
+              "label": "bucket index (LSA), best head scores centres",
+              "params": 0,
+              "flops_per_position": 1048576,
+              "act_bytes_per_position": 0,
+              "out": 0,
+              "note": "No weights, no gradient. FLOPs shown at 4k."
+            },
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 8,
+              "head_dim": 256,
+              "kv_heads": 2,
+              "causal": true,
+              "window": 1540,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L3.attn",
+              "label": "LSA read: last 512 tokens + 4 sinks + top 1,024 keys from the best buckets (code default)"
+            },
+            {
+              "type": "custom",
+              "id": "main.L3.gate",
+              "label": "attention output gate (Qwen3.5)",
+              "params": 2097152,
+              "flops_per_position": 4194304,
+              "act_bytes_per_position": 4096,
+              "out": 0,
+              "note": "attn_output_gate: the query projection also produces a sigmoid gate per head channel (1024 → 8 × 256) that multiplies the attention output."
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 3584,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L3.ffn",
+              "label": "SwiGLU 3584"
+            }
+          ]
+        },
+        {
+          "id": "main.head",
+          "x0_mix": false,
+          "label": "head",
+          "cells": [
+            {
+              "type": "lm_head",
+              "vocab": 248320,
+              "tied": true,
+              "bias": false,
+              "final_norm": "rmsnorm",
+              "z_loss": 0,
+              "softcap": 0,
+              "chunked": true,
+              "id": "main.head.lm",
+              "label": "tied output layer 248,320"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "edges": [],
+  "groups": [
+    {
+      "id": "rep.block",
+      "kind": "repeat",
+      "stack": "main",
+      "rows": [
+        "main.L0",
+        "main.L1",
+        "main.L2",
+        "main.L3"
+      ],
+      "count": 6,
+      "round_embedding": false,
+      "feedback": "none"
+    }
+  ],
+  "run": {
+    "row_length": 4096,
+    "rows_per_step": 256,
+    "micro_batch": 0,
+    "precision": "amp_bf16",
+    "optimizer": "adamw",
+    "weight_decay": 0.1,
+    "zero_stage": 0,
+    "checkpointing": false,
+    "gpu": "h100_80",
+    "gpu_count": 8,
+    "token_budget": 100000000000,
+    "deadline_hours": 0,
+    "mfu": 0,
+    "irregular_ratio": 0,
+    "dp_efficiency": 0.95
+  }
+}
