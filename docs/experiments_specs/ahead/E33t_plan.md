@@ -170,3 +170,47 @@ def index_loss(q, k, sink_k, kappa, opened, *, doc, raw_window, rows, negatives,
 # nn/perceiver_ar_lm.py — sketch
 def _attend_catalogue(q, k, v, sink_k, sink_v, *, ctx, key_valid, backend, opened): ...  # KV = raw ‖ slots
 ```
+
+## 10. Stage C — long documents (design 2026-11-08, awaiting the author's approval)
+**Why new code.** The read stores each query's choice as the table T [B, S, G] int16 with G ∝ S, so T grows with
+S²: 4.3 GB at 128k (G = 16,384), 17 GB at 256k, 275 GB at 1M (G = 131,072). Everything else in the forward is
+linear in S at eval (chunked choice, chunked CE, block masks of (S/128)² bits, writer per page), so T is the one wall.
+`open_seen` is not needed: the reuse arms have no pass exclusion.
+
+**Measured data (val split, 2026-11-08):** 17 documents ≥ 128k (gutenberg 4, arxiv 1, doab 8, usgpo 4), 4 ≥ 256k
+(doab 2, usgpo 2), 1 ≥ 512k and ≥ 1M (one usgpo document of 1,295,611 tokens). The long-document loss at 1M is
+therefore one document: an illustration, not a statistic. The planted password at 1M (filler = that document,
+20 depths) is the 1M test with rows enough to count.
+
+**Decisions.**
+1. **The choice as a list** (`lm_open_impl = "list"`, eval only, no gradient): `note_open_table` keeps its loop and
+   writes each chunk's `ids` [B, ch, m] and `off` [B, ch, m] (and the counts) into a `ChoiceList` instead of T:
+   [B, S, m] int32 + int16, 0.8 GB at 1M with m = 128. Same collector for the LSA port's buckets
+   (`nn/lsa_buckets.py` calls the same `choose`).
+2. **Opened positions without T.** For a query, chosen group g takes places [off_g, off_g + cnt_g) ∩ [0, cap); the
+   opened tokens are g's members in [doc_start(i), i − RW], oldest first. Each of the cap slots t finds its group by
+   `searchsorted` over off + cnt and reads `members[g, r0_g + t − off_g]` (r0_g = g's members before doc_start(i),
+   from the prefix counts). members [B, G, F] (F = largest group: 16 for the catalogue, up to 512 for LSA buckets) is
+   built once per forward from the codes. Exactly the table rule when every token is in at most one group per
+   forward (one code layer: the catalogue's filed notes, LSA's closed blocks); overlapping spans are refused.
+3. **The read per query chunk** (1,024 queries): one softmax over the raw window (keys [s0 − RW + 1, s1), band and
+   same-tag test, key_valid as the flex predicate) ‖ the ≤ cap gathered tokens (same tag) ‖ the learned slots (or
+   LSA's sinks). One KV head, so the gather is [ch, cap, 64]: about 130 MB per chunk.
+4. **Exactness test before any long run:** at 16k (tiny and s30 shapes, fp32), the list read equals the table read
+   (SDPA reference) to 1e-5, for the catalogue and the LSA port, with and without document packing.
+5. **Training stays on the table** (flex, gradients). The 64k stage's T is 1 GB per row: fits.
+6. **The 64k stage** (new phase `long` in `scripts/run_e33n.py`, `e33n_run.sh` after the decay): from the 16k
+   decay's final weights, LongDocs-lite rows of 65,536, 0.1B tokens, picking up at the rate the decay ended on
+   (1e-4, 10 % of the peak) and decaying 1−sqrt to 1e-5, 4 rows per optimizer step (the decay's 262k tokens per
+   step; ~380 steps). Given to the stage-B winner,
+   the LSA port and the window control alike (the controls get the same tokens; dense is not a ceiling past 16k:
+   at 64k the reuse catalogue is already at 152 % of its gap).
+7. **Two levels as an eval switch first.** The page key is the mean of a page's raw keys (no parameters), so the
+   two-level search can run on the flat-trained winner at eval (`levels = 2`, 16 pages). If it matches the flat
+   search at 128k–1M, no two-level model is trained (saves ~$60); if it loses and the compute matters, the second
+   training run of the spec is the two-level reuse arm.
+8. **Evals:** long-document loss at 128k, 256k (all rows that exist), 1M (one document), each with the notebook
+   on / off; planted password at 128k and 1M; the window control as the floor, the LSA port (list read) as the
+   reference, the 16k-only model to show what the 64k stage adds.
+
+**Cost:** three 64k stages (~1 h each on an H100) + evals (~1 h per model at 1M) ≈ $30–50, against the spec's $80.

@@ -202,7 +202,10 @@ at 16k in E33p) show the marks are reachable at this size and data.
   A spot quota raise to 96 vCPUs (two 4-GPU nodes) was requested 2026-11-08 17:56 UTC for later stages.
 - **Stage C: long documents.** The winner with the two-level search, its choice stored as a short list (a gather
   read instead of the [S × G] table), trained at 16k plus a short 64k stage; evaluated at 128k, 1M and beyond.
-  Two runs, about $80.
+  Two runs, about $80. **Design proposed 2026-11-08 (plan §10, awaiting approval):** the list read for evaluation
+  only (the table is 275 GB at 1M), the 64k stage for the stage-B winner, the LSA port and the window control alike,
+  two levels first as an eval switch on the flat winner (a two-level model only if the switch loses), about $30–50.
+  Only one validation document reaches 1M tokens, so 1M is judged mainly by the planted password.
 - **Stage D (if A–C match LSA-native at 30M, with the author's approval):** 100M (`m100`: 3B + 0.4B tokens) — the
   winner, LSA-native and the two controls, about 20–25 hours each on the 4 × L40S node, $500–600 in all.
 - **Budget:** about $800–900 for A–D on top of stage 1 (≈ $220 in all), inside the $2,000 AWS goal.
