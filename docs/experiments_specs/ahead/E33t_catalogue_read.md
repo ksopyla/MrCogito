@@ -187,12 +187,19 @@ at 16k in E33p) show the marks are reachable at this size and data.
   `C4.chain4-1k` ≥ 75 % first letter (the passes-as-lookups claim).
 - **Stage B (if S1 holds): page and note sizes.** Around the stage-A winner: 4, 8 and 16 tokens per note at
   256-token pages (64 / 32 / 16 notes), and 512-token pages with 64 notes. Four runs, about $120.
-  **Launched 2026-11-08 (approved by the author ~17:30 UTC):** the winner is `catalogue_reuse` (8 tokens per note at
-  256-token pages, already trained), so three new runs on one g6e.12xlarge spot node (`infra/aws/jobs/e33t_b.sh`):
-  `catalogue_reuse_n4` (64 notes, 72,769,685 parameters / 30,328,597 without word tables), `catalogue_reuse_n16`
-  (16 notes, 72,646,805 / 30,205,717) and `catalogue_reuse_p512` (512-token pages, 64 notes, 72,900,757 /
-  30,459,669); only the writer's note slots differ. Same gates as stage A against the seed-1 controls; the winner
-  is the best 16k share whose 64k share does not fall below it (S2), ties broken by RULER at 4k.
+  **Approved by the author 2026-11-08 ~17:30 UTC:** the winner is `catalogue_reuse` (8 tokens per note at
+  256-token pages, already trained), so three new runs (`infra/aws/jobs/e33t_b.sh`): `catalogue_reuse_n4`
+  (64 notes, 72,769,685 parameters / 30,328,597 without word tables), `catalogue_reuse_n16` (16 notes, 72,646,805 /
+  30,205,717) and `catalogue_reuse_p512` (512-token pages, 64 notes, 72,900,757 / 30,459,669); only the writer's
+  note slots differ. Same gates as stage A against the seed-1 controls; the winner is the best 16k share whose 64k
+  share does not fall below it (S2), ties broken by RULER at 4k.
+  **Machines:** the planned g6e.12xlarge spot node was refused at 17:40 UTC (MaxSpotInstanceCountExceeded in every
+  us-east-1 zone: the account's 48-vCPU spot G quota is held by the 10M-context runs; on-demand G quota is 0). The
+  author chose one on-demand H100 (p5.4xlarge, $6.88/h) per model, launched from ~18:00 UTC with a retry every 5 min
+  while H100s are short, 16 h hard stop each; micro-batch 8 (trunk) / 2 (decay) on the 80 GB card, same rows per
+  optimizer step as the 4-GPU runs (64 / 16). Expected ~8–10 h and ~$60–70 per model. Caveat for the comparison:
+  one GPU instead of four, so the same data in a different micro-batch split (numerics only, no change of recipe).
+  A spot quota raise to 96 vCPUs (two 4-GPU nodes) was requested 2026-11-08 17:56 UTC for later stages.
 - **Stage C: long documents.** The winner with the two-level search, its choice stored as a short list (a gather
   read instead of the [S × G] table), trained at 16k plus a short 64k stage; evaluated at 128k, 1M and beyond.
   Two runs, about $80.

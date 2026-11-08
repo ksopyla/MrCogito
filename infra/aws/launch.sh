@@ -71,27 +71,30 @@ EOF
 # H100 capacity differs per zone: try each zone that offers TYPE in this region, in turn (MC_ZONES overrides)
 ZONES="${MC_ZONES:-$(aws ec2 describe-instance-type-offerings --location-type availability-zone \
   --filters "Name=instance-type,Values=$TYPE" --query 'InstanceTypeOfferings[].Location' --output text)}"
-ID=""
+# an on-demand launch has no market options: an empty array under set -u needs the +-guard on macOS bash 3.2
+# (2026-11-08: "MARKET[@]: unbound variable" before any request reached AWS); each try gets a fresh error file
+ID=""; ERR=$(mktemp)
 for AZ in $ZONES; do
+  : > "$ERR"
   SUBNET=$(aws ec2 describe-subnets --filters Name=default-for-az,Values=true "Name=availability-zone,Values=$AZ" \
     --query 'Subnets[0].SubnetId' --output text)
   [ "$SUBNET" = "None" ] && continue
   if ID=$(aws ec2 run-instances --image-id "$AMI" --instance-type "$TYPE" --key-name "$MC_KEY" \
     --subnet-id "$SUBNET" --security-group-ids "$SG" --iam-instance-profile "Name=${MC_ROLE}" \
-    --instance-initiated-shutdown-behavior terminate "${MARKET[@]}" \
+    --instance-initiated-shutdown-behavior terminate ${MARKET[@]+"${MARKET[@]}"} \
     --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=${MC_ROOT_GB},VolumeType=gp3,DeleteOnTermination=true}" \
     --metadata-options "HttpTokens=required,HttpEndpoint=enabled" \
     --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${NAME}},{Key=Project,Value=${MC_PROJECT_TAG}},{Key=MaxHours,Value=${MAX_HOURS}}]" \
-    --user-data "file://${USERDATA}" --query 'Instances[0].InstanceId' --output text 2>/tmp/mc_launch_err); then
+    --user-data "file://${USERDATA}" --query 'Instances[0].InstanceId' --output text 2>"$ERR"); then
     break
   fi
-  echo "no $TYPE in $AZ: $(grep -oE '\(([A-Za-z]+)\)' /tmp/mc_launch_err | head -1)"
+  echo "no $TYPE in $AZ: $(grep -oE '\(([A-Za-z]+)\)' "$ERR" | head -1)"
   ID=""
 done
-rm -f "$USERDATA"
+rm -f "$USERDATA" "$ERR"
 [ -z "$ID" ] && { echo "no capacity in any zone; try again later"; exit 2; }
 echo "launched $NAME = $ID ($TYPE in $AZ, max ${MAX_HOURS} h ≈ \$$(python3 -c "print(f'{$MAX_HOURS*$PRICE:.0f}')") cap)"
 aws ec2 wait instance-running --instance-ids "$ID"
 IP=$(aws ec2 describe-instances --instance-ids "$ID" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 echo "running at $IP — ssh -i $MC_KEY_FILE ubuntu@$IP ; tmux attach -t job"
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) launch $NAME $ID $TYPE${MARKET[*]:+ spot} max ${MAX_HOURS}h job ${JOB} branch ${BRANCH}" >> "$(dirname "$0")/runs.log"
+echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) launch $NAME $ID $TYPE${MARKET[*]+${MARKET[*]:+ spot}} max ${MAX_HOURS}h job ${JOB} branch ${BRANCH}" >> "$(dirname "$0")/runs.log"
