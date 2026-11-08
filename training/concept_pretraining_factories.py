@@ -454,7 +454,7 @@ def _plain_loop_kwargs(model_args) -> dict:
             out[k] = getattr(model_args, k)
         if str(model_args.par_global_read) == "concept":  # E37
             for k in ("concept_block", "concept_per_block", "concept_iters", "concept_tau", "concept_sinks",
-                      "concept_top_k", "concept_width", "concept_summaries", "concept_variance",
+                      "concept_top_k", "concept_width", "concept_summaries", "concept_variance", "concept_sum_len",
                       "concept_reasoner_layers", "concept_reasoner_dim", "concept_reasoner_heads",
                       "concept_reasoner_loops"):
                 out[k] = getattr(model_args, k)

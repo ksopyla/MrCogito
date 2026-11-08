@@ -165,11 +165,54 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     `_attend_concepts_flex` (and the reference path): a padding query reads zero; test T7
     (`test_padding_slots_read_zero_and_leave_real_tokens_unchanged`). On the GPU with the fix: no NaN, loss on
     positions 2k–4k 2.7853 / 2.7865 / 2.7855 for the three padded layouts vs 2.7855 plain. RULER to be rerun.
+  - **RULER rerun with the fix (e7a0b18), e37b (Odra GPUs 0+1, 07:42–11:13 UTC Nov 8; 16k tasks split over the two
+    cards, merged; 100 documents per task):** mean of the 13 tasks 0.113 at 4k and 0.103 at 16k. At 4k: LSA 0.139,
+    pages_open 0.105, dense 0.091, notes_open 0.047, window 0.029, e33 0.024 (the controls ran RULER at 4k only;
+    e33 at 16k 0.016). Single needle (niah_single_1) 0.57 at 4k and 0.49 at 16k (LSA 0.97, pages_open 0.78, dense
+    0.68 at 4k); multi-value 0.155 / 0.185 (LSA 0.103). The old zero result is kept as `eval_ruler_padnan.json`.
+    e37a's rerun is queued on Polonez GPU 2 after e37a_c128's evals.
   - **Summaries-off probe (eval only, same rows; 01:41–01:49 UTC Nov 8, Polonez GPU 0):** e37a with the concept
     summaries switched off recovers 86.5 % at 16k (vs 100 % with them) but 104.7 % at 64k (vs 86.4 %); at 128k
     (arxiv, doab, gutenberg; hansard has no 128k row and the probe stopped before usgpo) loss 2.930 vs 3.131 with
     summaries, LSA 2.947, window 3.031, dense 3.044. The summaries carry ~13 points at the training length, and
     their growing number (2,048 at 16k → 16,384 at 128k) breaks the read past it: the fade is the summaries'.
+- **Compression ladder, e37a_c128 (4 concepts of 128 keys per block, same 512 opened tokens; Polonez GPU 2, decay
+  done 09:10 UTC Nov 8, long-document eval 09:10–09:15 UTC; RULER and core then run with the padding fix):** share
+  of the window→dense gap 85.8 / 80.9 / 71.5 / 65.0 % at 4k / 16k / 32k / 64k (e37a, 8 keys per concept: 96.0 /
+  100.0 / 98.7 / 86.4); 128k raw loss 2.286 (e37a 2.333, window 2.278, dense 2.267, LSA 2.170).
+  - Coarse concepts cost ~19 points at the training length: four broad concepts choose a less precise 512-token open,
+    and their summaries are coarser.
+  - The fade remains (−16 points from 16k to 64k; e37a −14), although c128 has ~512 summaries at 64k, fewer than
+    e37a's ~2,048 at 16k, where e37a is at 100 %. So the number of summaries alone does not explain the fade.
+    Hypothesis: the cause is the total weight the far field claims (each summary claims its members' estimated
+    mass, and that total grows with length whatever the grouping). Tested by the fade probe below.
+  - e37a_c32 (16 concepts of 32 keys) is due to finish its main phase about 13:10 UTC.
+- **Fade probe (eval only, no retraining; e37b's checkpoint, Odra GPUs 0+1, 11:14–11:52 UTC Nov 8; same rows as
+  its long-document eval, 8 per source; shares paired by source: 5 sources at 16k / 64k, 4 at 128k).** The flex
+  summary call patched in memory: **cap K** keeps each query and head's K strongest summaries (by the summary logit);
+  **scale** multiplies the summaries' total weight by ρ = min(1, 15,360 / N), N the keys the summaries stand for
+  (15,360 = 30 blocks at the end of a 16k row), so nothing changes up to 16k. Self-test: with the probe off the
+  hidden states equal the original read's (difference 0), and the 16k loss equals the official eval's (2.3492).
+
+  | variant | 16k share | 64k share | 128k loss |
+  |---|---|---|---|
+  | e37b as trained | 99.8 % | 89.0 % | 2.326 |
+  | cap 2,048 (keeps 45 % of the summaries at 64k, 24 % at 128k) | 99.8 % | 95.1 % | 2.288 |
+  | cap 512 (46 % at 16k, 12 % at 64k, 6 % at 128k) | 99.6 % | 121.8 % | 2.204 |
+  | **scale** | 99.8 % (unchanged) | **127.8 %** | **2.155** |
+  | LSA-native / dense / window | 99.2 / 100 / 0 % | 127.0 / 100 / 0 % | 2.170 / 2.267 / 2.278 |
+
+  - **The fade is the summaries' growing total weight:** holding it at the training length's removes the fade and
+    puts e37b level with LSA-native at 64k and 0.015 nats better at 128k. Capping the number of summaries helps only
+    as far as it removes weight.
+  - Only 512 summaries per query and head are needed at 16k (cap 512: −0.2 points).
+  - Caveats: one checkpoint, chosen on the same rows it is scored on, 32–40 rows per length. To confirm: e37a,
+    e37a_c128 and e37a_c32 (not used to choose), more rows, and RULER past 16k (the scale acts only there).
+  - **Built into the read (2026-11-08):** `concept_sum_len` in `PerceiverARConfig` and the trainer (0 = off, the
+    default, so old checkpoints read as trained; set it to the training length, 16,384 here), applied at the merge
+    of the two flex calls and in the reference path; it counts only the blocks wholly inside the query's document.
+    Eval switch: `--concept_sum_len 16384` in `evaluation/long_doc_loss.py` and `evaluation/run_lsa_suite.py`.
+    Tests T8 (values, and no change up to the length) and the GPU flex = reference case `e37a_sum_len`.
 - **Stage A:** six arms at 100M with the screening protocol, on one 4 × L40S spot node (each arm on all four
   GPUs, ~8–10 h, ≈ $60 per arm; ≈ $360) or H100s when available. Gate: S1–S5, K1–K3.
 - **Stage B (if S1 holds):** the full m100 protocol for e37 (a or b), lsa and dense (+ original LSA if its stack

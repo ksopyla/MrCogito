@@ -20,6 +20,7 @@ CASES = {
     "e37a": BASE,
     "e37b": dict(BASE, concept_reasoner_layers=1, concept_reasoner_dim=32, concept_reasoner_heads=2),
     "e37a_no_summaries": dict(BASE, concept_summaries=False),
+    "e37a_sum_len": dict(BASE, concept_sum_len=384),   # the length scale acts from block 3 of the 8-block rows
 }
 
 

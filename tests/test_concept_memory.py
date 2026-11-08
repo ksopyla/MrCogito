@@ -7,8 +7,13 @@ What must hold:
   T4  opening every member equals full causal attention for any keys (opened concepts leave the summaries);
   T5  the model never reads ahead (later tokens do not move earlier logits), with and without the reasoner;
   T6  gradients: the summaries reach the members' keys and values; the reasoner's update starts at zero and learns.
+  T7  padding slots (document id −1) read zero and leave the real tokens unchanged.
+  T8  the length scale: log ρ is 0 up to the training length and log(N_train / N) past it (a later document counts
+      its own blocks); in the model it changes nothing up to that length and only the positions past it.
 """
 from __future__ import annotations
+
+import math
 
 import pytest
 import torch
@@ -258,6 +263,46 @@ def test_padding_slots_read_zero_and_leave_real_tokens_unchanged(kw):
         assert torch.isfinite(left).all()
         # block-aligned left padding: the real tokens' blocks are the plain row's, shifted by two whole blocks
         torch.testing.assert_close(left[:, P:P + lim], base[:, :lim], atol=1e-4, rtol=1e-3)
+
+
+def test_length_scale_values():
+    """T8 — log ρ per query: 0 while the summaries stand for at most N_train keys (the end of a `sum_len` row),
+    log(N_train / N) beyond; a document starting mid-row counts only the blocks wholly inside it."""
+    from nn.exact_read import doc_starts
+
+    S = 20 * BLK
+    doc = torch.zeros(1, S, dtype=torch.long)
+    doc[0, 7 * BLK + 3:] = 1                                   # document 1 starts inside block 7: its first block is 8
+    lr = cm.summary_log_scale(doc_starts(doc), S, BLK, sum_len=6 * BLK)
+    n_train = 4 * BLK                                          # a 6-block row's last query sees blocks 0..3
+    for t, first in [(0, 0), (5 * BLK, 0), (6 * BLK - 1, 0), (6 * BLK, 0), (7 * BLK + 2, 0),
+                     (7 * BLK + 3, 8), (13 * BLK, 8), (14 * BLK, 8), (19 * BLK + 5, 8)]:
+        n = max(t // BLK - 1 - first, 1) * BLK
+        want = 0.0 if n <= n_train else math.log(n_train / n)
+        assert abs(float(lr[0, t]) - want) < 1e-6, (t, float(lr[0, t]), want)
+    assert float(lr[0, :6 * BLK].abs().max()) == 0.0 and float(lr[0, 6 * BLK]) < 0
+    assert cm.summary_log_scale(doc_starts(doc), S, BLK, 0) is None
+
+
+@pytest.mark.parametrize("kw", [{}, {"concept_reasoner_layers": 1, "concept_reasoner_dim": 16,
+                                     "concept_reasoner_heads": 2}], ids=["no_reasoner", "reasoner"])
+def test_length_scale_changes_only_positions_past_the_training_length(kw):
+    """T8 — in the model: a row within `sum_len` reads exactly as with the scale off; with a shorter `sum_len`
+    every position up to it is unchanged and the positions past it change."""
+    m = _model(**kw)
+    ids = torch.randint(3, 60, (1, 8 * BLK), generator=torch.Generator().manual_seed(11))
+    doc = torch.zeros_like(ids)
+    with torch.no_grad():
+        base = m.hidden_states(ids, doc_ids=doc)
+        assert cm.set_concept_sum_len(m, 8 * BLK) == 1
+        same = m.hidden_states(ids, doc_ids=doc)
+        cm.set_concept_sum_len(m, 4 * BLK)
+        scaled = m.hidden_states(ids, doc_ids=doc)
+        cm.set_concept_sum_len(m, 0)
+        off = m.hidden_states(ids, doc_ids=doc)
+    assert torch.equal(same, base) and torch.equal(off, base)
+    assert torch.equal(scaled[:, :4 * BLK], base[:, :4 * BLK])
+    assert (scaled[0, 4 * BLK:] - base[0, 4 * BLK:]).abs().amax(-1).min() > 0
 
 
 def test_eval_switch_reads_window_and_sinks_only():

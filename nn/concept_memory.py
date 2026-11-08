@@ -24,6 +24,12 @@ The three blocks, inside one causal language model (`PerceiverARLM`, `par_global
    moments). Every past token of the document is represented exactly once: inside the window, opened, or inside one
    summary. With pure concepts (identical member keys) the summary read equals full attention.
 
+   **Length scale** (`sum_len`, off by default): past the row length `sum_len` (set it to the training length), the
+   summaries' total weight in a query's softmax is multiplied by ρ = N_train / N, N being the keys the query's
+   summaries stand for and N_train the same count at the end of a `sum_len` row; up to that length ρ = 1 and nothing
+   changes. Without it the estimated far-field mass grows with the document and swamps the read past the training
+   length (E37 fade probe, 2026-11-08, e37b: 89 % → 128 % of the window→dense gap at 64k, 128k loss 2.326 → 2.155).
+
 Related work (2026-11-07 scout): SPLA (arXiv 2601.22379) estimates positional blocks' mass from mean and diagonal
 covariance and reads unread blocks as residual linear attention; RetroInfer (2505.02922) estimates unread clusters as
 centroid score × size, training-free; LSA (2610.42147) clusters keys by Ward merges and picks by cosine, no summaries
@@ -198,6 +204,31 @@ def summary_logit(q: torch.Tensor, cidx: ConceptIndex, *, variance: bool = True)
 
 
 @torch.no_grad()
+def summary_log_scale(ds: torch.Tensor, S: int, block: int, sum_len: int) -> Optional[torch.Tensor]:
+    """log ρ of each query's summaries (the length scale), ρ = min(1, N_train / N): N the keys in the concept blocks
+    the query sees (blocks wholly inside its document, two or more blocks before its own), N_train that count at the
+    end of a `sum_len` row. ds [B, S] document starts → [B, S] fp32, or None when `sum_len` ≤ 0 (off)."""
+    if sum_len <= 0:
+        return None
+    n_train = max((sum_len - 1) // block - 1, 1) * block
+    qi = torch.arange(S, device=ds.device)[None]
+    first = (ds + block - 1) // block                                                  # first block of the document
+    n = ((qi // block) - 1 - first).clamp_min(1) * block
+    return torch.where(n > n_train, math.log(n_train) - n.float().log(), torch.zeros_like(n, dtype=torch.float32))
+
+
+def set_concept_sum_len(model: nn.Module, sum_len: int) -> int:
+    """Eval switch: the length scale of every concept read in `model` (0 = off). Returns the layers changed."""
+    n = 0
+    for m in model.modules():
+        c = getattr(m, "concept", None)
+        if isinstance(c, dict) and "summaries" in c:
+            c["sum_len"] = int(sum_len)
+            n += 1
+    return n
+
+
+@torch.no_grad()
 def concept_open_table(q: torch.Tensor, cidx: ConceptIndex, *, top_k: int, width: int, variance: bool = True,
                        chunk: int = 0) -> OpenTable:
     """Each query opens the concepts with the largest estimated attention mass (its summary logit, best query head),
@@ -284,9 +315,11 @@ def _chosen_lookup(opened: Optional[OpenTable]):
 
 def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch.Tensor], doc, key_valid, backend,
                     opened: Optional[OpenTable], sink: torch.Tensor, ds: torch.Tensor, n_sinks: int,
-                    summaries: bool = True, variance: bool = True, dv_tok: Optional[torch.Tensor] = None):
+                    summaries: bool = True, variance: bool = True, dv_tok: Optional[torch.Tensor] = None,
+                    sum_len: int = 0):
     """The decoder's read: sinks ‖ block-aligned window ‖ opened members ‖ concept summaries, one softmax.
     q [B,S,h,d], k/v [B,S,1,d], doc [B,S] (−1 = pad), sink [B,S] bool, ds [B,S] document starts. Returns [B,S,h,d].
+    `sum_len` > 0: the length scale (module docstring), log ρ added to every summary logit of the query.
 
     With the reasoner (`dv` [B,C,d] per concept, `dv_tok` [B,S,1,d] the same spread to the member tokens), every
     read from memory carries the reasoned update: summaries get μ_v + dv, and older tokens (previous block, sinks,
@@ -321,6 +354,7 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
         qn2 = ((q.detach().float() ** 2).sum(-1).transpose(1, 2) / d).contiguous()       # [B, h, S]
         c_from = ((cidx.block_of + 2) * blk)[None].expand(B, -1).to(torch.int32).contiguous()
         c_doc = cidx.c_doc.to(torch.int32).contiguous()
+    logrho = summary_log_scale(ds, S, blk, sum_len) if use_sum else None                # [B, S] or None
     K, V = (torch.cat(Ks, dim=1), torch.cat(Vs, dim=1)) if len(Ks) > 1 else (k, v1)
     KV = K.shape[1]
     qt, kt, vt = (t.transpose(1, 2) for t in (q, K, V))
@@ -331,7 +365,7 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
                                      ds=ds, n_sinks=n_sinks, key_valid=key_valid, opened=opened, blk=blk, C=C,
                                      logn=logn if use_sum else None, vhalf=vhalf if use_sum else None,
                                      qn2=qn2 if use_sum else None, c_from=c_from if use_sum else None,
-                                     c_doc=c_doc if use_sum else None)
+                                     c_doc=c_doc if use_sum else None, logrho=logrho)
     # reference path (CPU / MPS tests): the same rule as a dense mask and an additive bias
     if g != h:
         kt = kt.repeat_interleave(h // g, dim=1)
@@ -363,6 +397,8 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
             vis = vis & ~(opened.T[:, :, :C].to(torch.int32) < int(opened.cap))
         parts.append(vis)
         bias[..., off_sum:] = logn[:, None, None, :] + qn2[..., None] * vhalf[:, None, None, :]
+        if logrho is not None:
+            bias[..., off_sum:] += logrho[:, None, :, None]
     mask = torch.cat(parts, dim=-1)
     empty = ~mask.any(-1)                                                              # padding queries read nothing
     bias = bias.masked_fill(~(mask | empty[..., None])[:, None], float("-inf"))
@@ -371,12 +407,13 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
 
 
 def _attend_concepts_flex(q, k, v, *, K, V, cidx, use_sum, two, doc32, sk, ds, n_sinks, key_valid, opened, blk, C,
-                          logn, vhalf, qn2, c_from, c_doc):
+                          logn, vhalf, qn2, c_from, c_doc, logrho=None):
     """Flex path in two calls merged by their log-sum-exp: (1) the raw tokens (window, sinks, opened members, and
     the own-block raw copy with the reasoner), no score_mod — the LSA arm's kernel shape; (2) the concept summaries
     only, with the bias in score_mod. One score_mod over the whole key range made the forward 4.4× slower than the
     LSA arm (E37 stage 0, 2026-11-07): it gathers its buffers for every raw entry too. Exact: the merge is the
-    single softmax over both."""
+    single softmax over both. The length scale (`logrho` [B, S], one value per query) enters at the merge: adding
+    log ρ to the summary call's log-sum-exp equals adding it to every summary logit."""
     from torch.nn.attention.flex_attention import AuxRequest, create_block_mask
 
     from nn.exact_read import open_term
@@ -449,6 +486,8 @@ def _attend_concepts_flex(q, k, v, *, K, V, cidx, use_sum, two, doc32, sk, ds, n
     o2, aux2 = flex(qt, Ks.transpose(1, 2).contiguous(), Vs.transpose(1, 2).contiguous(), block_mask=bm2,
                     score_mod=smod, enable_gqa=(g != h), return_aux=AuxRequest(lse=True))
     l1, l2 = aux1.lse.float(), aux2.lse.float()                                        # [B, h, S]
+    if logrho is not None:
+        l2 = l2 + logrho[:, None, :]
     # A padding query (document id −1, e.g. RULER's left padding and the generator's future slots) reads nothing in
     # either call: both lse are −inf, and an unguarded merge gave 0/0 = NaN there, which reached the real tokens
     # through 0 × NaN in the next layers' attention tiles (E37 RULER, 2026-11-08: every answer garbage). It reads

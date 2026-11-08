@@ -108,6 +108,9 @@ def main() -> None:
                     help="also save every row's bucket sums with its document key (for a bootstrap over documents)")
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--concept_sum_len", type=int, default=-1,
+                    help="E37 concept read: length scale of the summaries' weight past this row length (the training "
+                         "length; 0 = off; default: the checkpoint's own setting)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -122,6 +125,12 @@ def main() -> None:
         str(getattr(model.config, "message_override", "real")) == "real"
     srcs = sorted(json.loads((Path(a.data) / "manifest.json").read_text())["sources"])
     res = {"checkpoint": a.checkpoint, "has_notebook": has_notes, "lengths": {}}
+    if a.concept_sum_len >= 0:
+        from nn.concept_memory import set_concept_sum_len
+
+        if not set_concept_sum_len(model, a.concept_sum_len):
+            raise SystemExit("--concept_sum_len: the checkpoint has no concept read")
+        res["concept_sum_len"] = a.concept_sum_len
     for S in (int(x) for x in a.lengths.split(",")):
         per_len = {}
         for src in srcs:

@@ -284,6 +284,7 @@ class PerceiverARConfig(PretrainedConfig):
         concept_width: int = 0,           # E37: concepts each query ranks for opening (0 = 2 · top_k · per_block / block)
         concept_summaries: bool = True,   # E37: every concept not opened enters the read as one summary entry
         concept_variance: bool = True,    # E37: the summary logit's second-order term |q|² σ² / 2d
+        concept_sum_len: int = 0,         # E37: length scale of the summaries' weight past this row length (0 = off)
         concept_reasoner_layers: int = 0,  # E37: transformer layers of the concept reasoner (0 = none)
         concept_reasoner_dim: int = 512,  # E37: reasoner width
         concept_reasoner_heads: int = 8,  # E37: reasoner heads
@@ -440,6 +441,7 @@ class PerceiverARConfig(PretrainedConfig):
             1, 2 * self.concept_top_k * self.concept_per_block // max(self.concept_block, 1))
         self.concept_summaries = bool(concept_summaries)
         self.concept_variance = bool(concept_variance)
+        self.concept_sum_len = int(concept_sum_len or 0)
         self.concept_reasoner_layers = int(concept_reasoner_layers or 0)
         self.concept_reasoner_dim = int(concept_reasoner_dim)
         self.concept_reasoner_heads = int(concept_reasoner_heads)
@@ -2408,7 +2410,8 @@ class Attention(nn.Module):
             self.concept = dict(block=int(cfg.concept_block), per_block=int(cfg.concept_per_block),
                                 iters=int(cfg.concept_iters), tau=float(cfg.concept_tau), sinks=int(cfg.concept_sinks),
                                 top_k=int(cfg.concept_top_k), width=int(cfg.concept_width),
-                                summaries=bool(cfg.concept_summaries), variance=bool(cfg.concept_variance))
+                                summaries=bool(cfg.concept_summaries), variance=bool(cfg.concept_variance),
+                                sum_len=int(getattr(cfg, "concept_sum_len", 0) or 0))
             if int(getattr(cfg, "concept_reasoner_layers", 0) or 0) > 0:
                 from nn.concept_memory import ConceptReasoner
 
@@ -2719,7 +2722,7 @@ class Attention(nn.Module):
             self.flow.reading_concept(self, q=q, k=k, v=v, doc=doc, cidx=cidx, opened=opened, sink=sink)
         return attend_concepts(q, k, v, cidx=cidx, dv=dv, doc=doc, key_valid=key_valid, backend=self.backend,
                                opened=opened, sink=sink, ds=ds, n_sinks=c["sinks"], summaries=c["summaries"],
-                               variance=c["variance"], dv_tok=dv_tok)
+                               variance=c["variance"], dv_tok=dv_tok, sum_len=c.get("sum_len", 0))
 
 
 @torch.no_grad()

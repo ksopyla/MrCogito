@@ -459,6 +459,8 @@ class ModelArguments:
     concept_width: int = field(default=0, metadata={"help": "E37: concepts ranked for opening (0 = 2·top_k/size)."})
     concept_summaries: bool = field(default=True, metadata={"help": "E37: unopened concepts as summary entries."})
     concept_variance: bool = field(default=True, metadata={"help": "E37: second-order term in the summary logit."})
+    concept_sum_len: int = field(default=0, metadata={
+        "help": "E37: length scale of the summaries' weight past this row length (the training length; 0 = off)."})
     concept_reasoner_layers: int = field(default=0, metadata={"help": "E37: concept reasoner layers (0 = none)."})
     concept_reasoner_dim: int = field(default=512, metadata={"help": "E37: concept reasoner width."})
     concept_reasoner_heads: int = field(default=8, metadata={"help": "E37: concept reasoner heads."})
