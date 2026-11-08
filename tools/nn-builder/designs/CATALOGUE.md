@@ -61,12 +61,12 @@ block, and this table between the markers. Edit the table through the script, no
 | `e37a_c128_s30` | **E37** · concept memory, 128 keys per concept (`e37a_c128`) | compression ladder: 4 concepts of 128 keys per block (same 512 opened tokens) ⚑ | done | arch-10m @ `6e49738` · E37_concept_memory.md | 68,701,396 | 26,260,308 | 2026-11-07 |
 | `e37b_s30` | **E37** · concept memory + reasoner (`e37b`) | a 2-layer, width-512 reasoner over the concepts, looped twice; its update is added to each concept's mean value and to its member tokens' values ⚑ | done | arch-10m @ `95ee75d` · E37_concept_memory.md | 75,323,092 | 32,882,004 | 2026-11-07 |
 | `e33n_m100` | **E33n** · top-64 note read (`e33n`) | the 30M arm at 100M (width 896, 3 pre layers, 7 stack layers, FFN 2624) ⚑ | parked | e33n-lsa-testbed @ `27577bc` · E33n_lsa_testbed_topk_notes.md | 166,375,003 | 100,554,203 | 2026-11-05 |
-| `e37_window_m100` | **E37** · window-only floor (`window`) | the 30M floor at 100M | planned | arch-10m @ `8701b17` · E37_concept_memory.md | 166,375,003 | 100,554,203 | 2026-11-07 |
-| `e37_dense_m100` | **E37** · dense ceiling (`dense`) | the 30M ceiling at 100M | planned | arch-10m @ `8701b17` · E37_concept_memory.md | 162,356,379 | 96,535,579 | 2026-11-07 |
-| `e37_lsa_m100` | **E37** · LSA port (`lsa`) | the LSA port at 100M ⚑ | planned | arch-10m @ `7f64a09` · E37_concept_memory.md | 162,356,379 | 96,535,579 | 2026-11-07 |
-| `e37_notes_open_m100` | **E37** · notes open their tokens (`notes_open`) | E33p's notes_open at 100M (the best E33-family read on natural text; the catalogue may replace it) ⚑ | planned | arch-10m @ `7f64a09` · E37_concept_memory.md | 166,375,003 | 100,554,203 | 2026-11-07 |
-| `e37a_m100` | **E37** · concept memory (`e37a`) | e37a at 100M ⚑ | planned | arch-10m @ `95ee75d` · E37_concept_memory.md | 162,356,379 | 96,535,579 | 2026-11-07 |
-| `e37b_m100` | **E37** · concept memory + reasoner (`e37b`) | e37b at 100M (the reasoner's input map is 896 → 512) ⚑ | parked | arch-10m @ `95ee75d` · E37_concept_memory.md | 169,141,915 | 103,321,115 | 2026-11-07 |
+| `e37_window_m100` | **E37** · window-only floor (`window`) | the 30M floor at 100M | queued | arch-10m @ `8701b17` · E37_concept_memory.md | 166,375,003 | 100,554,203 | 2026-11-07 |
+| `e37_dense_m100` | **E37** · dense ceiling (`dense`) | the 30M ceiling at 100M | queued | arch-10m @ `8701b17` · E37_concept_memory.md | 162,356,379 | 96,535,579 | 2026-11-07 |
+| `e37_lsa_m100` | **E37** · LSA port (`lsa`) | the LSA port at 100M ⚑ | queued | arch-10m @ `7f64a09` · E37_concept_memory.md | 162,356,379 | 96,535,579 | 2026-11-07 |
+| `e37_notes_open_m100` | **E37** · notes open their tokens (`notes_open`) | E33p's notes_open at 100M (the best E33-family read on natural text; the catalogue may replace it) ⚑ | queued | arch-10m @ `7f64a09` · E37_concept_memory.md | 166,375,003 | 100,554,203 | 2026-11-07 |
+| `e37a_m100` | **E37** · concept memory (`e37a`) | e37a at 100M ⚑ | queued | arch-10m @ `95ee75d` · E37_concept_memory.md | 162,356,379 | 96,535,579 | 2026-11-07 |
+| `e37b_m100` | **E37** · concept memory + reasoner (`e37b`) | e37b at 100M (the reasoner's input map is 896 → 512) ⚑ | queued | arch-10m @ `95ee75d` · E37_concept_memory.md | 169,141,915 | 103,321,115 | 2026-11-07 |
 | `e31_li_m1_cap30m` | **E31** · latent-memory champion (capability checks) (`e31_li_m1`) | the capability-check champion: E31's sliding-window latent memory on the DNA tasks — width 960, 4 layers (pre-encoder, global read, 2 stack layers), the E31 page writer (256-token pages every 192, 32 notes per page, one key and value per note), reads after QUERY go to the notes only ⚑ | done | dev @ `9253d7a` · E31_sliding_window_latent_memory.md | 35,129,900 | 33,947,436 | 2026-09-27 |
 | `lsa_paper_native_0p8b` | **LSA** · LSA as published (Qwen3.5-0.8B) | the outside reference: Gated DeltaNet hybrid, 24 layers of width 1024, the LSA read on every fourth layer ⚑ | done | e33n-lsa-testbed @ `1769cf9` · 1_Strategy_and_Plans (architectures review); arXiv 2610.42147 | 752,393,024 | 498,113,344 | 2026-10-30 |
 | `e33m_plain_30m` | **E33** · notebook (text checks) | E33's notebook on the text checks (4,096-token vocabulary): the E31c writer plus a 4-round loop over the read layer and the next, the order term and count heads | done | dev @ `edb1c00` · E33_iterative_concept_reads.md | 29,946,402 | 25,911,266 | 2026-10-24 |
@@ -125,6 +125,12 @@ or the older capability-probe arches). The first pass did not draw them; any one
     index's FLOPs. The catalogue's read label now names the new-place-per-pass rule.
 - **2026-11-08 · arch-10m `e9b37d2`:** E37's length scale of the summaries (`concept_sum_len`) is an eval switch
   with no weights, off in training. It is noted in the E37 descriptions; no design change.
+- **2026-11-08 · arch-10m `7c7158c`:** the concept arms (e37a, the ladder, e37b) now train with the length scale
+  on, set to the decay's row length (16,384), where it is inert. Recounted every arm at 30M and 100M on this
+  commit with the trainer: totals, core counts and every weight shape unchanged. Text only: the E37 descriptions
+  say so, and the six 100M arms are now `queued` (stage A has the author's go-ahead, one 4-GPU AWS spot node, in
+  the order e37a, lsa, dense, window, notes_open, e37b). `e37b_m100` moves from `parked` to `queued`: the 30M
+  screen shelved the reasoner, but the launch list still includes it, last.
 
 ## Branches last seen
 
@@ -132,11 +138,11 @@ The next check reads only commits after these.
 
 | branch | last commit seen | its time | read at |
 |---|---|---|---|
-| `origin/dev` | `5e44e62` | 2026-11-05 21:58 +01:00 | 2026-11-08 14:00 +01:00 |
-| `origin/e33n-lsa-testbed` | `1769cf9` | 2026-11-08 13:32 +01:00 | 2026-11-08 14:00 +01:00 |
-| `origin/arch-10m` | `e9b37d2` | 2026-11-08 13:34 +01:00 | 2026-11-08 14:00 +01:00 |
-| `origin/e33-multihop` | `070c56f` (fully merged into dev) | 2026-10-22 20:52 +02:00 | 2026-11-08 14:00 +01:00 |
-| `origin/process/capability-eval-tracking` | `7422a11` (fully merged into dev) | 2026-10-19 10:04 +02:00 | 2026-11-08 14:00 +01:00 |
+| `origin/dev` | `a1b128f` (this catalogue) | 2026-11-08 13:51 +01:00 | 2026-11-08 16:27 +01:00 |
+| `origin/e33n-lsa-testbed` | `1769cf9` | 2026-11-08 13:32 +01:00 | 2026-11-08 16:27 +01:00 |
+| `origin/arch-10m` | `7c7158c` | 2026-11-08 14:40 +01:00 | 2026-11-08 16:27 +01:00 |
+| `origin/e33-multihop` | `070c56f` (fully merged into dev) | 2026-10-22 20:52 +02:00 | 2026-11-08 16:27 +01:00 |
+| `origin/process/capability-eval-tracking` | `7422a11` (fully merged into dev) | 2026-10-19 10:04 +02:00 | 2026-11-08 16:27 +01:00 |
 
 The check:
 

@@ -2,7 +2,7 @@
   "schema": "nn-builder/graph",
   "version": 1,
   "name": "E37 · concept memory · 162.4M (96.5M core)",
-  "description": "E37 arm e37a — concept memory, 100M testbed. New against e37a_s30: e37a at 100M. Protocol (E37 stage A screen): 1.0B FineWeb-Edu tokens at 4k, then 0.2B LongDocs-lite at 16k, 128 rows per step. Built 2026-11-07; status planned (as of 2026-11-08). Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 95ee75d. Not a builder field: Grouping, statistics and the choice have no weights (0-parameter custom cells); the summaries are the concepts' mean key and value (a notes cell with no projections); the block window and opened tokens are drawn as a 1,280-key window. The summaries' length scale past the training length (concept_sum_len, arch-10m e9b37d2, 8 Nov) is an eval switch with no weights, off in training. Parameters: 162,356,379 in total, 96,535,579 without the word tables (input embedding 20,790,528 + output layer 45,030,272); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm e37a --size m100 (FFN 2624 from fit())).",
+  "description": "E37 arm e37a — concept memory, 100M testbed. New against e37a_s30: e37a at 100M. Protocol (E37 stage A screen): 1.0B FineWeb-Edu tokens at 4k, then 0.2B LongDocs-lite at 16k, 128 rows per step. Built 2026-11-07; status queued (as of 2026-11-08). Stage A has the author's go-ahead (8 Nov, ≈ $360): one 4-GPU AWS spot node trains the arms one after another, in the order e37a, lsa, dense, window, notes_open, e37b (arch-10m 7c7158c); not scored yet. Trains with the length scale on and is also scored with it off. Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 95ee75d. Not a builder field: Grouping, statistics and the choice have no weights (0-parameter custom cells); the summaries are the concepts' mean key and value (a notes cell with no projections); the block window and opened tokens are drawn as a 1,280-key window. The summaries' length scale (concept_sum_len: past that length their total weight is held at its level) has no weights and no builder field. The 30M runs trained without it and use it as an eval switch (arch-10m e9b37d2); from stage A the concept arms train with it set to the decay's row length, 16,384, where it is inert (arch-10m 7c7158c, 8 Nov). Parameters: 162,356,379 in total, 96,535,579 without the word tables (input embedding 20,790,528 + output layer 45,030,272); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm e37a --size m100 (FFN 2624 from fit())).",
   "stacks": [
     {
       "id": "main",
@@ -788,7 +788,7 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-08T12:50:54.813Z",
+    "exported_at": "2026-11-08T15:28:14.799Z",
     "hash": "nnb1-04221eed751407090e640d5475d9",
     "row_length": 4096,
     "params_total": 162356379,

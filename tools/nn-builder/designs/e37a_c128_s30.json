@@ -2,7 +2,7 @@
   "schema": "nn-builder/graph",
   "version": 1,
   "name": "E37 · concept memory, 128 keys per concept · 68.7M (26.3M core)",
-  "description": "E37 arm e37a_c128 — concept memory, 128 keys per concept, 30M testbed. New against e37a_s30: compression ladder: 4 concepts of 128 keys per block (same 512 opened tokens). Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status done (as of 2026-11-08). Done 8 Nov 09:10 UTC: 81 % of the gap at 16k, 65 % at 64k (e37a 100 / 86 %): coarse concepts cost ~19 points. Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 6e49738. Not a builder field: Grouping, statistics and the choice have no weights (0-parameter custom cells); the summaries are the concepts' mean key and value (a notes cell with no projections); the block window and opened tokens are drawn as a 1,280-key window. The summaries' length scale past the training length (concept_sum_len, arch-10m e9b37d2, 8 Nov) is an eval switch with no weights, off in training. Parameters: 68,701,396 in total, 26,260,308 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm e37a_c128 --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
+  "description": "E37 arm e37a_c128 — concept memory, 128 keys per concept, 30M testbed. New against e37a_s30: compression ladder: 4 concepts of 128 keys per block (same 512 opened tokens). Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status done (as of 2026-11-08). Done 8 Nov 09:10 UTC: 81 % of the gap at 16k, 65 % at 64k (e37a 100 / 86 %): coarse concepts cost ~19 points. Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 6e49738. Not a builder field: Grouping, statistics and the choice have no weights (0-parameter custom cells); the summaries are the concepts' mean key and value (a notes cell with no projections); the block window and opened tokens are drawn as a 1,280-key window. The summaries' length scale (concept_sum_len: past that length their total weight is held at its level) has no weights and no builder field. The 30M runs trained without it and use it as an eval switch (arch-10m e9b37d2); from stage A the concept arms train with it set to the decay's row length, 16,384, where it is inert (arch-10m 7c7158c, 8 Nov). Parameters: 68,701,396 in total, 26,260,308 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm e37a_c128 --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
   "stacks": [
     {
       "id": "main",
@@ -634,7 +634,7 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-08T12:50:54.808Z",
+    "exported_at": "2026-11-08T15:28:14.794Z",
     "hash": "nnb1-13ebdeb645b9f81e755570e3e5c5",
     "row_length": 4096,
     "params_total": 68701396,

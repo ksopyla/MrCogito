@@ -2,7 +2,7 @@
   "schema": "nn-builder/graph",
   "version": 1,
   "name": "E37 · notes open their tokens · 166.4M (100.6M core)",
-  "description": "E37 arm notes_open — notes open their tokens, 100M testbed. New against e33p_notes_open_30m: E33p's notes_open at 100M (the best E33-family read on natural text; the catalogue may replace it). Protocol (E37 stage A screen): 1.0B FineWeb-Edu tokens at 4k, then 0.2B LongDocs-lite at 16k, 128 rows per step. Built 2026-11-07; status planned (as of 2026-11-08). Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 7f64a09. Not a builder field: The per-query choice of notes has no weights and no builder field; the opened tokens are drawn as a 1,024-key window (512 window + 512 opened). Parameters: 166,375,003 in total, 100,554,203 without the word tables (input embedding 20,790,528 + output layer 45,030,272); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm notes_open --size m100 (FFN 2624 from fit())).",
+  "description": "E37 arm notes_open — notes open their tokens, 100M testbed. New against e33p_notes_open_30m: E33p's notes_open at 100M (the best E33-family read on natural text; the catalogue may replace it). Protocol (E37 stage A screen): 1.0B FineWeb-Edu tokens at 4k, then 0.2B LongDocs-lite at 16k, 128 rows per step. Built 2026-11-07; status queued (as of 2026-11-08). Stage A has the author's go-ahead (8 Nov, ≈ $360): one 4-GPU AWS spot node trains the arms one after another, in the order e37a, lsa, dense, window, notes_open, e37b (arch-10m 7c7158c); not scored yet. Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 7f64a09. Not a builder field: The per-query choice of notes has no weights and no builder field; the opened tokens are drawn as a 1,024-key window (512 window + 512 opened). Parameters: 166,375,003 in total, 100,554,203 without the word tables (input embedding 20,790,528 + output layer 45,030,272); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm notes_open --size m100 (FFN 2624 from fit())).",
   "stacks": [
     {
       "id": "main",
@@ -953,7 +953,7 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-08T12:50:54.812Z",
+    "exported_at": "2026-11-08T15:28:14.798Z",
     "hash": "nnb1-080a1e539b581e0f917647b55a73",
     "row_length": 4096,
     "params_total": 166375003,

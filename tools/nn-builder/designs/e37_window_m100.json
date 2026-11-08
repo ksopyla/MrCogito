@@ -2,7 +2,7 @@
   "schema": "nn-builder/graph",
   "version": 1,
   "name": "E37 · window-only floor · 166.4M (100.6M core)",
-  "description": "E37 arm window — window-only floor, 100M testbed. New against e33p_window_s30: the 30M floor at 100M. Protocol (E37 stage A screen): 1.0B FineWeb-Edu tokens at 4k, then 0.2B LongDocs-lite at 16k, 128 rows per step. Built 2026-11-07; status planned (as of 2026-11-08). Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 8701b17. Parameters: 166,375,003 in total, 100,554,203 without the word tables (input embedding 20,790,528 + output layer 45,030,272); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm window --size m100 (FFN 2624 from fit())).",
+  "description": "E37 arm window — window-only floor, 100M testbed. New against e33p_window_s30: the 30M floor at 100M. Protocol (E37 stage A screen): 1.0B FineWeb-Edu tokens at 4k, then 0.2B LongDocs-lite at 16k, 128 rows per step. Built 2026-11-07; status queued (as of 2026-11-08). Stage A has the author's go-ahead (8 Nov, ≈ $360): one 4-GPU AWS spot node trains the arms one after another, in the order e37a, lsa, dense, window, notes_open, e37b (arch-10m 7c7158c); not scored yet. Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 8701b17. Parameters: 166,375,003 in total, 100,554,203 without the word tables (input embedding 20,790,528 + output layer 45,030,272); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm window --size m100 (FFN 2624 from fit())).",
   "stacks": [
     {
       "id": "main",
@@ -942,7 +942,7 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-08T12:50:54.810Z",
+    "exported_at": "2026-11-08T15:28:14.796Z",
     "hash": "nnb1-1fb8eab228e6800ca2d7e7a4ccf1",
     "row_length": 4096,
     "params_total": 166375003,
