@@ -29,6 +29,10 @@ const EXPECTED: Record<string, { total: number; core: number }> = {
   e33t_catalogue_30m: { total: 72_687_765, core: 30_246_677 },
   e33t_catalogue_2l_s30: { total: 72_687_765, core: 30_246_677 },
   e33t_catalogue_reuse_s30: { total: 72_687_765, core: 30_246_677 },
+  // E33t stage B (e33n-lsa-testbed 34eff60, counted 8 Nov on 0227838): only the writer's slots and position prior differ
+  e33t_catalogue_reuse_n4_s30: { total: 72_769_685, core: 30_328_597 },
+  e33t_catalogue_reuse_n16_s30: { total: 72_646_805, core: 30_205_717 },
+  e33t_catalogue_reuse_p512_s30: { total: 72_900_757, core: 30_459_669 },
   e37a_s30: { total: 68_701_396, core: 26_260_308 },
   e37a_c32_s30: { total: 68_701_396, core: 26_260_308 },
   e37a_c128_s30: { total: 68_701_396, core: 26_260_308 },

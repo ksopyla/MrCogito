@@ -110,10 +110,16 @@ const ARM = {
     r.label = "reading layer · LSA read";
     return g;
   },
-  catalogue(z, { twoLevel = false, reuse = false } = {}) {
+  /** E33t's catalogue read; `notes` per page and `page` length are stage B's sizes (default: stage A, 32 per 256). */
+  catalogue(z, { twoLevel = false, reuse = false, notes = 32, page = 256 } = {}) {
     const g = base(z);
-    g.stacks.find((s) => s.id === "pages").seq.stride = 256;
-    g.stacks.find((s) => s.id === "pages").rows[0].label = "in: 256-token pages, no overlap";
+    const pages = g.stacks.find((s) => s.id === "pages");
+    Object.assign(pages.seq, { window: page, stride: page });
+    pages.rows[0].label = `in: ${page}-token pages, no overlap`;
+    pages.rows[0].cells.find((c) => c.type === "positional").max_len = page;
+    const slots = g.stacks.find((s) => s.id === "notes");
+    slots.seq.per_page = notes;
+    rowOf(g, "notes.init").cells[0].label = `${notes} learned slots per page`;
     const { r, a } = readLayer(g, z);
     Object.assign(a, { window: 1028, label: "Catalogue read: notes only choose → open ≤128 notes' tokens (≤512) + 4 empty slots + last 512 tokens · no RoPE" +
       (reuse ? " · a later loop pass may re-open notes an earlier pass opened" : " · each loop pass opens notes not opened before") });
@@ -126,10 +132,11 @@ const ARM = {
         "No weights, no gradient. Page key = mean of the page's token keys; a query keeps its 16 best pages (max-head " +
         "cosine) and scores only their 16 × 32 = 512 notes instead of all of them (lm_open_levels 2, lm_open_pages 16). " +
         "FLOPs not counted."));
-    r.label = `reading layer · catalogue (index only${twoLevel ? ", pages first" : ""}${reuse ? ", re-opening allowed" : ""})`;
+    const sized = notes !== 32 || page !== 256 ? `, ${page / notes} tokens per note${page !== 256 ? `, ${page}-token pages` : ""}` : "";
+    r.label = `reading layer · catalogue (index only${twoLevel ? ", pages first" : ""}${reuse ? ", re-opening allowed" : ""}${sized})`;
     rowOf(g, "notes.out").cells.unshift(custom("notes.out.filing", "balanced filing: each token under one note, ≤16 per note", 0, 0, 0,
-      "Sinkhorn-balanced assignment of the page's tokens to its 32 notes, capped at 16 tokens per note; decides which " +
-      "tokens a note opens. No weights."));
+      `Sinkhorn-balanced assignment of the page's tokens to its ${notes} notes${sized ? ` (${page / notes} per note on average)` : ""}, ` +
+      "capped at 16 tokens per note; decides which tokens a note opens. No weights."));
     return g;
   },
   /** E37 concept memory on the dense trunk: per closed 512-key block, `per` balanced content concepts of the reading
@@ -252,6 +259,8 @@ const UX = {
 };
 const STAGE_A = "Stage A has the author's go-ahead (8 Nov, ≈ $360): one 4-GPU AWS spot node trains the arms one after another, in the order e37a, lsa, dense, window, notes_open, e37b (arch-10m 7c7158c); not scored yet.";
 UX.e37b = `${UX.e37} The reasoner's attention over earlier blocks' concepts is counted for its own block only.`;
+UX.catalogueB = "As the catalogue with re-opening: balanced filing, the index loss and the re-opening switch have no weights or builder field. The slot count changes the writer's learned slots and its position prior (slots × 8 heads × page length).";
+const STAGE_B = "Stage B (approved 8 Nov ~17:30 UTC; e33n-lsa-testbed 34eff60): seed 1, the stage-A recipe against the same seed-1 controls; one on-demand H100 per model from ~18:00 UTC (b13a77b; the 4-GPU spot node was refused), about 8–10 h each. Winner: the best 16k share whose 64k share does not fall below it. Not scored yet.";
 
 const ENTRIES = [
   // ---- the 30M LSA testbed: what is training or being decided now
@@ -293,18 +302,31 @@ const ENTRIES = [
   { file: "e33t_catalogue_30m", id: "E33t", plain: "catalogue read", size: "s30", arm: "catalogue", build: () => ARM.catalogue("s30"),
     parent: "e33p_notes_open_30m", what: "pages without overlap; each token filed under one note (≤ 16 per note); the notes are only an index (their values are not read); up to 128 notes' tokens (≤ 512) open per query; a new place each loop pass; 4 learned empty slots; an index loss",
     status: "done", branch: TB, commit: "47339bf", spec: "E33t", date: "2026-11-07",
-    extra: "Trained 7 Nov 11:24–16:05 UTC (AWS, seed 1). Preliminary result: 75 % of the gap at 16k, 99 % at 64k. Probe: opens a planted password on pass 1 (94 % at 4k) but rarely returns to it on passes 2–4.",
+    extra: "Trained 7 Nov 11:24–16:05 UTC (AWS, seed 1). Scored 8 Nov against the seed-1 controls (e33n-lsa-testbed a372da3): 71 % of the window-to-dense gap at 16k (S1, 80 %, missed), 115 % at 64k; LSA port 95 / 153 %. Probe: opens a planted password on pass 1 (94 % at 4k) but rarely returns to it on passes 2–4.",
     unexpressed: "Balanced filing, the per-pass exclusion and the index loss have no weights (0-parameter custom cells); the read is drawn as a 1,028-key window." },
   { file: "e33t_catalogue_2l_s30", id: "E33t", plain: "two-level catalogue", size: "s30", arm: "catalogue_2l", build: () => ARM.catalogue("s30", { twoLevel: true }),
     parent: "e33t_catalogue_30m", what: "the catalogue searched in two levels: a query keeps its 16 best pages first, then scores only their 512 notes",
-    status: "training", branch: TB, commit: "47339bf", spec: "E33t", date: "2026-11-07",
-    extra: "Queued after the catalogue on the AWS node (stage A); not scored yet.",
+    status: "done", branch: TB, commit: "47339bf", spec: "E33t", date: "2026-11-07",
+    extra: "Trained 7 Nov 15:51–20:49 UTC (AWS, seed 1). Scored 8 Nov (a372da3): 68 % of the gap at 16k, 3 points behind the flat catalogue (holds), 99.5 % at 64k, 16 points behind (S4 fails). Stage C proposes the two levels as an eval switch first.",
     unexpressed: "The page-first search has no weights and no builder field (a 0-parameter custom cell, FLOPs not counted)." },
   { file: "e33t_catalogue_reuse_s30", id: "E33t", plain: "catalogue, re-opening allowed", size: "s30", arm: "catalogue_reuse", build: () => ARM.catalogue("s30", { reuse: true }),
     parent: "e33t_catalogue_30m", what: "the pass exclusion off in training (lm_open_new_per_pass False): a later loop pass may re-open notes an earlier pass opened",
-    status: "training", branch: TB, commit: "26d18f4", spec: "E33t", date: "2026-11-07",
-    extra: "Approved 7 Nov ~21:00 UTC after the planted-password probe; chained on the AWS node after the seed-1 window and LSA controls (infra/aws/jobs/e33t_reuse.sh).",
+    status: "done", branch: TB, commit: "26d18f4", spec: "E33t", date: "2026-11-07",
+    extra: "Stage-A winner. Trained 8 Nov 07:22–12:03 UTC (AWS, seed 1). Scored (a372da3): 91 % of the gap at 16k (S1 met), 152 % at 64k, the lowest 128k loss of all models (2.1395; LSA port 2.1441); RULER 4k 14.1 (single needle 94 %), LSA port 15.2; trains about 10 % slower than the LSA port.",
     unexpressed: "Same weights and drawing as the catalogue; the difference is a training switch with no builder field (named in the read's label)." },
+  // E33t stage B (approved 8 Nov ~17:30 UTC): note and page sizes around catalogue_reuse; only the writer's slots differ
+  { file: "e33t_catalogue_reuse_n4_s30", id: "E33t", plain: "catalogue, 4 tokens per note", size: "s30", arm: "catalogue_reuse_n4", build: () => ARM.catalogue("s30", { reuse: true, notes: 64 }),
+    parent: "e33t_catalogue_reuse_s30", what: "64 notes per 256-token page (4 tokens per note on average) instead of 32; the read's budget stays 512 tokens (up to 128 notes)",
+    status: "queued", branch: TB, commit: "34eff60", spec: "E33t", date: "2026-11-08", extra: STAGE_B,
+    unexpressed: UX.catalogueB },
+  { file: "e33t_catalogue_reuse_n16_s30", id: "E33t", plain: "catalogue, 16 tokens per note", size: "s30", arm: "catalogue_reuse_n16", build: () => ARM.catalogue("s30", { reuse: true, notes: 16 }),
+    parent: "e33t_catalogue_reuse_s30", what: "16 notes per 256-token page (16 tokens per note, exactly the filing cap) instead of 32",
+    status: "queued", branch: TB, commit: "34eff60", spec: "E33t", date: "2026-11-08", extra: STAGE_B,
+    unexpressed: UX.catalogueB },
+  { file: "e33t_catalogue_reuse_p512_s30", id: "E33t", plain: "catalogue, 512-token pages", size: "s30", arm: "catalogue_reuse_p512", build: () => ARM.catalogue("s30", { reuse: true, notes: 64, page: 512 }),
+    parent: "e33t_catalogue_reuse_s30", what: "512-token pages with 64 notes (still 8 tokens per note); the writer reads twice as long a page",
+    status: "queued", branch: TB, commit: "34eff60", spec: "E33t", date: "2026-11-08", extra: STAGE_B,
+    unexpressed: UX.catalogueB },
   // ---- E37 concept memory (the 10M-context branch)
   { file: "e37a_s30", id: "E37", plain: "concept memory", size: "s30", arm: "e37a", build: () => ARM.e37("s30", 64),
     parent: "e33p_dense_s30", what: "each closed 512-key block of the reading layer's own keys is grouped by content into 64 balanced concepts of 8 keys; a query reads exactly the tokens of its strongest concepts (512) and one summary entry for every other concept",
