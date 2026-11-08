@@ -364,9 +364,10 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
         parts.append(vis)
         bias[..., off_sum:] = logn[:, None, None, :] + qn2[..., None] * vhalf[:, None, None, :]
     mask = torch.cat(parts, dim=-1)
-    bias = bias.masked_fill(~mask[:, None], float("-inf"))
+    empty = ~mask.any(-1)                                                              # padding queries read nothing
+    bias = bias.masked_fill(~(mask | empty[..., None])[:, None], float("-inf"))
     out = F.scaled_dot_product_attention(qt, kt, vt, attn_mask=bias.to(qt.dtype))
-    return out.transpose(1, 2)
+    return out.masked_fill(empty[:, None, :, None], 0.0).transpose(1, 2)
 
 
 def _attend_concepts_flex(q, k, v, *, K, V, cidx, use_sum, two, doc32, sk, ds, n_sinks, key_valid, opened, blk, C,
@@ -448,8 +449,14 @@ def _attend_concepts_flex(q, k, v, *, K, V, cidx, use_sum, two, doc32, sk, ds, n
     o2, aux2 = flex(qt, Ks.transpose(1, 2).contiguous(), Vs.transpose(1, 2).contiguous(), block_mask=bm2,
                     score_mod=smod, enable_gqa=(g != h), return_aux=AuxRequest(lse=True))
     l1, l2 = aux1.lse.float(), aux2.lse.float()                                        # [B, h, S]
+    # A padding query (document id −1, e.g. RULER's left padding and the generator's future slots) reads nothing in
+    # either call: both lse are −inf, and an unguarded merge gave 0/0 = NaN there, which reached the real tokens
+    # through 0 × NaN in the next layers' attention tiles (E37 RULER, 2026-11-08: every answer garbage). It reads
+    # zero, as flex gives the other arms' fully masked rows.
     m = torch.maximum(l1, l2)
-    w1 = torch.exp(l1 - m)
+    w1 = torch.where(torch.isfinite(l1), torch.exp(l1 - m), torch.zeros_like(l1))
     w2 = torch.where(torch.isfinite(l2), torch.exp(l2 - m), torch.zeros_like(l2))
-    out = (o1.float() * w1[..., None] + o2.float() * w2[..., None]) / (w1 + w2)[..., None]
+    den = w1 + w2
+    out = (o1.float() * w1[..., None] + o2.float() * w2[..., None]) / den.clamp_min(1e-30)[..., None]
+    out = torch.where((den > 0)[..., None], out, torch.zeros_like(out))
     return out.to(q.dtype).transpose(1, 2)

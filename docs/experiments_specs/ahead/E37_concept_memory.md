@@ -143,6 +143,33 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
   
   At the controls' 30M scale the share of the gap at 16k is 99 % for LSA-native, 34 % for pages_open, 31 % for
   notes_open and 4 % for e33. Three GPUs would break the 64-row step, so the reasoner arm uses two.
+- **30M home screen result, e37a and e37b (2026-11-08; e37a decay done 23:25 UTC Nov 7, e37b 01:11 UTC Nov 8; RULER
+  16k for e37a pending; the ladder pending).** Share of the window→dense gap, positions ≥ 2k (long-document eval, 8
+  rows per source and length; LSA-native in brackets): e37a 96.0 / 100.0 / 98.7 / 86.4 % at 4k / 16k / 32k / 64k
+  [96.5 / 99.2 / 100.2 / 127.0]; e37b 95.6 / 99.8 / 99.6 / 89.0 %. At 128k (gap 0.012, raw loss): window 2.278,
+  dense 2.267, LSA 2.170, e37a 2.333, e37b 2.326 (2.7M scored tokens).
+  - **S1 met** (100 % ≥ 90 %). **S2 missed** (86.4 % < 95 %; 128k worse than the window control).
+  - **S3 missed, K2 met → the reasoner is shelved for stage B.** e37b − e37a at 16k: −0.2 points; on far-copy tokens
+    (copy split at 16k, 4-gram test, 438k far tokens) −0.0045 nats (95 % document bootstrap −0.0073 … −0.0016,
+    156 docs; 8-gram −0.0047), real but under the 0.01 bar, and +0.004 nats worse on never-seen tokens.
+  - **S4 split:** core average 39.8 (e37a) / 38.7 (e37b) vs dense 38.8 (met); loss on positions < 512 at 16k
+    2.6322 / 2.6311 vs window 2.6052 (+0.027, missed; dense +0.020, LSA +0.015 also miss it).
+  - **Exact far copy works:** e37a recovers 99.8 % of the far-copy gap at 16k (window 2.098 → dense 0.673 nats on
+    far tokens; e37a 0.676), 104.6 % on near-copy tokens, 99.2 % on never-seen tokens.
+  - **RULER 4k / 16k: 0.000 on all 13 tasks — an eval bug, not a result.** The controls score (mean at 4k: LSA
+    0.139, single-needle 0.97; pages_open 0.105; dense 0.091; window 0.029). Cause (2026-11-08, Odra GPU 0, e37b's
+    checkpoint): the RULER generator lays a row out with document id −1 (left padding, and the decoding slots up
+    to a 256 multiple); a padding query reads nothing in either flex call of the concept read, so the
+    log-sum-exp merge gave 0/0 = NaN there, which reached the real tokens through 0 × NaN in the next layers'
+    attention tiles. Training and the long-document eval have no padding, so their numbers stand. Fixed in
+    `_attend_concepts_flex` (and the reference path): a padding query reads zero; test T7
+    (`test_padding_slots_read_zero_and_leave_real_tokens_unchanged`). On the GPU with the fix: no NaN, loss on
+    positions 2k–4k 2.7853 / 2.7865 / 2.7855 for the three padded layouts vs 2.7855 plain. RULER to be rerun.
+  - **Summaries-off probe (eval only, same rows; 01:41–01:49 UTC Nov 8, Polonez GPU 0):** e37a with the concept
+    summaries switched off recovers 86.5 % at 16k (vs 100 % with them) but 104.7 % at 64k (vs 86.4 %); at 128k
+    (arxiv, doab, gutenberg; hansard has no 128k row and the probe stopped before usgpo) loss 2.930 vs 3.131 with
+    summaries, LSA 2.947, window 3.031, dense 3.044. The summaries carry ~13 points at the training length, and
+    their growing number (2,048 at 16k → 16,384 at 128k) breaks the read past it: the fade is the summaries'.
 - **Stage A:** six arms at 100M with the screening protocol, on one 4 × L40S spot node (each arm on all four
   GPUs, ~8–10 h, ≈ $60 per arm; ≈ $360) or H100s when available. Gate: S1–S5, K1–K3.
 - **Stage B (if S1 holds):** the full m100 protocol for e37 (a or b), lsa and dense (+ original LSA if its stack

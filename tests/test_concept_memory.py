@@ -230,6 +230,36 @@ def test_reasoner_update_reaches_opened_members_and_summaries():
     assert tok[0, nb * BLK:].abs().max() == 0 and tok[0, :2].abs().max() == 0
 
 
+@pytest.mark.parametrize("kw", [{}, {"concept_reasoner_layers": 1, "concept_reasoner_dim": 16,
+                                     "concept_reasoner_heads": 2}], ids=["no_reasoner", "reasoner"])
+def test_padding_slots_read_zero_and_leave_real_tokens_unchanged(kw):
+    """T7 — the RULER generator's row layout (E37, 2026-11-08: NaN on every answer). Padding (document id −1) before
+    the prompt and after it (the decoding slots) must not produce NaN anywhere, and slots after the last real token
+    must leave every real position exactly as the plain row has it.
+
+    With the reasoner, a block's tokens carry its concepts' update only once the block is built, i.e. once the row
+    has a query two blocks later; the longer padded row builds the last real blocks too, so the queries reading those
+    blocks as their previous block legitimately differ (no leak: T5). They are compared up to that point."""
+    m = _model(**kw)
+    g = torch.Generator().manual_seed(9)
+    n, tail, P = 90, 38, 2 * BLK
+    lim = n if not kw else ((n - 1) // BLK) * BLK          # reasoner: queries whose previous block is built in both
+    ids = torch.randint(3, 60, (1, n), generator=g)
+    with torch.no_grad():
+        base = m.hidden_states(ids, doc_ids=torch.zeros_like(ids))
+        buf = torch.cat([ids, torch.full((1, tail), 2)], dim=1)
+        doc = torch.cat([torch.zeros(1, n, dtype=torch.long), torch.full((1, tail), -1)], dim=1)
+        fut = m.hidden_states(buf, doc_ids=doc)
+        assert torch.isfinite(fut).all()
+        torch.testing.assert_close(fut[:, :lim], base[:, :lim], atol=1e-5, rtol=1e-4)
+        buf2 = torch.cat([torch.full((1, P), 2), ids, torch.full((1, tail), 2)], dim=1)
+        doc2 = torch.cat([torch.full((1, P), -1), torch.zeros(1, n, dtype=torch.long), torch.full((1, tail), -1)], 1)
+        left = m.hidden_states(buf2, doc_ids=doc2)
+        assert torch.isfinite(left).all()
+        # block-aligned left padding: the real tokens' blocks are the plain row's, shifted by two whole blocks
+        torch.testing.assert_close(left[:, P:P + lim], base[:, :lim], atol=1e-4, rtol=1e-3)
+
+
 def test_eval_switch_reads_window_and_sinks_only():
     m = _model()
     att = m.layers[m.config.global_layer_index].attn
