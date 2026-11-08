@@ -9,7 +9,8 @@
 # in S3, so it must mean "all evals done" (a failed eval leaves core.json, and a relaunch redoes the evals).
 # Usage: bash infra/aws/jobs/e37_evals.sh CHECKPOINT OUT_DIR DATA_DIR
 #   DATA_DIR holds tokenizer_gpt2/ and longdocs_lite_gpt2/. GPUs: CUDA_VISIBLE_DEVICES (default: all).
-#   E37_EVAL_QUICK=1: a pipeline check of a few minutes (4k only, 1 row, 2 RULER documents, RULER "16k" at 2k).
+#   E37_EVAL_QUICK=1: a pipeline check (4k only, 1 row, 2 RULER documents, RULER "16k" at 8k: below ~4k RULER's
+#   hotpot QA generator never fits its documents and spins forever; 8k keeps the long key apart from lane 0's 4k).
 set -uo pipefail
 CK="${1:?checkpoint}"; O="${2:?out dir}"; D="${3:?data dir}"
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1 \
@@ -20,7 +21,7 @@ IFS=, read -ra GL <<< "${CUDA_VISIBLE_DEVICES:-$(seq -s, 0 $(( $(nvidia-smi -L |
 N=${#GL[@]}
 log() { echo "[e37_evals $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$O/events.log"; }
 if [ -n "${E37_EVAL_QUICK:-}" ]; then
-  LD=4096; ROWS=1; LIM=2; RL=2048; CLIM=10
+  LD=4096; ROWS=1; LIM=2; RL=8192; CLIM=10
 else
   LD=4096,16384,32768,65536,131072; ROWS=8; LIM=100; RL=16384; CLIM=0
 fi
