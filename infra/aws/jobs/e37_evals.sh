@@ -25,9 +25,11 @@ else
   LD=4096,16384,32768,65536,131072; ROWS=8; LIM=100; RL=16384; CLIM=0
 fi
 CONCEPT=$(python3 -c "import json,sys; print(int(json.load(open(sys.argv[1] + '/config.json')).get('par_global_read') == 'concept'))" "$CK")
-GROUPS=("niah_single_1,niah_multikey_2,niah_multivalue,ruler_cwe,ruler_qa_hotpot:long_a"
-        "niah_single_2,niah_multikey_3,niah_multiquery,ruler_fwe:long_b"
-        "niah_single_3,niah_multikey_1,ruler_vt,ruler_qa_squad:long_c")
+# RULER task groups for the long length. Not named GROUPS: bash reserves that (the user's group ids) and silently
+# ignores assignments to it, so the lanes were handed group ids as task names.
+RGROUPS=("niah_single_1,niah_multikey_2,niah_multivalue,ruler_cwe,ruler_qa_hotpot:long_a"
+         "niah_single_2,niah_multikey_3,niah_multiquery,ruler_fwe:long_b"
+         "niah_single_3,niah_multikey_1,ruler_vt,ruler_qa_squad:long_c")
 
 ruler() {  # GPU LENGTH TASKS NAME
   CUDA_VISIBLE_DEVICES=$1 uv run --with wonderwords python evaluation/run_lsa_suite.py --checkpoint "$CK" \
@@ -53,7 +55,7 @@ lane0() {
 log "evals of $CK on GPUs ${GL[*]} (concept read: $CONCEPT${E37_EVAL_QUICK:+, quick check})"
 if [ "$N" -gt 1 ]; then
   declare -a LANE
-  for i in 0 1 2; do L=$(( 1 + i % (N - 1) )); LANE[$L]="${LANE[$L]:-} ${GROUPS[$i]}"; done
+  for i in 0 1 2; do L=$(( 1 + i % (N - 1) )); LANE[$L]="${LANE[$L]:-} ${RGROUPS[$i]}"; done
   PIDS=()
   ( lane0 ) & PIDS+=($!)
   for L in $(seq 1 $((N - 1))); do
@@ -63,7 +65,7 @@ if [ "$N" -gt 1 ]; then
   wait "${PIDS[@]}"
 else
   lane0
-  for g in "${GROUPS[@]}"; do ruler "${GL[0]}" "$RL" "${g%%:*}" "${g##*:}"; done
+  for g in "${RGROUPS[@]}"; do ruler "${GL[0]}" "$RL" "${g%%:*}" "${g##*:}"; done
 fi
 
 # RULER: 4k from lane 0 and the three long groups, one file in run_lsa_suite.py's layout (mean of the 13 tasks)
