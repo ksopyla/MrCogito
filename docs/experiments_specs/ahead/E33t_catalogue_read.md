@@ -187,6 +187,12 @@ at 16k in E33p) show the marks are reachable at this size and data.
   `C4.chain4-1k` ≥ 75 % first letter (the passes-as-lookups claim).
 - **Stage B (if S1 holds): page and note sizes.** Around the stage-A winner: 4, 8 and 16 tokens per note at
   256-token pages (64 / 32 / 16 notes), and 512-token pages with 64 notes. Four runs, about $120.
+  **Launched 2026-11-08 (approved by the author ~17:30 UTC):** the winner is `catalogue_reuse` (8 tokens per note at
+  256-token pages, already trained), so three new runs on one g6e.12xlarge spot node (`infra/aws/jobs/e33t_b.sh`):
+  `catalogue_reuse_n4` (64 notes, 72,769,685 parameters / 30,328,597 without word tables), `catalogue_reuse_n16`
+  (16 notes, 72,646,805 / 30,205,717) and `catalogue_reuse_p512` (512-token pages, 64 notes, 72,900,757 /
+  30,459,669); only the writer's note slots differ. Same gates as stage A against the seed-1 controls; the winner
+  is the best 16k share whose 64k share does not fall below it (S2), ties broken by RULER at 4k.
 - **Stage C: long documents.** The winner with the two-level search, its choice stored as a short list (a gather
   read instead of the [S × G] table), trained at 16k plus a short 64k stage; evaluated at 128k, 1M and beyond.
   Two runs, about $80.

@@ -304,3 +304,39 @@ def test_reuse_arm_trains_and_equals_the_reuse_switch():
     out.loss.backward()
     att = m.layers[m.config.global_layer_index].attn
     assert att.index_log_tau.grad is not None and float(att.index_log_tau.grad.abs()) > 0
+
+
+STAGE_B = {"catalogue_reuse_n4": (256, 4), "catalogue_reuse_n16": (256, 16), "catalogue_reuse_p512": (512, 8)}
+
+
+def test_stage_b_arms_change_only_the_note_and_page_sizes():
+    """E33t stage B (scripts/run_e33n.py): each arm is catalogue_reuse with only the page size and the notes per page
+    changed (at 30M and at tiny size); each builds through the trainer's factory (which checks that the filing cap
+    covers every token of a page) and differs from catalogue_reuse only by the writer's note slots."""
+    from scripts.run_e33n import count, model_args
+
+    base = model_args("catalogue_reuse", "s30", 1472)
+    n_base = count(base)
+    for arm, (page, per_note) in STAGE_B.items():
+        a = model_args(arm, "s30", 1472)
+        assert a["lm_window"] == a["lm_stride"] == page and page // a["lm_latents"] == per_note, arm
+        assert a["lm_open_new_per_pass"] is False and a["lm_open_cap"] == 512, arm
+        assert {k for k in a if a[k] != base.get(k)} <= {"lm_window", "lm_stride", "lm_latents"}, arm
+        t = model_args(arm, "tiny")
+        assert t["lm_window"] // t["lm_latents"] == per_note, arm
+        assert abs(count(a) - n_base) < 0.01 * n_base, arm                       # only the note slots differ
+
+
+@pytest.mark.parametrize("window,latents,cap", [(16, 8, 6), (16, 4, 4), (32, 8, 6)])
+def test_stage_b_shapes_train_with_reuse(window, latents, cap):
+    """The three stage-B shapes at test scale (finer notes, notes exactly at the filing cap, pages twice as long), pass
+    exclusion off: the filing stays within the cap and the model trains (finite loss, gradient to the index)."""
+    kw = dict(CAT, lm_window=window, lm_stride=window, lm_latents=latents, lm_filing_cap=cap,
+              lm_open_new_per_pass=False)
+    m = make(train=True, **kw)
+    ids = row(160)
+    out = m(ids, labels=ids)
+    assert torch.isfinite(out.loss)
+    out.loss.backward()
+    att = m.layers[m.config.global_layer_index].attn
+    assert att.index_log_tau.grad is not None and float(att.index_log_tau.grad.abs()) > 0

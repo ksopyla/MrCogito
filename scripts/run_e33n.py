@@ -15,6 +15,9 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
          catalogue_reuse — E33t: the catalogue with the pass exclusion off (a loop pass may re-open notes earlier
                    passes opened). The planted-password probe (2026-11-07) found the catalogue opens the key on
                    pass 1 (94 % at 4k) but may not return to it on passes 2–4, where the LSA port and dense copy it
+         catalogue_reuse_n4 / _n16 / _p512 — E33t stage B: note and page sizes around the stage-A winner
+                   (catalogue_reuse: 256-token pages, 32 notes = 8 tokens per note): 4 and 16 tokens per note, and
+                   512-token pages with 64 notes (8 per note); everything else unchanged
          Note (2026-11-06): before then the trainer passed the loop only to notebook models, so E33n's dense arm
          trained with one round; it now loops 4 times like every other arm.
          All: E33's loop (prelude → [reading layer + 1 local layer] × 4 tied → coda), exits off, local windows 128,
@@ -78,6 +81,11 @@ ARMS = {
 }
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
 ARMS["catalogue_reuse"] = {**ARMS["catalogue"], "lm_open_new_per_pass": False}  # every pass may re-open any note
+# E33t stage B (approved by the author 2026-11-08): note and page sizes around catalogue_reuse; the read's budget stays
+# 512 tokens (up to 128 notes still fills it at 4 tokens per note); the filing cap 16 is exact at 16 tokens per note
+ARMS["catalogue_reuse_n4"] = {**ARMS["catalogue_reuse"], "lm_latents": 64}                     # 4 tokens per note
+ARMS["catalogue_reuse_n16"] = {**ARMS["catalogue_reuse"], "lm_latents": 16}                    # 16 tokens per note
+ARMS["catalogue_reuse_p512"] = {**ARMS["catalogue_reuse"], "lm_window": 512, "lm_stride": 512, "lm_latents": 64}
 TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"lm_open_k": 1, "lm_open_cap": 64},
              "lsa": {"lsa_window": 64, "lsa_block": 64, "lsa_top_k": 64},
              "catalogue": {"lm_open_k": 16, "lm_open_cap": 64, "lm_index_queries": 32, "lm_index_negatives": 4,
@@ -85,6 +93,9 @@ TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"
              "catalogue_2l": {"lm_open_k": 16, "lm_open_cap": 64, "lm_index_queries": 32, "lm_index_negatives": 4,
                               "lm_stride": 64, "lm_open_pages": 2}}
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
+TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
+TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}
+TINY_OPEN["catalogue_reuse_p512"] = {**TINY_OPEN["catalogue"], "lm_window": 128, "lm_stride": 128, "lm_latents": 16}
 TINY_WRITER = {"lm_latents": 8, "lm_latent_dim": 64, "lm_heads": 2, "lm_writer_dim": 64, "lm_enc_layers": 1,
                "lm_rounds": 1, "message_raw_window": 64, "lm_window": 64, "lm_stride": 48}
 
