@@ -35,6 +35,28 @@ def test_pick_queries_mixes_far_copies_and_random_positions():
     assert (s >= 0).sum() >= 16 and np.all(ids[s[s >= 0]] == ids[q[s >= 0] + 1])
 
 
+class _CharTok:
+    """One token per character (ids = code points): enough to place a pass key."""
+
+    def encode(self, text, add_special_tokens=False):
+        return [ord(c) for c in text]
+
+
+def test_passkey_row_points_each_answer_query_at_the_key_inside_the_needle():
+    import random
+
+    from evaluation.flow_probe import passkey_row
+
+    S = 1200
+    filler = [5] * 2000
+    ids, q, src, answer = passkey_row(_CharTok(), filler, S, 0.3, random.Random(0))
+    assert len(ids) == S and len(answer) == 6 and len(q) == len(src) == 6        # " 12345": space + 5 digits
+    assert ids[-len(answer):] == answer
+    assert np.all(q + 1 == np.arange(S - 6, S))                                   # each query predicts one answer token
+    assert [ids[s] for s in src] == answer and src[0] < 0.3 * S + 30               # the key inside the needle
+    assert np.all(q - src > 512)                                                  # beyond the 512 window
+
+
 def test_probe_dense_ref_then_opening_and_notebook_arms():
     S = 200
     g = torch.Generator().manual_seed(3)
