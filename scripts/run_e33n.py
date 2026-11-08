@@ -106,6 +106,10 @@ def model_args(arm: str, size: str, ffn: int | None = None) -> dict:
             a["lm_read_topk"] = 4
     if size == "tiny" and arm in TINY_OPEN:
         a.update(TINY_OPEN[arm])
+    if a.get("par_global_read") == "concept":
+        # E37 length scale (2026-11-08): past the long decay's row length the summaries' total weight is held at
+        # that length's level, so the trained model reads longer documents without the fade. Inert in training.
+        a.setdefault("concept_sum_len", decay_len(size))
     a["num_attention_heads"] = z["hidden"] // a["head_dim"]
     a["intermediate_size"] = ffn or max(64, round(z["hidden"] * 8 / 3 / 64) * 64)
     return a
@@ -146,6 +150,11 @@ def fit(arm: str, size: str) -> tuple[dict, int]:
     return args, count(args)
 
 
+def decay_len(size: str) -> int:
+    """Row length of the long decay (LongDocs-lite)."""
+    return 1024 if size == "tiny" else 16384
+
+
 def manifests(data: Path, out: Path, size: str) -> dict:
     """Write the two token-shard manifests (trunk / decay) for a run under `out`, return their paths."""
     out.mkdir(parents=True, exist_ok=True)
@@ -155,7 +164,7 @@ def manifests(data: Path, out: Path, size: str) -> dict:
              "train": [{"name": "fineweb_edu", "files": [str(fw / "finewebedu_train_*.bin")], "weight": 1.0}],
              "eval": [{"name": "fineweb_edu", "files": [str(fw / "finewebedu_val_*.bin")], "rows": 256}]}
     srcs = json.loads((ld / "manifest.json").read_text())["sources"] if (ld / "manifest.json").exists() else {}
-    decay = {"seq_len": 1024 if tiny else 16384, "rule": "doc", "eot": EOT, "seed": 1042,
+    decay = {"seq_len": decay_len(size), "rule": "doc", "eot": EOT, "seed": 1042,
              "train": [{"name": s, "files": [str(ld / f"{s}_train_*.bin")], "weight": 1.0} for s in srcs],
              "eval": [{"name": s, "files": [str(ld / f"{s}_val_*.bin")], "rows": 16} for s in srcs]}
     p = {"trunk": out / "manifest_trunk.json", "decay": out / "manifest_decay.json"}

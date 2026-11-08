@@ -212,9 +212,27 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     default, so old checkpoints read as trained; set it to the training length, 16,384 here), applied at the merge
     of the two flex calls and in the reference path; it counts only the blocks wholly inside the query's document.
     Eval switch: `--concept_sum_len 16384` in `evaluation/long_doc_loss.py` and `evaluation/run_lsa_suite.py`.
-    Tests T8 (values, and no change up to the length) and the GPU flex = reference case `e37a_sum_len`.
+    Tests T8 (values, and no change up to the length) and the GPU flex = reference case `e37a_sum_len` (10 GPU
+    tests pass, Odra GPU 0, 12:37 UTC).
+  - **Confirmed with the built-in scale (`--concept_sum_len 16384`, official rows; e37b Odra GPU 1 12:35–12:52 UTC,
+    e37a and e37a_c128 Polonez GPU 2 12:36–12:53 UTC):** share of the gap at 16k / 32k / 64k, as trained → with
+    the scale, and the 128k loss:
+    - e37a (not used to choose): 100.0 → 100.0 / 98.7 → 100.9 / **86.4 → 129.0 %**; 128k **2.333 → 2.143**;
+    - e37b (reproduces the probe): 99.8 → 99.8 / 99.6 → 101.2 / 89.0 → 127.9 %; 128k 2.326 → 2.154;
+    - e37a_c128: 80.9 → 80.9 / 71.5 → 72.1 / 65.0 → 88.0 %; 128k 2.286 → 2.180;
+    - LSA-native: 99.2 / 100.2 / 127.0 %; 128k 2.170 (window 2.278, dense 2.267).
+    With the scale, e37a passes S2 (129 % at 64k ≥ 100 % − 5) and is ahead of LSA-native at 64k and 128k. The
+    scale is an eval-time rule found after the runs, not part of the trained read S2 was set for: it is the default
+    for the next stage (set `concept_sum_len` to the training length), where S2 is tested as designed.
+    e37a_c32 follows when its own evals are written; RULER at 32k with and without the scale runs on Odra.
 - **Stage A:** six arms at 100M with the screening protocol, on one 4 × L40S spot node (each arm on all four
   GPUs, ~8–10 h, ≈ $60 per arm; ≈ $360) or H100s when available. Gate: S1–S5, K1–K3.
+  - **Launch (2026-11-08, author's go-ahead for ≈ $360):** one g6e.12xlarge spot node, `infra/aws/jobs/e37_multi.sh
+    42 e37a lsa dense window notes_open e37b` (most important first), hard lifetime 52 h (≤ ≈ $400 at ~$7.6/h).
+    Spend before it: ≈ $320 of $2,000. The concept arms train with the length scale on (`concept_sum_len` 16,384,
+    set by `scripts/run_e33n.py`; inert at ≤ 16k) and are also scored with it off. Evals per arm over all four
+    GPUs (`infra/aws/jobs/e37_evals.sh`: RULER 16k split in three task groups; at 30M the node's evals took 2.3 h
+    with mostly one GPU busy). Estimate per arm at 100M: trunk ~4–5 h, decay ~1.2 h, evals ~1.75 h.
 - **Stage B (if S1 holds):** the full m100 protocol for e37 (a or b), lsa and dense (+ original LSA if its stack
   runs), ≈ $450.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
