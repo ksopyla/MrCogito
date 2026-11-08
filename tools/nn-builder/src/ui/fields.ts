@@ -85,7 +85,7 @@ export const CELL_FIELDS: Record<CellType, Field[]> = {
     { key: "entries", label: "Keys/values per slot", kind: "int", min: 1, max: 64 },
     { key: "kv_heads", label: "Key/value heads (= the reader's)", kind: "int", min: 1, max: 64 },
     { key: "head_dim", label: "Head size (= the reader's)", kind: "int", min: 8, max: 512, step: 8 },
-    { key: "projections", label: "Projections", kind: "select", options: [[2, "2 (k, v)"], [4, "4 (k, k-read, v, v-state)"]] },
+    { key: "projections", label: "Projections", kind: "select", options: [[0, "0 (none: the states are the keys/values)"], [2, "2 (k, v)"], [4, "4 (k, k-read, v, v-state)"]] },
     { key: "in_norms", label: "Input norms", kind: "int", min: 0, max: 2 },
     { key: "key_norm", label: "Key norm", kind: "bool" },
     { key: "layers", label: "Reader layers served (keys/values for each)", kind: "int", min: 1, max: 256 },

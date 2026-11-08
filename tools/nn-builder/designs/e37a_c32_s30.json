@@ -1,0 +1,782 @@
+{
+  "schema": "nn-builder/graph",
+  "version": 1,
+  "name": "E37 · concept memory, 32 keys per concept · 68.7M (26.3M core)",
+  "description": "E37 arm e37a_c32 — concept memory, 32 keys per concept, 30M testbed. New against e37a_s30: compression ladder: 16 concepts of 32 keys per block (same 512 opened tokens; only the summaries get coarser). Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status training (as of 2026-11-08). Training on Polonez GPUs 0+1; main phase due about 13:10 UTC 8 Nov. Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 6e49738. Not a builder field: Grouping, statistics and the choice have no weights (0-parameter custom cells); the summaries are the concepts' mean key and value (a notes cell with no projections); the block window and opened tokens are drawn as a 1,280-key window. The summaries' length scale past the training length (concept_sum_len, arch-10m e9b37d2, 8 Nov) is an eval switch with no weights, off in training. Parameters: 68,701,396 in total, 26,260,308 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm e37a_c32 --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
+  "stacks": [
+    {
+      "id": "main",
+      "name": "Decoder (reader)",
+      "role": "decoder",
+      "width": 576,
+      "seq": {
+        "kind": "tokens"
+      },
+      "rows": [
+        {
+          "id": "main.input",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "embedding",
+              "vocab": 50257,
+              "dim": 256,
+              "ngram_tables": 0,
+              "ngram_buckets": 8192,
+              "proj": "gated_mlp",
+              "out_norm": "rmsnorm",
+              "id": "main.input.emb",
+              "label": "GPT-2 token table 50,257 × 256 + input MLP"
+            },
+            {
+              "type": "positional",
+              "kind": "rope",
+              "theta": 500000,
+              "max_len": 4096,
+              "id": "main.input.pos",
+              "label": "RoPE θ 500k (every layer but the reading layer)"
+            }
+          ],
+          "label": "input"
+        },
+        {
+          "id": "main.L0",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L0.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L0.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "pre 0 · local 128"
+        },
+        {
+          "id": "main.L1",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L1.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L1.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "pre 1 · local 128"
+        },
+        {
+          "id": "main.L2",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 1280,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": true,
+              "dual_key": false,
+              "nope": true,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L2.attn",
+              "label": "concept read: 4 sinks + the raw tokens of its own and the previous 512-block + the members of the concepts with the largest estimated mass (512 tokens, exact) + one summary entry per other concept; modelled as a 1,280-key window plus the summaries; no RoPE"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L2.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "reading layer · concept read (16 concepts per block)"
+        },
+        {
+          "id": "main.L3",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L3.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L3.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 0 (in the loop) · local 128"
+        },
+        {
+          "id": "main.L4",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L4.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L4.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 1 · local 128"
+        },
+        {
+          "id": "main.L5",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L5.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L5.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 2 · local 128"
+        },
+        {
+          "id": "main.L6",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L6.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L6.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 3 · local 128"
+        },
+        {
+          "id": "main.L7",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L7.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L7.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 4 · local 128"
+        },
+        {
+          "id": "main.head",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "lm_head",
+              "vocab": 50257,
+              "tied": false,
+              "bias": false,
+              "final_norm": "rmsnorm",
+              "z_loss": 0.0001,
+              "softcap": 30,
+              "chunked": true,
+              "id": "main.head.lm",
+              "label": "untied output layer 50,257"
+            }
+          ],
+          "label": "head"
+        }
+      ]
+    },
+    {
+      "id": "blocks",
+      "name": "Concept builder (512-key blocks)",
+      "role": "encoder",
+      "width": 576,
+      "seq": {
+        "kind": "pages",
+        "of": "main",
+        "window": 512,
+        "stride": 512
+      },
+      "rows": [
+        {
+          "id": "blocks.group",
+          "x0_mix": false,
+          "label": "group each closed block into 16 concepts",
+          "cells": [
+            {
+              "type": "custom",
+              "id": "blocks.group.kmeans",
+              "label": "balanced soft k-means on the reading layer's own keys: 16 concepts × 32 keys, farthest-point seeds, Sinkhorn, no gradient, no weights (rebuilt every loop round)",
+              "params": 0,
+              "flops_per_position": 32768,
+              "act_bytes_per_position": 0,
+              "out": 0,
+              "note": "balanced soft k-means on the unit keys"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "concepts",
+      "name": "Concepts (16 per block)",
+      "role": "latent",
+      "width": 576,
+      "seq": {
+        "kind": "slots",
+        "of": "blocks",
+        "per_page": 16
+      },
+      "rows": [
+        {
+          "id": "concepts.stats",
+          "x0_mix": false,
+          "label": "statistics + member links",
+          "cells": [
+            {
+              "type": "custom",
+              "id": "concepts.stats.sum",
+              "label": "per concept: count n, mean key, key variance, mean value, mean state z, links to its member tokens (sums, no weights); the summary is (mean key, mean value)",
+              "params": 0,
+              "flops_per_position": 0,
+              "act_bytes_per_position": 0,
+              "out": 64,
+              "note": "concept statistics"
+            }
+          ]
+        },
+        {
+          "id": "concepts.out",
+          "x0_mix": false,
+          "label": "summary entries",
+          "cells": [
+            {
+              "type": "kv_out",
+              "entries": 1,
+              "kv_heads": 1,
+              "head_dim": 64,
+              "projections": 0,
+              "in_norms": 0,
+              "key_norm": false,
+              "id": "concepts.out.kv",
+              "label": "one summary key + value per concept (1 KV head × 64): the mean key and mean value as they are, no weights"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "main.skip0",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L3"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L4"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip1",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L2"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L5"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip2",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L1"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L6"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip3",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L0"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L7"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "w.blocks.in",
+      "kind": "input",
+      "from": {
+        "stack": "main",
+        "row": "main.L1"
+      },
+      "to": {
+        "stack": "blocks"
+      }
+    },
+    {
+      "id": "w.concepts.in",
+      "kind": "input",
+      "from": {
+        "stack": "blocks"
+      },
+      "to": {
+        "stack": "concepts"
+      }
+    },
+    {
+      "id": "w.read",
+      "kind": "source",
+      "from": {
+        "stack": "concepts"
+      },
+      "to": {
+        "stack": "main",
+        "cell": "main.L2.attn"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "loop.read",
+      "kind": "loop",
+      "stack": "main",
+      "rows": [
+        "main.L2",
+        "main.L3"
+      ],
+      "count": 4,
+      "round_embedding": true,
+      "feedback": "none"
+    }
+  ],
+  "run": {
+    "row_length": 4096,
+    "rows_per_step": 64,
+    "micro_batch": 4,
+    "precision": "amp_bf16",
+    "optimizer": "adamw",
+    "weight_decay": 0.1,
+    "zero_stage": 0,
+    "checkpointing": false,
+    "gpu": "rtx3090",
+    "gpu_count": 1,
+    "token_budget": 1500000000,
+    "deadline_hours": 0,
+    "mfu": 0,
+    "irregular_ratio": 0,
+    "dp_efficiency": 0.95
+  },
+  "derived": {
+    "exported_at": "2026-11-08T12:50:54.807Z",
+    "hash": "nnb1-0bfba2a91eb578086d50286a5a00",
+    "row_length": 4096,
+    "params_total": 68701396,
+    "params_by_stack": {
+      "main": 68701396,
+      "blocks": 0,
+      "concepts": 0
+    },
+    "train_flops_per_token": 493265400,
+    "cells": {
+      "main.input.emb": {
+        "params": 13493056,
+        "width_in": 0,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.input.pos": {
+        "params": 0,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L0.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L0.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L1.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L1.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L2.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L2.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L3.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L3.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L4.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L4.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L5.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L5.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L6.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L6.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L7.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L7.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.head.lm": {
+        "params": 28948608,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "blocks.group.kmeans": {
+        "params": 0,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "concepts.stats.sum": {
+        "params": 0,
+        "width_in": 576,
+        "width_out": 64,
+        "runs_per_row": 1
+      },
+      "concepts.out.kv": {
+        "params": 0,
+        "width_in": 64,
+        "width_out": 64,
+        "runs_per_row": 1
+      }
+    }
+  }
+}

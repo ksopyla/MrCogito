@@ -100,7 +100,7 @@ const BLOCK_TYPES: Record<string, string> = {
   norm: "normalise the stream: rmsnorm (weight) or layernorm (weight and bias).",
   linear: "project the stream to `out` (0 = keep the width), optional bias, then out_norm.",
   latent_init: "replace the stream with learned queries (one per slot, the same on every page; or one per latent), plus a linear map of address features, then norm.",
-  kv_out: "turn each slot into ready keys/values (notes) of entries × kv_heads × head_dim, for `layers` reader layers; projections 2 (k, v) or 4 (k, k-read, v, v-state); in_norms norms on the input; key_norm RMSNorm on keys.",
+  kv_out: "turn each slot into ready keys/values (notes) of entries × kv_heads × head_dim, for `layers` reader layers; projections 0 (none: the slot states already are the keys/values, no weights), 2 (k, v) or 4 (k, k-read, v, v-state); in_norms norms on the input; key_norm RMSNorm on keys.",
   pool: "the first block of a slots stack wired from a pages stack: each page of tokens becomes one vector (mean, or attention with one learned query per head).",
   lm_head: "final_norm, then logits over vocab (tied = reuse the stack's token table; needs dim = width); loss = cross-entropy against the next token (softcap: cap·tanh(logits/cap); z_loss weight on logsumexp²); chunked = computed in chunks.",
   custom: "a block the builder only counts (params, forward FLOPs); its meaning is in `note` and the design's description. sparse = a lookup table.",

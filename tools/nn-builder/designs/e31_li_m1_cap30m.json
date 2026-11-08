@@ -1,0 +1,747 @@
+{
+  "schema": "nn-builder/graph",
+  "version": 1,
+  "name": "E31 · latent-memory champion (capability checks) · 35.1M (33.9M core)",
+  "description": "E31 arm e31_li_m1 — latent-memory champion (capability checks), capability-check 30M. New against e31c_plain_30m (preset): the capability-check champion: E31's sliding-window latent memory on the DNA tasks — width 960, 4 layers (pre-encoder, global read, 2 stack layers), the E31 page writer (256-token pages every 192, 32 notes per page, one key and value per note), reads after QUERY go to the notes only. Protocol: the capability checks (C0–C5 core package, seeds 0–2, trained from scratch per task; rows of 1k–16k). Built 2026-09-27; status done (as of 2026-11-08). Champion of the capability checks (no-harm reference for every new variant, analysis/capability_board.py --champion). Built by verification/bapo_capability_probe.py with the E31 platform args (scripts/study_plans/e30_vs_e31.py BASE: hidden 960, token embedding 128, no n-grams, raw window 256) on the 13-symbol DNA alphabet; the results ledger stores 35,129,900 for its runs. Spec: docs/experiments_specs/ahead/E31_sliding_window_latent_memory.md. Source: origin/dev @ 9253d7a. Not a builder field: The value embeddings on layers 0 and 1 (1,233 parameters each) are custom cells; the exclusive-after-QUERY mask has no builder field. Parameters: 35,129,900 in total, 33,947,436 without the word tables (input embedding 1,169,984 + output layer 12,480); exact against the trainer's own count (evaluation/bapo_models.build_model as the exam runner calls it, = the ledger's stored count).",
+  "stacks": [
+    {
+      "id": "main",
+      "name": "Reader",
+      "role": "decoder",
+      "width": 960,
+      "seq": {
+        "kind": "tokens"
+      },
+      "rows": [
+        {
+          "id": "main.input",
+          "x0_mix": false,
+          "label": "input",
+          "cells": [
+            {
+              "type": "embedding",
+              "vocab": 13,
+              "dim": 128,
+              "ngram_tables": 0,
+              "ngram_buckets": 8192,
+              "proj": "gated_mlp",
+              "out_norm": "rmsnorm",
+              "id": "main.input.emb",
+              "label": "DNA-task alphabet 13 × 128 + input MLP"
+            },
+            {
+              "type": "positional",
+              "kind": "rope",
+              "theta": 10000,
+              "max_len": 1024,
+              "id": "main.input.pos",
+              "label": "RoPE"
+            }
+          ]
+        },
+        {
+          "id": "main.L0",
+          "x0_mix": true,
+          "label": "pre-encoder · local 16",
+          "cells": [
+            {
+              "type": "custom",
+              "id": "main.L0.ve",
+              "label": "value embedding: a 13 × 16 table → 64, added to the values",
+              "params": 1233,
+              "flops_per_position": 0,
+              "act_bytes_per_position": 0,
+              "out": 0,
+              "note": "value_embed [13, 16] + value_proj [16 → 64] + value_lambda (one scalar); E18's value embeddings on the pre-encoder and the global read (ArchSpec.value_embed_layers (0, 1)). Not a builder field."
+            },
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 15,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L0.attn",
+              "label": "local window 16"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1920,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L0.ffn",
+              "label": "SwiGLU 1920"
+            }
+          ]
+        },
+        {
+          "id": "main.L1",
+          "x0_mix": true,
+          "label": "global read · last 256 tokens + notes",
+          "cells": [
+            {
+              "type": "custom",
+              "id": "main.L1.ve",
+              "label": "value embedding: a 13 × 16 table → 64, added to the values",
+              "params": 1233,
+              "flops_per_position": 0,
+              "act_bytes_per_position": 0,
+              "out": 0,
+              "note": "value_embed [13, 16] + value_proj [16 → 64] + value_lambda (one scalar); E18's value embeddings on the pre-encoder and the global read (ArchSpec.value_embed_layers (0, 1)). Not a builder field."
+            },
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 15,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 256,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": true,
+              "dual_key": true,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L1.attn",
+              "label": "global read: the last 256 tokens (message_raw_window) + the notes of closed pages; answers read the notes only (exclusive after QUERY)"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1920,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L1.ffn",
+              "label": "SwiGLU 1920"
+            }
+          ]
+        },
+        {
+          "id": "main.L2",
+          "x0_mix": true,
+          "label": "stack 0 · local 16",
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 15,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L2.attn",
+              "label": "local window 16"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1920,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L2.ffn",
+              "label": "SwiGLU 1920"
+            }
+          ]
+        },
+        {
+          "id": "main.L3",
+          "x0_mix": true,
+          "label": "stack 1 · local 16",
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 15,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 16,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L3.attn",
+              "label": "local window 16"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1920,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L3.ffn",
+              "label": "SwiGLU 1920"
+            }
+          ]
+        },
+        {
+          "id": "main.head",
+          "x0_mix": false,
+          "label": "head",
+          "cells": [
+            {
+              "type": "lm_head",
+              "vocab": 13,
+              "tied": false,
+              "bias": false,
+              "final_norm": "rmsnorm",
+              "z_loss": 0.0001,
+              "softcap": 0,
+              "chunked": false,
+              "id": "main.head.lm",
+              "label": "untied output layer 13"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pages",
+      "name": "Page writer",
+      "role": "writer",
+      "width": 256,
+      "seq": {
+        "kind": "pages",
+        "of": "main",
+        "window": 256,
+        "stride": 192
+      },
+      "rows": [
+        {
+          "id": "pages.in",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "linear",
+              "out": 256,
+              "bias": false,
+              "out_norm": "rmsnorm",
+              "id": "pages.in.proj",
+              "label": "token table (128) → writer width 256"
+            },
+            {
+              "type": "positional",
+              "kind": "rope",
+              "theta": 10000,
+              "max_len": 256,
+              "id": "pages.in.pos",
+              "label": "RoPE inside the page (θ 10k)"
+            }
+          ],
+          "label": "in: 256-token pages, a new one every 192"
+        },
+        {
+          "id": "pages.enc0",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 4,
+              "head_dim": 64,
+              "kv_heads": 4,
+              "causal": false,
+              "window": 0,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "pages.enc0.attn",
+              "label": "whole page, both directions"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 512,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "pages.enc0.ffn",
+              "label": "SwiGLU 512"
+            }
+          ],
+          "label": "page layer 0"
+        },
+        {
+          "id": "pages.enc1",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 4,
+              "head_dim": 64,
+              "kv_heads": 4,
+              "causal": false,
+              "window": 0,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "pages.enc1.attn",
+              "label": "whole page, both directions"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 512,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "pages.enc1.ffn",
+              "label": "SwiGLU 512"
+            }
+          ],
+          "label": "page layer 1"
+        }
+      ]
+    },
+    {
+      "id": "notes",
+      "name": "Notebook (notes)",
+      "role": "latent",
+      "width": 512,
+      "seq": {
+        "kind": "slots",
+        "of": "pages",
+        "per_page": 32
+      },
+      "rows": [
+        {
+          "id": "notes.init",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "latent_init",
+              "address_feats": 64,
+              "norm": "rmsnorm",
+              "id": "notes.init.q",
+              "label": "32 learned slots per page"
+            }
+          ],
+          "label": "slots"
+        },
+        {
+          "id": "notes.read",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "cross",
+              "heads": 8,
+              "head_dim": 64,
+              "kv_heads": 8,
+              "causal": false,
+              "window": 0,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "eager",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": true,
+                "logit_scale": false
+              },
+              "id": "notes.read.attn",
+              "label": "slots read their page"
+            }
+          ],
+          "label": "read page"
+        },
+        {
+          "id": "notes.ffn",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1024,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "notes.ffn.ffn",
+              "label": "SwiGLU 1024"
+            }
+          ],
+          "label": "think"
+        },
+        {
+          "id": "notes.out",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "kv_out",
+              "entries": 1,
+              "kv_heads": 1,
+              "head_dim": 64,
+              "projections": 4,
+              "in_norms": 2,
+              "key_norm": true,
+              "id": "notes.out.kv",
+              "label": "notes: one key + one value each (1 KV head × 64, m = 1)"
+            }
+          ],
+          "label": "notes"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "main.skip0",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L1"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L2"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip1",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L0"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L3"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "wire.table",
+      "kind": "input",
+      "from": {
+        "stack": "main",
+        "cell": "main.input.emb",
+        "port": "table"
+      },
+      "to": {
+        "stack": "pages"
+      }
+    },
+    {
+      "id": "wire.pages",
+      "kind": "source",
+      "from": {
+        "stack": "pages"
+      },
+      "to": {
+        "stack": "notes",
+        "cell": "notes.read.attn"
+      }
+    },
+    {
+      "id": "wire.notes",
+      "kind": "source",
+      "from": {
+        "stack": "notes"
+      },
+      "to": {
+        "stack": "main",
+        "cell": "main.L1.attn"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "loop.writer",
+      "kind": "loop",
+      "stack": "notes",
+      "rows": [
+        "notes.read",
+        "notes.ffn"
+      ],
+      "count": 2,
+      "round_embedding": false,
+      "feedback": "none"
+    }
+  ],
+  "run": {
+    "row_length": 1024,
+    "rows_per_step": 128,
+    "micro_batch": 32,
+    "precision": "amp_bf16",
+    "optimizer": "adamw",
+    "weight_decay": 0.1,
+    "zero_stage": 0,
+    "checkpointing": false,
+    "gpu": "rtx3090",
+    "gpu_count": 1,
+    "token_budget": 0,
+    "deadline_hours": 0,
+    "mfu": 0,
+    "irregular_ratio": 0,
+    "dp_efficiency": 0.95
+  },
+  "derived": {
+    "exported_at": "2026-11-08T12:50:54.815Z",
+    "hash": "nnb1-07b768aab0279514122ebab2a15f",
+    "row_length": 1024,
+    "params_total": 35129900,
+    "params_by_stack": {
+      "main": 31176812,
+      "pages": 1345024,
+      "notes": 2608064
+    },
+    "train_flops_per_token": 212988330,
+    "cells": {
+      "main.input.emb": {
+        "params": 1169984,
+        "width_in": 0,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.input.pos": {
+        "params": 0,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L0.ve": {
+        "params": 1233,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L0.attn": {
+        "params": 1967168,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L0.ffn": {
+        "params": 5530560,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L1.ve": {
+        "params": 1233,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L1.attn": {
+        "params": 1967168,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L1.ffn": {
+        "params": 5530560,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L2.attn": {
+        "params": 1967168,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L2.ffn": {
+        "params": 5530560,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L3.attn": {
+        "params": 1967168,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.L3.ffn": {
+        "params": 5530560,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "main.head.lm": {
+        "params": 13440,
+        "width_in": 960,
+        "width_out": 960,
+        "runs_per_row": 1
+      },
+      "pages.in.proj": {
+        "params": 33024,
+        "width_in": 128,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.in.pos": {
+        "params": 0,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc0.attn": {
+        "params": 262528,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc0.ffn": {
+        "params": 393472,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc1.attn": {
+        "params": 262528,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc1.ffn": {
+        "params": 393472,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "notes.init.q": {
+        "params": 49664,
+        "width_in": 0,
+        "width_out": 512,
+        "runs_per_row": 1
+      },
+      "notes.read.attn": {
+        "params": 852864,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 2
+      },
+      "notes.ffn.ffn": {
+        "params": 1573376,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 2
+      },
+      "notes.out.kv": {
+        "params": 132160,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 1
+      }
+    }
+  }
+}
