@@ -78,7 +78,7 @@ for AZ in $ZONES; do
   [ "$SUBNET" = "None" ] && continue
   if ID=$(aws ec2 run-instances --image-id "$AMI" --instance-type "$TYPE" --key-name "$MC_KEY" \
     --subnet-id "$SUBNET" --security-group-ids "$SG" --iam-instance-profile "Name=${MC_ROLE}" \
-    --instance-initiated-shutdown-behavior terminate "${MARKET[@]}" \
+    --instance-initiated-shutdown-behavior terminate ${MARKET[@]+"${MARKET[@]}"} \
     --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=${MC_ROOT_GB},VolumeType=gp3,DeleteOnTermination=true}" \
     --metadata-options "HttpTokens=required,HttpEndpoint=enabled" \
     --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${NAME}},{Key=Project,Value=${MC_PROJECT_TAG}},{Key=MaxHours,Value=${MAX_HOURS}}]" \
