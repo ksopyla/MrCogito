@@ -45,6 +45,7 @@ import torch.nn.functional as F
 
 ROOT = Path(__file__).resolve().parent.parent
 PAD_MULTIPLE = 512   # their LSA block
+EVAL_MAX = 131072
 
 
 def _load(name: str, path: Path):
@@ -72,7 +73,9 @@ def load_backbone(checkpoint: str, work: Path):
     """Their evaluation builder on the decay phase's config (the arm, the ~160M body), then the checkpoint's weights."""
     _single_process_env()
     LO.patch_body()
-    exp, _ = LO.experiment("decay", work)
+    # built for the longest eval row (the context limit torchtitan's input preparation checks); every forward then
+    # sets the sparse layers' length to its own batch's, as their benchmark does
+    exp, _ = LO.experiment("decay", work, extra=[f"data.seq_len={EVAL_MAX}", f"run.optim.tokens_per_rank={EVAL_MAX}"])
     from lsa.training.native.benchmark.run import load_backbone as their_load_backbone
 
     bb = their_load_backbone(exp, checkpoint)
