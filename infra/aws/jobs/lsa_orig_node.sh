@@ -7,10 +7,13 @@
 #      flash-linear-attention 0.5.2, causal-conv1d 1.7.0 built here, FlashAttention-3 / -2 prebuilt wheels);
 #      our uv env is not needed (no uv sync of this repo: the line above);
 #   2. our shards from S3 (the m100 trunk's 32 FineWeb-Edu shards + val, LongDocs-lite, GPT-2 tokenizer);
-#   3. development over ssh (smoke tests): waits for $MC_DISK/GO, at most DEV_HOURS (default 6, from the job's
-#      start; `echo <epoch> > $MC_DISK/DEV_UNTIL` moves the deadline); no GO by then -> the job ends, the node
-#      powers off (never an idle H100);
-#   4. on GO: git pull of this branch, then infra/aws/jobs/lsa_orig_run.sh (trunk -> decay -> evals -> S3); when it
+#   3. the smoke test (LSA_SMOKE=1 lsa_orig_run.sh: trunk 200 steps, decay 100, quick evals) and its gate
+#      (scripts/lsa_orig_gate.py); a pass writes $MC_DISK/GO. `touch $MC_DISK/HOLD` before it starts skips it
+#      (development over ssh), and a HOLD during it keeps the gate from writing GO;
+#   4. waits for GO: at most 2 h after a failed gate (FAIL_HOURS), else DEV_HOURS (6) from the job's start
+#      (`echo <epoch> > $MC_DISK/DEV_UNTIL` moves the deadline); no GO by then -> the job ends and the node powers off
+#      (never an idle H100);
+#   5. on GO: git pull of this branch, then infra/aws/jobs/lsa_orig_run.sh (trunk -> decay -> evals -> S3); when it
 #      returns the job ends and node_run.sh powers the node off.
 # Usage: bash infra/aws/launch.sh lsa-orig-h100 50 infra/aws/jobs/lsa_orig_node.sh arch-10m p5.4xlarge
 set -uo pipefail
@@ -62,15 +65,33 @@ log "data: $(ls "$D"/fineweb_edu_gpt2/finewebedu_train_*.bin | wc -l) FineWeb sh
 log "setup done in $(( ($(date -u +%s) - T0) / 60 )) min"
 touch "$MC_DISK/LSA_READY"
 
-# 3. development window: wait for GO, never past the deadline
-DEADLINE=$(( T0 + ${DEV_HOURS:-6} * 3600 ))
+# 3. the smoke test (unless $MC_DISK/HOLD exists: development over ssh first), then its gate
+#    (scripts/lsa_orig_gate.py: losses fall, no NaN, the full run's estimate <= 45 h / $450); a pass writes GO
+git -C "$REPO" pull -q --ff-only || log "git pull FAILED; using the checkout as it is"
+if [ ! -f "$MC_DISK/HOLD" ]; then
+  log "smoke test (code $(git -C "$REPO" log --oneline -1 | cut -c1-50))"
+  LSA_SMOKE=1 bash "$REPO/infra/aws/jobs/lsa_orig_run.sh" > "$MC_DISK/smoke.log" 2>&1
+  python3 "$REPO/scripts/lsa_orig_gate.py" "$MC_DISK/runs/lsa_orig_smoke" "$MC_PRICE_PER_HOUR" > "$MC_DISK/gate.json" 2>&1
+  GATE=$?
+  aws s3 cp --only-show-errors "$MC_DISK/gate.json" "s3://$MC_BUCKET/runs/e37/lsa_orig_smoke/gate.json" || true
+  tee -a "$MC_DISK/lsa_setup.log" < "$MC_DISK/gate.json"
+  if [ "$GATE" = 0 ] && [ ! -f "$MC_DISK/HOLD" ]; then
+    echo "auto: smoke gate passed $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MC_DISK/GO"
+  else
+    log "smoke gate did not pass (or HOLD): waiting for GO at most ${FAIL_HOURS:-2} h more"
+    DEADLINE=$(( $(date -u +%s) + ${FAIL_HOURS:-2} * 3600 ))
+  fi
+fi
+
+# 4. development window: wait for GO, never past the deadline
+DEADLINE=${DEADLINE:-$(( T0 + ${DEV_HOURS:-6} * 3600 ))}
 while [ ! -f "$MC_DISK/GO" ]; do
   [ -f "$MC_DISK/DEV_UNTIL" ] && DEADLINE=$(cat "$MC_DISK/DEV_UNTIL")
   if [ "$(date -u +%s)" -ge "$DEADLINE" ]; then log "no GO by the deadline; the job ends (node powers off)"; exit 0; fi
   sleep 60
 done
 
-# 4. the run
+# 5. the run
 log "GO: $(cat "$MC_DISK/GO" 2>/dev/null)"
 git -C "$REPO" pull -q --ff-only || log "git pull FAILED; running the checkout as it is"
 log "code at $(git -C "$REPO" log --oneline -1)"
