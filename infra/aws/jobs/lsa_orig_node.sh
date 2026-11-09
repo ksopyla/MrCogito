@@ -1,7 +1,7 @@
 #!/bin/bash
 # mc: no-sync
 # E37 stage B, the ORIGINAL Latent Sparse Attention model (Kubicek et al., arXiv 2610.42147; their code
-# github.com/Prefrontal-AI/latent-sparse-attention @ 5ebea73, trainer `lsa native train`) at ~160M on one H100,
+# github.com/Prefrontal-AI/latent-sparse-attention @ 5ebea732d639 (pinned, full SHA below), trainer `lsa native train`) at ~160M on one H100,
 # with our data, token budget and evals. A launch.sh job (on demand p5.4xlarge):
 #   1. their stack in its own venv ($MC_DISK/lsa-venv, from their uv.lock: torch 2.13.0 cu129, torchtitan @56a721b,
 #      flash-linear-attention 0.5.2, causal-conv1d 1.7.0 built here, FlashAttention-3 / -2 prebuilt wheels);
@@ -18,14 +18,20 @@ source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1
 REPO="$(pwd)"
 LSA="$MC_DISK/lsa"; VENV="$MC_DISK/lsa-venv"; D="$MC_DISK/data"
-LSA_COMMIT=5ebea73
+# their HEAD 5ebea73 (2026-11-09), resolved once from GitHub; the job refuses any other commit
+FULL_SHA=5ebea732d639576d2a7579b0de40e6252f9001f5
 T0=$(date -u +%s)
 log() { echo "[lsa_orig_node $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$MC_DISK/lsa_setup.log"; }
 
 log "setup on $MC_NAME ${MC_IID:-} ($(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null))"
-# 1. their code and their locked environment
+# 1. their code at the pinned commit (a failed checkout or another HEAD stops the job), then their locked environment
 [ -d "$LSA/.git" ] || git clone -q https://github.com/Prefrontal-AI/latent-sparse-attention.git "$LSA"
-git -C "$LSA" checkout -q "$LSA_COMMIT" && log "their repo at $(git -C "$LSA" log --oneline -1)"
+git -C "$LSA" cat-file -e "$FULL_SHA^{commit}" 2>/dev/null || git -C "$LSA" fetch -q origin "$FULL_SHA"
+if ! git -C "$LSA" -c advice.detachedHead=false checkout -q --detach "$FULL_SHA^{commit}" \
+   || [ "$(git -C "$LSA" rev-parse HEAD)" != "$FULL_SHA" ]; then
+  log "pin mismatch: their repo is at $(git -C "$LSA" rev-parse HEAD 2>/dev/null), wanted $FULL_SHA"; exit 1
+fi
+log "their repo at $(git -C "$LSA" log --oneline -1) ($FULL_SHA)"
 CUDA_DIR=$(ls -d /usr/local/cuda-12.* 2>/dev/null | sort -V | tail -1)
 [ -n "$CUDA_DIR" ] && export CUDA_HOME="$CUDA_DIR" PATH="$CUDA_DIR/bin:$PATH"
 log "nvcc: $(nvcc --version 2>/dev/null | tail -2 | tr '\n' ' ') (CUDA_HOME=${CUDA_HOME:-none})"
