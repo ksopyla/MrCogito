@@ -177,7 +177,8 @@ def make_lm(bb, tokenizer: str, max_length: int, batch: int):
 
         def __init__(self):
             super().__init__()
-            self.config = transformers.PretrainedConfig(vocab_size=50304)
+            cfg = getattr(transformers, "PretrainedConfig", None) or transformers.PreTrainedConfig
+            self.config = cfg(vocab_size=50304)
 
         @property
         def device(self):
