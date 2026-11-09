@@ -170,7 +170,12 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     pages_open 0.105, dense 0.091, notes_open 0.047, window 0.029, e33 0.024 (the controls ran RULER at 4k only;
     e33 at 16k 0.016). Single needle (niah_single_1) 0.57 at 4k and 0.49 at 16k (LSA 0.97, pages_open 0.78, dense
     0.68 at 4k); multi-value 0.155 / 0.185 (LSA 0.103). The old zero result is kept as `eval_ruler_padnan.json`.
-    e37a's rerun is queued on Polonez GPU 2 after e37a_c128's evals.
+  - **RULER rerun with the fix, e37a (Polonez GPU 2, 12:53–17:39 UTC Nov 8; 100 documents per task):** mean of
+    the 13 tasks **0.158 at 4k and 0.151 at 16k**, the best of all 30M models at 4k (LSA 0.139, e37b 0.113,
+    pages_open 0.105, dense 0.091) and level from 4k to 16k (e37b 0.113 → 0.103, e33 0.024 → 0.016). Single needle
+    0.94 / 0.90 (LSA 0.97 at 4k), multi-key-1 0.31 / 0.41, multi-value 0.19 / 0.21; the variable-tracking,
+    word-frequency and multi-key-2/3 tasks stay near zero, as for LSA and dense at 4k. The reasoner (e37b) does not
+    help RULER at 30M: −0.045 at 4k, −0.048 at 16k.
   - **Summaries-off probe (eval only, same rows; 01:41–01:49 UTC Nov 8, Polonez GPU 0):** e37a with the concept
     summaries switched off recovers 86.5 % at 16k (vs 100 % with them) but 104.7 % at 64k (vs 86.4 %); at 128k
     (arxiv, doab, gutenberg; hansard has no 128k row and the probe stopped before usgpo) loss 2.930 vs 3.131 with
@@ -186,7 +191,17 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     e37a's ~2,048 at 16k, where e37a is at 100 %. So the number of summaries alone does not explain the fade.
     Hypothesis: the cause is the total weight the far field claims (each summary claims its members' estimated
     mass, and that total grows with length whatever the grouping). Tested by the fade probe below.
-  - e37a_c32 (16 concepts of 32 keys) is due to finish its main phase about 13:10 UTC.
+  - RULER (13 tasks, mean, padding fix): 0.110 at 4k, 0.056 at 16k (e37a 0.158 at 4k). Core (lm-eval, accuracy):
+    within ±0.02 of e37a except sciq 0.592 (e37a 0.626).
+- **Compression ladder, e37a_c32 (16 concepts of 32 keys per block; trained on Polonez GPUs 0+1 after the Odra
+  heat stop, decay done 15:21 UTC Nov 8, evals 15:21–15:45 UTC):** share of the window→dense gap 95.0 / 94.2 /
+  88.1 / 55.2 % at 4k / 16k / 32k / 64k (e37a 96.0 / 100.0 / 98.7 / 86.4; c128 85.8 / 80.9 / 71.5 / 65.0); 128k raw
+  loss 2.417 (e37a 2.333, c128 2.286). RULER 4k mean 0.105 (e37a 0.158, c128 0.110). Core within ±0.02 of e37a
+  except sciq 0.500 (e37a 0.626).
+  - The ladder at the training length: 8 keys per concept 100 %, 32 keys 94 %, 128 keys 81 %. Each 4× coarser
+    grouping costs more than the one before; the open of 512 tokens chosen by coarser concepts is less precise.
+  - As trained, c32 fades the most past 16k (55 % at 64k): its 16 summaries per block each claim 32 keys' mass.
+    With the length scale it recovers to 111 % at 64k and 2.160 at 128k (below).
 - **Fade probe (eval only, no retraining; e37b's checkpoint, Odra GPUs 0+1, 11:14–11:52 UTC Nov 8; same rows as
   its long-document eval, 8 per source; shares paired by source: 5 sources at 16k / 64k, 4 at 128k).** The flex
   summary call patched in memory: **cap K** keeps each query and head's K strongest summaries (by the summary logit);
@@ -220,11 +235,19 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     - e37a (not used to choose): 100.0 → 100.0 / 98.7 → 100.9 / **86.4 → 129.0 %**; 128k **2.333 → 2.143**;
     - e37b (reproduces the probe): 99.8 → 99.8 / 99.6 → 101.2 / 89.0 → 127.9 %; 128k 2.326 → 2.154;
     - e37a_c128: 80.9 → 80.9 / 71.5 → 72.1 / 65.0 → 88.0 %; 128k 2.286 → 2.180;
+    - e37a_c32 (not used to choose; Polonez GPU 0 15:37–15:45 UTC): 94.2 → 94.2 / 88.1 → 91.0 / **55.2 → 111.2 %**;
+      128k **2.417 → 2.160**;
     - LSA-native: 99.2 / 100.2 / 127.0 %; 128k 2.170 (window 2.278, dense 2.267).
     With the scale, e37a passes S2 (129 % at 64k ≥ 100 % − 5) and is ahead of LSA-native at 64k and 128k. The
     scale is an eval-time rule found after the runs, not part of the trained read S2 was set for: it is the default
     for the next stage (set `concept_sum_len` to the training length), where S2 is tested as designed.
-    e37a_c32 follows when its own evals are written; RULER at 32k with and without the scale runs on Odra.
+    The scale helps all four concept models past 16k and changes nothing at or below it; the coarser the
+    grouping, the more it recovers.
+  - **RULER at 32k, e37b with and without the scale (five needle tasks, 50 examples each; Odra GPUs 0+1,
+    after 12:52, done 16:56 (on) and 17:03 UTC (off), Nov 8):** mean 0.168 off → **0.227 on**; the same five tasks score 0.257 at 4k and 0.249 at
+    16k. Per task, off → on: single_1 0.48 → 0.44, single_2 0.02 → 0.16, single_3 0.10 → 0.14, multikey_1
+    0.14 → 0.26, multivalue 0.100 → 0.135. The scale keeps most of the 16k retrieval at 2× the training length;
+    without it a third is lost. No control has RULER at 32k yet (stage A scores 16k).
 - **Stage A:** six arms at 100M with the screening protocol, on one 4 × L40S spot node (each arm on all four
   GPUs, ~8–10 h, ≈ $60 per arm; ≈ $360) or H100s when available. Gate: S1–S5, K1–K3.
   - **Launch (2026-11-08, author's go-ahead for ≈ $360):** one g6e.12xlarge spot node, `infra/aws/jobs/e37_multi.sh
@@ -233,8 +256,80 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     set by `scripts/run_e33n.py`; inert at ≤ 16k) and are also scored with it off. Evals per arm over all four
     GPUs (`infra/aws/jobs/e37_evals.sh`: RULER 16k split in three task groups; at 30M the node's evals took 2.3 h
     with mostly one GPU busy). Estimate per arm at 100M: trunk ~4–5 h, decay ~1.2 h, evals ~1.75 h.
+  - Eval-script trial before the node's first evals (Odra, `E37_EVAL_QUICK=1`, e37b's 30M checkpoint): the RULER task
+    groups were named `GROUPS`, which bash reserves (the user's group ids; assignments are ignored), so the 16k
+    lanes ran group ids as task names. Renamed (3833ca1, pulled on the node about 17:10 UTC, before its evals; only
+    that file changed). The quick check's long length moved from 2k to 8k (07ca3a5; RULER's hotpot QA generator
+    never fits its documents below ~4k). Trial passed 17:33–17:40 UTC: 13 tasks at both lengths, merge, marker.
+  - **e37a at 100M (trunk 13:42–17:14, decay 17:14–18:20, evals 18:20–19:58 UTC Nov 8; 1,907 trunk steps of 128
+    rows, last train loss 3.33; the 30M e37a ended at 3.35 after 5,722 steps of 64 rows and 1.5B tokens):**
+    long-document raw loss on positions ≥ 2k (5 sources; 4 at 128k), trained with the length scale, scored with
+    it on / off: 16k 2.334 / 2.334, 32k 2.442 / 2.451, 64k **2.417 / 2.490**, 128k **2.148 / 2.321** (30M e37a with
+    the scale: 2.349, 2.453, 2.426, 2.143). The scale trained in works as at eval time. RULER mean of 13 tasks
+    **0.066 at 4k, 0.055 at 16k** (30M e37a 0.158 / 0.151; single needle 0.27 / 0.38 vs 0.94 / 0.90). Core within
+    ±0.02 of the 30M e37a except arc_easy 0.400 (0.384) and sciq 0.589 (0.626).
+    - At the screening budget the 100M model is barely better than the 30M one (0.015 nats at 16k) and much
+      worse at RULER: 1.0B tokens in 1,907 steps is fewer tokens and a third of the 30M screen's steps. The 100M
+      controls (same budget) decide whether this is the budget or the read; shares of the gap wait for window
+      and dense.
+  - **lsa (our port) at 100M (trunk 19:59–23:08, decay 23:08–23:57 UTC Nov 8, evals 23:57–01:02 UTC Nov 9; last
+    train loss 3.33, as e37a):** long-document raw loss on positions ≥ 2k (same 5 sources; 4 at 128k): 16k 2.332,
+    32k 2.437, 64k 2.399, 128k 2.130 — below e37a at every length by 0.002 / 0.005 / 0.018 / 0.018 nats (30M LSA:
+    2.350, 2.455, 2.429, 2.170). RULER mean of 13 tasks **0.104 at 4k, 0.092 at 16k** (30M LSA 0.139 at 4k);
+    single needle 0.70 / 0.73 (30M LSA 0.97), multi-key-1 0.16 / 0.10, multi-value 0.04 / 0.04. Core mean of the
+    7 accuracy tasks 0.391 (e37a 0.397): arc_challenge 0.251, arc_easy 0.395, hellaswag 0.281, lambada 0.157, piqa
+    0.578, sciq 0.575, winogrande 0.503.
+    - The budget explains part of e37a's RULER drop: LSA also falls at 100M under the screening budget (0.139 →
+      0.104 at 4k, single needle 0.97 → 0.70). But the concept read falls more (0.158 → 0.066; single needle
+      0.94 → 0.27) and now trails LSA by 0.038 / 0.037, the reverse of 30M (+0.019 at 4k). On loss the two are
+      within 0.02 nats, LSA ahead past 32k; e37a keeps a slight core edge (+0.006). One guess, untested: at a
+      third of the 30M screen's optimizer steps, the concept read's grouping (Sinkhorn assignments) has not yet
+      learned to route single needles. Window and dense decide the gap shares.
+  - **dense, window, notes_open at 100M (evals done 04:45, 08:40 and 15:42 UTC Nov 9; read from the node over ssh,
+    the S3 login having expired):** raw loss on positions ≥ 2k, same 5 sources (4 at 128k), and the share of the
+    window → dense gap:
+
+    | length | e37a | lsa | dense | window | notes_open |
+    |---|---|---|---|---|---|
+    | 4k | 2.493 (94.7 %) | 2.485 (100.1 %) | 2.485 | 2.629 | 2.532 (67.2 %) |
+    | 16k | 2.334 (**99.1 %**) | 2.332 (99.9 %) | 2.332 | 2.523 | 2.411 (58.7 %) |
+    | 32k | 2.442 (99.4 %) | 2.437 (102.2 %) | 2.441 | 2.646 | 2.544 (49.8 %) |
+    | 64k | 2.417 (**113.7 %**) | 2.399 (127.1 %) | 2.436 | 2.574 | 2.503 (52.0 %) |
+    | 128k | 2.148 | 2.130 | 2.212 | 2.257 | 2.237 |
+
+    Dense fades past its 16k training length (gap 0.191 at 16k, 0.045 at 128k), so the shares past 32k are
+    inflated; at 128k e37a and LSA beat dense by 0.06–0.08 nats. RULER mean of 13 tasks at 4k / 16k (single
+    needle): dense **0.192 / 0.138** (0.87 / 0.79), notes_open 0.116 / 0.072 (0.64 / 0.63), lsa 0.104 / 0.092
+    (0.70 / 0.73), e37a 0.066 / 0.055 (0.27 / 0.38), window 0.023 / 0.006 (0.12 / 0.04). Share of the window →
+    dense RULER gap at 4k / 16k: notes_open 55 % / 50 %, lsa 48 % / 65 %, e37a **25 % / 37 %**. Core means 0.391–0.401
+    for all five (a tie). Training samples per second at 16k (decay) / 4k (trunk), node of 4 × L40S: dense
+    5.71 / 24.8, window 5.60 / 23.5, lsa 4.23 / 21.5, e37a 3.09 / 19.3, notes_open 2.99 / 19.6.
+  - **Stage-A gates for e37a (e37b's S3 / K2 wait for its evals):** **S1 met** (99.1 % ≥ 90 %); **S2 met** with the
+    length scale (113.7 % at 64k ≥ 94.1 %); **S4 split** — core 39.7 vs dense 39.4 (met), loss on positions < 512 at
+    16k 2.602 vs window 2.572 (+0.030, missed; dense +0.022, lsa +0.018, notes_open +0.016 miss it too); **S5 missed
+    at 16k** (0.73 × LSA's samples per second; 0.89 × at 4k); K1 not hit; last trunk loss 3.33 as LSA (K3 clear).
+  - **The budget does not explain the RULER drop.** From 30M to 100M at the screening budget, dense rose on RULER
+    at 4k (0.091 → 0.192) and so did notes_open (0.047 → 0.116), while the two reads that pick a few blocks fell
+    (LSA 0.139 → 0.104, e37a 0.158 → 0.066). The loss on long text says the concept read works as well as LSA and
+    dense (S1, S2); retrieval of a single exact needle says its top-k routing is the weak part at 100M. Next
+    measurement (cheap, eval only, on a saved checkpoint): the flow probe — does e37a's opened set contain the
+    needle's block at 100M (it did at 30M, single needle 0.94)?
 - **Stage B (if S1 holds):** the full m100 protocol for e37 (a or b), lsa and dense (+ original LSA if its stack
   runs), ≈ $450.
+  - **Go-ahead (author, 2026-11-09 ~20:30 UTC):** all the needed models at 100M on the full token budget (3.0B trunk +
+    0.4B decay = 3.4B tokens, ~21 per parameter of the 162M models; stage A gave 1.2B, ~7 per parameter), the original
+    LSA and our two best, for generation tests and evaluation with LSA's protocol; up to $3,000; H100 and L40S in
+    parallel; first results on Nov 10; act without asking. Spend before it ≈ $570.
+  - **Machines** (quotas, us-east-1: G spot 64 vCPU = one g6e.12xlarge; P on demand 64 vCPU = four one-H100
+    p5.4xlarge; P spot 8, unusable; other regions ≤ 8; a G-spot increase to 96 is pending since Nov 8):
+    one 4 × L40S spot node `e37-b-l40s` (`infra/aws/jobs/e37_full.sh 42 e37a lsa`, launched when the stage-A node
+    ends, 32 h cap ≈ $240); one H100 each for notes_open, dense and window (`e37_full.sh 42 ARM`, 40–44 h caps,
+    ≈ $300 each), retrying every 5 min (no p5.4xlarge capacity in any zone at 20:31 UTC); the fourth H100 for the
+    original LSA (their trainer, ~160M preset, our shards and budget; smoke test first). Ours: e37a (lead) and
+    notes_open (best E33-family read at 100M on RULER, 0.116 at 4k); e37b is out (no gain at 30M).
+  - **Evals:** e37_evals.sh on each node (long-document loss 4k–128k, RULER 13 tasks at 4k and 16k, core). LSA's
+    protocol adds RULER at 8k, 32k and 64k and held-out FineWeb-Edu loss at 4k: a separate pass on the saved
+    checkpoints after training (RULER past 16k costs hours per model with uncached decoding).
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
