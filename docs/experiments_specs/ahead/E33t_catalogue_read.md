@@ -200,6 +200,18 @@ at 16k in E33p) show the marks are reachable at this size and data.
   optimizer step as the 4-GPU runs (64 / 16). Expected ~8–10 h and ~$60–70 per model. Caveat for the comparison:
   one GPU instead of four, so the same data in a different micro-batch split (numerics only, no change of recipe).
   A spot quota raise to 96 vCPUs (two 4-GPU nodes) was requested 2026-11-08 17:56 UTC for later stages.
+  **Moved to the home servers (author, 2026-11-09 ~20:20 UTC: "train what has been scheduled"):** no H100 came free
+  in 138 rounds (2026-11-08 17:58 → 2026-11-09 20:19 UTC, every us-east-1 zone, every 5 then 10 min) and the L40S
+  spot quota (64 vCPU by then, case to 96 still open) stayed held by the 10M-context node, so the AWS loop was
+  stopped at 20:22 UTC with no machine launched ($0). Launched 20:23 UTC at `0227838`, seed 1, the stage-A recipe
+  (`E33N_EXPERIMENT=E33t E33N_FLOW=1 E33N_SEED=1 E33N_RULER_LENGTHS=4096 E33N_MICRO_TRUNK=4 E33N_MICRO_DECAY=1
+  E33N_CORE_BATCH=8 bash infra/aws/jobs/e33n_run.sh ARM s30`, runs in `Cache/e33t_runs/`, W&B online):
+  `catalogue_reuse_n4` on Odra GPUs 0–1 (`E33N_GPUS=2`), `catalogue_reuse_p512` on Polonez GPUs 0–1 and
+  `catalogue_reuse_n16` on Polonez GPU 2 (both `E33N_BURST_H=5.5 E33N_COOL_MIN=20`, the heat rule; Odra GPU 2 and
+  Polonez GPU 3 idle on purpose). Same 64 rows per optimizer step (4 × 8 × 2 GPUs, 4 × 16 × 1). p512's first start
+  lost rank 1 to a SIGSEGV one second in, while both Polonez jobs were syncing the venv after the pull; relaunched
+  20:24 UTC, fine. Expected (stage-0 speed, 23.6k tokens/s per 3090 at 4k): ~12 h on two GPUs, ~24 h on one, so
+  n4 and p512 about 09:00–10:00 UTC on 2026-11-10 and n16 about 21:00 UTC.
 - **Stage C: long documents.** The winner with the two-level search, its choice stored as a short list (a gather
   read instead of the [S × G] table), trained at 16k plus a short 64k stage; evaluated at 128k, 1M and beyond.
   Two runs, about $80. **Design proposed 2026-11-08 (plan §10, awaiting approval):** the list read for evaluation
