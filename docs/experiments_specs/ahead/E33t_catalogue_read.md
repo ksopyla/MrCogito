@@ -300,6 +300,7 @@ at 16k in E33p) show the marks are reachable at this size and data.
   |---|---|---|---|---|---|---|---|
   | catalogue_reuse (32 notes, AWS) | 96.9 | 91.4 | 94.0 | 151.6 | 2.1395 | 14.1 | 40.78 |
   | catalogue_reuse_n4 (64 notes, Odra) | 91.2 | 87.9 | 90.8 | 146.8 | 2.1463 | 10.9 | 38.90 |
+  | catalogue_reuse_p512 (512-token pages, 64 notes, Polonez) | 89.0 | 84.0 | 85.8 | 133.2 | 2.1608 | 15.5 | 39.31 |
 
   - **n4** (Odra GPUs 0–1): trunk 2026-11-09 20:23 → 11-10 06:07 UTC (9.7 h), decay 06:07 → 08:14, evals to 08:44.
     Below the 32-note winner at every length (3.5 points at 16k), on RULER and on core; S1 and S2 pass, S6 misses
@@ -308,3 +309,14 @@ at 16k in E33p) show the marks are reachable at this size and data.
     the window's 2.6095 (0.011; dense 2.6250 and the LSA port 2.6258 miss it as well). Its 128k pass ran out of
     memory when core shared card 0 (fix in `e33n_run.sh`, two-GPU runs now keep the long-document loss on its own
     card); rerun alone on Odra GPU 0 08:55–09:04 UTC (`eval_longdoc_128k.json`, hansard has no 128k document).
+  - **p512** (Polonez GPUs 0–1, bursts): trunk 2026-11-09 20:24 → 11-10 06:48 UTC (one 20 min cooldown at 01:54),
+    decay 06:49 → 09:05, evals to 09:34 (128k fit this time: no out-of-memory). Below the 32-note winner at every
+    length (7.4 points at 16k) and on the 128k loss; S1 passes (84.0), S2 passes; best RULER at 4k of any model
+    (15.5; the LSA port 15.2, dense 16.0), single needle 88 %; S6 misses on core (1.5 below the window) and passes
+    on the short positions (2.6169, 0.007 above the window).
+  - **Noise floor for these gaps:** the controls trained twice (AWS seed 1 vs home seed 42, so seed and hardware both
+    change) move by 0.0005 / 0.0114 / 0.0031 / 0.0160 nats at 16k (window / dense / LSA port / notes-open), up to 7.6
+    points of G. n4's 3.5-point gap sits inside it and p512's 7.4 at its edge. **Same-hardware reference** (free,
+    Odra idle): `catalogue_reuse` itself retrained at home, seed 1, the same command as n4 apart from the note count
+    (`e33n_s30_catalogue_reuse_seed1`, Odra GPUs 0–1, tmux `e33t-b-n8home`), started 2026-11-10 09:46 UTC, expected
+    about 22:00 UTC with n16. The winner is scored against both 32-note runs.
