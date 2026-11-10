@@ -307,7 +307,8 @@ def params(args) -> None:
     head = sum(p.numel() for n, p in named if n.startswith("lm_head"))
     kinds = {}
     for i, layer in enumerate(model.layers.values() if hasattr(model.layers, "values") else model.layers):
-        kind = "attention" if getattr(layer, "attention", None) is not None else "gated_deltanet"
+        mod = getattr(layer, "attn", None) or getattr(layer, "attention", None)
+        kind = "gated_deltanet" if type(mod).__name__ == "GatedDeltaNet" else type(mod).__name__
         kinds.setdefault(kind, []).append(i)
     res = {"total": total, "embedding": emb, "lm_head_separate": head, "non_embedding": total - emb - head,
            "tied": bool(getattr(spec.model, "enable_weight_tying", False)), "layers": kinds, "body": BODY,
