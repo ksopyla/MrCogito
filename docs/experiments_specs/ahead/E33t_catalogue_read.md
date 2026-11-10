@@ -293,3 +293,18 @@ at 16k in E33p) show the marks are reachable at this size and data.
   72,687,765 parameters) moves the catalogue read from 71 % to 91 % of G at 16k, level with the LSA port at 64k, and
   gives the best 128k loss of all models. It does not beat the LSA port at ≤ 32k (1–5 points behind) and trains
   about 10 % slower. catalogue_reuse is the stage-A winner for stages B–C.
+- **Stage B (note and page sizes), home servers, seed 1, scored against the AWS seed-1 controls** (same measures as
+  stage A; `catalogue_reuse` = 32 notes of 8 tokens per 256-token page is the stage-A winner it must beat):
+
+  | model | 4k | 16k | 32k | 64k | 128k loss | RULER 4k | core mean |
+  |---|---|---|---|---|---|---|---|
+  | catalogue_reuse (32 notes, AWS) | 96.9 | 91.4 | 94.0 | 151.6 | 2.1395 | 14.1 | 40.78 |
+  | catalogue_reuse_n4 (64 notes, Odra) | 91.2 | 87.9 | 90.8 | 146.8 | 2.1463 | 10.9 | 38.90 |
+
+  - **n4** (Odra GPUs 0–1): trunk 2026-11-09 20:23 → 11-10 06:07 UTC (9.7 h), decay 06:07 → 08:14, evals to 08:44.
+    Below the 32-note winner at every length (3.5 points at 16k), on RULER and on core; S1 and S2 pass, S6 misses
+    twice: core mean 1.9 below the window's 40.83 (lowest of any model so far; arc_easy 38.8 and sciq 62.1 against
+    40.8–44.6 and 63.5–70.4 elsewhere; one seed on different hardware), and 16k loss on positions < 512 2.6204 vs
+    the window's 2.6095 (0.011; dense 2.6250 and the LSA port 2.6258 miss it as well). Its 128k pass ran out of
+    memory when core shared card 0 (fix in `e33n_run.sh`, two-GPU runs now keep the long-document loss on its own
+    card); rerun alone on Odra GPU 0 08:55–09:04 UTC (`eval_longdoc_128k.json`, hansard has no 128k document).
