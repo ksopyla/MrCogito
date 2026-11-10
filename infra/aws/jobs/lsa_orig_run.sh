@@ -13,7 +13,8 @@
 #   LSA_SMOKE=1: the smoke test — trunk 200 steps, decay 100 steps from its weights, the evals with tiny limits on the
 #   same lanes; folder $MC_DISK/runs/lsa_orig_smoke_<gpu> (h100, l40s), S3 runs/e37/lsa_orig_smoke_<gpu>/.
 # Evals (eval_longdoc.json, eval_ruler.json, eval_core.json, eval_val.json): evaluation/lsa_orig_eval.py, one lane per
-# GPU (1 GPU: RULER 64k beside everything else; 4 GPUs: long-document + val + core | RULER 4k-16k | 32k | 64k),
+# GPU (1 GPU: RULER 64k beside everything else; 4 GPUs: long-document + val + core + RULER 4k-16k | 32k | 64k
+# in two task groups),
 # lm-eval 0.4.11 (ours) ahead of their 0.4.13 on PYTHONPATH.
 # Results: s3://BUCKET/runs/e37/lsa_orig_m100_tok3.0e9_seed42/
 set -uo pipefail
@@ -103,11 +104,15 @@ main_lane() {  # GPU
 }
 RB=(--limit "$LIM" --batch_tokens "$BT")
 if [ "$G" -ge 4 ]; then
-  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core"], ["ruler_a"], ["ruler_b"], ["ruler_c"]]}' > "$R/lanes.json"
-  ( ev 1 ruler_a ruler --lengths 4096,8192,16384 "${RB[@]}" ) & L1=$!
-  ( ev 2 ruler_b ruler --lengths 32768 "${RB[@]}" ) & L2=$!
-  ( ev 3 ruler_c ruler --lengths 65536 "${RB[@]}" ) & L3=$!
+  # RULER cost ~ length (uncached decoding): 4k+8k+16k ~ 7, 32k ~ 8, 64k ~ 16 units -> 64k split by task over 2 GPUs
+  R64A=niah_single_1,niah_multikey_2,niah_multivalue,ruler_cwe,ruler_qa_hotpot,niah_single_3,niah_multikey_1
+  R64B=niah_single_2,niah_multikey_3,niah_multiquery,ruler_fwe,ruler_vt,ruler_qa_squad
+  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_a"], ["ruler_b"], ["ruler_c1"], ["ruler_c2"]]}' > "$R/lanes.json"
+  ( ev 1 ruler_b ruler --lengths 32768 "${RB[@]}" ) & L1=$!
+  ( ev 2 ruler_c1 ruler --lengths 65536 --tasks "$R64A" "${RB[@]}" ) & L2=$!
+  ( ev 3 ruler_c2 ruler --lengths 65536 --tasks "$R64B" "${RB[@]}" ) & L3=$!
   main_lane 0
+  ev 0 ruler_a ruler --lengths 4096,8192,16384 "${RB[@]}"
   wait "$L1" "$L2" "$L3"
 else
   echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_a"], ["ruler_c"]]}' > "$R/lanes.json"
@@ -126,9 +131,16 @@ parts = [json.loads(p.read_text()) for p in sorted(R.glob("ruler_*.json"))]
 out = {"checkpoint": CK, "suite": "ruler", "lengths": [], "limit": LIM, "notes_off": False, "results": {}, "mean": {},
        "tasks": {}, "seconds_per_length": {}, "lm_eval": parts[0].get("lm_eval") if parts else None,
        "model": "lsa_orig (their trainer)", "note": "lsa_orig_run.sh: RULER lengths in lanes (ruler_*.json), merged"}
-for p in parts:
-    for k in ("results", "mean", "tasks", "seconds_per_length"):
-        out[k].update(p.get(k, {}))
+for p in parts:   # a length may come in task groups from several lanes: merge the tasks, then recompute the mean
+    for L, r in p.get("results", {}).items():
+        out["results"].setdefault(L, {}).update(r)
+    for L, sec in p.get("seconds_per_length", {}).items():
+        out["seconds_per_length"][L] = max(sec, out["seconds_per_length"].get(L, 0))
+for L, r in out["results"].items():
+    vals = [x.get(f"{L},none") for x in r.values() if isinstance(x, dict)]
+    vals = [v for v in vals if isinstance(v, (int, float)) and v >= 0]
+    out["mean"][L] = sum(vals) / len(vals) if vals else None
+    out["tasks"][L] = len(vals)
 out["lengths"] = sorted(int(L) for L in out["results"])
 for L in out["lengths"]:
     print(f"RULER {L}: {out['tasks'].get(str(L))} tasks, mean {out['mean'].get(str(L))}")
