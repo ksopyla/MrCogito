@@ -280,7 +280,7 @@ def _lm_eval_suite(a, suite: str) -> None:
         for L in lengths:
             t1 = time.time()
             # batch by length (rows never see each other: right padding, causal layers); max_length fixed as ours
-            lm = make_lm(bb, tok, max_len, a.batch or max(1, min(8, 131072 // L)))
+            lm = make_lm(bb, tok, max_len, a.batch or max(1, min(8, a.batch_tokens // L)))
             r = run(lm, {"tokenizer": tok, "max_seq_lengths": [L]})
             out["results"][L] = r
             vals = [x.get(f"{L},none") for x in r.values() if isinstance(x, dict)]
@@ -349,6 +349,7 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=100)
     ap.add_argument("--tasks", default="")
     ap.add_argument("--batch", type=int, default=0, help="0: by length (RULER) / 32 (core)")
+    ap.add_argument("--batch_tokens", type=int, default=131072, help="RULER: rows of a batch = min(8, this / length)")
     ap.add_argument("--max_gen_toks", type=int, default=32)
     a = ap.parse_args()
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")

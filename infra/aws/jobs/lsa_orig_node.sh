@@ -16,6 +16,8 @@
 #   5. on GO: git pull of this branch, then infra/aws/jobs/lsa_orig_run.sh (trunk -> decay -> evals -> S3); when it
 #      returns the job ends and node_run.sh powers the node off.
 # Usage: bash infra/aws/launch.sh lsa-orig-h100 50 infra/aws/jobs/lsa_orig_node.sh arch-10m p5.4xlarge
+#    or: bash infra/aws/launch.sh lsa-orig-l40s 40 infra/aws/jobs/lsa_orig_node.sh arch-10m g6e.12xlarge   (4 x L40S;
+#        MC_SPOT=1 works: checkpoints go to S3, a relaunch skips the smoke its GPU type passed and resumes)
 set -uo pipefail
 source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1
@@ -38,7 +40,8 @@ log "their repo at $(git -C "$LSA" log --oneline -1) ($FULL_SHA)"
 CUDA_DIR=$(ls -d /usr/local/cuda-12.* 2>/dev/null | sort -V | tail -1)
 [ -n "$CUDA_DIR" ] && export CUDA_HOME="$CUDA_DIR" PATH="$CUDA_DIR/bin:$PATH"
 log "nvcc: $(nvcc --version 2>/dev/null | tail -2 | tr '\n' ' ') (CUDA_HOME=${CUDA_HOME:-none})"
-export UV_PROJECT_ENVIRONMENT="$VENV" TORCH_CUDA_ARCH_LIST="9.0" MAX_JOBS=16
+# causal-conv1d builds for this node's GPUs only (9.0 on H100, 8.9 on L40S)
+export UV_PROJECT_ENVIRONMENT="$VENV" TORCH_CUDA_ARCH_LIST="$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)" MAX_JOBS=16
 ( cd "$LSA" && uv --version && uv sync --locked --extra training ) > "$MC_DISK/lsa_sync.log" 2>&1
 if [ $? -ne 0 ]; then
   log "uv sync with causal-conv1d FAILED (tail of lsa_sync.log below); retrying without it (only GLM's layers use it)"
@@ -67,13 +70,20 @@ touch "$MC_DISK/LSA_READY"
 
 # 3. the smoke test (unless $MC_DISK/HOLD exists: development over ssh first), then its gate
 #    (scripts/lsa_orig_gate.py: losses fall, no NaN, the full run's estimate <= 45 h / $450); a pass writes GO
+#    The smoke is per GPU type (lsa_orig_smoke_h100, _l40s); a relaunched node (spot) whose GPU type already passed it
+#    goes straight on (the run script then resumes from the S3 checkpoints).
 git -C "$REPO" pull -q --ff-only || log "git pull FAILED; using the checkout as it is"
-if [ ! -f "$MC_DISK/HOLD" ]; then
-  log "smoke test (code $(git -C "$REPO" log --oneline -1 | cut -c1-50))"
+TAG=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1 | grep -oiE "h100|h200|b200|l40s|a100|l4" | head -1 | tr '[:upper:]' '[:lower:]')
+SMOKE="lsa_orig_smoke_${TAG:-gpu}"
+if aws s3 cp --only-show-errors "s3://$MC_BUCKET/runs/e37/$SMOKE/gate.json" - 2>/dev/null | grep -q '"pass": true'; then
+  log "$SMOKE passed before (S3 gate.json): no smoke test"
+  [ -f "$MC_DISK/HOLD" ] || echo "auto: $SMOKE passed before" > "$MC_DISK/GO"
+elif [ ! -f "$MC_DISK/HOLD" ]; then
+  log "smoke test on $(nvidia-smi -L | wc -l) x ${TAG:-gpu} (code $(git -C "$REPO" log --oneline -1 | cut -c1-50))"
   LSA_SMOKE=1 bash "$REPO/infra/aws/jobs/lsa_orig_run.sh" > "$MC_DISK/smoke.log" 2>&1
-  python3 "$REPO/scripts/lsa_orig_gate.py" "$MC_DISK/runs/lsa_orig_smoke" "$MC_PRICE_PER_HOUR" > "$MC_DISK/gate.json" 2>&1
+  python3 "$REPO/scripts/lsa_orig_gate.py" "$MC_DISK/runs/$SMOKE" "$MC_PRICE_PER_HOUR" > "$MC_DISK/gate.json" 2>&1
   GATE=$?
-  aws s3 cp --only-show-errors "$MC_DISK/gate.json" "s3://$MC_BUCKET/runs/e37/lsa_orig_smoke/gate.json" || true
+  aws s3 cp --only-show-errors "$MC_DISK/gate.json" "s3://$MC_BUCKET/runs/e37/$SMOKE/gate.json" || true
   tee -a "$MC_DISK/lsa_setup.log" < "$MC_DISK/gate.json"
   if [ "$GATE" = 0 ] && [ ! -f "$MC_DISK/HOLD" ]; then
     echo "auto: smoke gate passed $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MC_DISK/GO"

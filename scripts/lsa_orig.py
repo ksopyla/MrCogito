@@ -19,7 +19,9 @@ through torchrun. Nothing in their checkout is edited; three things are swapped 
      every document (torchtitan then cuts the Gated DeltaNet's document offsets there), labels that would predict the
      first token of the next document are ignored (our collator's rule), and a row's last token predicts nothing.
      Their LSA layer's fused read takes no document mask: inside a packed 4k trunk row it reads across documents,
-     as in their own FineWeb trunk. (The decay rows and every eval row hold one document.)
+     as in their own FineWeb trunk. (The decay rows and every eval row hold one document.) On several GPUs (torchrun,
+     their FSDP over run.dp_shard) the loader deals the global micro-batch order out to the ranks as accelerate does,
+     so every optimizer step reads the same 128 x 4k rows on 1 or 4 GPUs.
   3. schedule — our m100 phases: trunk 3.0B tokens = 5,722 steps of 128 x 4,096, warmup 57 steps (1 %), then constant
      (WSD's stable part; their decay_ratio 0); decay from the trunk's final weights (model only: fresh optimizer,
      schedule and stream, their `run.init_from`), 0.4B tokens = 763 steps of 32 x 16,384, warmup 22, 1 - sqrt decay
@@ -165,7 +167,9 @@ def experiment(phase: str, out: Path, *, init: str | None = None, steps: int | N
 
     z = phase_numbers(phase, steps, micro)
     ov = [
-        f"run.output={out.resolve()}", f"run.name={phase}", "run.dp_shard=1", "run.dp_replicate=1",
+        # data parallel over the GPUs torchrun gives (their default: FSDP over dp_shard); 1 for the evals
+        f"run.output={out.resolve()}", f"run.name={phase}", f"run.dp_shard={int(os.environ.get('WORLD_SIZE', 1))}",
+        "run.dp_replicate=1",
         f"run.optim.steps={z['steps']}", f"run.optim.warmup_steps={z['warmup']}", f"run.optim.lr={LR}",
         f"run.optim.decay_ratio={z['decay_ratio']}", "run.optim.decay_shape=sqrt", "run.optim.schedule=wsd",
         "run.optim.min_lr_factor=0.1", "run.optim.weight_decay=0.1", "run.optim.grad_clip=1.0",
@@ -192,7 +196,11 @@ def make_loader_class():
     from torchtitan.components.data.loader import BaseDataLoader
 
     class McShardRows(BaseDataLoader):
-        """Our rows in our HF trainer's order, as a torchtitan dataloader (state: micro-batches taken)."""
+        """Our rows in our HF trainer's order, as a torchtitan dataloader (state: micro-batches taken).
+
+        One global order of micro-batches (rows perm[g * rows : (g + 1) * rows] for micro-batch g); with W data-parallel
+        ranks, rank r takes micro-batches r, r + W, r + 2W, ... (accelerate's BatchSamplerShard), so every optimizer
+        step reads the same 128 x 4k rows whatever the number of GPUs."""
 
         @dataclass(kw_only=True, slots=True)
         class Config(BaseDataLoader.Config):
@@ -203,8 +211,8 @@ def make_loader_class():
                      num_tokens_per_batch: int, **kwargs: Any) -> None:
             del kwargs
             super().__init__()
-            if dp_world_size != 1:
-                raise ValueError("this loader replays one process's order; run one GPU per model")
+            self.world, self.rank = int(dp_world_size), int(dp_rank)
+            self.key = f"dp_rank_{self.rank}"
             self.ds, _, m = bin_dataset().load_bin_manifest(config.manifest)
             self.S = int(m["seq_len"])
             if num_tokens_per_batch % self.S or self.S > max_context_length:
@@ -219,7 +227,8 @@ def make_loader_class():
         def _indices(self, k: int) -> list[int]:
             n = len(self.ds)
             out = []
-            for g in range(k * self.rows, (k + 1) * self.rows):
+            gm = k * self.world + self.rank   # this rank's k-th micro-batch in the global order
+            for g in range(gm * self.rows, (gm + 1) * self.rows):
                 epoch, i = divmod(g, n)
                 if epoch != self._epoch:   # accelerate's SeedableRandomSampler: seed + epoch
                     self._order = torch.randperm(n, generator=torch.Generator().manual_seed(self.seed + epoch))
@@ -235,10 +244,13 @@ def make_loader_class():
                                     torch.stack([x["doc_ids"] for x in items]))
 
         def state_dict(self) -> dict[str, Any]:
-            return {"dp_world_size": 1, "dp_rank_0": {"batches": self.batches, "seed": self.seed, "rows": self.rows}}
+            return {"dp_world_size": self.world,
+                    self.key: {"batches": self.batches, "seed": self.seed, "rows": self.rows}}
 
         def load_state_dict(self, state_dict: dict[str, Any]) -> None:
-            s = state_dict["dp_rank_0"]
+            if state_dict.get("dp_world_size") != self.world or self.key not in state_dict:
+                raise ValueError(f"loader state saved for {state_dict.get('dp_world_size')} ranks, now {self.world}")
+            s = state_dict[self.key]
             if (s["seed"], s["rows"]) != (self.seed, self.rows):
                 raise ValueError(f"loader state saved with seed/rows {s['seed']}/{s['rows']}")
             self.batches = int(s["batches"])

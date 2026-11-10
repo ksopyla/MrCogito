@@ -4,8 +4,9 @@ Reads the smoke run folder (lsa_orig_run.sh with LSA_SMOKE=1: trunk 200 steps, d
 JSON summary and exits 0 when the full run may start:
   * trunk and decay both finished, no NaN / inf loss, the trunk's loss fell (last three logs < 0.8 x the first), the
     decay's loss did not rise by more than 0.2;
-  * the full run's estimate (tokens / measured tokens per second + the evals, scaled from the smoke evals) is at most
-    MAX_HOURS (45) and its cost at most MAX_USD.
+  * the full run's estimate (tokens / the node's measured tokens per second, i.e. torchtitan's per-device rate x the
+    GPUs in hw.json, + the evals, scaled per lane of lanes.json from the smoke evals) is at most MAX_HOURS (45) and its
+    cost at most MAX_USD.
 Eval failures are reported, not gating: the checkpoints go to S3 and the evals can be rerun.
 Usage: python3 scripts/lsa_orig_gate.py RUN_DIR [PRICE_PER_HOUR]
 """
@@ -60,13 +61,14 @@ def main() -> int:
         if ph == "decay" and tail > losses[0] + 0.2:
             ok = False
             why.append(f"decay loss rose ({losses[0]:.3f} -> {tail:.3f})")
-    # evals of the smoke (3 RULER documents per task, core 20 per task, one long-document row per source)
-    ev = {}
-    for name in ("eval_longdoc", "eval_val", "eval_core", "ruler_short", "ruler_long"):
-        p = R / f"{name}.json"
-        ev[name] = "ok" if p.exists() else "missing"
+    # the hardware and the eval lanes the run script recorded (one lane per GPU, or two on one GPU)
+    hw = json.loads((R / "hw.json").read_text()) if (R / "hw.json").exists() else {"gpus": 1}
+    lanes = json.loads((R / "lanes.json").read_text())["lanes"] if (R / "lanes.json").exists() else []
+    res["hw"] = hw
+    # evals of the smoke (3 RULER documents per task, core 20 per task, one long-document row per source at 4k, 128k)
+    ev = {name: ("ok" if (R / f"{name}.json").exists() else "missing") for lane in lanes for name in lane}
     res["evals"] = ev
-    if any(v != "ok" for v in ev.values()):
+    if not ev or any(v != "ok" for v in ev.values()):
         why.append("some smoke evals missing (not gating): " + ", ".join(k for k, v in ev.items() if v != "ok"))
 
     def secs(name, key="seconds", overhead=90.0):
@@ -76,17 +78,21 @@ def main() -> int:
         except Exception:
             return 0.0
 
-    # full evals from the smoke ones: RULER 100 / 3 documents (64k alone; 4k-32k ~ 15 x the 4k cost), core ~145 x
-    # (23k requests / 160), long-document 8 rows x 5 lengths ~ 40 x; two lanes in parallel
-    lane_long = secs("ruler_long") * 100 / 3
-    lane_rest = secs("ruler_short") * 100 / 3 * 15 + secs("eval_core") * 145 + secs("eval_longdoc") * 20
-    eval_h = max(lane_long, lane_rest) / 3600 if (lane_long or lane_rest) else 4.0
+    # full evals from the smoke ones, per lane (the lanes run side by side): RULER 100 / 3 documents per task, core
+    # ~145 x (about 23k requests against 160), long-document ~15 x (8 rows at 4k-128k against 1 row at 4k + 128k)
+    scale = {"eval_core": 145.0, "eval_longdoc": 15.0, "eval_val": 1.0}
+    lane_s = [sum(secs(n) * scale.get(n, 100 / 3) for n in lane) for lane in lanes]
+    eval_h = max(lane_s) / 3600 if lane_s and max(lane_s) > 0 else 4.0
+    res["eval_lane_hours"] = [round(x / 3600, 2) for x in lane_s]
+    # torchtitan logs tokens per second per device; the node's rate is that times the GPUs
+    g = int(hw.get("gpus", 1))
     tt, td = res["trunk"].get("tps_median"), res["decay"].get("tps_median")
     if tt and td:
-        train_h = TRUNK_TOKENS / tt / 3600 + DECAY_TOKENS / td / 3600
+        train_h = TRUNK_TOKENS / (tt * g) / 3600 + DECAY_TOKENS / (td * g) / 3600
         total = train_h + eval_h + 0.3
-        res["estimate"] = {"train_hours": round(train_h, 2), "eval_hours": round(eval_h, 2),
-                           "total_hours": round(total, 2), "usd": round(total * price, 1)}
+        res["estimate"] = {"node_tps_trunk": tt * g, "node_tps_decay": td * g, "train_hours": round(train_h, 2),
+                           "eval_hours": round(eval_h, 2), "total_hours": round(total, 2),
+                           "usd": round(total * price, 1)}
         if total > MAX_HOURS or total * price > MAX_USD:
             ok = False
             why.append(f"estimate {total:.1f} h / ${total * price:.0f} over the limit ({MAX_HOURS} h, ${MAX_USD})")
