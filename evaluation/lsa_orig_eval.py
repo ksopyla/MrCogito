@@ -49,8 +49,11 @@ EVAL_MAX = 131072
 
 
 def _load(name: str, path: Path):
+    if name in sys.modules:
+        return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod   # @dataclass under `from __future__ import annotations` looks its module up here
     spec.loader.exec_module(mod)
     return mod
 

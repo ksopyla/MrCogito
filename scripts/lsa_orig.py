@@ -69,8 +69,11 @@ PHASES = {
 def _load_by_path(name: str, path: Path):
     """Import one of our modules by file path (no repo root on sys.path: our top-level packages `data`, `nn`,
     `evaluation` must not shadow anything in their environment)."""
+    if name in sys.modules:
+        return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod   # @dataclass under `from __future__ import annotations` looks its module up here
     spec.loader.exec_module(mod)
     return mod
 
