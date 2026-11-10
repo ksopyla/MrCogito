@@ -20,6 +20,14 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-07 — E37, concept memory: an encoder, a reasoner and a decoder read for 10M-token context
+  (exploration program, draft spec; code + unit tests done, GPU check and 100M runs pending compute).** Encoder:
+  each closed 512-key block of the reading layer grouped into 64 balanced content concepts with links to their tokens
+  and additive statistics. Reasoner: a small looped transformer over the concepts. Decoder read: exact tokens for the
+  concepts with the largest estimated attention mass (512 per query), one calibrated second-order kernel summary per
+  other concept (log n + q·μ + |q|²σ²/2), every past token counted once. Stage A at 100M against dense, window, LSA's
+  read (our port), notes-open and the e37 arms; pass mark ≥ 90 % of the window→dense gap at 16k with no fade to 64k.
+  Branch `arch-10m`; spec [E37](../experiments_specs/ahead/E37_concept_memory.md).
 - **2026-11-07 — E33t, the catalogue read (draft spec, awaiting alignment).** Answers E33p stage 1's measured limits:
   the notes leave the read and only choose what to open (4 learned empty slots instead), balanced filing (Sinkhorn,
   none empty, ≤ 16 per note), an index loss that teaches note scores where the read's attention lands, the budget
@@ -54,6 +62,34 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Eval fixes (561fe26): RULER 16k ran out of memory on every arm (flex recompiled per generated token, fell back to
   eager), notes-open crashed at 128k (opening table > 2³¹ elements); finished runs rerun.
   Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
+- **2026-10-23 — Where the E33 line stands before the 100M decision.**
+  - **Written reasoning also teaches latest** (19 Oct, Odra; pulled 23 Oct). From R2, with latest answers written as
+    the person's last move and the steps removed in stages: latest 78 / 92 % at 4k / 16k with no generator labels.
+    In the same model, compose is 93 / 98 % and deduce 100 / 100 %. Count stays at 17 %. One warm-started run.
+  - **Still open on the synthetic world:** count; 3-hop compose (0 %); new sentence shapes (compose 5 %); far
+    quotes (lost in the reasoning line). Nothing of the reasoning line has been trained from scratch yet.
+  - **E33s (real multi-hop QA at 100M) is on hold.** Its pre-flight showed that a pretrained SmolLM2-135M sits near
+    the floor on MuSiQue, so the run's gates cannot be resolved.
+  - **24 Oct: E33s re-scoped (draft, awaiting go-ahead).**
+    - Phase 0: code fixes and one cheap check.
+    - Phase A: 30M from scratch, written chains from step 0, 3 seeds plus dense.
+    - Phase B: 100M E33 against dense.
+    - About 225 GPU-hours on our servers. Real data deferred.
+    - Spec: [E33s](../experiments_specs/ahead/E33s_written_chains_real_data.md), re-scope section; plan section 11.
+  - Board: text capability board (status and decisions updated 23 Oct).
+- **2026-10-21 — E33s, multi-hop on real text taught by written reasoning, at 100M. Spec drafted; on hold after
+  the 22 Oct pre-flight (see above).**
+  - **The 30M pilot (R2, 19 Oct)** used no generator labels:
+    - answers wrote their chain out, and a rule read each hop's word and location off that text;
+    - the written steps were removed in three stages;
+    - compose reached 92 % and deduce 99 % at 4k, as with generator labels (94 / 98 %).
+  - **E33s** moves this to real data at 100M, against a dense 100M model trained on the same chains:
+    - data: MuSiQue, HotpotQA, 2WikiMultiHopQA and GSM8K-Aug;
+    - pretraining: 1.5B tokens of long-document text, then 3 × 0.15B written-chain stages;
+    - exams: 4k / 16k / 64k contexts padded with real distractors.
+  - Spec: [E33s_written_chains_real_data.md](../experiments_specs/ahead/E33s_written_chains_real_data.md) ·
+    alignment page: [e33s_architecture.html](../3_Evaluations_and_Baselines/e33s_architecture.html) · review:
+    [e33_multihop_review_label_free_20261018.md](../4_Research_Notes/e33_multihop_review_label_free_20261018.md).
 - **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
   ladder failed its pass mark.**
   - The frozen reader can take a whole 512-token span through one optimised key/value entry: 99.98 % of tokens,
@@ -67,7 +103,18 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   - **19 Oct — the improved writer:** reconstruction-first training at growing spans (64 → 512) makes entries
     carry 114–145 bits (from 32–48). Continuation recovered rises to 24.5 / 16.7 %. SQuAD from the own memory
     is 11 % vs 6.4 % from another document's. Attention pooling adds nothing. Still below the 50 % pass mark.
-  - Next: teacher matching (S2) on passages with questions, on top of the curriculum writer.
+  - **21 Oct — S2 teacher matching** (KL to the reader with the raw text in context; SQuAD + SYNTH +
+    book/PDF rows): SQuAD from memory 12.6 % vs 5.0 % from another document's (8.8 % with none, 51.6 % with
+    the text). Continuation is unchanged (24.7 / 15.8 %). The student plateaus at KL 0.29: one ~130-bit entry
+    per passage cannot hold what the teacher uses.
+  - **22 Oct — 128 tokens per passage entry** (up to 8 entries per passage): SQuAD from memory 13.0 % (5.0 %
+    from another passage's), KL 0.287. More entries per passage do not help.
+  - **22 Oct — oracle check: the way in is the limit.** Entries optimised so the frozen reader rebuilds a passage
+    word for word answer 9.4 % of new SQuAD questions (the trained writer 11.9 %, the passage as text 50 %).
+    Entries fitted to the teacher on the other questions reach 13 %. The reader can recite from key/value
+    entries of 128 tokens but cannot consult them.
+  - Next (author's call): an oracle at finer entries (16 / 32 / 64 tokens), or a small reader adapter trained
+    to consult entries.
   - Spec: [E36_frozen_reader_writer.md](../experiments_specs/ahead/E36_frozen_reader_writer.md) · note:
     [e36_frozen_reader_writer_20261018.md](../4_Research_Notes/e36_frozen_reader_writer_20261018.md).
 - **2026-10-17 — Agent to agent through the notebook works (E33f, E33 trained as two agents).** Agent A keeps an

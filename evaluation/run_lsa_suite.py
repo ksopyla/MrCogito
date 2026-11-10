@@ -72,6 +72,9 @@ def main() -> None:
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--notes_off", action="store_true", help="notebook models: message_override none")
+    ap.add_argument("--concept_sum_len", type=int, default=-1,
+                    help="E37 concept read: length scale of the summaries' weight past this row length (the training "
+                         "length; 0 = off; default: the checkpoint's own setting)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -88,6 +91,11 @@ def main() -> None:
                            max_length=max_len, batch_size=a.batch, device=a.device)
     if a.notes_off:
         lm.model._message_override = "none"
+    if a.concept_sum_len >= 0:
+        from nn.concept_memory import set_concept_sum_len
+
+        if not set_concept_sum_len(lm.model, a.concept_sum_len):
+            raise SystemExit("--concept_sum_len: the checkpoint has no concept read")
     tasks = [t for t in a.tasks.split(",") if t] or (RULER if a.suite == "ruler" else CORE)
     if "ruler_qa_hotpot" in tasks:
         redirect_hotpot_download()
@@ -99,7 +107,7 @@ def main() -> None:
         bootstrap_iters=0,
     )["results"]
     out = {"checkpoint": a.checkpoint, "suite": a.suite, "lengths": lengths if a.suite == "ruler" else None,
-           "limit": a.limit, "notes_off": a.notes_off}
+           "limit": a.limit, "notes_off": a.notes_off, "concept_sum_len": a.concept_sum_len}
     if a.suite == "ruler":
         # One call per length: lm-eval concatenates the lengths into one dataset per task and `limit` takes its first
         # documents, so a single call with several lengths scored only the first length (found 2026-11-05).
