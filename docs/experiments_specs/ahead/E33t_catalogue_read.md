@@ -311,8 +311,8 @@ at 16k in E33p) show the marks are reachable at this size and data.
     card); rerun alone on Odra GPU 0 08:55–09:04 UTC (`eval_longdoc_128k.json`, hansard has no 128k document).
   - **p512** (Polonez GPUs 0–1, bursts): trunk 2026-11-09 20:24 → 11-10 06:48 UTC (one 20 min cooldown at 01:54),
     decay 06:49 → 09:05, evals to 09:34 (128k fit this time: no out-of-memory). Below the 32-note winner at every
-    length (7.4 points at 16k) and on the 128k loss; S1 passes (84.0), S2 passes; best RULER at 4k of any model
-    (15.5; the LSA port 15.2, dense 16.0), single needle 88 %; S6 misses on core (1.5 below the window) and passes
+    length (7.4 points at 16k) and on the 128k loss; S1 passes (84.0), S2 passes; RULER at 4k 15.5, the best of
+    the reading models (the LSA port 15.2) and just below dense's 16.0, single needle 88 %; S6 misses on core (1.5 below the window) and passes
     on the short positions (2.6169, 0.007 above the window).
   - **Noise floor for these gaps:** the controls trained twice (AWS seed 1 vs home seed 42, so seed and hardware both
     change) move by 0.0005 / 0.0114 / 0.0031 / 0.0160 nats at 16k (window / dense / LSA port / notes-open), up to 7.6
