@@ -350,6 +350,41 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     zero. Core mean of 7 accuracy tasks 0.416 (screen 0.397): arc_challenge 0.247, arc_easy 0.422, hellaswag 0.303,
     lambada 0.201, piqa 0.599, sciq 0.633, winogrande 0.510. Shares of the gap wait for the full-budget window and
     dense.
+  - **Original LSA, full budget (launched 14:01:16 UTC Nov 10; node `lsa-orig-l40s` i-00da766f90443a5a1, 4 × L40S
+    spot, launched 13:02:55 UTC, 24 h cap):** their code (github.com/Prefrontal-AI/latent-sparse-attention, pinned at
+    5ebea732d639576d2a7579b0de40e6252f9001f5) in its own venv from their uv.lock (torch 2.13.0+cu129, torchtitan
+    @56a721b, flash-linear-attention 0.5.2, causal-conv1d 1.7.0 built on the node); torchtitan's Trainer through their
+    `trainer_config`, nothing in their checkout edited (`scripts/lsa_orig.py`, `infra/aws/jobs/lsa_orig_node.sh` →
+    `lsa_orig_run.sh`). **Model:** their `qwen35_0_8b_gpt2/pretrain_fineweb_lsa.yaml` (lsa_mqa8, FineWeb trunk) with
+    the Qwen3.5 body shrunk to our size: hidden 896, 12 layers (9 Gated DeltaNet + LSA at layers 3, 7, 11: their 3 : 1),
+    Gated DeltaNet 7 key / 7 value heads of 128, SwiGLU 2,240, tied GPT-2 embeddings (50,304), their GPT-2 inits;
+    attention layer exactly theirs (8 query heads over 1 KV head, d 128, no RoPE, output gate, QK-norm, `kind: lsa`,
+    `coarse: false`, `fast_read: true`, window 512, block 512, pool 4, buckets 8 / cap 16, 4 sinks, top_k 1024, max
+    over query heads); **162,632,318 parameters** (45.07M embedding, 117.56M other). **Data and budget:** our m100
+    rows (data/bin_token_dataset.py, the 32 FineWeb-Edu shards; LongDocs-lite) in our HF trainer's order
+    (`torch.randperm(N, seed 42)`, checked against `Trainer.get_train_dataloader`; the same 128 × 4k rows every step
+    on 1 or 4 GPUs: the first 30 trunk losses repeat the smoke's to 4 decimals); positions restart at every document
+    (torchtitan then resets the Gated DeltaNet there), labels across a document start ignored; trunk 5,722 steps
+    (3.0B), warmup 57, constant; decay 763 steps of 32 × 16k from the trunk's weights (fresh optimizer), warmup 22,
+    1 − sqrt over 740 to 0.1 ×; AdamW (0.9, 0.95), wd 0.1 on matrices (their scope), clip 1.0, fp32 weights under
+    bf16 autocast, peak **6.4e-4** (ours, so the LR is no difference between arms; inside their 0.55B sweep 5e-4 /
+    1e-3; their 5e-4 × 1,024 / 896 = 5.7e-4); their FSDP over the 4 GPUs, micro-batch 4 × 4k / 1 × 16k.
+    **Deviations, all forced:** their fused LSA read has no document mask, so in the packed 4k trunk the 3 LSA layers
+    read across documents (as in their own FineWeb trunk); on the L40S their LSA layer runs their Triton read
+    (gather_sparse) and, because lsa_select's tiles need 105–168 KiB of shared memory and the L40S has 99 KiB
+    (measured), their reference selection (their CUDA kernels are sm_90 only); evals in their venv with lm-eval 0.4.11
+    (ours) put ahead of their 0.4.13; rows padded with <|endoftext|> to a multiple of 512 (causal, never read back),
+    and RULER generation without left padding (their read has no padding mask). **Smoke (200 + 100 steps, 13:17–14:00
+    UTC):** trunk loss 11.01 → 4.99, decay 5.55 → 3.73, no NaN, 18.5 GiB a GPU; **75.3k tokens/s at 4k and 71.7k at
+    16k for the node** (18.8k / 17.9k a GPU); every eval ran end to end (long-document loss at 4k and 128k, val,
+    core, RULER 4k / 16k; batched generation = one by one on the real model). **Evals on the node:** our models' set
+    (`evaluation/lsa_orig_eval.py`, which runs `long_doc_loss.py`'s scoring and `run_lsa_suite.py`'s lm-eval protocol
+    on their model): long-document loss 4k–128k (8 rows a source, plus `open_off` = their LSA layers at top_k 0),
+    FineWeb-Edu val at 4k, core, RULER 13 tasks at 4k and 16k; 8k / 32k / 64k in the later pass for every model.
+    **Gate passed:** 12.6 h of training + ~1 h of evals → expected finish **≈ 03:45–04:15 UTC Nov 11** (trunk ≈
+    01:05, decay ≈ 02:40), ≈ $105 at $7.24 / h. Results: `s3://…/runs/e37/lsa_orig_m100_tok3.0e9_seed42/`
+    (eval_longdoc.json, eval_val.json, eval_core.json, eval_ruler.json; checkpoints every 500 / 200 steps, a relaunch
+    resumes). No H100 came free (20:44 UTC Nov 9 → 12:30 UTC Nov 10, every 5 min).
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
