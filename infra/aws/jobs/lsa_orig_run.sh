@@ -12,10 +12,10 @@
 #     (gather_sparse, lsa_select; their code picks them); the Gated DeltaNet is attn-gym's Triton path (sm_80+).
 #   LSA_SMOKE=1: the smoke test — trunk 200 steps, decay 100 steps from its weights, the evals with tiny limits on the
 #   same lanes; folder $MC_DISK/runs/lsa_orig_smoke_<gpu> (h100, l40s), S3 runs/e37/lsa_orig_smoke_<gpu>/.
-# Evals (eval_longdoc.json, eval_ruler.json, eval_core.json, eval_val.json): evaluation/lsa_orig_eval.py, one lane per
-# GPU (1 GPU: RULER 64k beside everything else; 4 GPUs: long-document + val + core + RULER 4k, 16k, 8k | 32k |
-# 64k in two halves; 32k and 64k one task per call, so what a lane finished survives the node's lifetime),
-# lm-eval 0.4.11 (ours) ahead of their 0.4.13 on PYTHONPATH.
+# Evals (eval_longdoc.json, eval_ruler.json, eval_core.json, eval_val.json): evaluation/lsa_orig_eval.py, our models'
+# node set (e37_evals.sh): long-document loss 4k-128k, FineWeb-Edu val at 4k, core, RULER 13 tasks at 4k and 16k
+# (8k / 32k / 64k: a later pass for every model); lanes as e37_evals.sh (4k after the rest on GPU 0, 16k in three task
+# groups on the other GPUs); lm-eval 0.4.11 (ours) ahead of their 0.4.13 on PYTHONPATH.
 # Results: s3://BUCKET/runs/e37/lsa_orig_m100_tok3.0e9_seed42/
 set -uo pipefail
 source /etc/mrcogito.env
@@ -103,34 +103,27 @@ main_lane() {  # GPU
   ev "$1" eval_core core --limit "$CLIM"
 }
 RB=(--limit "$LIM" --batch_tokens "$BT")
-RT13=(niah_single_1 niah_single_2 niah_single_3 niah_multikey_1 niah_multikey_2 niah_multikey_3 niah_multiquery
-      niah_multivalue ruler_vt ruler_cwe ruler_fwe ruler_qa_squad ruler_qa_hotpot)
-ruler_tasks() {  # GPU LENGTH TAG TASK...  one lm-eval call per task (identical per-task results, as e37_evals.sh's
-  local gpu=$1 L=$2 tag=$3; shift 3   # task groups), so a lane stopped by the node's lifetime keeps the tasks it did
-  for t in "$@"; do ev "$gpu" "ruler_${tag}_$t" ruler --lengths "$L" --tasks "$t" "${RB[@]}"; done
-}
+# The node's evals are our models' node set (e37_evals.sh): RULER at 4k and 16k only; 8k, 32k and 64k come later in one
+# separate pass for every model. As e37_evals.sh: 4k after the rest on the first GPU, 16k in its three task groups on
+# the other GPUs (one GPU: everything in turn).
+R16=("niah_single_1,niah_multikey_2,niah_multivalue,ruler_cwe,ruler_qa_hotpot:16k_a"
+     "niah_single_2,niah_multikey_3,niah_multiquery,ruler_fwe:16k_b"
+     "niah_single_3,niah_multikey_1,ruler_vt,ruler_qa_squad:16k_c")
 if [ "$G" -ge 4 ]; then
-  # RULER cost ~ length x documents (uncached decoding, 32 new tokens: lm-eval's RULER tasks stop on nothing but
-  # <|endoftext|>): 4k 1, 8k 2, 16k 4, 32k 8, 64k 16 units; ~8 units a lane, in the order of our main protocol
-  # (long-document loss, core, RULER 4k and 16k first), each long lane task by task
-  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_4k", "ruler_16k", "ruler_8k"], ["ruler_32k_*"], ["ruler_64ka_*"], ["ruler_64kb_*"]]}' > "$R/lanes.json"
-  ( ruler_tasks 1 32768 32k "${RT13[@]}" ) & L1=$!
-  ( ruler_tasks 2 65536 64ka "${RT13[@]:0:7}" ) & L2=$!
-  ( ruler_tasks 3 65536 64kb "${RT13[@]:7}" ) & L3=$!
+  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_4k"], ["ruler_16k_a"], ["ruler_16k_b"], ["ruler_16k_c"]]}' > "$R/lanes.json"
+  PIDS=()
+  for i in 0 1 2; do
+    g=${R16[$i]}
+    ( ev $((1 + i % (G - 1))) "ruler_${g##*:}" ruler --lengths 16384 --tasks "${g%%:*}" "${RB[@]}" ) & PIDS+=($!)
+  done
   main_lane 0
   ev 0 ruler_4k ruler --lengths 4096 "${RB[@]}"
-  ev 0 ruler_16k ruler --lengths 16384 "${RB[@]}"
-  ev 0 ruler_8k ruler --lengths 8192 "${RB[@]}"
-  wait "$L1" "$L2" "$L3"
+  wait "${PIDS[@]}"
 else
-  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_4k", "ruler_16k", "ruler_8k", "ruler_32k_*"], ["ruler_64k_*"]]}' > "$R/lanes.json"
-  ( ruler_tasks 0 65536 64k "${RT13[@]}" ) & L3=$!
+  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_4k", "ruler_16k_a", "ruler_16k_b", "ruler_16k_c"]]}' > "$R/lanes.json"
   main_lane 0
   ev 0 ruler_4k ruler --lengths 4096 "${RB[@]}"
-  ev 0 ruler_16k ruler --lengths 16384 "${RB[@]}"
-  ev 0 ruler_8k ruler --lengths 8192 "${RB[@]}"
-  ruler_tasks 0 32768 32k "${RT13[@]}"
-  wait "$L3"
+  for g in "${R16[@]}"; do ev 0 "ruler_${g##*:}" ruler --lengths 16384 --tasks "${g%%:*}" "${RB[@]}"; done
 fi
 
 # RULER: one file in run_lsa_suite.py's layout (results / mean / tasks per length)
