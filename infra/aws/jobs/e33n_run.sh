@@ -149,12 +149,16 @@ ev_core() {
   uv run python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" --suite core \
     --limit 0 --batch "${E33N_CORE_BATCH:-32}" --backend "${E33N_CORE_BACKEND:-sdpa}" --out "$R/eval_core.json" > "$R/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
 }
-if [ "$G" -gt 1 ]; then   # one eval per GPU, side by side
-  n=${#GL[@]}
+n=${#GL[@]}
+if [ "$G" -gt 1 ] && [ "$n" -gt 2 ]; then   # one eval per GPU, side by side
   ( export CUDA_VISIBLE_DEVICES="${GL[0]}"; ev_longdoc ) & P1=$!
-  ( export CUDA_VISIBLE_DEVICES="${GL[$((1 % n))]}"; ev_ruler ) & P2=$!
-  ( export CUDA_VISIBLE_DEVICES="${GL[$((2 % n))]}"; ev_core ) & P3=$!
+  ( export CUDA_VISIBLE_DEVICES="${GL[1]}"; ev_ruler ) & P2=$!
+  ( export CUDA_VISIBLE_DEVICES="${GL[2]}"; ev_core ) & P3=$!
   wait "$P1" "$P2" "$P3"   # not a bare wait: the S3 sync loop runs in the background until finish
+elif [ "$G" -gt 1 ] && [ "$n" -eq 2 ]; then   # the long-document loss keeps a card to itself (128k: ~19 GB of 24)
+  ( export CUDA_VISIBLE_DEVICES="${GL[0]}"; ev_longdoc ) & P1=$!
+  ( export CUDA_VISIBLE_DEVICES="${GL[1]}"; ev_ruler; ev_core ) & P2=$!
+  wait "$P1" "$P2"
 else
   ev_longdoc; ev_ruler; ev_core
 fi
