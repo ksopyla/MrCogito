@@ -314,6 +314,10 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     dense (S1, S2); retrieval of a single exact needle says its top-k routing is the weak part at 100M. Next
     measurement (cheap, eval only, on a saved checkpoint): the flow probe — does e37a's opened set contain the
     needle's block at 100M (it did at 30M, single needle 0.94)?
+    - **Correction (2026-11-10, stage B):** at the full budget e37a's single needle is back to 0.96 / 0.96 and its
+      RULER mean is 0.185 / 0.136, so the screen's drop was the budget for the read that picks blocks (a third of
+      the optimizer steps), not a defect of the routing; dense needed fewer steps for it. The full-budget controls
+      decide the comparison.
 - **Stage B (if S1 holds):** the full m100 protocol for e37 (a or b), lsa and dense (+ original LSA if its stack
   runs), ≈ $450.
   - **Go-ahead (author, 2026-11-09 ~20:30 UTC):** all the needed models at 100M on the full token budget (3.0B trunk +
@@ -330,6 +334,22 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
   - **Evals:** e37_evals.sh on each node (long-document loss 4k–128k, RULER 13 tasks at 4k and 16k, core). LSA's
     protocol adds RULER at 8k, 32k and 64k and held-out FineWeb-Edu loss at 4k: a separate pass on the saved
     checkpoints after training (RULER past 16k costs hours per model with uncached decoding).
+  - **No H100 at all (20:31 UTC Nov 9 → 12:30 UTC Nov 10, every 5 min, every zone):** the original LSA moved to the
+    L40S slot (its node job runs their stack on sm89 with their Triton kernels, `infra/aws/jobs/lsa_orig_node.sh`);
+    `e37-b-l40s` was terminated at 12:49 UTC right after e37a's evals (lsa had trained 5 minutes; its S3
+    checkpoints resume later). Slot order: e37a → original LSA → lsa → the parent session's catalogue arm
+    (catalogue_reuse, branch e37-catalogue, its own budget). Quota requests pending: G spot 96 (us-east-1, us-east-2,
+    us-west-2), P on demand 64 (us-west-2), 32 (us-east-2).
+  - **e37a, full budget (trunk 22:28–09:00, decay 09:00–11:06, evals 11:06–12:43 UTC Nov 9–10; 4 × L40S spot,
+    ≈ $105):** raw loss on positions ≥ 2k, 5 sources (4 at 128k): 4k 2.320, 16k **2.166**, 32k 2.254, 64k 2.250,
+    128k **1.990** (screen 2.493, 2.334, 2.442, 2.417, 2.148: −0.16 to −0.19 nats at every length); with the length
+    scale off 2.166 / 2.317 / 2.156 at 16k / 64k / 128k (the scale still carries 0.07–0.17 nats past 16k). Loss on
+    positions < 512 at 16k 2.388 (screen 2.602). RULER mean of 13 tasks **0.185 at 4k, 0.136 at 16k** (screen 0.066 /
+    0.055; screening dense 0.192 / 0.138); single needle **0.96 / 0.96** (screen 0.27 / 0.38), single-2 0.58 / 0.14,
+    multi-key-1 0.29 / 0.26, multi-value 0.12 / 0.15; variable tracking, word frequency and multi-key-2/3 stay near
+    zero. Core mean of 7 accuracy tasks 0.416 (screen 0.397): arc_challenge 0.247, arc_easy 0.422, hellaswag 0.303,
+    lambada 0.201, piqa 0.599, sciq 0.633, winogrande 0.510. Shares of the gap wait for the full-budget window and
+    dense.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
