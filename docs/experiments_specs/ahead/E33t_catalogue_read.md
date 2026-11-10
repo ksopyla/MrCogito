@@ -301,6 +301,7 @@ at 16k in E33p) show the marks are reachable at this size and data.
   | catalogue_reuse (32 notes, AWS) | 96.9 | 91.4 | 94.0 | 151.6 | 2.1395 | 14.1 | 40.78 |
   | catalogue_reuse_n4 (64 notes, Odra) | 91.2 | 87.9 | 90.8 | 146.8 | 2.1463 | 10.9 | 38.90 |
   | catalogue_reuse_p512 (512-token pages, 64 notes, Polonez) | 89.0 | 84.0 | 85.8 | 133.2 | 2.1608 | 15.5 | 39.31 |
+  | catalogue_reuse_n16 (16 notes, Polonez) | 79.0 | 73.0 | 70.7 | 106.2 | 2.1855 | 8.9 | 39.91 |
 
   - **n4** (Odra GPUs 0–1): trunk 2026-11-09 20:23 → 11-10 06:07 UTC (9.7 h), decay 06:07 → 08:14, evals to 08:44.
     Below the 32-note winner at every length (3.5 points at 16k), on RULER and on core; S1 and S2 pass, S6 misses
@@ -314,6 +315,13 @@ at 16k in E33p) show the marks are reachable at this size and data.
     length (7.4 points at 16k) and on the 128k loss; S1 passes (84.0), S2 passes; RULER at 4k 15.5, the best of
     the reading models (the LSA port 15.2) and just below dense's 16.0, single needle 88 %; S6 misses on core (1.5 below the window) and passes
     on the short positions (2.6169, 0.007 above the window).
+  - **n16** (16 notes of 16 tokens per 256-token page; Polonez GPU 2 alone, bursts): trunk 2026-11-09 20:23 →
+    11-10 15:34 UTC (three 20 min cooldowns), decay 15:34 → 19:29, evals one after another to 20:12 UTC (no
+    out-of-memory). Far below the 32-note winner: 18.4 points at 16k, 2.5 × the noise floor, and the worst
+    reading model at every length; **S1 misses** (73.0 < 80), S2 passes (106.2 at 64k); RULER at 4k 8.9, single
+    needle 46 % (the 32-note winner 94 %); S6 passes (core 0.9 below the window, short positions 2.6144, 0.005 above
+    it). Halving the notes to 16 costs 18 points at 16k, doubling them to 64 costs 3.5: 32 notes of 8 tokens is the
+    best of the three note sizes.
   - **Noise floor for these gaps:** the controls trained twice (AWS seed 1 vs home seed 42, so seed and hardware both
     change) move by 0.0005 / 0.0114 / 0.0031 / 0.0160 nats at 16k (window / dense / LSA port / notes-open), up to 7.6
     points of G. n4's 3.5-point gap sits inside it and p512's 7.4 at its edge. **Same-hardware reference** (free,
