@@ -227,7 +227,9 @@ at 16k in E33p) show the marks are reachable at this size and data.
   port: start about 14:00–18:00 UTC Nov 11, or about 01:30 UTC Nov 11 if an H100 takes the original LSA, earlier if
   the G spot quota rises to 96. The E37 session launches it in its queue, seed 42 like its other 100M models:
   `MC_SPOT=1 bash infra/aws/launch.sh e37-b-l40s-cat 30 "infra/aws/jobs/e37_full.sh 42 <arm>" e37-catalogue
-  g6e.12xlarge`. The arm is the stage-B winner, `catalogue_reuse_n4` (named 2026-11-10 22:20 UTC, see Result). Size at m100: 100.6M parameters without
+  g6e.12xlarge`. The arm is the stage-B winner, `catalogue_reuse_n4` (named 2026-11-10 22:20 UTC, see Result).
+  Queued by the E37 session about 22:25 UTC Nov 10 on node `e37-b-l40s-catalogue-reuse-n4` (30 h cap), results to
+  `s3://mrcogito-train-093337158062/runs/e37/e33n_m100_catalogue_reuse_n4_tok3.0e9_seed42/`. Size at m100: 100.6M parameters without
   the word tables, 166.4M in total, the same as window and notes-open (the LSA port 96.5M / 162.4M), so 3.4B tokens
   is 20.4 per parameter, about compute-optimal. Code: branch `e37-catalogue` (a986d08) = this branch + `arch-10m`
   (3079db4), conflicts only side-by-side additions, tests 124 pass. Memory check at m100 on Odra card 2 (24 GB),
