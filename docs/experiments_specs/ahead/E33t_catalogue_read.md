@@ -220,6 +220,22 @@ at 16k in E33p) show the marks are reachable at this size and data.
   Only one validation document reaches 1M tokens, so 1M is judged mainly by the planted password.
 - **Stage D (if A–C match LSA-native at 30M, with the author's approval):** 100M (`m100`: 3B + 0.4B tokens) — the
   winner, LSA-native and the two controls, about 20–25 hours each on the 4 × L40S node, $500–600 in all.
+  **Moved ahead of stage C and joined to E37's 100M full run (author, 2026-11-10 ~05:37 UTC: "Yes, add it"):** the
+  E37 session already trains window, dense, notes-open, the LSA port and E37's concept memory on the full m100
+  protocol (3.0B tokens at 4k, then 0.4B at 16k; E37 stage B, `infra/aws/jobs/e37_full.sh`), so only the catalogue
+  model is added, on E37's single 4 × L40S spot slot after e37a, the original LSA (if no H100 takes it) and the LSA
+  port: start about 14:00–18:00 UTC Nov 11, or about 01:30 UTC Nov 11 if an H100 takes the original LSA, earlier if
+  the G spot quota rises to 96. The E37 session launches it in its queue, seed 42 like its other 100M models:
+  `MC_SPOT=1 bash infra/aws/launch.sh e37-b-l40s-cat 30 "infra/aws/jobs/e37_full.sh 42 <arm>" e37-catalogue
+  g6e.12xlarge`. The arm is the stage-B winner (named by about 22:30 UTC Nov 10). Size at m100: 100.6M parameters without
+  the word tables, 166.4M in total, the same as window and notes-open (the LSA port 96.5M / 162.4M), so 3.4B tokens
+  is 20.4 per parameter, about compute-optimal. Code: branch `e37-catalogue` (a986d08) = this branch + `arch-10m`
+  (3079db4), conflicts only side-by-side additions, tests 124 pass. Memory check at m100 on Odra card 2 (24 GB),
+  05:41–05:56 UTC, `infra/aws/jobs/speed_check.sh`, peak by nvidia-smi: catalogue_reuse_n4 trunk at 4k 10.1 GB at
+  micro 1 and 16.8 GB at micro 2 (about 6.7 GB per row), so the node's micro 4 needs about 30 GB of the L40S's
+  48 GB; decay at 16k, micro 1 (the node's setting), 22.7 GB; catalogue_reuse_p512 trunk at micro 2 16.7 GB (n16
+  has fewer notes than n4). Speed on one 3090: 12.3k tokens/s at 4k (micro 2), 7.7k at 16k. Estimated 16–19 h on
+  4 × L40S (within the job's 30 h cap): about $80–140 on spot, $190 on demand, on the $2,000 goal.
 - **Budget:** about $800–900 for A–D on top of stage 1 (≈ $220 in all), inside the $2,000 AWS goal.
 - **Launch (stage A, AWS):** `MC_SPOT=1 bash infra/aws/launch.sh e33t-a 20 "infra/aws/jobs/e33p_s1_multi.sh 1
   catalogue catalogue_2l" e33n-lsa-testbed g6e.12xlarge` with `E33N_EXPERIMENT=E33t` (new arms in
