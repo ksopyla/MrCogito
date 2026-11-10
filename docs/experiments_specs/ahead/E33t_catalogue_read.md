@@ -227,7 +227,7 @@ at 16k in E33p) show the marks are reachable at this size and data.
   port: start about 14:00–18:00 UTC Nov 11, or about 01:30 UTC Nov 11 if an H100 takes the original LSA, earlier if
   the G spot quota rises to 96. The E37 session launches it in its queue, seed 42 like its other 100M models:
   `MC_SPOT=1 bash infra/aws/launch.sh e37-b-l40s-cat 30 "infra/aws/jobs/e37_full.sh 42 <arm>" e37-catalogue
-  g6e.12xlarge`. The arm is the stage-B winner (named by about 22:30 UTC Nov 10). Size at m100: 100.6M parameters without
+  g6e.12xlarge`. The arm is the stage-B winner, `catalogue_reuse_n4` (named 2026-11-10 22:20 UTC, see Result). Size at m100: 100.6M parameters without
   the word tables, 166.4M in total, the same as window and notes-open (the LSA port 96.5M / 162.4M), so 3.4B tokens
   is 20.4 per parameter, about compute-optimal. Code: branch `e37-catalogue` (a986d08) = this branch + `arch-10m`
   (3079db4), conflicts only side-by-side additions, tests 124 pass. Memory check at m100 on Odra card 2 (24 GB),
@@ -302,6 +302,7 @@ at 16k in E33p) show the marks are reachable at this size and data.
   | catalogue_reuse_n4 (64 notes, Odra) | 91.2 | 87.9 | 90.8 | 146.8 | 2.1463 | 10.9 | 38.90 |
   | catalogue_reuse_p512 (512-token pages, 64 notes, Polonez) | 89.0 | 84.0 | 85.8 | 133.2 | 2.1608 | 15.5 | 39.31 |
   | catalogue_reuse_n16 (16 notes, Polonez) | 79.0 | 73.0 | 70.7 | 106.2 | 2.1855 | 8.9 | 39.91 |
+  | catalogue_reuse (32 notes, Odra retrain, same-hardware reference) | 93.0 | 86.2 | 89.4 | 143.7 | 2.1586 | 9.9 | 39.84 |
 
   - **n4** (Odra GPUs 0–1): trunk 2026-11-09 20:23 → 11-10 06:07 UTC (9.7 h), decay 06:07 → 08:14, evals to 08:44.
     Below the 32-note winner at every length (3.5 points at 16k), on RULER and on core; S1 and S2 pass, S6 misses
@@ -328,3 +329,22 @@ at 16k in E33p) show the marks are reachable at this size and data.
     Odra idle): `catalogue_reuse` itself retrained at home, seed 1, the same command as n4 apart from the note count
     (`e33n_s30_catalogue_reuse_seed1`, Odra GPUs 0–1, tmux `e33t-b-n8home`), started 2026-11-10 09:46 UTC, expected
     about 22:00 UTC with n16. The winner is scored against both 32-note runs.
+  - **Same-hardware reference result:** trunk 09:46 → 19:22 UTC (9.6 h, n4 9.7 h), decay 19:22 → 21:25, evals to
+    21:59 UTC. The same model, seed and command as the AWS run scores 5.2 points lower at 16k on Odra (86.2 vs 91.4;
+    16k loss on positions ≥ 2k 2.3666 vs 2.3555 nats), RULER at 4k 9.9 vs 14.1 (single needle 81 % vs 94 %), core
+    39.84 vs 40.78. The home runs lose the same tasks (sciq 62–65 vs 68–70, arc_easy 39–41 vs 42–45 on AWS), and
+    the controls' reading models (dense, LSA port) are also worse at home, so the hardware gap looks systematic,
+    not seed noise. On the same machine, n4 against it: 91.2 / 87.9 / 90.8 / 146.8 vs 93.0 / 86.2 / 89.4 / 143.7
+    (n4 behind at 4k, ahead at 16k, 32k and 64k), 128k loss 2.1463 vs 2.1586, RULER 10.9 vs 9.9 (per-task nearly
+    identical: single needle 80 vs 81 %), core 38.90 vs 39.84, short positions 2.6204 vs 2.6218. Against the home
+    seed-42 controls the order is the same (16k: n4 92.9, 32-note retrain 91.1, p512 88.8, n16 77.1, so n16 misses
+    S1 on either set of controls). S6's short-position check fails for every model trained at home, the 32-note
+    retrain included (0.012 above the AWS window, 0.017 above the home window), so it does not separate the arms.
+- **Stage-B verdict (2026-11-10 ~22:15 UTC): `catalogue_reuse_n4` wins by the rule written before the runs** (best
+  16k share with the 64k share not below it, ties broken by RULER at 4k), on the same-hardware comparison the
+  reference was trained for: 87.9 vs 86.2 at 16k, RULER 10.9 vs 9.9. The margin (1.7 points, 0.0036 nats) is a
+  third of the hardware gap between two runs of the same model, so 64 and 32 notes are a near-tie; 16 notes is
+  clearly worse (S1 misses), 512-token pages sit 2–4 points behind with a better needle score (RULER 15.5, run on
+  Polonez, a third machine). Named to the E37 session at 22:20 UTC for stage D's 100M full run
+  (`infra/aws/jobs/e37_full.sh 42 catalogue_reuse_n4`, branch `e37-catalogue` a986d08, where the memory check at
+  m100 was already done on n4). Stage B spent $0 on AWS (all four runs on Odra and Polonez).
