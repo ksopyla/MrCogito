@@ -81,6 +81,7 @@ def load_backbone(checkpoint: str, work: Path):
     exp, _ = LO.experiment("decay", work, extra=[f"data.seq_len={EVAL_MAX}", f"run.optim.tokens_per_rank={EVAL_MAX}"])
     from lsa.training.native.benchmark.run import load_backbone as their_load_backbone
 
+    print(f"[lsa_orig_eval] kernels: {LO.fit_kernels()}", flush=True)
     bb = their_load_backbone(exp, checkpoint)
     from lsa.training.native.layers import MultiresInnerAttention
 

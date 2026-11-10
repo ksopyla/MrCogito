@@ -148,6 +148,26 @@ def patch_body() -> None:
     q._mc_patched = True
 
 
+def fit_kernels() -> str:
+    """Their LSA selection on a GPU whose shared memory its Triton kernel does not fit.
+
+    Their code picks the selection kernel by `supported()`: lsa_rank (CUDA, sm_90 only), else lsa_select (Triton), else
+    `reference.select_indices` (chunked torch, the specification both kernels are tested against). lsa_select's tiles
+    need 105-168 KiB of shared memory a block at any tile size (measured on the L40S: 101,376 bytes there; the H100 has
+    227 KiB), and its `supported()` does not check, so on such a GPU it is switched off and the reference selects
+    (6 ms a 4k row, 39 ms a 16k row on an L40S). The read itself (gather_sparse, Triton) fits and is unchanged."""
+    import torch
+    from lsa.training.native.kernels import lsa_select
+
+    if not torch.cuda.is_available():
+        return "cpu"
+    smem = int(getattr(torch.cuda.get_device_properties(0), "shared_memory_per_block_optin", 0))
+    if smem and smem < 172032:
+        lsa_select.supported = lambda *args, **kwargs: False
+        return f"lsa_select off ({smem} B shared memory a block < 172,032): reference selection"
+    return f"their kernels as they are ({smem} B shared memory a block)"
+
+
 def phase_numbers(phase: str, steps: int | None = None, micro: int | None = None) -> dict[str, Any]:
     p = PHASES[phase]
     seq = p["seq"]
@@ -275,7 +295,7 @@ def train(args) -> None:
     init_logger()
     check_label_contract()
     print(describe(exp), flush=True)
-    print(f"[mc] phase {args.phase}: {z}", flush=True)
+    print(f"[mc] phase {args.phase}: {z}; kernels: {fit_kernels()}", flush=True)
     config = trainer_config(exp, check_corpora=False)
     config.hf_assets_path = tokenizer_path(exp, Path(args.data))
     Loader = make_loader_class()
