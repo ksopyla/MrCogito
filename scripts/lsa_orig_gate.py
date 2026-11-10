@@ -66,6 +66,12 @@ def main() -> int:
     lanes = json.loads((R / "lanes.json").read_text())["lanes"] if (R / "lanes.json").exists() else []
     res["hw"] = hw
     # evals of the smoke (3 RULER documents per task, core 20 per task, one long-document row per source at 4k, 128k)
+    def names(entry):   # a lane entry may be a glob (ruler_32k_*: one file per task)
+        if "*" not in entry:
+            return [entry]
+        return sorted(p.name[:-5] for p in R.glob(f"{entry}.json")) or [entry]
+
+    lanes = [[n for e in lane for n in names(e)] for lane in lanes]
     ev = {name: ("ok" if (R / f"{name}.json").exists() else "missing") for lane in lanes for name in lane}
     res["evals"] = ev
     if not ev or any(v != "ok" for v in ev.values()):

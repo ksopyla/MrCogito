@@ -13,8 +13,8 @@
 #   LSA_SMOKE=1: the smoke test — trunk 200 steps, decay 100 steps from its weights, the evals with tiny limits on the
 #   same lanes; folder $MC_DISK/runs/lsa_orig_smoke_<gpu> (h100, l40s), S3 runs/e37/lsa_orig_smoke_<gpu>/.
 # Evals (eval_longdoc.json, eval_ruler.json, eval_core.json, eval_val.json): evaluation/lsa_orig_eval.py, one lane per
-# GPU (1 GPU: RULER 64k beside everything else; 4 GPUs: long-document + val + core + RULER 4k-16k | 32k | 64k
-# in two task groups),
+# GPU (1 GPU: RULER 64k beside everything else; 4 GPUs: long-document + val + core + RULER 4k, 16k, 8k | 32k |
+# 64k in two halves; 32k and 64k one task per call, so what a lane finished survives the node's lifetime),
 # lm-eval 0.4.11 (ours) ahead of their 0.4.13 on PYTHONPATH.
 # Results: s3://BUCKET/runs/e37/lsa_orig_m100_tok3.0e9_seed42/
 set -uo pipefail
@@ -103,22 +103,33 @@ main_lane() {  # GPU
   ev "$1" eval_core core --limit "$CLIM"
 }
 RB=(--limit "$LIM" --batch_tokens "$BT")
+RT13=(niah_single_1 niah_single_2 niah_single_3 niah_multikey_1 niah_multikey_2 niah_multikey_3 niah_multiquery
+      niah_multivalue ruler_vt ruler_cwe ruler_fwe ruler_qa_squad ruler_qa_hotpot)
+ruler_tasks() {  # GPU LENGTH TAG TASK...  one lm-eval call per task (identical per-task results, as e37_evals.sh's
+  local gpu=$1 L=$2 tag=$3; shift 3   # task groups), so a lane stopped by the node's lifetime keeps the tasks it did
+  for t in "$@"; do ev "$gpu" "ruler_${tag}_$t" ruler --lengths "$L" --tasks "$t" "${RB[@]}"; done
+}
 if [ "$G" -ge 4 ]; then
-  # RULER cost ~ length (uncached decoding): 4k+8k+16k ~ 7, 32k ~ 8, 64k ~ 16 units -> 64k split by task over 2 GPUs
-  R64A=niah_single_1,niah_multikey_2,niah_multivalue,ruler_cwe,ruler_qa_hotpot,niah_single_3,niah_multikey_1
-  R64B=niah_single_2,niah_multikey_3,niah_multiquery,ruler_fwe,ruler_vt,ruler_qa_squad
-  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_a"], ["ruler_b"], ["ruler_c1"], ["ruler_c2"]]}' > "$R/lanes.json"
-  ( ev 1 ruler_b ruler --lengths 32768 "${RB[@]}" ) & L1=$!
-  ( ev 2 ruler_c1 ruler --lengths 65536 --tasks "$R64A" "${RB[@]}" ) & L2=$!
-  ( ev 3 ruler_c2 ruler --lengths 65536 --tasks "$R64B" "${RB[@]}" ) & L3=$!
+  # RULER cost ~ length x documents (uncached decoding, 32 new tokens: lm-eval's RULER tasks stop on nothing but
+  # <|endoftext|>): 4k 1, 8k 2, 16k 4, 32k 8, 64k 16 units; ~8 units a lane, in the order of our main protocol
+  # (long-document loss, core, RULER 4k and 16k first), each long lane task by task
+  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_4k", "ruler_16k", "ruler_8k"], ["ruler_32k_*"], ["ruler_64ka_*"], ["ruler_64kb_*"]]}' > "$R/lanes.json"
+  ( ruler_tasks 1 32768 32k "${RT13[@]}" ) & L1=$!
+  ( ruler_tasks 2 65536 64ka "${RT13[@]:0:7}" ) & L2=$!
+  ( ruler_tasks 3 65536 64kb "${RT13[@]:7}" ) & L3=$!
   main_lane 0
-  ev 0 ruler_a ruler --lengths 4096,8192,16384 "${RB[@]}"
+  ev 0 ruler_4k ruler --lengths 4096 "${RB[@]}"
+  ev 0 ruler_16k ruler --lengths 16384 "${RB[@]}"
+  ev 0 ruler_8k ruler --lengths 8192 "${RB[@]}"
   wait "$L1" "$L2" "$L3"
 else
-  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_a"], ["ruler_c"]]}' > "$R/lanes.json"
-  ( ev 0 ruler_c ruler --lengths 65536 "${RB[@]}" ) & L3=$!
+  echo '{"lanes": [["eval_longdoc", "eval_val", "eval_core", "ruler_4k", "ruler_16k", "ruler_8k", "ruler_32k_*"], ["ruler_64k_*"]]}' > "$R/lanes.json"
+  ( ruler_tasks 0 65536 64k "${RT13[@]}" ) & L3=$!
   main_lane 0
-  ev 0 ruler_a ruler --lengths 4096,8192,16384,32768 "${RB[@]}"
+  ev 0 ruler_4k ruler --lengths 4096 "${RB[@]}"
+  ev 0 ruler_16k ruler --lengths 16384 "${RB[@]}"
+  ev 0 ruler_8k ruler --lengths 8192 "${RB[@]}"
+  ruler_tasks 0 32768 32k "${RT13[@]}"
   wait "$L3"
 fi
 
