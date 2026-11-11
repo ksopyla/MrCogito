@@ -401,6 +401,29 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     essay haystack works) is unexplained — the eval saved no generations, so the next check is a few RULER samples.
     Their body is 9 Gated DeltaNet (recurrent) + 3 LSA layers against our local-attention layers around one looped
     reading layer, so the loss gap is not the read alone; the lsa arm (their read in our body) separates the two.
+  - **lsa (our port: LSA's top-k read in our body), full budget (trunk 03:40–13:05, decay 13:06–14:46, evals
+    14:47–15:52 UTC Nov 11; node `e37-b-l40s-lsa` i-0e44d4a99d1d8f0ae, 4 × L40S spot, self-shutdown 15:54, ≈ 12.3 h ≈
+    $90; job exit 0):** training loss at the end of the trunk 3.095 (e37a 3.092; trunk eval 3.121), of the decay 2.333
+    (e37a 2.330; decay eval 2.255 vs 2.253). Raw loss on positions ≥ 2k, 5 sources (4 at 128k): 4k 2.322, 16k
+    **2.169**, 32k 2.254, 64k 2.245, 128k **1.994** — a tie with e37a (2.320 / 2.166 / 2.254 / 2.250 / 1.990, within
+    0.005 everywhere), and 0.03–0.07 nats above the original LSA (2.284 / 2.135 / 2.215 / 2.201 / 1.925); positions
+    < 512 at 16k 2.384 (e37a 2.388). Its read off (`open_off`): 2.505 / 2.389 / 2.492 / 2.435 / 2.126, so the top-k
+    read carries 0.13–0.24 nats (the original's 0.15–0.22). RULER mean of 13 tasks **0.255 at 4k, 0.209 at 16k** — the
+    best of the three (e37a 0.185 / 0.136, original LSA 0.139 / 0.082; screen lsa 0.104 / 0.092). Single needle
+    0.96 / 0.95 (e37a 0.96 / 0.96, original 0.10 / 0.04); the gain is on the essay haystacks: single-2 (number)
+    **0.88 / 0.84** (e37a 0.58 / 0.14, original 0.63 / 0.46), single-3 (UUID) **0.55 / 0.27** (e37a 0.13 / 0.03,
+    original 0.19 / 0.06), and word frequency 0.27 / 0.09 (e37a 0.01 / 0.06); multi-key-1 0.26 / 0.27, multi-value
+    0.12 / 0.14, multi-query 0.05 / 0.04, QA 0.10 / 0.09 (HotpotQA) and 0.03 / 0.01 (SQuAD), common words 0.06 / 0.01,
+    variable tracking and multi-key-2/3 near zero as for the others. Core mean 0.416 (e37a 0.416, original 0.420, a
+    tie): arc_challenge 0.266, arc_easy 0.413, hellaswag 0.305, lambada 0.212, piqa 0.600, sciq 0.596, winogrande
+    0.522. No notebook in this arm (`has_notebook: false`), so no notes-off file. W&B: trunk and decay runs synced
+    from the node's offline logs (15:57 UTC). **Reading:** with the body held fixed, LSA's exact top-k read and our
+    notebook predict long text equally well, so the original LSA's 0.03–0.07-nat edge comes from its Gated DeltaNet
+    body, not its read. On retrieval the top-k read is clearly ahead of the notebook: the same single-needle score and
+    far better on the essay haystack with numbers and UUIDs at 16k (0.84 vs 0.14; 0.27 vs 0.03), i.e. the exact read
+    finds facts the notebook's summaries blur. And the original LSA's single-needle collapse is not the read itself
+    (0.96 in our body): its body or its code path. Next: the notebook plus an exact top-k read (the notes_open arm
+    asks a nearby question), and dense / window at the full budget for the shares of the gap.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
