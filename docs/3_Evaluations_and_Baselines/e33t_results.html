@@ -186,7 +186,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
 <main class="wrap">
   <header>
-    <p class="eyebrow">E33t · the catalogue read · 30M-parameter models · as of 11 Nov 2026, 11:16 UTC</p>
+    <p class="eyebrow">E33t · the catalogue read · 30M-parameter models · as of 11 Nov 2026, 12:05 UTC</p>
     <h1>Our catalogue read is within a few points of LSA, and ahead of it at 128k</h1>
     <p class="lede">We changed how the model looks things up in its notebook. The notes no longer get read; they only point
       to the exact words worth rereading, like cards in a library catalogue. At 30M parameters it now recovers 91&nbsp;% of
@@ -302,7 +302,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <h3>Past 128k the notebook still helps, but nobody finds the password</h3>
         <p>Trained only on 16k documents, the 64-notes model predicts 256k documents better than both the window control and
           LSA. With its notebook removed it falls just below the window control, so the gain is the notebook's. At 128k and 1M
-          no model gets more than 1 of 20 passwords.</p>
+          no model gets more than 2 of 20 passwords.</p>
       </article>
     </div>
   </section>
@@ -361,14 +361,15 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
             models are compared with this version, not the 16k one.</p></div>
       </div>
       <div class="now-item">
-        <span class="when">since 11:05</span>
-        <div class="what"><span class="top">LSA port, trained on 16k <span class="pill" data-s="running">running</span></span>
-          <p>Password test at 1M on Odra. At 128k it got 1 of 20.</p></div>
+        <span class="when">11:59 UTC</span>
+        <div class="what"><span class="top">LSA port, trained on 16k <span class="pill" data-s="done">done</span></span>
+          <p>All 256k and 1M tests in. Passwords: 1 of 20 at 128k, none at 1M.</p></div>
       </div>
       <div class="now-item">
-        <span class="when">since 11:07</span>
+        <span class="when">since 11:47</span>
         <div class="what"><span class="top">LSA port, after the 64k stage <span class="pill" data-s="running">running</span></span>
-          <p>Standard tests on Odra (to 128k, needle puzzles, general knowledge), then 256k and 1M.</p></div>
+          <p>Standard tests and the 256k and 1M loss are in; the password test at 1M is running on Odra, done about
+            12:45 UTC. At 128k it got 2 of 20, the best so far.</p></div>
       </div>
       <div class="now-item">
         <span class="when">due ~15:40</span>
@@ -391,7 +392,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
   <footer>
     <span>Sources: the E33t spec's results (stages A and B, scored against the same-seed AWS controls) and the stage C result
-      files on Odra and Polonez, read 11 Nov 2026 at 11:16 UTC. Scores use positions past 2k tokens, weighted by tokens.</span>
+      files on Odra and Polonez, read 11 Nov 2026 at 12:05 UTC. Scores use positions past 2k tokens, weighted by tokens.</span>
     <span>One seed per model. The same model trained twice moves by up to 7.6 points of the gap when seed and machine both
       change.</span>
   </footer>
@@ -576,11 +577,11 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       { name: "LSA port, opened tokens removed", c: "--neutral", v: { "256k": 1.8324, "1M": 0.9398 } },
     ] },
     long: { ref: { "256k": 1.7675, "1M": 0.8793 }, rows: [
-      { name: "LSA port", c: "--s2", v: null, eta: "this afternoon" },
+      { name: "LSA port", c: "--s2", v: { "256k": 1.6106, "1M": 0.8421 } },
       { name: "64 notes per page", c: "--s6", v: null, eta: "about 20:00 UTC" },
       { name: "64 notes, two-level search", c: "--s6", hatch: true, v: null, eta: "about 20:00 UTC" },
       { name: "64 notes, notebook removed", c: "--neutral", v: null, eta: "about 20:00 UTC" },
-      { name: "LSA port, opened tokens removed", c: "--neutral", v: null, eta: "this afternoon" },
+      { name: "LSA port, opened tokens removed", c: "--neutral", v: { "256k": 1.8250, "1M": 0.9305 } },
     ] },
   };
   let ldPhase = "decay", ldLen = "256k";
@@ -660,10 +661,10 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
   const PK = [
     { who: "Window control", when: "trained on 16k", k128: Z, k1m: Z },
     { who: "Window control", when: "after the 64k stage", k128: Z, k1m: Z },
-    { who: "LSA port", when: "trained on 16k", k128: "00200000000000100000", k1m: P, note: "1M running" },
+    { who: "LSA port", when: "trained on 16k", k128: "00200000000000100000", k1m: "00010000000000000000" },
     { who: "64 notes per page", when: "trained on 16k", k128: "00000000000000100000", k1m: Z },
     { who: "64 notes, two-level search", when: "trained on 16k", k128: Z, k1m: Z },
-    { who: "LSA port", when: "after the 64k stage", k128: P, k1m: P },
+    { who: "LSA port", when: "after the 64k stage", k128: "00200000000000100002", k1m: P },
     { who: "64 notes per page", when: "after the 64k stage", k128: P, k1m: P },
   ];
   const pk = document.getElementById("pk");
