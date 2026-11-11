@@ -265,6 +265,7 @@ ARCH_FLAGS: dict[str, tuple[str, ...]] = {
     "e33a_loop": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
     "e31c_m1": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
     "e31c_loop": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
+    "e33t_catalogue_n4": ("--token_embedding_dim", "128", "--ngram_orders", "none"),
     "e30_ord": ("--swp_n_heads", "8", "--swp_query_dim", "128", "--token_embedding_dim", "128",
                 "--ngram_orders", "none"),
     "e31_ord_m1": ("--token_embedding_dim", "128", "--ngram_orders", "none"),

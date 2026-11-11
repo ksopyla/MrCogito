@@ -256,19 +256,115 @@ def _job(name, arch, seed, length, exam, extra=(), *, init=None, ladder=None, co
     }
 
 
+def suite_train(task_id, size="30m"):
+    """The training budget of a v4 task with no written `train` (empty = the suite v3 budget of the size), written out
+    from its suite cell (`budget_for`, `lr_for`, `grad_accum_for` in evaluation/capability_suite.py), so the task can
+    be built like every other one. Warm residuals are in BASE (every 30m cell uses them)."""
+    from evaluation.capability_suite import CELL_BY_ID, budget_for, grad_accum_for, lr_for
+    from evaluation.capability_tasks import SUITE_V3, TASK_BY_ID
+
+    cells = [c for c, t in SUITE_V3.items() if t == task_id]
+    if len(cells) != 1:
+        raise SystemExit(f"{task_id} has no written budget and no single suite cell to take it from")
+    cell = CELL_BY_ID[cells[0]]
+    if cell.seq_len != TASK_BY_ID[task_id].train_len:
+        raise SystemExit(f"{task_id}: suite cell {cell.id} trains at {cell.seq_len}, not {TASK_BY_ID[task_id].train_len}")
+    b, (lr, warm, _) = budget_for(cell), lr_for(size, cell)
+    if not warm:
+        raise SystemExit(f"{cell.id} at {size} trains without warm residuals; BASE always sets them")
+    return ("--seq_len", str(cell.seq_len), "--steps", str(b.steps), "--k1_mult", str(b.k1_mult), "--batch",
+            str(b.batch), "--grad_accum", str(grad_accum_for(cell)), "--lr", f"{lr:g}",
+            "--eval_every", str(max(5, min(b.eval_every, b.steps // 4))))
+
+
 def task_job(task_id, arch, seed, *, prefix="v4", cost=1.3, ladder=False):
     """One from-scratch job built from the v4 task definition itself (exam args + training budget), so a run
-    can never drift from the protocol in `evaluation/capability_tasks.py`."""
+    can never drift from the protocol in `evaluation/capability_tasks.py`. A task without a written `train` takes
+    its suite cell's v3 budget (`suite_train`), as the task definition says."""
     from evaluation.capability_tasks import STOP_RULE, TASK_BY_ID
     t = TASK_BY_ID[task_id]
-    if not t.train:
-        raise SystemExit(f"{task_id} has no written training budget (`train`); use the suite runner")
+    train = t.train or suite_train(task_id)
     name = f"{prefix}_{task_id.replace('.', '_')}_{arch}_s{seed}"
     # the stop rule (v4-draft-2026-10-13.2): early stop / extension read the task's own score on validation rows
-    return {"name": name, "args": [*t.train, "--eval_rows", "256", *STOP_RULE, "--task_score", t.score,
+    return {"name": name, "args": [*train, "--eval_rows", "256", *STOP_RULE, "--task_score", t.score,
                                    "--recipe", t.recipe, *t.args, "--arch", arch, "--seed", str(seed)], "init": None,
-            "ladder": ([L for L in LADDER_1K_FULL if L <= 32768] if arch == "dense" else LADDER_1K_FULL)
+            "ladder": ([L for L in LADDER_1K_FULL if L <= 32768] if arch == "dense" else
+                       [L for L in LADDER_1K_FULL if L >= t.train_len])
             if (t.ladder and ladder) else None, "cost": cost}
+
+
+def _set_accum(args, mult):
+    """Multiply the micro-batch split of a job's args (memory only: the effective batch is unchanged)."""
+    if mult == 1:
+        return list(args)
+    a = list(args)
+    i = len(a) - 1 - a[::-1].index("--grad_accum") if "--grad_accum" in a else None
+    if i is None:
+        return a + ["--grad_accum", str(mult)]
+    a[i + 1] = str(int(a[i + 1]) * mult)
+    return a
+
+
+def core_jobs(model, arch, flags=(), *, seeds=(0, 1, 2), accum=None, cost=None):
+    """The v4 **core package** (C0–C5) for one registered variant, from random init, built from the task definitions
+    (`evaluation/capability_tasks.py`), so no job list is ever copied:
+      * every `active` task of the core levels: one `task_job` (`v4_<task>_<model>_s<seed>`; tasks without a written
+        budget take their suite cell's, `suite_train`); tasks trained at ≥ 1k are then read to 128k;
+      * C5 tasks: their written curriculum as a chain, one job per stage (`v4_<task>_h<k>_<model>_s<seed>`): the same
+        exam at 1 hop at TRAIN_1K_X4, then each next hop at the task budget with half the rows at the previous hop
+        count; the last stage is read to 128k;
+      * C1.lookup-16k: its written curriculum 2k → 8k → 16k (`len_lookup_<model>_s<seed>[_b8k|_b16k]`, the jobs the
+        champion's evidence came from), each stage read to 128k, plus the stop rule.
+    `accum` = {train length: micro-batch multiplier} (memory only); `cost` = {train length: GPU-hours per job}."""
+    import re
+
+    from evaluation.capability_tasks import PACKAGES, STOP_RULE, TASKS, TRAIN_1K_X4
+
+    accum, cost = accum or {}, cost or {}
+    levels = PACKAGES["core"]["levels"]
+
+    def mult(length):
+        return next((m for L, m in sorted(accum.items()) if length <= L), 1)
+
+    def price(length):
+        return next((c for L, c in sorted(cost.items()) if length <= L), 1.0)
+
+    out = []
+    for t in TASKS:
+        if t.level not in levels or t.status != "active" or t.id == "C1.lookup-16k":
+            continue
+        hops = re.search(r"^C5\.(?:pchain|path)(\d)-", t.id)
+        for seed in seeds:
+            if not hops:
+                j = task_job(t.id, arch, seed, ladder=True, cost=price(t.train_len))
+                j.update(name=j["name"].replace(f"_{arch}_s", f"_{model}_s"), save=True,
+                         args=_set_accum([*j["args"], *flags], mult(t.train_len)))
+                out.append(j)
+                continue
+            prev = None
+            for k in range(1, int(hops[1]) + 1):
+                j = task_job(t.id, arch, seed, ladder=(k == int(hops[1])), cost=price(t.train_len) * (1 if k == 1 else 2))
+                stage = ["--hops", str(k)] + (list(TRAIN_1K_X4) if k == 1 else
+                                              ["--replay_recipe", "chain_parallel", "--replay_hops", str(k - 1),
+                                               "--replay_frac", "0.5"])
+                j.update(name=f"v4_{t.id.replace('.', '_')}_h{k}_{model}_s{seed}", init=prev, save=True,
+                         args=_set_accum([*j["args"], *stage, *flags], mult(t.train_len)))
+                prev = j["name"]
+                out.append(j)
+    for j in length_jobs(arches=(arch,), seeds=seeds, chain_arches=()):
+        L = int(j["args"][j["args"].index("--seq_len") + 1])
+        j.update(name=j["name"].replace(f"_{arch}_s", f"_{model}_s"), cost=price(L),
+                 init=j["init"].replace(f"_{arch}_s", f"_{model}_s") if j.get("init") else None,
+                 args=_set_accum([*j["args"], *STOP_RULE, "--task_score", "first", *flags], mult(L)))
+        out.append(j)
+    return out
+
+
+# One entry per variant that runs the core package: `--phase core_<model>` (kwargs of core_jobs).
+CORE_VARIANTS = {
+    # E33t catalogue read, the stage-B winner (`catalogue_reuse_n4`); spec E33t_catalogue_read.md "Capability checks"
+    "e33t_catalogue_n4": dict(model="e33t_catalogue_n4", arch="e33t_catalogue_n4"),
+}
 
 
 def ratio_jobs(seeds=(0,)):
@@ -399,6 +495,11 @@ def jobs(phase: str) -> list[dict]:
         if tag not in BATTERY_VARIANTS:
             raise SystemExit(f"no battery variant {tag!r}; add it to BATTERY_VARIANTS")
         return battery_jobs(**BATTERY_VARIANTS[tag])
+    if phase.startswith("core_"):  # the v4 core package (C0–C5, seeds 0–2, ladders to 128k) of a registered variant
+        model = phase[len("core_"):]
+        if model not in CORE_VARIANTS:
+            raise SystemExit(f"no core variant {model!r}; add it to CORE_VARIANTS")
+        return core_jobs(**CORE_VARIANTS[model])
     if phase == "recall_len":  # does the 8k stage carry multi-fact recall to length (as it did lookup)?
         out = []
         for arch in ("e30_li", "e31_li_m1", "e31_li"):

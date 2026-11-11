@@ -60,13 +60,15 @@ from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM, swp_geometry
 
 ARCHES = ("dense", "e18", "e18_local", "e21", "e30", "encdec", "e30_ctx", "e31_page", "e31_bixt",
           "e30_li", "e31_li", "e31_li_m1", "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1", "e33a_loop",
-          "e31c_m1", "e31c_loop")
-# Arches whose global read is exclusive after QUERY (compressed / latent memory only).
+          "e31c_m1", "e31c_loop", "e33t_catalogue_n4")
+# Arches whose global read is exclusive after QUERY (compressed / latent memory only). Exception: a variant with
+# `query_boundary=False` (the E33t catalogue) keeps the message machinery but reads across QUERY, as in text.
 EXCLUSIVE_ARCHES = ("e21", "e30", "e30_ctx", "e31_page", "e31_bixt", "e30_li", "e31_li", "e31_li_m1",
-                    "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1", "e33a_loop", "e31c_m1", "e31c_loop")
+                    "e30_ord", "e31_ord_m1", "e30_mix", "e31_mix_m1", "e33a_loop", "e31c_m1", "e31c_loop",
+                    "e33t_catalogue_n4")
 SWP_ARCHES = ("e30", "e30_ctx", "e30_li", "e30_ord", "e30_mix")
 E31_ARCHES = ("e31_page", "e31_bixt", "e31_li", "e31_li_m1", "e31_ord_m1", "e31_mix_m1", "e33a_loop",
-              "e31c_m1", "e31c_loop")
+              "e31c_m1", "e31c_loop", "e33t_catalogue_n4")
 # Length-invariant variants (E30 vs E31 limits study, 2026-09-27): named so scorecards keep
 # them apart. Each is a base arch plus fixed spec fields; other spec fields pass through.
 #   e30_li    = e30_ctx (64-token pre-encoder reach) + slot keys RoPE'd at QUERY
@@ -97,6 +99,24 @@ ARCH_VARIANTS: dict[str, tuple[str, dict]] = {
     "e31c_loop": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "reader", "lm_reader_tokens": 1,
                                "lm_read": "closed", "message_loop_rounds": 4, "message_loop_exit_aux": 0.3,
                                "message_loop_exit_targets": "answer"}),
+    # E33t catalogue read, stage-B winner `catalogue_reuse_n4` (scripts/run_e33n.py ARMS; spec
+    # docs/experiments_specs/ahead/E33t_catalogue_read.md): the E31c page writer files every token of a closed
+    # 256-token page (no overlap) under one of 64 notes (Sinkhorn-balanced, ≤ 16 per note); a note's key is the mean of
+    # its members' reading-layer keys (tied, no RoPE in the reading layer); each query, in each of the 4 loop passes
+    # (exits off, as in text), opens the raw tokens of its best notes by max-head cosine until 512 tokens are held
+    # (≤ 128 notes; a pass may re-open earlier passes' notes) and reads one softmax over 4 learned empty slots ‖ the raw
+    # window ‖ the opened tokens; the notes themselves are never read; an index loss (0.1) teaches the note scores
+    # where the read's attention lands. No QUERY boundary: the opened tokens are raw book tokens, which an exclusive
+    # answer side could never read (the read keeps them to the query's own (document, side) tag). The answer reads
+    # the platform's raw window (`--message_raw_window`, 256 in the capability checks) plus what it opens.
+    "e33t_catalogue_n4": ("e31_page", {"lm_addr": "none", "lm_slot_pos": "reader", "lm_reader_tokens": 1,
+                                       "lm_read": "closed", "message_loop_rounds": 4, "message_loop_exit_aux": 0.0,
+                                       "query_boundary": False, "global_nope": True,
+                                       "lm_window": 256, "lm_stride": 256, "lm_latents": 64,
+                                       "lm_note_key": "tied", "lm_open": "notes", "lm_open_k": 128,
+                                       "lm_open_cap": 512, "lm_note_read": "index", "lm_filing": "balanced",
+                                       "lm_open_score": "max_cos", "lm_open_new_per_pass": False, "lm_sinks": 4,
+                                       "lm_index_loss": 0.1}),
 }
 
 
@@ -186,6 +206,33 @@ class ArchSpec:
     lm_slot_pos: str = "read"
     lm_read: str = "exclusive"            # E31c: "closed" = every token reads the windows closed before it
     slot_pos_ref: int = 2048
+    # E33p / E33t note-indexed exact read (PerceiverARConfig fields of the same names; defaults = off, so every
+    # earlier arch builds bit for bit as before). `query_boundary=False` drops the QUERY split (text-style read).
+    query_boundary: bool = True
+    global_nope: bool = False             # reading layer without RoPE (required by tied note keys)
+    lm_note_key: str = "writer"
+    lm_open: str = "none"
+    lm_open_k: int = 0
+    lm_open_cap: int = 512
+    lm_note_read: str = "gist"
+    lm_filing: str = "argmax"
+    lm_open_score: str = "sum_softmax"
+    lm_open_new_per_pass: bool = False
+    lm_sinks: int = 0
+    lm_index_loss: float = 0.0
+
+
+_NOTE_OPEN = ("global_nope", "lm_note_key", "lm_open", "lm_open_k", "lm_open_cap", "lm_note_read", "lm_filing",
+              "lm_open_score", "lm_open_new_per_pass", "lm_sinks", "lm_index_loss")
+
+
+def _note_open_fields(spec: "ArchSpec", arch: str) -> dict:
+    """E33p / E33t config fields (latent-memory arches only); only non-default values are passed, so arches that do
+    not set them build exactly the config they built before."""
+    if arch not in E31_ARCHES:
+        return {}
+    default = ArchSpec(name="_")
+    return {k: getattr(spec, k) for k in _NOTE_OPEN if getattr(spec, k) != getattr(default, k)}
 
 
 def _n_heads(hidden: int, head_dim: int) -> int:
@@ -270,7 +317,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         z_loss=spec.z_loss,
         zero_init_residuals=spec.zero_init_residuals,
         message_boundary_token_id=(
-            spec.message_boundary_token_id if exclusive else -1
+            spec.message_boundary_token_id if (exclusive and bool(getattr(spec, "query_boundary", True))) else -1
         ),
         message_compress_ratio=spec.message_compress_ratio if arch == "e21" else 16,
         message_pool_remainder=bool(spec.message_pool_remainder) if arch == "e21" else False,
@@ -329,6 +376,7 @@ def build_model(arch: str, *, vocab_size: int, seq_len: int, answer_start: int, 
         lm_slot_pos=str(getattr(spec, "lm_slot_pos", "read")),
         lm_read=str(getattr(spec, "lm_read", "exclusive")) if arch in E31_ARCHES else "exclusive",
         slot_pos_ref=int(getattr(spec, "slot_pos_ref", 2048)),
+        **_note_open_fields(spec, arch),
         pad_token_id=pad_id,
         bos_token_id=bos_id,
         eos_token_id=eos_id,
