@@ -310,3 +310,20 @@ def test_lsa_gradient_checkpointing_matches():
     assert g0.keys() == g1.keys() and len(g0) > 10
     for n in g0:
         torch.testing.assert_close(g1[n], g0[n], rtol=1e-4, atol=1e-6, msg=n)
+
+
+@pytest.mark.parametrize("packed", [False, True])
+def test_lsa_list_read_matches_table(packed):
+    """E33t stage C (plan §10.4): the LSA port's list read (no [B, S, G] table) gives the table read's outputs, fp32,
+    with its sinks, one document per row and two documents packed in a row."""
+    from tests.test_catalogue_read import _logits_table_and_list
+
+    m = make(seed=1, **LSA)
+    S = 320
+    ids = row(S, B=2)
+    doc = torch.zeros(2, S, dtype=torch.long)
+    if packed:
+        doc[0, 130:] = 1
+        doc[1, 200:] = 1
+    a, b = _logits_table_and_list(m, ids, doc)
+    torch.testing.assert_close(b, a, rtol=1e-5, atol=1e-5)

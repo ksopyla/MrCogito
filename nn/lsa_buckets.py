@@ -39,7 +39,7 @@ from typing import Optional
 import torch
 import torch.nn.functional as F
 
-from nn.exact_read import GroupIndex, OpenTable, choose, doc_starts, groups_from_spans
+from nn.exact_read import ChoiceList, GroupIndex, OpenTable, choose, doc_starts, groups_from_spans
 
 
 def pool_keys(index_keys: torch.Tensor, pool_size: int) -> torch.Tensor:
@@ -156,16 +156,18 @@ def lsa_groups(k: torch.Tensor, doc: torch.Tensor, *, block: int, per_block: int
 
 @torch.no_grad()
 def lsa_open_table(q: torch.Tensor, centroids: torch.Tensor, gi: GroupIndex, *, top_k: int, width: int,
-                   raw_window: int, chunk: int = 0) -> OpenTable:
+                   raw_window: int, chunk: int = 0, impl: str = "table"):
     """LSA's selection for every query: score = max over query heads of cos(q_h, centre) on the buckets of blocks
     closed before the query's block; the `width` best; keys best bucket first until `top_k` (nn.exact_read.choose:
-    keys of the query's document, outside its sinks and window). q [B, S, h, dh]."""
+    keys of the query's document, outside its sinks and window). q [B, S, h, dh]. `impl = "list"` (E33t stage C,
+    evaluation): the choice as a ChoiceList instead of the table."""
     B, S, h, dh = q.shape
     G = centroids.shape[1]
     if chunk <= 0:
         chunk = max(128, min(1024, (1 << 25) // max(B * h * G, 1) // 128 * 128))
     iq = F.normalize(q.detach().float(), dim=-1)
-    tab = OpenTable(gi, B, S, cap=top_k)
+    tab = (ChoiceList(gi, B, S, cap=top_k, m=min(int(width), G)) if impl == "list"
+           else OpenTable(gi, B, S, cap=top_k))
     for s0 in range(0, S, chunk):
         s1 = min(S, s0 + chunk)
         qp = torch.arange(s0, s1, device=q.device)

@@ -367,3 +367,66 @@ def test_gradient_checkpointing_matches(excl):
     assert g0.keys() == g1.keys() and len(g0) > 10
     for n in g0:
         torch.testing.assert_close(g1[n], g0[n], rtol=1e-4, atol=1e-6, msg=n)
+
+
+def _logits_table_and_list(m, ids, doc):
+    m.eval()
+    with torch.no_grad():
+        a = m(ids, doc_ids=doc, return_logits=True).logits.float()
+        with m.open_impl("list"):
+            b = m(ids, doc_ids=doc, return_logits=True).logits.float()
+    return a, b
+
+
+@pytest.mark.parametrize("packed", [False, True])
+@pytest.mark.parametrize("shape", ["n8", "n4"])
+def test_list_read_matches_table(packed, shape):
+    """E33t stage C (plan §10.4): the list read (each query's choice as a list, one read per query chunk, no [B, S, G]
+    table) gives the table read's outputs, fp32, one document per row and two documents packed in a row. The test
+    shape files 4 notes per 16-token page with pass exclusion off (the reuse arms) and caps the opened tokens at 24,
+    so some queries fill the cap mid-note."""
+    kw = dict(CAT, lm_open_new_per_pass=False, **({"lm_latents": 8, "lm_filing_cap": 4} if shape == "n4" else {}))
+    m = make(seed=2, **kw)
+    S = 320
+    ids = row(S, B=2)
+    doc = torch.zeros(2, S, dtype=torch.long)
+    if packed:
+        doc[0, 150:] = 1
+        doc[1, 70:] = 1
+    a, b = _logits_table_and_list(m, ids, doc)
+    torch.testing.assert_close(b, a, rtol=1e-5, atol=1e-5)
+
+
+def test_list_read_counts_like_the_table():
+    """The list's opened positions are exactly the table's opened tokens (dense_open), query by query: random groups
+    on non-overlapping spans, two documents in one row, a cap that cuts groups."""
+    from nn.exact_read import ChoiceList, OpenTable, choose, dense_open, doc_starts, groups_from_spans
+
+    torch.manual_seed(0)
+    B, S, L, K, cap, rw = 2, 192, 32, 4, 10, 16
+    starts = list(range(0, S, L))
+    member = torch.randint(-1, K, (B, len(starts), L))
+    doc = torch.zeros(B, S, dtype=torch.long)
+    doc[1, 100:] = 1
+    ds = doc_starts(doc)
+    G = len(starts) * K
+    g_close = (torch.arange(len(starts)) * L + L).repeat_interleave(K)[None].expand(B, -1).contiguous()
+    gi = groups_from_spans(member, starts, S=S, per_span=K, doc_start=ds, g_close=g_close,
+                           g_doc=torch.zeros(B, G, dtype=torch.long), any_doc=True)
+    tab, cl = OpenTable(gi, B, S, cap=cap), ChoiceList(gi, B, S, cap=cap, m=5)
+    for s0 in range(0, S, 64):
+        qp = torch.arange(s0, s0 + 64)
+        score = torch.randn(B, 64, G)
+        cand = gi.g_close[:, None, :] <= qp[None, :, None]
+        ids_, off = choose(score, cand, gi, qp, m=5, cap=cap, raw_window=rw)
+        tab.add(s0, ids_, off)
+        cl.add(s0, ids_, off)
+    want = dense_open(tab.T, gi.codes, cap=cap, raw_window=rw, doc=doc)                     # [B, S, S]
+    assert int(want.sum()) > 100
+    for s0 in range(0, S, 48):
+        pos, ok = cl.opened(s0, min(S, s0 + 48), rw)
+        got = torch.zeros(B, pos.shape[1], S, dtype=torch.int32)
+        got.scatter_add_(2, pos, ok.to(torch.int32))
+        assert int(ok.sum(-1).max()) <= cap
+        assert int(got.max()) <= 1, "an opened position appears twice"
+        assert torch.equal(got.bool(), want[:, s0:s0 + pos.shape[1]]), s0

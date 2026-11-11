@@ -2120,10 +2120,20 @@ def _attend_catalogue(q, k, v, sink_k, sink_v, *, ctx: MessageCtx, key_valid, ba
     None, `opened` (nn.exact_read.OpenTable) or None → [B,S,h,dh]. A slot is readable by every valid query."""
     from nn.exact_read import dense_open, open_term
 
+    from nn.exact_read import ChoiceList
+
     B, S, h, dh = q.shape
     g = k.shape[2]
     rw = int(ctx.raw_window or 0)
     n = 0 if sink_k is None else int(sink_k.shape[0])
+    if isinstance(opened, ChoiceList):  # E33t stage C: the list read (evaluation at 128k–1M)
+        if ctx.anchor is not None and bool(ctx.anchor.any()):
+            raise NotImplementedError("the list read has no anchors")
+        tag, _ = ctx.tags()
+        ek = sink_k.to(k.dtype)[:, None, :].expand(n, g, dh) if n else None
+        ev = sink_v.to(v.dtype)[:, None, :].expand(n, g, sink_v.shape[-1]) if n else None
+        return attend_list(q, k, v, opened=opened, raw_window=rw, tag=tag, key_valid=key_valid, extra_k=ek,
+                           extra_v=ev)
     if n:
         K = torch.cat([k, sink_k.to(k.dtype)[None, :, None, :].expand(B, n, g, dh)], dim=1)
         V = torch.cat([v, sink_v.to(v.dtype)[None, :, None, :].expand(B, n, g, dh)], dim=1)
@@ -2160,13 +2170,113 @@ def _attend_catalogue(q, k, v, sink_k, sink_v, *, ctx: MessageCtx, key_valid, ba
     return out.transpose(1, 2)
 
 
+def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_valid, extra_k=None, extra_v=None,
+                ds: Optional[torch.Tensor] = None, n_sinks: int = 0, valid_query: bool = False,
+                chunk: int = 256) -> torch.Tensor:
+    """E33t stage C (plan §10.3), evaluation at 128k–1M: the exact read without the [B, S, G] table. Per chunk of
+    queries, one softmax over the raw window ‖ the raw tokens each query opened (`opened`, nn.exact_read.ChoiceList, or
+    None) ‖ the extra keys: the catalogue's learned empty slots (`extra_k` / `extra_v` [n, g, dh], readable by every
+    query with tag ≥ 0) or LSA's sinks (the `n_sinks` first tokens of the query's document, `ds` [B, S] its start;
+    those inside the window are read there, once). Window keys: j ≤ q, q − j < raw_window, tag[j] == tag[q]; opened
+    and sink keys: tag[j] == tag[q]; with `valid_query` (LSA) a query of tag < 0 reads nothing raw; key_valid[j] (or
+    j == q) as in the table's masks. Same keys and weights as `_attend_catalogue` / `attend_lsa` with the table (tests:
+    `test_list_read_matches_table`). q [B,S,h,dh], k / v [B,S,g,dh], tag [B,S] int → [B,S,h,dh]; scale 1/√dh, fp32."""
+    B, S, h, dh = q.shape
+    g = k.shape[2]
+    rep = h // g
+    rw = int(raw_window)
+    sc = dh ** -0.5
+    kvf = key_valid.bool() if key_valid is not None else None
+    tag = tag.long()
+    neg = float("-inf")
+    out = torch.empty(B, S, h, v.shape[-1], dtype=q.dtype, device=q.device)
+
+    def take(x, pos):  # x [B, S, ...] at pos [B, ch, P] → [B, ch, P, ...]
+        Bp, ch, P = pos.shape
+        flat = pos.reshape(Bp, ch * P)
+        if x.dim() == 2:
+            return x.gather(1, flat).view(Bp, ch, P)
+        idx = flat.view(Bp, ch * P, *([1] * (x.dim() - 2))).expand(Bp, ch * P, *x.shape[2:])
+        return x.gather(1, idx).view(Bp, ch, P, *x.shape[2:])
+
+    for s0 in range(0, S, chunk):
+        s1 = min(S, s0 + chunk)
+        ch = s1 - s0
+        qp = torch.arange(s0, s1, device=q.device)
+        qc = q[:, s0:s1].float().reshape(B, ch, g, rep, dh)
+        tq = tag[:, s0:s1]
+        logits, vals = [], []
+        # the raw window
+        j0 = max(0, s0 - rw + 1)
+        jw = torch.arange(j0, s1, device=q.device)
+        d = qp[:, None] - jw[None, :]
+        ok = ((d >= 0) & (d < rw))[None] & (tag[:, j0:s1][:, None, :] == tq[..., None])
+        if valid_query:
+            ok = ok & (tq >= 0)[..., None]
+        if kvf is not None:
+            ok = ok & (kvf[:, j0:s1][:, None, :] | (d == 0)[None])
+        kw, vw = k[:, j0:s1].float(), v[:, j0:s1].float()
+        lw = torch.einsum("bqgrd,bkgd->bqgrk", qc, kw) * sc
+        logits.append(lw.masked_fill(~ok[:, :, None, None, :], neg))
+        vals.append(("shared", vw))
+        # the opened tokens
+        if opened is not None:
+            pos, ok = opened.opened(s0, s1, rw)
+            if pos.shape[-1]:
+                ok = ok & (take(tag, pos) == tq[..., None])
+                if valid_query:
+                    ok = ok & (tq >= 0)[..., None]
+                if kvf is not None:
+                    ok = ok & take(kvf, pos)
+                ko, vo = take(k, pos).float(), take(v, pos).float()                      # [B, ch, P, g, dh]
+                lo = torch.einsum("bqgrd,bqpgd->bqgrp", qc, ko) * sc
+                logits.append(lo.masked_fill(~ok[:, :, None, None, :], neg))
+                vals.append(("own", vo))
+        # learned empty slots (catalogue)
+        if extra_k is not None and extra_k.shape[0]:
+            le = torch.einsum("bqgrd,ngd->bqgrn", qc, extra_k.float()) * sc
+            logits.append(le.masked_fill(~(tq >= 0)[:, :, None, None, None], neg))
+            vals.append(("slots", extra_v.float()))
+        # LSA's sinks outside the window
+        if n_sinks:
+            sp = ds[:, s0:s1][..., None] + torch.arange(n_sinks, device=q.device)               # [B, ch, n]
+            ok = (sp <= qp[None, :, None]) & (qp[None, :, None] - sp >= rw) & (sp < S)
+            spc = sp.clamp(max=S - 1)
+            ok = ok & (take(tag, spc) == tq[..., None])
+            if valid_query:
+                ok = ok & (tq >= 0)[..., None]
+            if kvf is not None:
+                ok = ok & take(kvf, spc)
+            ks, vs = take(k, spc).float(), take(v, spc).float()
+            ls = torch.einsum("bqgrd,bqpgd->bqgrp", qc, ks) * sc
+            logits.append(ls.masked_fill(~ok[:, :, None, None, :], neg))
+            vals.append(("own", vs))
+        w = torch.nan_to_num(torch.softmax(torch.cat(logits, dim=-1), dim=-1), nan=0.0)
+        o, a = 0.0, 0
+        for lg, (kind, val) in zip(logits, vals):
+            n = lg.shape[-1]
+            wi = w[..., a:a + n]
+            a += n
+            if kind == "shared":
+                o = o + torch.einsum("bqgrk,bkgd->bqgrd", wi, val)
+            elif kind == "own":
+                o = o + torch.einsum("bqgrp,bqpgd->bqgrd", wi, val)
+            else:
+                o = o + torch.einsum("bqgrn,ngd->bqgrd", wi, val)
+        out[:, s0:s1] = o.reshape(B, ch, h, -1).to(q.dtype)
+    return out
+
+
 def attend_lsa(q, k, v, *, doc, key_valid, backend, opened, window: int, sink: torch.Tensor, ds: torch.Tensor,
                n_sinks: int):
     """LSA-native read on the global layer: sinks ‖ raw window ‖ the keys each query took (nn.lsa_buckets), one softmax
     over raw keys only, within the query's document. q [B,S,h,dh], k/v [B,S,g,dh], doc [B,S] (−1 = pad),
     `sink` [B,S] bool (the first tokens of each document), `ds` [B,S]: each token's document start."""
-    from nn.exact_read import dense_open, open_term
+    from nn.exact_read import ChoiceList, dense_open, open_term
 
+    if isinstance(opened, ChoiceList):  # E33t stage C: the list read (evaluation at 128k–1M)
+        return attend_list(q, k, v, opened=opened, raw_window=int(window), tag=doc, key_valid=key_valid, ds=ds,
+                           n_sinks=int(n_sinks), valid_query=True)
     B, S, h, dh = q.shape
     g = k.shape[2]
     qt, kt, vt = (t.transpose(1, 2) for t in (q, k, v))
@@ -2453,6 +2563,7 @@ class Attention(nn.Module):
         # E33p: LSA's released flat read on the global layer (the LSA-native arm; nn/lsa_buckets.py)
         self.lsa = None
         self.lsa_off = False  # eval switch (`PerceiverARLM.open_override("off")`): sinks + window only
+        self.open_impl = "table"  # E33t stage C eval switch (`PerceiverARLM.open_impl`): "list" = no [B, S, G] table
         if pattern == "full" and str(getattr(cfg, "par_global_read", "dense") or "dense") == "lsa":
             self.lsa = dict(window=int(cfg.lsa_window), sinks=int(cfg.lsa_sinks), block=int(cfg.lsa_block),
                             per_block=int(cfg.lsa_block) // int(cfg.lsa_bucket), pool=int(cfg.lsa_pool),
@@ -2647,9 +2758,13 @@ class Attention(nn.Module):
                     excl = bool(getattr(ni, "new_per_pass", False)) and ev != "reuse"
                     pkey = (page_keys(k, ni.page_tok, ni.pick)
                             if getattr(ni, "levels", 1) == 2 and ni.pick is not None else None)
+                    impl = self.open_impl
+                    if impl == "list" and (not catalogue or excl or self.training):
+                        raise NotImplementedError("the list read is for evaluating catalogue arms without pass "
+                                                  "exclusion (E33t stage C)")
                     opened = note_open_table(q, k_bar, ni, doc=message.doc, slot_close=message.slot_close,
                                              slot_doc=message.slot_doc, raw_window=int(message.raw_window or 0),
-                                             exclude=message.open_seen if excl else None, page_key=pkey)
+                                             exclude=message.open_seen if excl else None, page_key=pkey, impl=impl)
                     if excl:  # E33t: a later pass looks somewhere new
                         seen = opened.T < opened.cap
                         message.open_seen = seen if message.open_seen is None else (message.open_seen | seen)
@@ -2764,8 +2879,10 @@ class Attention(nn.Module):
                                sinks=c["sinks"])
             if built is not None:
                 centroids, groups = built
+                if self.open_impl == "list" and self.training:
+                    raise NotImplementedError("the list read is for evaluation (E33t stage C)")
                 opened = lsa_open_table(q, centroids, groups, top_k=c["top_k"], width=c["width"],
-                                        raw_window=c["window"])
+                                        raw_window=c["window"], impl=self.open_impl)
         if self.flow is not None:
             self.flow.reading_lsa(self, q=q, k=k, v=v, doc=doc, key_valid=key_valid, opened=opened, sink=sink,
                                   window=c["window"])
@@ -3283,6 +3400,26 @@ class PerceiverARLM(PreTrainedModel):
             self._open_eval = prev
             for a, v in zip(lsa, prev_lsa):
                 a.lsa_off = v
+
+    @contextmanager
+    def open_impl(self, impl: Optional[str]):
+        """E33t stage C eval switch: `list` keeps each query's choice as a list and reads per query chunk
+        (nn.exact_read.ChoiceList, `attend_list`): memory linear in the length, for 128k–1M; `table` / None: the
+        [B, S, G] table (training, and the reference the list read is tested against)."""
+        if impl in (None, "table"):
+            yield
+            return
+        if impl != "list":
+            raise ValueError(f"unknown open_impl {impl!r}")
+        attns = [l.attn for l in self.layers]
+        prev = [getattr(a, "open_impl", "table") for a in attns]
+        for a in attns:
+            a.open_impl = impl
+        try:
+            yield
+        finally:
+            for a, v in zip(attns, prev):
+                a.open_impl = v
 
     def _set_flow(self, rec) -> None:
         for layer in self.layers:

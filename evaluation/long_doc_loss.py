@@ -4,11 +4,14 @@ LSA (arXiv 2610.42147) compares long-context mechanisms by validation loss on he
 value of a mechanism is where it differs from a window-only model, i.e. at positions beyond the local reach. Here a row
 is one contiguous span of ONE held-out document (LongDocs-lite val shards, `rule="doc"`), and the per-token loss is
 averaged in position buckets: 0–512 (inside every arm's raw window), 512–2k, 2k–8k, 8k–16k, 16k–32k, 32k–64k,
-64k–128k. Lengths past the 16k training length are the length-transfer test. For notebook models `--notes_off` adds
+64k–128k, then 128k–256k, 256k–512k, 512k–1M (E33t stage C). Lengths past the training length are the
+length-transfer test. For notebook models `--notes_off` adds
 the same rows with the notebook switched off (message_override "none"): the notebook's value inside one model.
 
 Usage: uv run python evaluation/long_doc_loss.py --checkpoint RUN/final --data DATA/longdocs_lite_gpt2 \
          --lengths 4096,16384,65536 --rows 16 --notes_off --out results.json
+E33t stage C, 256k–1M: add `--open_impl list` (each query's choice kept as a list, memory linear in the length; the
+[B, S, G] table is 17 GB at 256k and 275 GB at 1M).
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-BUCKETS = (0, 512, 2048, 8192, 16384, 32768, 65536, 131072)
+BUCKETS = (0, 512, 2048, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576)
 
 
 def bucket_names(S: int) -> list[str]:
@@ -122,6 +125,8 @@ def main() -> None:
                     help="E33t: also score with the pass exclusion off (a pass may re-open earlier passes' notes)")
     ap.add_argument("--per_row", action="store_true",
                     help="also save every row's bucket sums with its document key (for a bootstrap over documents)")
+    ap.add_argument("--open_impl", default="table", choices=("table", "list"),
+                    help="E33t stage C: 'list' reads without the [B, S, G] table (128k–1M)")
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", required=True)
@@ -137,7 +142,7 @@ def main() -> None:
     has_notes = getattr(model, "memory_writer", None) is not None and \
         str(getattr(model.config, "message_override", "real")) == "real"
     srcs = sorted(json.loads((Path(a.data) / "manifest.json").read_text())["sources"])
-    res = {"checkpoint": a.checkpoint, "has_notebook": has_notes, "lengths": {}}
+    res = {"checkpoint": a.checkpoint, "has_notebook": has_notes, "open_impl": a.open_impl, "lengths": {}}
     for S in (int(x) for x in a.lengths.split(",")):
         per_len = {}
         for src in srcs:
@@ -148,10 +153,12 @@ def main() -> None:
                 per_len[src] = {"rows": 0}
                 continue
             try:
-                per_len[src] = score_source(model, ds, S, a.rows, a.device, a.notes_off and has_notes, a.per_row,
-                                            open_off=a.open_off and opens(model),
-                                            gist_off=a.gist_off and opens(model) and has_notes and not catalogue(model),
-                                            open_reuse=a.open_reuse and new_per_pass(model))
+                with model.open_impl(a.open_impl):
+                    per_len[src] = score_source(
+                        model, ds, S, a.rows, a.device, a.notes_off and has_notes, a.per_row,
+                        open_off=a.open_off and opens(model),
+                        gist_off=a.gist_off and opens(model) and has_notes and not catalogue(model),
+                        open_reuse=a.open_reuse and new_per_pass(model))
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:  # a length past what fits: record it, go on
                 per_len[src] = {"error": f"{type(e).__name__}: {str(e)[:300]}"}
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
