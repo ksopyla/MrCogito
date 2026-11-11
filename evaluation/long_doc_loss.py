@@ -125,6 +125,9 @@ def main() -> None:
                     help="E33t: also score with the pass exclusion off (a pass may re-open earlier passes' notes)")
     ap.add_argument("--per_row", action="store_true",
                     help="also save every row's bucket sums with its document key (for a bootstrap over documents)")
+    ap.add_argument("--two_level", type=int, default=0,
+                    help="E33t stage C eval switch: a catalogue model keeps this many pages first, then chooses "
+                         "among their notes (lm_open_levels=2; the page key is the mean of its tokens' keys)")
     ap.add_argument("--open_impl", default="table", choices=("table", "list"),
                     help="E33t stage C: 'list' reads without the [B, S, G] table (128k–1M)")
     ap.add_argument("--backend", default="flex")
@@ -139,10 +142,14 @@ def main() -> None:
     from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval
 
     model = load_perceiver_ar_for_eval(a.checkpoint, device=a.device, attn_backend=a.backend)
+    if a.two_level:
+        if str(getattr(model.config, "lm_note_read", "gist")) != "index":
+            raise SystemExit("--two_level is for catalogue models")
+        model.config.lm_open_levels, model.config.lm_open_pages = 2, int(a.two_level)
     has_notes = getattr(model, "memory_writer", None) is not None and \
         str(getattr(model.config, "message_override", "real")) == "real"
     srcs = sorted(json.loads((Path(a.data) / "manifest.json").read_text())["sources"])
-    res = {"checkpoint": a.checkpoint, "has_notebook": has_notes, "open_impl": a.open_impl, "lengths": {}}
+    res = {"checkpoint": a.checkpoint, "has_notebook": has_notes, "open_impl": a.open_impl, "two_level": a.two_level, "lengths": {}}
     for S in (int(x) for x in a.lengths.split(",")):
         per_len = {}
         for src in srcs:
