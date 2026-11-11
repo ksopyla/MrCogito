@@ -385,6 +385,22 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     01:05, decay ≈ 02:40), ≈ $105 at $7.24 / h. Results: `s3://…/runs/e37/lsa_orig_m100_tok3.0e9_seed42/`
     (eval_longdoc.json, eval_val.json, eval_core.json, eval_ruler.json; checkpoints every 500 / 200 steps, a relaunch
     resumes). No H100 came free (20:44 UTC Nov 9 → 12:30 UTC Nov 10, every 5 min).
+  - **Original LSA, result (trunk 14:01–01:00, decay 01:00–02:32, evals 02:32–03:17 UTC Nov 10–11; node gone 03:18,
+    ≈ 14.3 h ≈ $107; job exit 0):** same size (162.6M), data, token budget and node evals as full e37a. Raw loss on
+    positions ≥ 2k, 5 sources (4 at 128k): 4k 2.284, 16k **2.135**, 32k 2.215, 64k 2.201, 128k **1.925** — 0.03–0.07
+    nats below e37a at every length (2.320 / 2.166 / 2.254 / 2.250 / 1.990); positions < 512 at 16k 2.369 (e37a 2.388).
+    Their read off (`open_off`, LSA layers at top_k 0, Gated DeltaNet unchanged): 2.432 / 2.334 / 2.386 / 2.079 at
+    4k / 16k / 64k / 128k, so the sparse read carries 0.15–0.20 nats. RULER mean of 13 tasks **0.139 at 4k, 0.082 at
+    16k** (e37a 0.185 / 0.136); single needle (repeated-sentence haystack) **0.10 / 0.04** (e37a 0.96 / 0.96), but
+    single-2 (essay haystack, number) 0.63 / 0.46 (e37a 0.58 / 0.14) and single-3 0.19 / 0.06 (e37a 0.13 / 0.03);
+    multi-key-1 0.30 / 0.27, multi-value 0.16 / 0.04, common words 0.14 / 0.02, the rest near zero as for e37a. Core
+    mean 0.420 (e37a 0.416, a tie): arc_challenge 0.240, arc_easy 0.415, hellaswag 0.309, lambada 0.202, piqa 0.590,
+    sciq 0.665, winogrande 0.522. FineWeb-Edu val at 4k 3.162 after the decay (3.093 after the trunk: the long-document
+    decay costs 0.07 nats on short web text). **Reading:** the original LSA predicts long text a little better, e37a
+    retrieves a planted fact far better; their single-needle collapse on the repeated-sentence haystack (while the
+    essay haystack works) is unexplained — the eval saved no generations, so the next check is a few RULER samples.
+    Their body is 9 Gated DeltaNet (recurrent) + 3 LSA layers against our local-attention layers around one looped
+    reading layer, so the loss gap is not the read alone; the lsa arm (their read in our body) separates the two.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
