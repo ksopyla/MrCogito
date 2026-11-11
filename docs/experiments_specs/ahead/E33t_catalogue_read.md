@@ -352,3 +352,28 @@ at 16k in E33p) show the marks are reachable at this size and data.
   Polonez, a third machine). Named to the E37 session at 22:20 UTC for stage D's 100M full run
   (`infra/aws/jobs/e37_full.sh 42 catalogue_reuse_n4`, branch `e37-catalogue` a986d08, where the memory check at
   m100 was already done on n4). Stage B spent $0 on AWS (all four runs on Odra and Polonez).
+- **Stage C (long documents), home servers, $0 on AWS.** Approved by the author 2026-11-11 with `catalogue_reuse_n4`.
+  - **Code** (branch e33n-lsa-testbed, fb91fa8 → 7c4ca8e): the `long` phase (`E33N_LONG=1`: rows of 65,536, 0.1B
+    tokens, 381 steps of 4 rows, 1e-4 → 1e-5, manifest seed 2042 and trainer seed 1 for every arm, so all three see the
+    same rows; train rows at 64k: arxiv 693 is the smallest source); layer recomputation for the notebook models (a
+    recomputed block replays the pass state its forward saw: the first try failed with CheckpointError, 85 vs 68 saved
+    tensors, because the loss had cleared the index-loss list; tests: same loss and gradients with and without it); the
+    list read (`ChoiceList` + `attend_list`, `open_impl("list")`, evaluation only); evaluation memory at 1M (feed-forward
+    in pieces without gradient, one loop state kept); `evaluation/long_passkey.py`, `--two_level` and
+    `infra/aws/jobs/e33t_c_evals.sh`.
+  - **Memory at 64k, micro 1, Odra 3090** (2026-11-11 06:50–07:01 UTC): without recomputation the reuse catalogue and the
+    LSA port run out of memory (24 GB); with it 15.6 GB and 6.6 GB.
+  - **List read = table read** on trained 16k models, fp32, two held-out 16k documents (`list_read_check.py`, 07:02–07:05
+    UTC): mean loss equal to 6–7 digits (catalogue_reuse_n4 1.42260 / 1.62415, LSA port 1.40922 / 1.58024); mean
+    per-token difference 1e-6–5e-6, largest 0.002 (catalogue) and 0.022 (LSA port, one token): near-tied choices that
+    round differently after four loop passes. CPU tests at test scale: logits equal to 1e-5, opened tokens equal query
+    by query. Cost of the list read (bf16, one row): 128k 11 s / 3.8 GB, 256k 30 s / 7.5 GB, 512k 85 s / 15.0 GB, 1M
+    276 s / 19.7 GB (catalogue_reuse_n4; the LSA port 11 s / 3.4 GB, 22 s / 6.6 GB, 55 s / 13.1 GB at 128k–512k). 1M
+    first ran out of memory on 2.9 GB feed-forward activations, fixed at 07:15 UTC.
+  - **64k phase launched 2026-11-11 07:02 UTC**, one GPU per model, layer recomputation, evals after it as
+    `eval_*_long.json` (4k–128k loss, RULER 4k, core): `catalogue_reuse_n4` (Odra GPU 0, 3,220 tokens/s, due about
+    15:40 UTC), the LSA port (home seed 42, `e33p_runs/e33n_s30_lsa`, Odra GPU 1, 6,850 tokens/s, due about 11:10 UTC)
+    and the window control (home seed 42, `e33p_runs/e33n_s30_window`, Polonez GPU 0, 25,600 tokens/s, due about
+    08:10 UTC). Each then runs `e33t_c_evals.sh` (256k and 1M loss, password at 128k and 1M; the catalogue also with
+    two levels, 16 pages) on its own GPU. The same evals on the 16k-only models started 07:20 UTC (catalogue and then the
+    LSA port on Odra GPU 2, the window control on Polonez GPU 1).
