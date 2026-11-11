@@ -377,3 +377,59 @@ at 16k in E33p) show the marks are reachable at this size and data.
     08:10 UTC). Each then runs `e33t_c_evals.sh` (256k and 1M loss, password at 128k and 1M; the catalogue also with
     two levels, 16 pages) on its own GPU. The same evals on the 16k-only models started 07:20 UTC (catalogue and then the
     LSA port on Odra GPU 2, the window control on Polonez GPU 1).
+  - **Chain bug** (found 11:10 UTC): `chain_c.sh` put the optional `${TL:+E33T_TWO_LEVEL=..}` word before the other
+    `VAR=..` prefixes, so bash took the next prefix as the command name (exit 127) and the window control's 256k–1M
+    evals did not start at 08:26 UTC. Fixed (settings exported first); the waiting chains were stopped by PID and
+    restarted 11:11 UTC. The 64-notes model's evals were later moved off its training GPU (`6285b87`,
+    `E33T_SKIP_FLAT`: flat search on Odra GPU 1, two levels on GPU 2, standard evals on GPU 0), about 3 h earlier.
+  - **Timeline (2026-11-11 UTC):** 64k phases 07:02 → window 08:10 (Polonez, 25,600 tokens/s), LSA port 11:07 (Odra,
+    6,850), catalogue_reuse_n4 15:45 (Odra, 3,220: the slowest, about 31 % GPU use). Last eval 17:37 UTC. Odra's
+    hottest card 73 °C. Results: `docs/2_Experiments_Registry/results/evaluations/E33t_C_*` and the NAS
+    (`/nas/ml_data/mrcogito/results/reports/<host>/MrCogito-lsa/`).
+  - **Gain over the window control trained the same way** (nats, loss on positions ≥ 2k, token-weighted over sources;
+    4k–128k with the table read and 8 documents per source (37 at 64k, 21 at 128k), 256k four documents (1.82M scored
+    tokens), 1M one usgpo document (1.05M scored tokens, an illustration); home controls: window and LSA port seed 42,
+    catalogue_reuse_n4 the Odra stage-B run, seed 1). Window losses: 16k-trained 2.6506 / 2.5480 / 2.6742 / 2.6007 /
+    2.2784 / 1.7891 / 0.9031, after the 64k stage 2.6365 / 2.5314 / 2.6584 / 2.5824 / 2.2590 / 1.7675 / 0.8793.
+
+    | model | 4k | 16k | 32k | 64k | 128k | 256k | 1M |
+    |---|---|---|---|---|---|---|---|
+    | LSA port, 16k-trained | 0.143 | 0.198 | 0.220 | 0.172 | 0.108 | 0.102 | 0.054 |
+    | LSA port, after the 64k stage | 0.137 | 0.193 | 0.223 | 0.195 | **0.168** | 0.157 | 0.037 |
+    | catalogue_reuse_n4, 16k-trained | 0.143 | 0.185 | 0.204 | 0.171 | 0.132 | 0.139 | 0.016 |
+    | catalogue_reuse_n4, after the 64k stage | 0.137 | 0.181 | 0.206 | 0.180 | 0.162 | **0.178** | **0.089** |
+    | n4, two levels (eval switch), 16k-trained | | | | | | 0.107 | 0.049 |
+    | n4, two levels (eval switch), after the 64k stage | | | | | | 0.109 | 0.039 |
+    | n4, notebook off, 16k-trained | −0.016 | −0.020 | −0.022 | −0.017 | −0.015 | −0.019 | −0.017 |
+    | n4, notebook off, after the 64k stage | −0.025 | −0.029 | −0.032 | −0.027 | −0.027 | −0.033 | −0.035 |
+    | LSA port, opened tokens off, after the 64k stage | | | | −0.045 | −0.047 | −0.058 | −0.051 |
+
+  - **Planted password** (exact / first digit right, of 20 depths; `evaluation/long_passkey.py`, teacher-forced):
+
+    | model | 128k, 16k-trained | 1M, 16k-trained | 128k, after 64k | 1M, after 64k |
+    |---|---|---|---|---|
+    | window control | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+    | LSA port | 1 / 2 | 0 / 1 | 2 / 3 (depths 12.5, 97.5 %) | **1 / 2** (depth 2.5 %) |
+    | catalogue_reuse_n4 | 0 / 1 | 0 / 0 | 2 / 2 (depths 72.5, 82.5 %) | 0 / 0 |
+    | n4, two levels | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+    | n4, notebook off | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+
+  - **No harm from the 64k stage:** core mean (7 tasks) window 40.34 → 40.40, LSA port 40.59 → 40.49,
+    catalogue_reuse_n4 38.90 → 38.87; RULER at 4k (mean × 100) 2.9 → 3.3, 13.9 → 14.0, 10.9 → 11.2.
+- **Stage-C verdict (2026-11-11 ~17:45 UTC):**
+  - **The list read works:** equal to the table read to 6–7 digits, and it takes the 30M catalogue to 1M tokens on one
+    3090 (276 s, 19.7 GB per row). The flat search is affordable at 1M, so the search cost is not yet the wall.
+  - **The 64k stage helps where it should:** 0.1B tokens leave 4k–32k unchanged (±0.006) and lift the gain at 128k
+    (catalogue 0.132 → 0.162, LSA port 0.108 → 0.168) and 256k (0.139 → 0.178, 0.102 → 0.157). The window control
+    itself gains 0.014–0.024 from it (more at longer lengths), which the comparison removes.
+  - **Catalogue vs the LSA port after the 64k stage:** level up to 128k (LSA port ahead by 0.006–0.017 at 16k–128k,
+    about the 0.016-nat rerun noise at 16k), the catalogue ahead at 256k (0.021, four documents) and on the one 1M
+    document (0.052). The past-128k lead is suggestive, not proven: four documents and one seed.
+  - **The gain is the notebook's:** with it off the catalogue sits 0.015–0.035 below the window control at every length.
+  - **Passwords stay rare past 128k** for every model (at most 2 of 20 at 128k, 1 of 20 at 1M, the LSA port's): at 30M
+    and this data neither read retrieves a five-digit key reliably that far; the loss gain comes from the text, not
+    from exact recall of one planted fact.
+  - **Two levels lose as an eval switch** (0.109 vs 0.178 at 256k, 0.039 vs 0.089 at 1M, 0 vs 2 passwords at 128k).
+    By plan §10.7 the next step would be a two-level training run; it is deferred because the flat search fits at 1M
+    and the cost only matters past it (the 10M-token aim). Open for the author.
+  - **Stage D** (catalogue_reuse_n4 at 100M on AWS with the E37 full protocol) runs since 2026-11-11 16:19 UTC.

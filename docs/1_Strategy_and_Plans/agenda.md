@@ -20,16 +20,16 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-11-07 — E33t, the catalogue read (draft spec, awaiting alignment).** Answers E33p stage 1's measured limits:
-  the notes leave the read and only choose what to open (4 learned empty slots instead), balanced filing (Sinkhorn,
-  none empty, ≤ 16 per note), an index loss that teaches note scores where the read's attention lands, the budget
-  filled by tokens, each loop pass opens notes the query has not opened before, pages without overlap, and a
-  two-level page→note search arm. Pass mark ≥ 80 % of the gap at 16k with no fade to 64k (LSA-native: 99 %), kill
-  < 50 %. Stage A on the AWS 4 × L40S node after the seed-1 controls (~$60), then note sizes, long documents and
-  100M if 30M matches. Spec [E33t](../experiments_specs/ahead/E33t_catalogue_read.md). (Drafted as "E33s"; renamed
-  2026-11-07: dev owns E33s.) Approved and built 2026-11-07 (`47339bf`); stage 0 passed 08:35 UTC (GPU tests, pipeline,
-  K4: ≈ 1.12 × LSA's run time). Stage A chained on the AWS node (`infra/aws/chain_job.sh`): after the dense seed-1
-  control (≈ 12:20 UTC) the two catalogue arms (≈ 18:00 and 23:30 UTC), then window and LSA-native seed 1.
+- **2026-11-11 — E33t, the catalogue read: stages A–C done at 30M, stage D (100M on AWS) running.** The notes only
+  index the text (never read), balanced filing, an index loss, the budget filled by tokens. Stage A: letting loop
+  passes revisit notes (`catalogue_reuse`) lifts 71 → **91 %** of the window→dense gap at 16k (LSA port 95 %), level
+  with LSA at 64k, best 128k loss. Stage B: 64 notes per page (`catalogue_reuse_n4`) wins narrowly over 32; 16 is too
+  few. Stage C (home, $0 AWS): a 0.1B-token 64k stage lifts the gain over the window control past 128k; after it n4
+  gains **0.178** nats at 256k (LSA port 0.157; four documents), level with LSA up to 128k; passwords stay rare (≤ 2/20
+  at 128k, LSA 1/20 at 1M); the two-level search loses as a test switch (trained two-level arm deferred). Stage D:
+  n4 at 100M on the E37 full protocol, AWS since 2026-11-11 16:19 UTC (30 h cap). Next: its results vs E37's 100M
+  models; capability checks for the variant. Spec [E33t](../experiments_specs/ahead/E33t_catalogue_read.md) ·
+  [results page](../3_Evaluations_and_Baselines/e33t_results.html).
 - **2026-11-06 — E33p, a note-indexed exact read on the LSA testbed: stage 1 training (six arms, 30M, home
   servers).** E33n closed at 30M (see below): the far-context value of natural long text is exact copying, which notes
   cannot return. E33p uses the notes as the index (address keys tied to the reading layer's own raw keys) and lets each
