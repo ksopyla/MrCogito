@@ -32,7 +32,8 @@ export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_PROJECT=MrCogito EXPERIMENT_ID=${E33N_EXPERIMENT:-E33n}
 if [ -f /etc/mrcogito.env ]; then
   source /etc/mrcogito.env
-  D="$MC_DISK/data"; RUNS="$MC_DISK/runs"; export WANDB_MODE=offline
+  D="$MC_DISK/data"; RUNS="$MC_DISK/runs"
+  source "$(dirname "${BASH_SOURCE[0]}")/wandb_env.sh"   # online with the key from Secrets Manager, else offline
 else
   D="${E33N_DATA:?set E33N_DATA}"; RUNS="${E33N_RUNS:?set E33N_RUNS}"; MC_BUCKET=""
 fi
