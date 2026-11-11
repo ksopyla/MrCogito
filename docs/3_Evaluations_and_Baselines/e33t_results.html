@@ -1,0 +1,779 @@
+<title>Catalogue Read Results</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<style>
+/* Layout: one reading column (max 1040px): headline and stage strip, four figures, the main chart,
+   findings as catalogue cards, long documents, the scorecard, what runs now. Library-catalogue cues
+   (index-card findings, mono card labels) come from the design's own analogy. */
+:root {
+  --page: #f1f4f2; --surface: #fcfcfb; --surface-2: #f5f7f6;
+  --ink: #121c18; --ink-2: #47544e; --muted: #737e79;
+  --rule: #dce2df; --grid: #e1e0d9; --axis: #c3c2b7; --ref: #858c88;
+  --accent: #1d4c9a; --accent-wash: rgba(42,120,214,.09); --band: rgba(18,28,24,.04);
+  --good: #0ca30c; --good-text: #006300; --warn: #fab219; --critical: #d03b3b; --pending: #8a918d;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s8: #e34948;
+  --neutral: #8b938f;
+  --font-display: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0e1211; --surface: #1a1a19; --surface-2: #202221;
+    --ink: #eef0ee; --ink-2: #c3c8c4; --muted: #949b97;
+    --rule: #2d312f; --grid: #2c2c2a; --axis: #3a3b38; --ref: #858c88;
+    --accent: #8db0ee; --accent-wash: rgba(57,135,229,.14); --band: rgba(255,255,255,.04);
+    --good-text: #3cc23c; --pending: #8a918d;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s8: #e66767;
+    --neutral: #7f8783;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0e1211; --surface: #1a1a19; --surface-2: #202221;
+  --ink: #eef0ee; --ink-2: #c3c8c4; --muted: #949b97;
+  --rule: #2d312f; --grid: #2c2c2a; --axis: #3a3b38; --ref: #858c88;
+  --accent: #8db0ee; --accent-wash: rgba(57,135,229,.14); --band: rgba(255,255,255,.04);
+  --good-text: #3cc23c; --pending: #8a918d;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s8: #e66767;
+  --neutral: #7f8783;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--ink); font: 15px/1.55 var(--font-body); }
+.wrap {
+  max-width: 1040px; margin: 0 auto; display: grid; gap: 44px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 36px 72px;
+}
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.4vw, 42px); line-height: 1.12; max-width: 22ch; }
+h2 { font-size: clamp(21px, 2.6vw, 26px); line-height: 1.2; }
+h3 { font-size: 17px; line-height: 1.3; }
+p { margin: 0; }
+.eyebrow { font: 500 12px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 17px; color: var(--ink-2); max-width: 66ch; }
+.section { display: grid; gap: 16px; min-width: 0; }
+.section > .intro { color: var(--ink-2); max-width: 68ch; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px; min-width: 0; }
+code, .mono { font-family: var(--font-mono); font-size: .92em; }
+
+/* header */
+header { display: grid; gap: 14px; }
+.stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.stage { display: grid; gap: 4px; padding: 12px 14px; border-top: 3px solid var(--rule); background: var(--surface); border-radius: 0 0 8px 8px; min-width: 0; }
+.stage[data-state="done"] { border-top-color: var(--good); }
+.stage[data-state="running"] { border-top-color: var(--s1); }
+.stage[data-state="blocked"] { border-top-color: var(--warn); }
+.stage .k { font: 500 11px/1.3 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.stage .t { font-weight: 600; font-size: 14px; }
+.stage .d { font-size: 13px; color: var(--ink-2); }
+.pill { display: inline-flex; align-items: center; gap: 5px; font: 500 11px/1 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; padding: 4px 7px; border-radius: 99px; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--rule); white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pending); }
+.pill[data-s="done"]::before { background: var(--good); }
+.pill[data-s="running"]::before { background: var(--s1); }
+.pill[data-s="blocked"]::before { background: var(--warn); }
+.pill[data-s="waiting"]::before { background: transparent; border: 1.5px solid var(--pending); width: 5px; height: 5px; }
+
+/* figures */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.tile .label { font-size: 13px; color: var(--ink-2); }
+.tile .value { font-family: var(--font-display); font-weight: 600; font-size: 34px; line-height: 1.05; }
+.tile .value small { font-size: 16px; font-weight: 500; color: var(--ink-2); }
+.tile .note { font-size: 12.5px; color: var(--muted); }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { font: 500 13px/1 var(--font-body); color: var(--ink-2); background: transparent; border: 0; padding: 9px 12px; cursor: pointer; border-right: 1px solid var(--rule); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; font: 13px/1 var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 99px; padding: 6px 10px 6px 8px; cursor: pointer; }
+.chip[aria-pressed="false"] { color: var(--muted); background: transparent; }
+.chip[aria-pressed="false"] svg { opacity: .35; }
+.chip svg { flex: none; }
+
+/* charts */
+.chart { position: relative; width: 100%; min-width: 0; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-family: var(--font-body); }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; line-height: 1.45; box-shadow: 0 6px 18px rgba(0,0,0,.12); min-width: 170px; z-index: 2; }
+.tip .h { font-weight: 600; margin-bottom: 4px; }
+.tip .r { display: flex; align-items: center; gap: 7px; justify-content: space-between; }
+.tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.tip .r b { font-variant-numeric: tabular-nums; font-weight: 600; }
+.caption { font-size: 13px; color: var(--ink-2); max-width: 74ch; }
+.caption b { color: var(--ink); }
+
+/* findings as catalogue cards */
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.card { position: relative; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 16px 16px 16px; display: grid; gap: 8px; align-content: start; min-width: 0;
+  background-image: linear-gradient(var(--rule), var(--rule)); background-size: 100% 1px; background-position: 0 38px; background-repeat: no-repeat; }
+.card .tag { font: 500 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); height: 14px; }
+.card h3 { margin-top: 6px; }
+.card p { font-size: 14px; color: var(--ink-2); }
+.card .num { font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
+
+/* long documents */
+.two { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; }
+.pk { display: grid; gap: 10px; }
+.pk-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.pk-row .who { font-size: 13px; color: var(--ink); }
+.pk-row .who span { color: var(--muted); }
+.pk-cells { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pk-len { font: 500 11px/1 var(--font-mono); color: var(--muted); margin-bottom: 4px; }
+.dots { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 2px; }
+.dot { display: block; aspect-ratio: 1; max-width: 100%; border-radius: 50%; border: 1.5px solid var(--axis); }
+.dot[data-v="1"] { border-color: var(--s1); background: radial-gradient(circle, var(--s1) 0 34%, transparent 36%); }
+.dot[data-v="2"] { border-color: var(--s1); background: var(--s1); }
+.dot[data-v="p"] { border: 1.5px dashed var(--rule); }
+.keyrow { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--ink-2); }
+.keyrow span { display: inline-flex; align-items: center; gap: 6px; }
+.keyrow .dot { width: 12px; }
+
+/* table */
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13.5px; }
+th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; white-space: normal; }
+thead th { font: 500 12px/1.3 var(--font-body); color: var(--ink-2); vertical-align: bottom; background: var(--surface-2); }
+thead th button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+thead th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+thead th .dir { color: var(--muted); font-size: 11px; }
+tbody tr:last-child td { border-bottom: 0; }
+td .nm { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; }
+td .sub { display: block; font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 21px; }
+tr.ref td { color: var(--ink-2); background: var(--band); }
+td.best { font-weight: 700; color: var(--ink); }
+td.na { color: var(--muted); }
+
+/* now */
+.now { display: grid; gap: 0; }
+.now-item { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.now-item:last-child { border-bottom: 0; }
+.now-item .when { font: 13px/1.4 var(--font-mono); color: var(--ink-2); }
+.now-item .what { display: grid; gap: 4px; }
+.now-item .what .top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-weight: 600; }
+.now-item .what p { font-size: 14px; color: var(--ink-2); }
+.cmd { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.cmd code { background: var(--surface-2); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 9px; user-select: all; overflow-wrap: anywhere; }
+.cmd button { font: 500 12.5px/1 var(--font-body); padding: 7px 10px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-top: 1px solid var(--rule); padding-top: 16px; max-width: 80ch; }
+
+@media (max-width: 860px) {
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .stages, .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .cards { grid-template-columns: minmax(0, 1fr); }
+  .now-item { grid-template-columns: minmax(0, 1fr); }
+  .tile .value { font-size: 28px; }
+  .pk-cells { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chart path.series { transition: opacity .15s; }
+}
+</style>
+
+<main class="wrap">
+  <header>
+    <p class="eyebrow">E33t · the catalogue read · 30M-parameter models · as of 11 Nov 2026, 11:16 UTC</p>
+    <h1>Our catalogue read is within a few points of LSA, and ahead of it at 128k</h1>
+    <p class="lede">We changed how the model looks things up in its notebook. The notes no longer get read; they only point
+      to the exact words worth rereading, like cards in a library catalogue. At 30M parameters it now recovers 91&nbsp;% of
+      what rereading every page gives at 16k tokens (our previous design: 39&nbsp;%), is level with the LSA reference read
+      at 64k, and has the lowest 128k loss of any model we trained.</p>
+    <div class="stages" role="list">
+      <div class="stage" data-state="done" role="listitem">
+        <span class="k">Stage A <span class="pill" data-s="done">done 8 Nov</span></span>
+        <span class="t">Fix the search</span>
+        <span class="d">Best version reaches 91&nbsp;% at 16k.</span>
+      </div>
+      <div class="stage" data-state="done" role="listitem">
+        <span class="k">Stage B <span class="pill" data-s="done">done 10 Nov</span></span>
+        <span class="t">Note and page sizes</span>
+        <span class="d">64 notes per page wins narrowly over 32.</span>
+      </div>
+      <div class="stage" data-state="running" role="listitem">
+        <span class="k">Stage C <span class="pill" data-s="running">running</span></span>
+        <span class="t">Long documents, 64k to 1M</span>
+        <span class="d">First results in; last tests about 20:00 UTC.</span>
+      </div>
+      <div class="stage" data-state="blocked" role="listitem">
+        <span class="k">Stage D <span class="pill" data-s="blocked">paused</span></span>
+        <span class="t">100M full run on AWS</span>
+        <span class="d">Queued; the AWS login has expired.</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="tiles" aria-label="Headline figures">
+    <div class="tile">
+      <span class="label">Share of the full-reread benefit at 16k</span>
+      <span class="value">91<small>&nbsp;%</small></span>
+      <span class="note">Previous notebook read 39&nbsp;%, LSA port 95&nbsp;%. Higher is better.</span>
+    </div>
+    <div class="tile">
+      <span class="label">Loss on 128k documents</span>
+      <span class="value">2.140</span>
+      <span class="note">Lowest of all 30M models; LSA port 2.144, window control 2.277. Lower is better.</span>
+    </div>
+    <div class="tile">
+      <span class="label">Gain over the window control at 256k</span>
+      <span class="value">0.14<small>&nbsp;nats</small></span>
+      <span class="note">64-notes model trained on 16k documents; LSA port 0.10. Higher is better.</span>
+    </div>
+    <div class="tile">
+      <span class="label">AWS spend for stages B and C</span>
+      <span class="value">$0</span>
+      <span class="note">Both ran on the Odra and Polonez home servers.</span>
+    </div>
+  </section>
+
+  <section class="section" id="share">
+    <h2>How much of the full-reread benefit each model recovers</h2>
+    <p class="intro">Think of a student reading a long book. The <b>window control</b> only sees the last few pages (0&nbsp;%).
+      The <b>dense model</b> may reread any page at any time (100&nbsp;%). Each model's score is the share of that gap it
+      closes on words more than 2k tokens into a document. Past 16k the dense model is reading longer documents than it was
+      trained on and gets worse, so scores above 100&nbsp;% are possible there.</p>
+    <div class="panel" style="display:grid;gap:14px">
+      <div class="controls">
+        <div class="seg" id="presets" role="group" aria-label="View">
+          <button type="button" data-p="journey" aria-pressed="true">How we got here</button>
+          <button type="button" data-p="sizes" aria-pressed="false">Note sizes</button>
+          <button type="button" data-p="levels" aria-pressed="false">Two-level search</button>
+          <button type="button" data-p="all" aria-pressed="false">All models</button>
+        </div>
+      </div>
+      <div class="legend" id="legend" aria-label="Models shown (click to toggle)"></div>
+      <div class="chart" id="share-chart" aria-label="Line chart of share of the gap by document length"></div>
+      <p class="caption" id="preset-note"></p>
+    </div>
+  </section>
+
+  <section class="section" id="findings">
+    <h2>What we learned</h2>
+    <div class="cards">
+      <article class="card">
+        <span class="tag">Stage A</span>
+        <h3>Letting each pass revisit notes closed most of the gap</h3>
+        <p>The first catalogue made each of its four reading passes look somewhere new: <span class="num">71&nbsp;%</span> at 16k.
+          Dropping that rule in training, nothing else changed, lifted it to <span class="num">91&nbsp;%</span>. On a planted
+          password the later passes now return to it 95–97&nbsp;% of the time at 4k, as LSA's do.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage A</span>
+        <h3>Two-level search holds at 16k, slips at 64k</h3>
+        <p>Searching pages first and then the notes inside them keeps the search cost growing with pages, not words. It is
+          <span class="num">3</span> points behind the flat search at 16k but <span class="num">16</span> behind at 64k, well
+          outside the 5 points we allowed.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage B</span>
+        <h3>32 or 64 notes per page is a near-tie; 16 is too few</h3>
+        <p>64 notes won by the rule written before the runs (<span class="num">88</span> vs <span class="num">86&nbsp;%</span> on
+          the same machine), but the margin is a third of the hardware gap. 16 notes lost 18 points. 512-token pages sat 2–4
+          points behind, with the best needle-puzzle score.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage B</span>
+        <h3>Home and AWS runs differ by about 5 points</h3>
+        <p>The same model, seed and recipe scored <span class="num">91&nbsp;%</span> on AWS and <span class="num">86&nbsp;%</span>
+          on Odra, and the control models shift too. Comparisons are only fair between models trained on the same machines.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stages A–B</span>
+        <h3>No harm to general knowledge</h3>
+        <p>Seven short benchmarks average <span class="num">40.1–41.0&nbsp;%</span> for every AWS-trained model, the window
+          control <span class="num">40.8&nbsp;%</span>. Home-trained models score 38.9–39.9&nbsp;%, which is the hardware gap
+          again, not the notebook.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage C</span>
+        <h3>Past 128k the notebook still helps, but nobody finds the password</h3>
+        <p>Trained only on 16k documents, the 64-notes model predicts 256k documents better than both the window control and
+          LSA. With its notebook removed it falls just below the window control, so the gain is the notebook's. At 128k and 1M
+          no model gets more than 1 of 20 passwords.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="long">
+    <h2>Past 128k tokens: first results</h2>
+    <p class="intro">Stage C trains every model for a short extra stretch on 64k-token documents, then tests it on 256k and
+      1M tokens. The results below are mostly the 16k-trained models; the 64k-stage models report through the day. Only
+      four held-out documents reach 256k and one reaches 1M, so the 1M loss is an illustration, not a statistic.</p>
+    <div class="two">
+      <div class="panel" style="display:grid;gap:12px">
+        <h3>Gain over the window control</h3>
+        <div class="controls">
+          <div class="seg" id="ld-phase" role="group" aria-label="Training">
+            <button type="button" data-v="decay" aria-pressed="true">Trained on 16k</button>
+            <button type="button" data-v="long" aria-pressed="false">After the 64k stage</button>
+          </div>
+          <div class="seg" id="ld-len" role="group" aria-label="Document length">
+            <button type="button" data-v="256k" aria-pressed="true">256k</button>
+            <button type="button" data-v="1M" aria-pressed="false">1M</button>
+          </div>
+        </div>
+        <div class="chart" id="ld-chart" aria-label="Bar chart of gain over the window control"></div>
+        <p class="caption" id="ld-note"></p>
+      </div>
+      <div class="panel pk">
+        <h3>Planted password, 20 depths each</h3>
+        <p class="caption">A five-digit password is planted at 20 depths (start to end) in a long real document, and asked for at
+          the end. One circle per depth.</p>
+        <div class="keyrow">
+          <span><i class="dot" data-v="2"></i>all five digits</span>
+          <span><i class="dot" data-v="1"></i>first digit only</span>
+          <span><i class="dot" data-v="0"></i>missed</span>
+          <span><i class="dot" data-v="p"></i>not tested yet</span>
+        </div>
+        <div id="pk"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="scorecard">
+    <h2>Scorecard</h2>
+    <p class="intro">Every 30M model, one seed each. Click a column to sort. Shares are of the window-to-dense gap (higher
+      is better); the 128k loss counts how surprised the model is by the next word (lower is better); needle puzzles are the
+      RULER retrieval tasks in 4k documents; general knowledge is the mean of seven short benchmarks.</p>
+    <div class="tablewrap"><table id="table"><thead></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="section" id="now">
+    <h2>Running now</h2>
+    <div class="panel now" id="now-list">
+      <div class="now-item">
+        <span class="when">11:13 UTC</span>
+        <div class="what"><span class="top">Window control, after the 64k stage <span class="pill" data-s="done">done</span></span>
+          <p>Its 256k and 1M tests are in. The extra 64k training alone lowered its 256k loss by 0.022, so the 64k-stage
+            models are compared with this version, not the 16k one.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">since 11:05</span>
+        <div class="what"><span class="top">LSA port, trained on 16k <span class="pill" data-s="running">running</span></span>
+          <p>Password test at 1M on Odra. At 128k it got 1 of 20.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">since 11:07</span>
+        <div class="what"><span class="top">LSA port, after the 64k stage <span class="pill" data-s="running">running</span></span>
+          <p>Standard tests on Odra (to 128k, needle puzzles, general knowledge), then 256k and 1M.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">due ~15:40</span>
+        <div class="what"><span class="top">64-notes model, 64k stage <span class="pill" data-s="running">training</span></span>
+          <p>The slowest of the three (about 3,200 tokens/s on one card). Its tests follow, flat and two-level search, done
+            about 20:00 UTC.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">paused</span>
+        <div class="what"><span class="top">64-notes model at 100M, full budget <span class="pill" data-s="blocked">needs you</span></span>
+          <p>Queued on AWS by the 10M-context session, beside its dense, window, LSA and concept-memory models. That session
+            cannot see AWS until the login is renewed.</p>
+          <div class="cmd"><code id="cmd">aws sso login --profile m21-research</code><button type="button" id="copy">Copy</button></div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">Spend: the last projection (9 Nov) put total AWS spend for both sessions near $1,050 of the $2,000 once
+      the 100M runs finish. The live figure needs the AWS login.</p>
+  </section>
+
+  <footer>
+    <span>Sources: the E33t spec's results (stages A and B, scored against the same-seed AWS controls) and the stage C result
+      files on Odra and Polonez, read 11 Nov 2026 at 11:16 UTC. Scores use positions past 2k tokens, weighted by tokens.</span>
+    <span>One seed per model. The same model trained twice moves by up to 7.6 points of the gap when seed and machine both
+      change.</span>
+  </footer>
+</main>
+
+<script>
+(() => {
+  const LENS = ["4k", "16k", "32k", "64k"];
+  const LOG2 = [12, 14, 15, 16];
+  const M = {
+    notes:  { name: "Previous notebook read", short: "previous read", sub: "notes-open, E33p · AWS", c: "--neutral", shape: "tri-down", s: [42.8, 37.4, 30.1, 23.4], l128: null, ruler: 5.0, core: 40.10 },
+    cat:    { name: "Catalogue, first version", short: "first catalogue", sub: "each pass looks somewhere new · AWS", c: "--s3", shape: "diamond", s: [70.0, 71.1, 72.3, 115.2], l128: 2.1738, ruler: 6.0, core: 40.85 },
+    cat2l:  { name: "Catalogue, two-level search", short: "two-level", sub: "pages first, then notes · AWS", c: "--s8", shape: "tri", s: [67.4, 67.9, 67.0, 99.5], l128: 2.1933, ruler: 1.2, core: 40.83 },
+    reuse:  { name: "Catalogue, passes may revisit", short: "passes revisit", sub: "32 notes per page · AWS · stage-A winner", c: "--s1", shape: "circle", s: [96.9, 91.4, 94.0, 151.6], l128: 2.1395, ruler: 14.1, core: 40.78 },
+    lsa:    { name: "LSA port", short: "LSA port", sub: "the reference read, rebuilt in our code · AWS", c: "--s2", shape: "square", s: [98.2, 95.3, 99.3, 153.3], l128: 2.1441, ruler: 15.2, core: 40.99 },
+    reuseH: { name: "32 notes, retrained at home", short: "32 notes, home", sub: "same model and seed · Odra", c: "--s1", shape: "circle", hollow: true, s: [93.0, 86.2, 89.4, 143.7], l128: 2.1586, ruler: 9.9, core: 39.84 },
+    n4:     { name: "64 notes per page", short: "64 notes", sub: "stage-B winner · Odra", c: "--s6", shape: "square", s: [91.2, 87.9, 90.8, 146.8], l128: 2.1463, ruler: 10.9, core: 38.90 },
+    p512:   { name: "512-token pages", short: "512-token pages", sub: "64 notes per page · Polonez", c: "--s4", shape: "tri", s: [89.0, 84.0, 85.8, 133.2], l128: 2.1608, ruler: 15.5, core: 39.31 },
+    n16:    { name: "16 notes per page", short: "16 notes", sub: "Polonez", c: "--s5", shape: "diamond", s: [79.0, 73.0, 70.7, 106.2], l128: 2.1855, ruler: 8.9, core: 39.91 },
+  };
+  const REFS = {
+    window: { name: "Window control", sub: "sees only the last 512 tokens · AWS", s: [0, 0, 0, 0], l128: 2.2765, ruler: 4.1, core: 40.83 },
+    dense:  { name: "Dense model", sub: "rereads every token · AWS", s: [100, 100, 100, 100], l128: 2.3209, ruler: 16.0, core: 40.69 },
+  };
+  const PRESETS = {
+    journey: { keys: ["notes", "cat", "reuse", "lsa"],
+      note: "<b>How we got here.</b> The previous notebook read faded with length. The first catalogue roughly doubled it; letting the passes revisit notes brought it within 1–5 points of the LSA port up to 32k and level with it at 64k." },
+    sizes: { keys: ["reuseH", "n4", "p512", "n16", "reuse"],
+      note: "<b>Note sizes.</b> All are the passes-may-revisit catalogue; only the notes per page (or the page length) change. The 32-note model trained on AWS scores 5 points above the same model retrained at home, so compare the home-trained ones with the hollow line." },
+    levels: { keys: ["cat", "cat2l", "reuse"],
+      note: "<b>Two-level search.</b> Pages first, then the notes inside the best 16 pages. It tracks the flat first version to 32k and falls 16 points behind at 64k. As a switch at test time on the 64-notes model it was slightly worse at 256k and better on the one 1M document." },
+    all: { keys: Object.keys(M),
+      note: "<b>All models.</b> Hover or tap a length to read every value. Models trained at home (Odra, Polonez) are scored against the AWS controls and sit about 5 points low for that reason alone." },
+  };
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs = {}, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  function shapePath(shape, x, y, r) {
+    switch (shape) {
+      case "square": return `M${x - r * .9},${y - r * .9}h${r * 1.8}v${r * 1.8}h${-r * 1.8}z`;
+      case "diamond": return `M${x},${y - r * 1.25}L${x + r * 1.25},${y}L${x},${y + r * 1.25}L${x - r * 1.25},${y}z`;
+      case "tri": return `M${x},${y - r * 1.2}L${x + r * 1.15},${y + r * .85}L${x - r * 1.15},${y + r * .85}z`;
+      case "tri-down": return `M${x},${y + r * 1.2}L${x + r * 1.15},${y - r * .85}L${x - r * 1.15},${y - r * .85}z`;
+      default: return `M${x - r},${y}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0`;
+    }
+  }
+  function swatch(m, size = 14) {
+    const s = el("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}`, "aria-hidden": "true" });
+    el("line", { x1: 0, y1: size / 2, x2: size, y2: size / 2, stroke: css(m.c), "stroke-width": 2, opacity: m.hollow ? .6 : 1 }, s);
+    el("path", { d: shapePath(m.shape, size / 2, size / 2, 3.6), fill: m.hollow ? css("--surface") : css(m.c), stroke: m.hollow ? css(m.c) : css("--surface"), "stroke-width": m.hollow ? 1.6 : 1.2 }, s);
+    return s;
+  }
+
+  /* ---------- share chart ---------- */
+  let visible = new Set(PRESETS.journey.keys);
+  let preset = "journey";
+  const legend = document.getElementById("legend");
+  function buildLegend() {
+    legend.innerHTML = "";
+    for (const [k, m] of Object.entries(M)) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.dataset.k = k;
+      b.setAttribute("aria-pressed", visible.has(k) ? "true" : "false");
+      b.appendChild(swatch(m));
+      b.appendChild(document.createTextNode(m.name));
+      b.addEventListener("click", () => {
+        if (visible.has(k)) visible.delete(k); else visible.add(k);
+        preset = null; syncPresets(); buildLegend(); drawShare();
+      });
+      legend.appendChild(b);
+    }
+  }
+  function syncPresets() {
+    document.querySelectorAll("#presets button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.p === preset ? "true" : "false"));
+    document.getElementById("preset-note").innerHTML = preset ? PRESETS[preset].note : "<b>Custom selection.</b> Pick a view above to reset.";
+  }
+  document.querySelectorAll("#presets button").forEach((b) => b.addEventListener("click", () => {
+    preset = b.dataset.p; visible = new Set(PRESETS[preset].keys); syncPresets(); buildLegend(); drawShare();
+  }));
+
+  const shareBox = document.getElementById("share-chart");
+  let tip = null;
+  function drawShare() {
+    shareBox.innerHTML = "";
+    const W = Math.max(300, shareBox.clientWidth);
+    const narrow = W < 600;
+    const keys = Object.keys(M).filter((k) => visible.has(k));
+    const labelsOn = !narrow && keys.length <= 5;
+    const H = narrow ? 300 : 390;
+    const m = { l: 40, r: labelsOn ? 196 : 18, t: 18, b: 44 };
+    const pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const yMax = 160;
+    const X = (i) => m.l + (LOG2[i] - 12) / 4 * pw;
+    const Y = (v) => m.t + (1 - v / yMax) * ph;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "Share of the window-to-dense gap by document length" }, shareBox);
+    // beyond training length band
+    const bx = X(1);
+    el("rect", { x: bx, y: m.t, width: X(3) - bx, height: ph, fill: css("--band") }, svg);
+    el("text", { x: bx + 6, y: m.t + 14, "font-size": 11.5, fill: css("--muted") }, svg).textContent = narrow ? "longer than training" : "longer than any training document";
+    // grid
+    for (let v = 0; v <= 150; v += 25) {
+      el("line", { x1: m.l, x2: m.l + pw, y1: Y(v), y2: Y(v), stroke: css("--grid"), "stroke-width": 1 }, svg);
+      el("text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end", "font-size": 11.5, fill: css("--muted"), "font-variant-numeric": "tabular-nums" }, svg).textContent = v + (v === 150 ? " %" : "");
+    }
+    // reference lines
+    el("line", { x1: m.l, x2: m.l + pw, y1: Y(0), y2: Y(0), stroke: css("--ref"), "stroke-width": 1.5 }, svg);
+    el("line", { x1: m.l, x2: m.l + pw, y1: Y(100), y2: Y(100), stroke: css("--ref"), "stroke-width": 1.5 }, svg);
+    el("text", { x: m.l + 6, y: Y(100) - 6, "font-size": 11.5, fill: css("--ink-2") }, svg).textContent = "dense: rereads every page (100 %)";
+    el("text", { x: m.l + 6, y: Y(0) - 6, "font-size": 11.5, fill: css("--ink-2") }, svg).textContent = "window control: last pages only (0 %)";
+    // x axis
+    LENS.forEach((L, i) => {
+      el("text", { x: X(i), y: m.t + ph + 18, "text-anchor": "middle", "font-size": 12, fill: css("--ink-2") }, svg).textContent = L;
+    });
+    el("text", { x: m.l + pw / 2, y: H - 6, "text-anchor": "middle", "font-size": 11.5, fill: css("--muted") }, svg).textContent = "document length, tokens (models trained up to 16k)";
+    // series
+    const ends = [];
+    for (const k of keys) {
+      const s = M[k];
+      const col = css(s.c);
+      const d = s.s.map((v, i) => `${i ? "L" : "M"}${X(i)},${Y(v)}`).join("");
+      el("path", { d, fill: "none", stroke: col, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", opacity: s.hollow ? .6 : 1, class: "series" }, svg);
+      s.s.forEach((v, i) => {
+        el("path", { d: shapePath(s.shape, X(i), Y(v), 4.4), fill: s.hollow ? css("--surface") : col, stroke: s.hollow ? col : css("--surface"), "stroke-width": 2 }, svg);
+      });
+      ends.push({ k, y: Y(s.s[3]), x: X(3) });
+    }
+    if (labelsOn) {
+      ends.sort((a, b) => a.y - b.y);
+      const gap = 16;
+      ends.forEach((e, i) => { e.ly = i ? Math.max(e.y, ends[i - 1].ly + gap) : e.y; });
+      const over = ends.length ? ends[ends.length - 1].ly - (m.t + ph) : 0;
+      if (over > 0) ends.forEach((e) => (e.ly -= over));
+      const lx = m.l + pw + 14;
+      for (const e of ends) {
+        const s = M[e.k];
+        el("path", { d: `M${e.x + 7},${e.y}L${lx - 4},${e.ly}`, stroke: css("--axis"), "stroke-width": 1, fill: "none" }, svg);
+        const t = el("text", { x: lx, y: e.ly + 4, "font-size": 12, fill: css("--ink") }, svg);
+        t.textContent = `${s.short} · ${Math.round(s.s[3])} %`;
+      }
+    }
+    // hover layer
+    const cross = el("line", { y1: m.t, y2: m.t + ph, stroke: css("--axis"), "stroke-width": 1, visibility: "hidden" }, svg);
+    const hit = el("rect", { x: m.l - 20, y: m.t, width: pw + 40, height: ph, fill: "transparent", style: "cursor:crosshair" }, svg);
+    tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; shareBox.appendChild(tip);
+    const show = (ev) => {
+      const r = svg.getBoundingClientRect();
+      const px = (ev.clientX - r.left) * (W / r.width);
+      let best = 0, bd = 1e9;
+      LENS.forEach((_, i) => { const dd = Math.abs(X(i) - px); if (dd < bd) { bd = dd; best = i; } });
+      cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best)); cross.setAttribute("visibility", "visible");
+      const rows = keys.map((k) => ({ k, v: M[k].s[best] })).sort((a, b) => b.v - a.v);
+      tip.innerHTML = `<div class="h">${LENS[best]} tokens · share of the gap</div>`;
+      for (const row of rows) {
+        const div = document.createElement("div"); div.className = "r";
+        const left = document.createElement("span"); left.appendChild(swatch(M[row.k], 12)); left.appendChild(document.createTextNode(M[row.k].name));
+        const val = document.createElement("b"); val.textContent = row.v.toFixed(1) + " %";
+        div.append(left, val); tip.appendChild(div);
+      }
+      tip.hidden = false;
+      const bw = shareBox.clientWidth, tw = tip.offsetWidth;
+      const sx = X(best) * (r.width / W);
+      tip.style.left = Math.min(Math.max(0, sx + 14 + tw > bw ? sx - tw - 14 : sx + 14), bw - tw) + "px";
+      tip.style.top = (m.t * (r.height / H) + 6) + "px";
+    };
+    hit.addEventListener("pointermove", show);
+    hit.addEventListener("pointerdown", show);
+    hit.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  }
+
+  /* ---------- long-document bars ---------- */
+  const LD = {
+    decay: { ref: { "256k": 1.7891, "1M": 0.9031 }, rows: [
+      { name: "LSA port", c: "--s2", v: { "256k": 1.6875, "1M": 0.8488 } },
+      { name: "64 notes per page", c: "--s6", v: { "256k": 1.6506, "1M": 0.8873 } },
+      { name: "64 notes, two-level search", c: "--s6", hatch: true, v: { "256k": 1.6821, "1M": 0.8542 } },
+      { name: "64 notes, notebook removed", c: "--neutral", v: { "256k": 1.8076, "1M": 0.9199 } },
+      { name: "LSA port, opened tokens removed", c: "--neutral", v: { "256k": 1.8324, "1M": 0.9398 } },
+    ] },
+    long: { ref: { "256k": 1.7675, "1M": 0.8793 }, rows: [
+      { name: "LSA port", c: "--s2", v: null, eta: "this afternoon" },
+      { name: "64 notes per page", c: "--s6", v: null, eta: "about 20:00 UTC" },
+      { name: "64 notes, two-level search", c: "--s6", hatch: true, v: null, eta: "about 20:00 UTC" },
+      { name: "64 notes, notebook removed", c: "--neutral", v: null, eta: "about 20:00 UTC" },
+      { name: "LSA port, opened tokens removed", c: "--neutral", v: null, eta: "this afternoon" },
+    ] },
+  };
+  let ldPhase = "decay", ldLen = "256k";
+  const ldBox = document.getElementById("ld-chart");
+  function drawLD() {
+    ldBox.innerHTML = "";
+    const set = LD[ldPhase], ref = set.ref[ldLen];
+    const W = Math.max(280, ldBox.clientWidth);
+    const narrow = true; // row names sit above their bars at every width, so long names never clip
+    const rowH = 50;
+    const m = { l: 8, r: 56, t: 22, b: 26 };
+    const H = m.t + m.b + rowH * set.rows.length;
+    const lo = -0.06, hi = 0.16;
+    const pw = W - m.l - m.r;
+    const X = (v) => m.l + (v - lo) / (hi - lo) * pw;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "Gain over the window control in nats" }, ldBox);
+    const defs = el("defs", {}, svg);
+    const pat = el("pattern", { id: "hatch", width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, defs);
+    el("rect", { width: 6, height: 6, fill: css("--s6"), opacity: .35 }, pat);
+    el("line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: css("--s6"), "stroke-width": 3 }, pat);
+    for (const v of [-0.05, 0, 0.05, 0.1, 0.15]) {
+      el("line", { x1: X(v), x2: X(v), y1: m.t - 4, y2: H - m.b, stroke: v === 0 ? css("--ref") : css("--grid"), "stroke-width": v === 0 ? 1.5 : 1 }, svg);
+      el("text", { x: X(v), y: H - 8, "text-anchor": "middle", "font-size": 11, fill: css("--muted"), "font-variant-numeric": "tabular-nums" }, svg).textContent = (v > 0 ? "+" : "") + v.toFixed(2);
+    }
+    el("text", { x: X(0) + 4, y: 12, "font-size": 11, fill: css("--ink-2") }, svg).textContent = "window control";
+    el("text", { x: X(hi), y: 12, "text-anchor": "end", "font-size": 11, fill: css("--muted") }, svg).textContent = "better →";
+    const tipLD = document.createElement("div"); tipLD.className = "tip"; tipLD.hidden = true; ldBox.appendChild(tipLD);
+    set.rows.forEach((row, i) => {
+      const y0 = m.t + i * rowH;
+      const barY = narrow ? y0 + 20 : y0 + (rowH - 18) / 2;
+      const lab = el("text", { x: narrow ? m.l : m.l - 10, y: narrow ? y0 + 13 : barY + 13, "text-anchor": narrow ? "start" : "end", "font-size": 12.5, fill: css("--ink") }, svg);
+      lab.textContent = row.name;
+      if (!row.v) {
+        el("text", { x: X(0) + 8, y: barY + 13, "font-size": 12, fill: css("--muted") }, svg).textContent = "pending · " + row.eta;
+        return;
+      }
+      const loss = row.v[ldLen];
+      const g = ref - loss;
+      const x0 = X(Math.min(0, g)), x1 = X(Math.max(0, g));
+      const r = 4, w = Math.max(2 * r, x1 - x0);
+      // rounded data end, square at the baseline
+      const d = g >= 0
+        ? `M${x0},${barY}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${18 - 2 * r}a${r},${r} 0 0 1 ${-r},${r}h${-(w - r)}z`
+        : `M${x1},${barY}h${-(w - r)}a${r},${r} 0 0 0 ${-r},${r}v${18 - 2 * r}a${r},${r} 0 0 0 ${r},${r}h${w - r}z`;
+      const bar = el("path", { d, fill: row.hatch ? "url(#hatch)" : css(row.c) }, svg);
+      const vt = el("text", { x: g >= 0 ? x1 + 6 : x0 - 6, y: barY + 13, "text-anchor": g >= 0 ? "start" : "end", "font-size": 12, fill: css("--ink-2"), "font-variant-numeric": "tabular-nums" }, svg);
+      vt.textContent = (g >= 0 ? "+" : "−") + Math.abs(g).toFixed(3);
+      const hitR = el("rect", { x: 0, y: y0, width: W, height: rowH, fill: "transparent" }, svg);
+      const show = (ev) => {
+        const r2 = ldBox.getBoundingClientRect();
+        tipLD.innerHTML = `<div class="h">${row.name}</div><div class="r"><span>loss at ${ldLen}</span><b>${loss.toFixed(4)}</b></div><div class="r"><span>window control</span><b>${ref.toFixed(4)}</b></div><div class="r"><span>gain</span><b>${(g >= 0 ? "+" : "−") + Math.abs(g).toFixed(4)}</b></div>`;
+        tipLD.hidden = false;
+        const tw = tipLD.offsetWidth;
+        tipLD.style.left = Math.min(Math.max(0, ev.clientX - r2.left + 12), r2.width - tw) + "px";
+        tipLD.style.top = (y0 + rowH) * (r2.height / H) + "px";
+        bar.setAttribute("opacity", .85);
+      };
+      hitR.addEventListener("pointermove", show);
+      hitR.addEventListener("pointerdown", show);
+      hitR.addEventListener("pointerleave", () => { tipLD.hidden = true; bar.setAttribute("opacity", 1); });
+    });
+    const note = document.getElementById("ld-note");
+    const docs = ldLen === "256k" ? "four documents, 1.8M scored tokens" : "one document of 1.3M tokens, an illustration only";
+    note.innerHTML = ldPhase === "decay"
+      ? `How much less surprised each model is by the next word than the window control, in nats (the unit of the loss; higher is better). ${ldLen}: ${docs}. Window control's loss ${ref.toFixed(3)}. <b>Removing the notebook makes the 64-notes model slightly worse than the window control</b>, so its gain comes from the notebook.`
+      : `Compared with the window control after the same 64k stage (loss ${ref.toFixed(3)} at ${ldLen}; the extra training lowered it by ${(LD.decay.ref[ldLen] - ref).toFixed(3)}). ${ldLen}: ${docs}. The notebook models' results land through the day.`;
+  }
+  const segBind = (id, set) => document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    set(b.dataset.v); drawLD();
+  }));
+  segBind("ld-phase", (v) => (ldPhase = v));
+  segBind("ld-len", (v) => (ldLen = v));
+
+  /* ---------- passwords ---------- */
+  const Z = "0".repeat(20), P = "p".repeat(20);
+  const PK = [
+    { who: "Window control", when: "trained on 16k", k128: Z, k1m: Z },
+    { who: "Window control", when: "after the 64k stage", k128: Z, k1m: Z },
+    { who: "LSA port", when: "trained on 16k", k128: "00200000000000100000", k1m: P, note: "1M running" },
+    { who: "64 notes per page", when: "trained on 16k", k128: "00000000000000100000", k1m: Z },
+    { who: "64 notes, two-level search", when: "trained on 16k", k128: Z, k1m: Z },
+    { who: "LSA port", when: "after the 64k stage", k128: P, k1m: P },
+    { who: "64 notes per page", when: "after the 64k stage", k128: P, k1m: P },
+  ];
+  const pk = document.getElementById("pk");
+  pk.className = "pk";
+  for (const row of PK) {
+    const r = document.createElement("div"); r.className = "pk-row";
+    const exact = (s) => [...s].filter((c) => c === "2").length;
+    const done = (s) => !s.includes("p");
+    const sum = done(row.k128) ? ` · ${exact(row.k128)} / 20 at 128k` : "";
+    r.innerHTML = `<div class="who">${row.who} <span>· ${row.when}${sum}</span></div>`;
+    const cells = document.createElement("div"); cells.className = "pk-cells";
+    for (const [len, s] of [["128k", row.k128], ["1M", row.k1m]]) {
+      const c = document.createElement("div");
+      c.innerHTML = `<div class="pk-len">${len}${done(s) ? "" : " · pending"}</div>`;
+      const dots = document.createElement("div"); dots.className = "dots";
+      [...s].forEach((v, i) => {
+        const d = document.createElement("i"); d.className = "dot"; d.dataset.v = v;
+        d.title = `${len}, password at ${(2.5 + 5 * i).toFixed(1)} % of the document: ${v === "2" ? "all five digits right" : v === "1" ? "first digit right" : v === "p" ? "not tested yet" : "missed"}`;
+        dots.appendChild(d);
+      });
+      c.appendChild(dots); cells.appendChild(c);
+    }
+    r.appendChild(cells); pk.appendChild(r);
+  }
+
+  /* ---------- scorecard ---------- */
+  const COLS = [
+    { k: "name", label: "Model", dir: null },
+    { k: "s0", label: "4k", dir: "hi", get: (m) => m.s[0] },
+    { k: "s1", label: "16k", dir: "hi", get: (m) => m.s[1] },
+    { k: "s2", label: "32k", dir: "hi", get: (m) => m.s[2] },
+    { k: "s3", label: "64k", dir: "hi", get: (m) => m.s[3] },
+    { k: "l128", label: "128k loss", dir: "lo", get: (m) => m.l128 },
+    { k: "ruler", label: "Needle puzzles, 4k", dir: "hi", get: (m) => m.ruler },
+    { k: "core", label: "General knowledge", dir: "hi", get: (m) => m.core },
+  ];
+  const rowsAll = [
+    ...Object.entries(M).map(([k, m]) => ({ k, m, ref: false })),
+    ...Object.entries(REFS).map(([k, m]) => ({ k, m, ref: true })),
+  ];
+  let sortK = "s1", sortDesc = true;
+  const table = document.getElementById("table");
+  function drawTable() {
+    const thead = table.tHead, tbody = table.tBodies[0];
+    thead.innerHTML = ""; tbody.innerHTML = "";
+    const htr = document.createElement("tr");
+    const groupTr = document.createElement("tr");
+    groupTr.innerHTML = `<th></th><th colspan="4" style="text-align:center">Share of the gap (%), by length</th><th colspan="3"></th>`;
+    thead.appendChild(groupTr);
+    for (const c of COLS) {
+      const th = document.createElement("th");
+      const b = document.createElement("button");
+      const arrow = sortK === c.k ? (sortDesc ? "▼" : "▲") : "";
+      b.innerHTML = `${c.label}${c.dir ? ` <span class="dir">${c.dir === "lo" ? "lower better" : ""}</span>` : ""} <span class="dir">${arrow}</span>`;
+      b.addEventListener("click", () => {
+        if (sortK === c.k) sortDesc = !sortDesc; else { sortK = c.k; sortDesc = c.dir !== "lo"; }
+        drawTable();
+      });
+      th.setAttribute("aria-sort", sortK === c.k ? (sortDesc ? "descending" : "ascending") : "none");
+      th.appendChild(b); htr.appendChild(th);
+    }
+    thead.appendChild(htr);
+    const col = COLS.find((c) => c.k === sortK);
+    const rows = [...rowsAll].sort((a, b) => {
+      if (sortK === "name") return (sortDesc ? -1 : 1) * a.m.name.localeCompare(b.m.name);
+      const va = col.get(a.m), vb = col.get(b.m);
+      if (va == null) return 1; if (vb == null) return -1;
+      return sortDesc ? vb - va : va - vb;
+    });
+    const best = {};
+    for (const c of COLS.slice(1)) {
+      const vals = Object.values(M).map(c.get).filter((v) => v != null);
+      best[c.k] = c.dir === "lo" ? Math.min(...vals) : Math.max(...vals);
+    }
+    for (const { m, ref } of rows) {
+      const tr = document.createElement("tr"); if (ref) tr.className = "ref";
+      const td0 = document.createElement("td");
+      const nm = document.createElement("span"); nm.className = "nm";
+      if (!ref) nm.appendChild(swatch(m)); else { const sp = document.createElement("span"); sp.style.width = "14px"; nm.appendChild(sp); }
+      nm.appendChild(document.createTextNode(m.name));
+      const sub = document.createElement("span"); sub.className = "sub"; sub.textContent = m.sub;
+      td0.append(nm, sub); tr.appendChild(td0);
+      for (const c of COLS.slice(1)) {
+        const td = document.createElement("td"); const v = c.get(m);
+        if (v == null) { td.textContent = "—"; td.className = "na"; }
+        else {
+          td.textContent = c.k === "l128" ? v.toFixed(4) : v.toFixed(1);
+          if (!ref && v === best[c.k]) td.className = "best";
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+
+  /* ---------- copy ---------- */
+  document.getElementById("copy").addEventListener("click", (e) => {
+    const t = document.getElementById("cmd").textContent;
+    const btn = e.currentTarget;
+    const done = () => { btn.textContent = "Copied"; setTimeout(() => (btn.textContent = "Copy"), 1600); };
+    const fallback = () => { const r = document.createRange(); r.selectNodeContents(document.getElementById("cmd")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "Selected"; };
+    try { navigator.clipboard.writeText(t).then(done, fallback); } catch (_) { fallback(); }
+  });
+
+  /* ---------- boot ---------- */
+  const redraw = () => { drawShare(); drawLD(); drawTable(); buildLegend(); };
+  syncPresets(); buildLegend(); drawShare(); drawLD(); drawTable();
+  let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => { drawShare(); drawLD(); }, 80); }).observe(document.querySelector(".wrap"));
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  mq.addEventListener?.("change", redraw);
+  new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+})();
+</script>
