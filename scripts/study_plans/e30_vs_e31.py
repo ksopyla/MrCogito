@@ -305,7 +305,12 @@ def _set_accum(args, mult):
     return a
 
 
-def core_jobs(model, arch, flags=(), *, seeds=(0, 1, 2), accum=None, cost=None):
+def _last(args, flag, default):
+    return type(default)(args[len(args) - 1 - args[::-1].index(flag) + 1]) if flag in args else default
+
+
+def core_jobs(model, arch, flags=(), *, seeds=(0, 1, 2), accum=None, sec_per_step=None, flex_from=0,
+              ladder_h=0.5):
     """The v4 **core package** (C0–C5) for one registered variant, from random init, built from the task definitions
     (`evaluation/capability_tasks.py`), so no job list is ever copied:
       * every `active` task of the core levels: one `task_job` (`v4_<task>_<model>_s<seed>`; tasks without a written
@@ -315,19 +320,29 @@ def core_jobs(model, arch, flags=(), *, seeds=(0, 1, 2), accum=None, cost=None):
         count; the last stage is read to 128k;
       * C1.lookup-16k: its written curriculum 2k → 8k → 16k (`len_lookup_<model>_s<seed>[_b8k|_b16k]`, the jobs the
         champion's evidence came from), each stage read to 128k, plus the stop rule.
-    `accum` = {train length: micro-batch multiplier} (memory only); `cost` = {train length: GPU-hours per job}."""
+    Implementation settings only (the exam, budget and curriculum stay the task's): `accum` = {train length: micro-batch
+    multiplier} (memory, same effective batch); `flex_from` = train length from which the probe uses the flex attention
+    backend (same attention, no dense mask; 0 = never); `sec_per_step` = {train length: measured seconds per step},
+    for the GPU-hour estimate that balances the queues (`ladder_h` added per laddered job)."""
     import re
 
     from evaluation.capability_tasks import PACKAGES, STOP_RULE, TASKS, TRAIN_1K_X4
 
-    accum, cost = accum or {}, cost or {}
+    accum, sps = accum or {}, sec_per_step or {}
     levels = PACKAGES["core"]["levels"]
 
     def mult(length):
         return next((m for L, m in sorted(accum.items()) if length <= L), 1)
 
-    def price(length):
-        return next((c for L, c in sorted(cost.items()) if length <= L), 1.0)
+    def finish(j):
+        a = j["args"]
+        L = _last(a, "--seq_len", 1024)
+        j["args"] = _set_accum([*a, *flags, *(["--attn_backend", "flex"] if flex_from and L >= flex_from else [])],
+                               mult(L))
+        s = next((v for k, v in sorted(sps.items()) if L <= k), 1.0)
+        j["cost"] = round(_last(a, "--steps", 1200) * _last(a, "--k1_mult", 4) * s / 3600
+                          + (ladder_h if j.get("ladder") else 0), 2)
+        return j
 
     out = []
     for t in TASKS:
@@ -336,34 +351,38 @@ def core_jobs(model, arch, flags=(), *, seeds=(0, 1, 2), accum=None, cost=None):
         hops = re.search(r"^C5\.(?:pchain|path)(\d)-", t.id)
         for seed in seeds:
             if not hops:
-                j = task_job(t.id, arch, seed, ladder=True, cost=price(t.train_len))
-                j.update(name=j["name"].replace(f"_{arch}_s", f"_{model}_s"), save=True,
-                         args=_set_accum([*j["args"], *flags], mult(t.train_len)))
-                out.append(j)
+                j = task_job(t.id, arch, seed, ladder=True)
+                j.update(name=j["name"].replace(f"_{arch}_s", f"_{model}_s"), save=True)
+                out.append(finish(j))
                 continue
             prev = None
             for k in range(1, int(hops[1]) + 1):
-                j = task_job(t.id, arch, seed, ladder=(k == int(hops[1])), cost=price(t.train_len) * (1 if k == 1 else 2))
+                j = task_job(t.id, arch, seed, ladder=(k == int(hops[1])))
                 stage = ["--hops", str(k)] + (list(TRAIN_1K_X4) if k == 1 else
                                               ["--replay_recipe", "chain_parallel", "--replay_hops", str(k - 1),
                                                "--replay_frac", "0.5"])
                 j.update(name=f"v4_{t.id.replace('.', '_')}_h{k}_{model}_s{seed}", init=prev, save=True,
-                         args=_set_accum([*j["args"], *stage, *flags], mult(t.train_len)))
+                         args=[*j["args"], *stage])
                 prev = j["name"]
-                out.append(j)
+                out.append(finish(j))
     for j in length_jobs(arches=(arch,), seeds=seeds, chain_arches=()):
-        L = int(j["args"][j["args"].index("--seq_len") + 1])
-        j.update(name=j["name"].replace(f"_{arch}_s", f"_{model}_s"), cost=price(L),
+        j.update(name=j["name"].replace(f"_{arch}_s", f"_{model}_s"),
                  init=j["init"].replace(f"_{arch}_s", f"_{model}_s") if j.get("init") else None,
-                 args=_set_accum([*j["args"], *STOP_RULE, "--task_score", "first", *flags], mult(L)))
-        out.append(j)
+                 args=[*j["args"], *STOP_RULE, "--task_score", "first"])
+        out.append(finish(j))
     return out
 
 
 # One entry per variant that runs the core package: `--phase core_<model>` (kwargs of core_jobs).
 CORE_VARIANTS = {
-    # E33t catalogue read, the stage-B winner (`catalogue_reuse_n4`); spec E33t_catalogue_read.md "Capability checks"
-    "e33t_catalogue_n4": dict(model="e33t_catalogue_n4", arch="e33t_catalogue_n4"),
+    # E33t catalogue read, the stage-B winner (`catalogue_reuse_n4`); spec E33t_catalogue_read.md "Capability checks".
+    # Measured on one RTX 3090 (Odra, 2026-11-11 19:58–20:30 UTC, sdpa unless noted): 1k micro 32 out of memory, micro
+    # 16 1.40 s/step 12.0 GB; 2k micro 8 2.59 s/step 12.3 GB; 8k micro 2 10.5 s/step 20.1 GB (flex 17.6 s); 16k on
+    # sdpa out of memory at micro 1 (a 16 GB score tensor), so the 16k stage uses flex at micro 1.
+    "e33t_catalogue_n4": dict(model="e33t_catalogue_n4", arch="e33t_catalogue_n4",
+                              accum={512: 1, 2048: 2, 16384: 2}, flex_from=16384,
+                              sec_per_step={128: 0.2, 256: 0.3, 512: 0.6, 1024: 1.4, 2048: 2.6, 8192: 10.5,
+                                            16384: 24.0}),
 }
 
 

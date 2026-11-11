@@ -144,3 +144,75 @@ def test_spec_round_trips_through_a_saved_checkpoint():
     with torch.no_grad():
         assert torch.equal(a(ids).logits, b(ids).logits)
     assert ARCH_VARIANTS[V][0] == "e31_page"
+
+
+# ------------------------------------------------------------------ the core package as a study phase
+def _core():
+    from scripts.study_plans.e30_vs_e31 import jobs
+
+    return jobs(f"core_{V}")
+
+
+def test_core_phase_covers_every_active_core_task_on_seeds_0_to_2():
+    """Every active C0–C5 task, seeds 0–2, each named so the board maps it onto its task and this variant (C5: the
+    final curriculum stage; C1.lookup-16k: the 16k stage of the len_lookup chain)."""
+    from analysis.capability_board import evidence
+    from evaluation.capability_tasks import PACKAGES, TASKS
+
+    js = _core()
+    led = {"kind": "study", "name": "t", "host": "h", "collected": "2026-11-11",
+           "jobs": [{"name": j["name"], "status": "done", "results": {V: {"p0": 0.9, "cand": 0.9}}, "ladders": {}}
+                    for j in js]}
+    ev, _ = evidence([led])
+    got = {(e["task"], e["seed"]) for e in ev if e["model"] == V and e["label"] == "same"}
+    want = {(t.id, s) for t in TASKS if t.level in PACKAGES["core"]["levels"] and t.status == "active"
+            for s in (0, 1, 2)}
+    assert want <= got, sorted(want - got)
+    assert all("--stop_on" in j["args"] for j in js)  # the v4 stop rule everywhere
+    names = {j["name"] for j in js}
+    assert all(j["init"] in names for j in js if j.get("init"))  # every curriculum parent is in the phase
+
+
+def test_core_phase_keeps_the_written_recipes():
+    from evaluation.capability_tasks import TRAIN_1K_X4, TRAIN_1K_X16
+    from scripts.study_plans.e30_vs_e31 import _last
+
+    by = {j["name"]: j for j in _core()}
+    lk2 = by[f"v4_C1_lookup-2k_{V}_s0"]["args"]  # the suite v3 budget of L3.lookup-2k at 30m, written out
+    assert (_last(lk2, "--lr", 0.0), _last(lk2, "--steps", 0), _last(lk2, "--k1_mult", 0)) == (1e-4, 1200, 6)
+    assert _last(lk2, "--grad_accum", 0) == 4 and _last(lk2, "--batch", 0) == 32  # micro 8: memory only
+    h1, h2 = by[f"v4_C5_pchain2-1k_h1_{V}_s1"], by[f"v4_C5_pchain2-1k_h2_{V}_s1"]
+    assert h2["init"] == h1["name"] and h1["ladder"] is None and h2["ladder"][-1] == 131072
+    assert _last(h1["args"], "--steps", 0) == int(TRAIN_1K_X4[TRAIN_1K_X4.index("--steps") + 1])
+    assert _last(h2["args"], "--steps", 0) == int(TRAIN_1K_X16[TRAIN_1K_X16.index("--steps") + 1])
+    assert _last(h2["args"], "--replay_hops", 0) == 1 and _last(h2["args"], "--hops", 0) == 2
+    b16 = by[f"len_lookup_{V}_s2_b16k"]["args"]
+    assert _last(b16, "--attn_backend", "") == "flex" and _last(b16, "--grad_accum", 0) == 8
+    assert "--attn_backend" not in by[f"len_lookup_{V}_s2_b8k"]["args"]
+
+
+def test_heat_schedule_rests_every_process_in_the_same_window():
+    from verification.heat_pause import rest_left, schedule
+
+    s = (1000.0, 600.0, 120.0)  # work 10 min, rest 2 min
+    assert rest_left(999, s) == 0 and rest_left(1000 + 300, s) == 0
+    assert rest_left(1000 + 600, s) == 120 and rest_left(1000 + 660, s) == 60
+    assert rest_left(1000 + 720, s) == 0 and rest_left(1000 + 720 + 610, s) == 110
+    assert schedule({}) is None and schedule({"MC_HEAT_EPOCH": "1", "MC_HEAT_BURST_MIN": "0",
+                                              "MC_HEAT_COOL_MIN": "5"}) is None
+
+
+def test_queue_scripts_gate_on_busy_cards_and_heat(tmp_path, monkeypatch):
+    import sys
+
+    from scripts import run_study_queue
+
+    monkeypatch.setattr(sys, "argv", ["x", "--plan", "e30_vs_e31", "--phase", f"core_{V}", "--out", str(tmp_path),
+                                      "--host", "polonez", "--gpus", "1", "2", "--only", "C0_copy-128",
+                                      "--mode", "scripts", "--heat", "330,20", "--max_busy", "3"])
+    assert run_study_queue.main() == 0
+    s = (tmp_path / "launch" / f"polonez_core_{V}_gpu2.sh").read_text()
+    assert "MC_HEAT_BURST_MIN=330 MC_HEAT_COOL_MIN=20" in s and "polonez_core_" in s
+    assert "busy_others" in s and "-ge 3" in s and "sleep 90" in s
+    first_job = s.index("JOB v4_C0_copy-128")
+    assert s.rindex("heat_pause.py", 0, first_job) > s.rindex("busy_others) -ge 3", 0, first_job) > 0

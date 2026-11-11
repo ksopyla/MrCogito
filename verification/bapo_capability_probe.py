@@ -776,8 +776,11 @@ def train_one(arch: str, cfg, args, eval_batches, spec: ArchSpec, device, *, ste
         sdp_cm = sdpa_kernel(SDPBackend.MATH)
     step = 0
     max_steps = steps
+    from verification.heat_pause import heat_pause
+
     with sdp_cm:
         while step < max_steps:
+            t_mark += heat_pause(arch)  # Polonez heat rule (MC_HEAT_*, off when unset); the rest is not training time
             step += 1
             n_aux = (int(getattr(args, "message_read_rounds", 1)) - 1) if getattr(args, "round_aux", 0) > 0 else 0
             mc = getattr(model, "config", None)  # E33a: from the model (named variants pin the loop in the spec)

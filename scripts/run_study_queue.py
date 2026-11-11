@@ -67,7 +67,9 @@ def assign(jobs: list[dict], gpus: list[str]) -> dict[str, list[dict]]:
     return out
 
 
-def job_lines(j: dict, *, out: Path, base: list[str], parents: set[str], local: set[str]) -> list[str]:
+def job_lines(j: dict, *, out: Path, base: list[str], parents: set[str], local: set[str],
+              gate: list[str] = ()) -> list[str]:
+    """`gate`: shell lines run right before the job starts (after any wait for its parent): card limits, heat pause."""
     d = out / j["name"]
     q = shlex.quote
     save = j.get("save", bool(j.get("ladder") or j.get("ladders")) or j["name"] in parents)
@@ -86,6 +88,7 @@ def job_lines(j: dict, *, out: Path, base: list[str], parents: set[str], local: 
         lines += [f'elif [ ! -f {q(str(out / j["init"] / "DONE"))} ]; then echo "SKIP {j["name"]} (parent {j["init"]} not done)"']
     lines += [
         "else",
+        *[f"  {g}" for g in gate],
         f'  echo "JOB {j["name"]} $(date +%Y-%m-%dT%H:%M:%S)"; mkdir -p {q(str(d))}; rm -f {q(str(d / "FAILED"))}',
         f"  {shlex.join(cmd)} > {q(str(d / 'probe.log'))} 2>&1",
         f'  rc=$?; echo "EXIT-TRAIN {j["name"]} $rc"',
@@ -129,7 +132,18 @@ def main() -> int:
     p.add_argument("--wait_for", nargs="*", default=[],
                    help="queue logs that must contain QUEUE-END before this queue starts (no GPU sharing); "
                    "'{g}' is replaced by the GPU id")
+    p.add_argument("--heat", default=None, metavar="BURST_MIN,COOL_MIN",
+                   help="Polonez heat rule: every GPU script of this launch works BURST_MIN minutes, then rests "
+                   "COOL_MIN, all on one clock (verification/heat_pause.py; the probe and the ladder pause mid-job)")
+    p.add_argument("--max_busy", type=int, default=0,
+                   help="before each job, wait while this many OTHER cards of the machine are busy (any user; "
+                   "Polonez: 3 busy cards at most). 0 = off")
     args = p.parse_args()
+    heat = None
+    if args.heat:
+        heat = tuple(int(x) for x in args.heat.split(","))
+        if len(heat) != 2 or min(heat) <= 0:
+            raise SystemExit("--heat needs BURST_MIN,COOL_MIN (e.g. 330,20)")
 
     plan = load_plan(args.plan)
     jobs = plan.jobs(args.phase)
@@ -182,9 +196,24 @@ def main() -> int:
             # never share a GPU: wait until it is idle
             f"while nvidia-smi -i {g} --query-compute-apps=pid --format=csv,noheader | grep -q .; do sleep 60; done",
         ]
+        if heat:  # one clock for every GPU script of this launch: the first script to start writes it
+            ep = shlex.quote(str(launch / f"{args.host}_{args.phase}_heat_epoch"))
+            lines += [f"[ -s {ep} ] || date +%s > {ep}",
+                      f"export MC_HEAT_EPOCH=$(cat {ep}) MC_HEAT_BURST_MIN={heat[0]} MC_HEAT_COOL_MIN={heat[1]}",
+                      'echo "HEAT schedule: epoch $MC_HEAT_EPOCH, work $MC_HEAT_BURST_MIN min, rest $MC_HEAT_COOL_MIN min"']
+        if args.max_busy:  # other cards busy right now (any process), not counting this one
+            lines += [f"busy_others() {{ local n=0 i; for i in $(nvidia-smi --query-gpu=index --format=csv,noheader); do "
+                      f"[ \"$i\" = \"{g}\" ] && continue; nvidia-smi -i \"$i\" --query-compute-apps=pid "
+                      f"--format=csv,noheader | grep -q . && n=$((n + 1)); done; echo $n; }}",
+                      f"sleep {90 * list(by_gpu).index(g)}  # stagger the first jobs so each sees the others start"]
+        gate = [f"while nvidia-smi -i {g} --query-compute-apps=pid --format=csv,noheader | grep -q .; do sleep 60; done"]
+        if args.max_busy:
+            gate += [f"while [ $(busy_others) -ge {args.max_busy} ]; do sleep 60; done"]
+        if heat:
+            gate += ["uv run python verification/heat_pause.py"]
         for j in js:
-            lines += [f"while nvidia-smi -i {g} --query-compute-apps=pid --format=csv,noheader | grep -q .; do sleep 60; done"]
-            lines += job_lines(j, out=out, base=base, parents=parents, local=local)
+            lines += [gate[0]]
+            lines += job_lines(j, out=out, base=base, parents=parents, local=local, gate=gate)
         lines += ['echo "QUEUE-END $(date +%Y-%m-%dT%H:%M:%S)"']
         path.write_text("\n".join(lines) + "\n")
         path.chmod(0o755)

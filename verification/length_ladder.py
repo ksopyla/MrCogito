@@ -119,7 +119,10 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
     ce_sum, ce_n = 0.0, 0
     t_rows = 0.0
     done = 0
+    from verification.heat_pause import heat_pause
+
     while done < rows:
+        heat_pause("ladder")  # Polonez heat rule (MC_HEAT_*, off when unset); timings start after it
         b = min(batch, rows - done)
         rr = [generate_row_for(cfg, rng) for _ in range(b)]
         ids = torch.from_numpy(np.stack([r.input_ids for r in rr])).long().to(device)
