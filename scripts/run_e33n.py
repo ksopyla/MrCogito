@@ -27,6 +27,11 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
                  warmup then constant learning rate (the WSD "stable" part; LSA branches its decays from it);
          decay — from the trunk's final weights, fresh optimizer, LongDocs-lite rows of 16,384 (one document per
                  row), warmup 3 % then 1−sqrt decay over 97 % to 10 % of the peak (LSA's 32k decay shape).
+         long  — E33t stage C (plan §10.6): from the decay's final weights, fresh optimizer, LongDocs-lite rows of
+                 65,536 (one document per row), 0.1B tokens at s30, the same tokens per step as the decay, picking up
+                 at the rate the decay ended on (10 % of the peak) with a 3 % warmup, then 1−sqrt to 1 % of the peak.
+                 Its own row order (manifest seed 2042) and, by default, trainer seed 1 for every arm, so all arms
+                 see the same rows. --grad_ckpt recomputes each layer in the backward (24 GB cards at 64k).
 
 Usage (on a node, from the repo root):
   uv run python scripts/run_e33n.py cmd --arm e33n --size s30 --phase trunk --data /opt/dlami/nvme/data --out OUT
@@ -47,11 +52,15 @@ VOCAB = 50257
 EOT = 50256
 
 SIZES = {
-    #        hidden  e    pre  stack  target   trunk tok  decay tok  trunk rows/step (×4k)  lr peak
-    "s30":  dict(hidden=576,  e=256, pre=2, stack=5, target=30e6,  trunk=1.5e9, decay=0.2e9, rows=64,  lr=1.0e-3),
-    "m100": dict(hidden=896,  e=384, pre=3, stack=7, target=100e6, trunk=3.0e9, decay=0.4e9, rows=128, lr=6.4e-4),
-    "l300": dict(hidden=1280, e=512, pre=4, stack=9, target=300e6, trunk=5.0e9, decay=0.6e9, rows=256, lr=4.5e-4),
-    "tiny": dict(hidden=128,  e=64,  pre=1, stack=2, target=8e6,   trunk=2e6,   decay=1e6,   rows=4,   lr=1.0e-3),
+    #        hidden  e    pre  stack  target   trunk tok  decay tok  long tok  trunk rows/step (×4k)  lr peak
+    "s30":  dict(hidden=576,  e=256, pre=2, stack=5, target=30e6,  trunk=1.5e9, decay=0.2e9, long=0.1e9, rows=64,
+                 lr=1.0e-3),
+    "m100": dict(hidden=896,  e=384, pre=3, stack=7, target=100e6, trunk=3.0e9, decay=0.4e9, long=0.2e9, rows=128,
+                 lr=6.4e-4),
+    "l300": dict(hidden=1280, e=512, pre=4, stack=9, target=300e6, trunk=5.0e9, decay=0.6e9, long=0.3e9, rows=256,
+                 lr=4.5e-4),
+    "tiny": dict(hidden=128,  e=64,  pre=1, stack=2, target=8e6,   trunk=2e6,   decay=1e6,   long=0.5e6, rows=4,
+                 lr=1.0e-3),
 }
 
 _LOOP = {"message_loop_rounds": 4, "message_loop_exit_aux": 0.0}  # loop span 1 is the default
@@ -158,7 +167,7 @@ def fit(arm: str, size: str) -> tuple[dict, int]:
 
 
 def manifests(data: Path, out: Path, size: str) -> dict:
-    """Write the two token-shard manifests (trunk / decay) for a run under `out`, return their paths."""
+    """Write the three token-shard manifests (trunk / decay / long) for a run under `out`, return their paths."""
     out.mkdir(parents=True, exist_ok=True)
     fw, ld = data / "fineweb_edu_gpt2", data / "longdocs_lite_gpt2"
     tiny = size == "tiny"
@@ -169,25 +178,27 @@ def manifests(data: Path, out: Path, size: str) -> dict:
     decay = {"seq_len": 1024 if tiny else 16384, "rule": "doc", "eot": EOT, "seed": 1042,
              "train": [{"name": s, "files": [str(ld / f"{s}_train_*.bin")], "weight": 1.0} for s in srcs],
              "eval": [{"name": s, "files": [str(ld / f"{s}_val_*.bin")], "rows": 16} for s in srcs]}
-    p = {"trunk": out / "manifest_trunk.json", "decay": out / "manifest_decay.json"}
-    p["trunk"].write_text(json.dumps(trunk, indent=2))
-    p["decay"].write_text(json.dumps(decay, indent=2))
+    long = {**decay, "seq_len": 2048 if tiny else 65536, "seed": 2042,
+            "eval": [{**e, "rows": 4} for e in decay["eval"]]}
+    p = {k: out / f"manifest_{k}.json" for k in ("trunk", "decay", "long")}
+    for k, m in (("trunk", trunk), ("decay", decay), ("long", long)):
+        p[k].write_text(json.dumps(m, indent=2))
     return p
 
 
 def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: str | None = None,
               lr: float | None = None, tokens: float | None = None, micro: int | None = None, seed: int = 42,
               wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
-              flow: bool = False, gpus: int = 1) -> list[str]:
+              flow: bool = False, gpus: int = 1, grad_ckpt: bool = False) -> list[str]:
     z = SIZES[size]
     args, n = fit(arm, size)
     man = manifests(data, out, size)
     seq = json.loads(man[phase].read_text())["seq_len"]
-    tokens = tokens or (z["trunk"] if phase == "trunk" else z["decay"])
+    tokens = tokens or z[phase]
     rows_per_step = z["rows"] * 4096 // seq  # the same tokens per step in both phases
     rows_per_step = max(1, rows_per_step)
-    micro = micro or max(1, min(rows_per_step, (16 if phase == "trunk" else 4) if size == "s30" else
-                                (8 if phase == "trunk" else 2)))
+    micro = micro or (1 if phase == "long" else max(1, min(rows_per_step, (16 if phase == "trunk" else 4)
+                                                             if size == "s30" else (8 if phase == "trunk" else 2))))
     # gpus > 1: one model on several GPUs (data parallel, torchrun); each optimizer step still sees rows_per_step
     # rows: micro × accum × gpus. When gpus does not divide the step (64 rows on 3 GPUs) the step is rounded down
     # and the step count rises to keep the same total tokens.
@@ -198,14 +209,14 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         print(f"note: {micro}×{accum}×{gpus} = {micro * accum * gpus} rows per step instead of {rows_per_step}",
               file=sys.stderr)
     steps = max(1, int(round(tokens / (micro * accum * gpus * seq))))
-    lr = lr or z["lr"]
+    lr = lr or (0.1 * z["lr"] if phase == "long" else z["lr"])  # long: the rate the decay ended on
     launch = (["torchrun", "--standalone", f"--nproc_per_node={gpus}"] if gpus > 1 else ["python"])
     cmd = ["uv", "run", *launch, "training/train_concept_pretraining.py"]
     for k, v in args.items():
         cmd += [f"--{k}", str(v)]
     if phase == "trunk":
         sched = ["--lr_scheduler_type", "constant_with_warmup", "--warmup_steps", str(max(1, int(0.01 * steps)))]
-    else:
+    else:  # decay: peak → 10 % of it; long: 10 % → 1 % of the peak (min_lr_ratio is relative to its own start)
         sched = ["--lr_scheduler_type", "warmup_stable_decay", "--warmup_steps", str(max(1, int(0.03 * steps))),
                  "--lr_scheduler_kwargs", json.dumps({"num_decay_steps": int(0.97 * steps), "decay_type": "1-sqrt",
                                                       "min_lr_ratio": 0.1})]
@@ -226,6 +237,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     ]
     if init:
         cmd += ["--model_name_or_path", init]
+    if grad_ckpt:
+        cmd += ["--gradient_checkpointing", "True"]
     if flow:  # E33p instrumentation: dynamics every 200 steps (decay: 50 of ~763) and weight snapshots
         cmd += ["--flow_every", "200" if phase == "trunk" else "50",
                 "--snapshot_every", "1000" if phase == "trunk" else "500"]
@@ -245,7 +258,7 @@ def main() -> None:
     c = sub.add_parser("cmd")
     c.add_argument("--arm", required=True, choices=sorted(ARMS))
     c.add_argument("--size", required=True, choices=sorted(SIZES))
-    c.add_argument("--phase", required=True, choices=("trunk", "decay"))
+    c.add_argument("--phase", required=True, choices=("trunk", "decay", "long"))
     c.add_argument("--data", required=True)
     c.add_argument("--out", required=True)
     c.add_argument("--init")
@@ -259,6 +272,7 @@ def main() -> None:
     c.add_argument("--flow", action="store_true", help="E33p instrumentation (flow/grad/upd/read/select/lens keys)")
     c.add_argument("--seed", type=int, default=42, help="trainer seed: initial weights and the order rows are drawn in")
     c.add_argument("--gpus", type=int, default=1, help="GPUs for one model (data parallel via torchrun)")
+    c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
     a = ap.parse_args()
     if a.what == "params":
         for size in ("s30", "m100", "l300"):
@@ -269,7 +283,7 @@ def main() -> None:
         return
     cmd = train_cmd(a.arm, a.size, a.phase, data=Path(a.data), out=Path(a.out), init=a.init, lr=a.lr,
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
-                    local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus)
+                    local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, grad_ckpt=a.grad_ckpt)
     print(shlex.join(cmd))
 
 

@@ -23,6 +23,11 @@
 #   snapshots, plan §8). E33N_SEED=N: trainer seed N (default 42), run folder gets _seedN.
 # E33N_GPUS=N: one model on N GPUs (data parallel, torchrun; same rows per optimizer step), and the three evals run
 #   side by side on separate GPUs. On a home server pair it with CUDA_VISIBLE_DEVICES=0,1,2.
+# E33N_LONG=1 (E33t stage C): after the decay, a 64k phase (LongDocs-lite rows of 65,536, 0.1B tokens at s30, from the
+#   decay's final weights; trainer seed E33N_LONG_SEED, default 1 for every arm, so all arms see the same rows), then
+#   the evals of that model as eval_*_long.json (the decay's own evals are kept). A run whose decay is already done
+#   starts at the 64k phase. E33N_MICRO_LONG (default 1), E33N_GRAD_CKPT=1 (recompute layers: 24 GB cards).
+# E33N_LONGDOC_LENGTHS (default 4096,16384,32768,65536,131072): lengths of the long-document loss.
 # E33N_CKPT_S3=1 (AWS spot nodes): checkpoints go to S3 with the rest, and a relaunched node first pulls the run
 #   folder back, so an interrupted run resumes from its newest checkpoint instead of starting over.
 set -uo pipefail
@@ -128,26 +133,41 @@ if [ -z "$DECAY" ]; then
 fi
 log "decay done: $DECAY"
 sync_up
+MODEL="$DECAY"; SFX=""
+if [ -n "${E33N_LONG:-}" ]; then
+  LONG=$(ls -d "$R"/long/*/final 2>/dev/null | tail -1)
+  if [ -z "$LONG" ]; then
+    CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase long --data "$D" --out "$R" \
+          ${E33N_MICRO_LONG:+--micro $E33N_MICRO_LONG} --init "$DECAY" --eval_every 100 --wandb ${E33N_FLOW:+--flow} --seed "${E33N_LONG_SEED:-1}" --gpus "$G" ${E33N_GRAD_CKPT:+--grad_ckpt} ${E33N_CMD_EXTRA:-})
+    echo "$CMD" > "$R/long.cmd"
+    log "long start"
+    phase long "$CMD" || { log "long FAILED"; tail -40 "$R/long.log"; finish; exit 1; }
+    LONG=$(ls -d "$R"/long/*/final | tail -1)
+  fi
+  log "long done: $LONG"
+  sync_up
+  MODEL="$LONG"; SFX="_long"
+fi
 [ -n "${E33N_SKIP_EVAL:-}" ] && { log "evals skipped"; finish; exit 0; }
 
 ev_longdoc() {
-  log "eval long-document loss"
-  uv run python evaluation/long_doc_loss.py --checkpoint "$DECAY" --data "$D/longdocs_lite_gpt2" \
-    --lengths 4096,16384,32768,65536,131072 --rows 8 --notes_off --open_off --gist_off --open_reuse --out "$R/eval_longdoc.json" > "$R/eval_longdoc.log" 2>&1 \
-    || log "long-document eval FAILED (see eval_longdoc.log)"
+  log "eval long-document loss${SFX:+ ($SFX)}"
+  uv run python evaluation/long_doc_loss.py --checkpoint "$MODEL" --data "$D/longdocs_lite_gpt2" \
+    --lengths "${E33N_LONGDOC_LENGTHS:-4096,16384,32768,65536,131072}" --rows 8 --notes_off --open_off --gist_off --open_reuse --out "$R/eval_longdoc$SFX.json" > "$R/eval_longdoc$SFX.log" 2>&1 \
+    || log "long-document eval FAILED (see eval_longdoc$SFX.log)"
   sync_up
 }
 ev_ruler() {
-  log "eval RULER"
-  uv run --with wonderwords python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" \
-    --suite ruler --lengths "${E33N_RULER_LENGTHS:-4096,8192,16384,32768}" --limit 100 --batch "${E33N_RULER_BATCH:-8}" --out "$R/eval_ruler.json" > "$R/eval_ruler.log" 2>&1 \
-    || log "RULER FAILED (see eval_ruler.log)"
+  log "eval RULER${SFX:+ ($SFX)}"
+  uv run --with wonderwords python evaluation/run_lsa_suite.py --checkpoint "$MODEL" --tokenizer "$D/tokenizer_gpt2" \
+    --suite ruler --lengths "${E33N_RULER_LENGTHS:-4096,8192,16384,32768}" --limit 100 --batch "${E33N_RULER_BATCH:-8}" --out "$R/eval_ruler$SFX.json" > "$R/eval_ruler$SFX.log" 2>&1 \
+    || log "RULER FAILED (see eval_ruler$SFX.log)"
   sync_up
 }
 ev_core() {
-  log "eval core"
-  uv run python evaluation/run_lsa_suite.py --checkpoint "$DECAY" --tokenizer "$D/tokenizer_gpt2" --suite core \
-    --limit 0 --batch "${E33N_CORE_BATCH:-32}" --backend "${E33N_CORE_BACKEND:-sdpa}" --out "$R/eval_core.json" > "$R/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
+  log "eval core${SFX:+ ($SFX)}"
+  uv run python evaluation/run_lsa_suite.py --checkpoint "$MODEL" --tokenizer "$D/tokenizer_gpt2" --suite core \
+    --limit 0 --batch "${E33N_CORE_BATCH:-32}" --backend "${E33N_CORE_BACKEND:-sdpa}" --out "$R/eval_core$SFX.json" > "$R/eval_core$SFX.log" 2>&1 || log "core FAILED (see eval_core$SFX.log)"
 }
 n=${#GL[@]}
 if [ "$G" -gt 1 ] && [ "$n" -gt 2 ]; then   # one eval per GPU, side by side
