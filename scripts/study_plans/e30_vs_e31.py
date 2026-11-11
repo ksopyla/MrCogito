@@ -376,13 +376,14 @@ def core_jobs(model, arch, flags=(), *, seeds=(0, 1, 2), accum=None, sec_per_ste
 # One entry per variant that runs the core package: `--phase core_<model>` (kwargs of core_jobs).
 CORE_VARIANTS = {
     # E33t catalogue read, the stage-B winner (`catalogue_reuse_n4`); spec E33t_catalogue_read.md "Capability checks".
-    # Measured on one RTX 3090 (Odra, 2026-11-11 19:58–20:30 UTC, sdpa unless noted): 1k micro 32 out of memory, micro
-    # 16 1.40 s/step 12.0 GB; 2k micro 8 2.59 s/step 12.3 GB; 8k micro 2 10.5 s/step 20.1 GB (flex 17.6 s); 16k on
-    # sdpa out of memory at micro 1 (a 16 GB score tensor), so the 16k stage uses flex at micro 1.
+    # Measured on one RTX 3090 (Odra, 2026-11-11 19:58–20:39 UTC, sdpa unless noted): 1k micro 32 out of memory, micro
+    # 16 1.40 s/step 12.0 GB; 2k micro 8 2.59 s/step 12.3 GB; 8k micro 2 10.5 s/step 20.1 GB (flex 17.6 s); 16k micro 1
+    # 18.8 s/step 20.1 GB once dense_open builds its mask in query chunks (flex 24.1 s, 11.8 GB). Every stage on sdpa,
+    # as the champion. Ladder reads: 13 s/row at 64k, 27 s/row at 128k (20.3 GB), about an hour per ladder.
     "e33t_catalogue_n4": dict(model="e33t_catalogue_n4", arch="e33t_catalogue_n4",
-                              accum={512: 1, 2048: 2, 16384: 2}, flex_from=16384,
+                              accum={512: 1, 2048: 2, 16384: 2}, ladder_h=1.0,
                               sec_per_step={128: 0.2, 256: 0.3, 512: 0.6, 1024: 1.4, 2048: 2.6, 8192: 10.5,
-                                            16384: 24.0}),
+                                            16384: 18.8}),
 }
 
 

@@ -187,8 +187,7 @@ def test_core_phase_keeps_the_written_recipes():
     assert _last(h2["args"], "--steps", 0) == int(TRAIN_1K_X16[TRAIN_1K_X16.index("--steps") + 1])
     assert _last(h2["args"], "--replay_hops", 0) == 1 and _last(h2["args"], "--hops", 0) == 2
     b16 = by[f"len_lookup_{V}_s2_b16k"]["args"]
-    assert _last(b16, "--attn_backend", "") == "flex" and _last(b16, "--grad_accum", 0) == 8
-    assert "--attn_backend" not in by[f"len_lookup_{V}_s2_b8k"]["args"]
+    assert "--attn_backend" not in b16 and _last(b16, "--grad_accum", 0) == 8  # sdpa (the champion's), micro 1
 
 
 def test_heat_schedule_rests_every_process_in_the_same_window():
