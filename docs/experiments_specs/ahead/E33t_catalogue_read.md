@@ -218,6 +218,8 @@ at 16k in E33p) show the marks are reachable at this size and data.
   only (the table is 275 GB at 1M), the 64k stage for the stage-B winner, the LSA port and the window control alike,
   two levels first as an eval switch on the flat winner (a two-level model only if the switch loses), about $30–50.
   Only one validation document reaches 1M tokens, so 1M is judged mainly by the planted password.
+  **Approved by the author 2026-11-11 (before 06:45 UTC, "Yes, start it") with the stage-B winner `catalogue_reuse_n4`;**
+  run on the home servers ($0 on AWS), see Result.
 - **Stage D (if A–C match LSA-native at 30M, with the author's approval):** 100M (`m100`: 3B + 0.4B tokens) — the
   winner, LSA-native and the two controls, about 20–25 hours each on the 4 × L40S node, $500–600 in all.
   **Moved ahead of stage C and joined to E37's 100M full run (author, 2026-11-10 ~05:37 UTC: "Yes, add it"):** the
