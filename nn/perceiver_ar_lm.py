@@ -2850,6 +2850,36 @@ def _call_block(layer, x, x0, skip, **kwargs):
     return layer(x, x0, skip, **kwargs)
 
 
+# Per-pass state of the message context that a reading layer reads or replaces. The backward's recomputation
+# (gradient checkpointing) runs after the loss has consumed and cleared it (index_losses, open_seen → None) and after
+# later loop passes changed it (read_round, open_seen), so without the replay it would skip the index loss and save
+# fewer tensors than the original pass (CheckpointError, E33t 64k, Odra 2026-11-11).
+_REPLAY_FIELDS = ("index_losses", "open_seen", "read_round", "read_losses", "read_targets")
+
+
+def _replay_message_state(fn, ctx):
+    """Wrap a checkpointed block call: the first call (the forward) runs as is; a recomputation first restores the
+    message state the forward saw, then puts the current one back. The recomputed index loss is appended to the
+    forward's own list, which the loss has already read, so it changes no result."""
+    state = {f: getattr(ctx, f, None) for f in _REPLAY_FIELDS}
+    calls = [0]
+
+    def run(*args):
+        calls[0] += 1
+        if calls[0] == 1:
+            return fn(*args)
+        now = {f: getattr(ctx, f, None) for f in _REPLAY_FIELDS}
+        for f, v in state.items():
+            setattr(ctx, f, v)
+        try:
+            return fn(*args)
+        finally:
+            for f, v in now.items():
+                setattr(ctx, f, v)
+
+    return run
+
+
 # --------------------------------------------------------------------------------------
 # Chunked soft-capped CE (+ z-loss) — never materialises [B,S,V]
 # --------------------------------------------------------------------------------------
@@ -3626,6 +3656,8 @@ class PerceiverARLM(PreTrainedModel):
                           message=(msg if is_global else None), rope_theta=cfg.rope_theta)
             if self.gradient_checkpointing and self.training:
                 fn = partial(_call_block, layer, **kwargs)
+                if kwargs["message"] is not None:
+                    fn = _replay_message_state(fn, kwargs["message"])
                 x = torch_checkpoint(fn, x, x0, skip, use_reentrant=False)
             else:
                 x = layer(x, x0, skip, **kwargs)

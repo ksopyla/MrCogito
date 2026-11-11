@@ -340,3 +340,30 @@ def test_stage_b_shapes_train_with_reuse(window, latents, cap):
     out.loss.backward()
     att = m.layers[m.config.global_layer_index].attn
     assert att.index_log_tau.grad is not None and float(att.index_log_tau.grad.abs()) > 0
+
+
+def _grads_with_and_without_recompute(make_fn, ids, **kw):
+    out = []
+    for ck in (False, True):
+        m = make_fn(**kw).train()
+        if ck:
+            m.gradient_checkpointing_enable()
+        loss = m(ids, labels=ids).loss
+        loss.backward()
+        out.append((float(loss), {n: p.grad.clone() for n, p in m.named_parameters() if p.grad is not None}))
+    return out
+
+
+@pytest.mark.parametrize("excl", [False, True])
+def test_gradient_checkpointing_matches(excl):
+    """E33t stage C trains at 64k with each layer recomputed in the backward (24 GB cards). The recomputation runs
+    after the loss cleared the pass state (index-loss list, opened notes) and after later loop passes changed it, so
+    the reading layer replays the state its forward saw: same loss and the same gradient in every parameter, with
+    and without pass exclusion (before the fix: CheckpointError, 85 vs 68 saved tensors, Odra 2026-11-11)."""
+    kw = dict(CAT, lm_open_new_per_pass=excl, message_loop_rounds=4)
+    ids = row(256, B=2)
+    (l0, g0), (l1, g1) = _grads_with_and_without_recompute(make, ids, **kw)
+    assert l0 == pytest.approx(l1, rel=1e-6)
+    assert g0.keys() == g1.keys() and len(g0) > 10
+    for n in g0:
+        torch.testing.assert_close(g1[n], g0[n], rtol=1e-4, atol=1e-6, msg=n)

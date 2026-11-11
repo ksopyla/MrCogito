@@ -238,6 +238,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     if init:
         cmd += ["--model_name_or_path", init]
     if grad_ckpt:
+        if flow:  # the recomputed layers would record their instrumentation a second time
+            raise ValueError("--flow and --grad_ckpt are not combined")
         cmd += ["--gradient_checkpointing", "True"]
     if flow:  # E33p instrumentation: dynamics every 200 steps (decay: 50 of ~763) and weight snapshots
         cmd += ["--flow_every", "200" if phase == "trunk" else "50",
