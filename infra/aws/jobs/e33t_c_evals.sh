@@ -8,6 +8,8 @@
 # Home server (in tmux, from the repo root):
 #   E33N_DATA=DIR CUDA_VISIBLE_DEVICES=2 bash infra/aws/jobs/e33t_c_evals.sh CHECKPOINT OUT_DIR TAG
 # E33T_LOSS_LENGTHS (default 262144,1048576), E33T_KEY_LENGTHS (default 131072,1048576), E33T_KEY_DEPTHS (default 20).
+# E33T_SKIP_FLAT=1 with E33T_TWO_LEVEL=P runs only the two-level pass (so the flat and two-level passes can run on two
+# GPUs at once; give each its own GPU, the files differ by the _2l suffix).
 # Results: OUT_DIR/c_<TAG>_longdoc.json, c_<TAG>_passkey.json (and _2l variants); a rerun skips finished files.
 set -uo pipefail
 CK="$1"; OUT="$2"; TAG="$3"
@@ -22,8 +24,10 @@ run() {  # NAME CMD...: skip when NAME.json exists
   log "$name start"
   "$@" --out "$OUT/$name.json" > "$OUT/$name.log" 2>&1 && log "$name done" || log "$name FAILED (see $name.log)"
 }
-log "start $TAG on $(hostname) GPU ${CUDA_VISIBLE_DEVICES:-all}: $CK"
-for lv in 0 ${E33T_TWO_LEVEL:-}; do
+LEVELS="0 ${E33T_TWO_LEVEL:-}"
+if [ -n "${E33T_SKIP_FLAT:-}" ]; then LEVELS="${E33T_TWO_LEVEL:?E33T_SKIP_FLAT needs E33T_TWO_LEVEL}"; fi
+log "start $TAG on $(hostname) GPU ${CUDA_VISIBLE_DEVICES:-all} (levels: $LEVELS): $CK"
+for lv in $LEVELS; do
   sfx=""; extra=()
   if [ "$lv" != 0 ]; then sfx="_2l"; extra=(--two_level "$lv"); fi
   run "c_${TAG}_longdoc$sfx" uv run python evaluation/long_doc_loss.py --checkpoint "$CK" --data "$D/longdocs_lite_gpt2" \
