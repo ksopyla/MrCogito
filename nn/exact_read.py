@@ -326,6 +326,9 @@ def open_term(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: int
     return opened
 
 
+_DENSE_OPEN_ELEMS = 1 << 25  # query rows × keys per gather chunk in dense_open (memory only)
+
+
 def dense_open(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: int,
                q_idx: Optional[torch.Tensor] = None, doc: Optional[torch.Tensor] = None) -> torch.Tensor:
     """[B, Q, S] bool — the same rule as `open_term` for the query rows `q_idx` (default: all); with `doc` [B, S],
@@ -334,15 +337,21 @@ def dense_open(T: torch.Tensor, codes: torch.Tensor, *, cap: int, raw_window: in
     G = T.shape[-1]
     if q_idx is None:
         q_idx = torch.arange(S, device=T.device)
-    Tq = T[:, q_idx].to(torch.int32)                                                    # [B, Q, G]
-    Q = Tq.shape[1]
+    Q = int(q_idx.shape[0])
     hit = torch.zeros(B, Q, S, dtype=torch.bool, device=T.device)
+    layers = []
     for li in range(codes.shape[0]):
         c = codes[li].to(torch.int64)
         g = torch.div(c, ORD_MOD, rounding_mode="floor")
-        o = c - g * ORD_MOD
-        tg = Tq.gather(2, g.clamp(0, G - 1)[:, None, :].expand(B, Q, S))
-        hit |= (c >= 0)[:, None, :] & (tg + o[:, None, :] < cap)
+        layers.append((c >= 0, g.clamp(0, G - 1), c - g * ORD_MOD))
+    # query rows in chunks: the gather's int64 index is [B, rows, S] (2 GB per row of 16k queries at once)
+    rows = max(1, _DENSE_OPEN_ELEMS // max(B * S, 1))
+    for q0 in range(0, Q, rows):
+        q1 = min(Q, q0 + rows)
+        Tq = T[:, q_idx[q0:q1]].to(torch.int32)                                          # [B, rows, G]
+        for valid, g, o in layers:
+            tg = Tq.gather(2, g[:, None, :].expand(B, q1 - q0, S))
+            hit[:, q0:q1] |= valid[:, None, :] & (tg + o[:, None, :] < cap)
     j = torch.arange(S, device=T.device)
     hit = hit & ((q_idx[:, None] - j[None, :]) >= raw_window)[None]
     if doc is not None:

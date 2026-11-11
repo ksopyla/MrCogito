@@ -216,3 +216,23 @@ def test_queue_scripts_gate_on_busy_cards_and_heat(tmp_path, monkeypatch):
     assert "busy_others" in s and "-ge 3" in s and "sleep 90" in s
     first_job = s.index("JOB v4_C0_copy-128")
     assert s.rindex("heat_pause.py", 0, first_job) > s.rindex("busy_others) -ge 3", 0, first_job) > 0
+
+
+def test_dense_open_in_query_chunks_equals_one_shot(monkeypatch):
+    """dense_open builds the sdpa path's opened-token mask in query chunks (the one-shot gather index needed 16 GB at
+    16k): the mask is identical whatever the chunk size."""
+    import nn.exact_read as er
+
+    torch.manual_seed(0)
+    B, S, G, cap = 2, 300, 40, 16
+    T = torch.randint(0, cap + 3, (B, S, G), dtype=torch.int16)
+    codes = torch.randint(-1, G * er.ORD_MOD, (2, B, S))
+    doc = torch.zeros(B, S, dtype=torch.long)
+    doc[:, 200:] = 1
+    q_idx = torch.tensor([0, 5, 150, 299])
+    one = [er.dense_open(T, codes, cap=cap, raw_window=7), er.dense_open(T, codes, cap=cap, raw_window=7,
+                                                                          q_idx=q_idx, doc=doc)]
+    monkeypatch.setattr(er, "_DENSE_OPEN_ELEMS", B * S * 7)  # 7 query rows per chunk
+    many = [er.dense_open(T, codes, cap=cap, raw_window=7), er.dense_open(T, codes, cap=cap, raw_window=7,
+                                                                           q_idx=q_idx, doc=doc)]
+    assert all(torch.equal(a, b) for a, b in zip(one, many)) and bool(one[0].any())
