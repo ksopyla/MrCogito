@@ -208,10 +208,10 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <span class="t">Long documents, 64k to 1M</span>
         <span class="d">First results in; last tests about 17:45 UTC.</span>
       </div>
-      <div class="stage" data-state="blocked" role="listitem">
-        <span class="k">Stage D <span class="pill" data-s="blocked">paused</span></span>
+      <div class="stage" data-state="running" role="listitem">
+        <span class="k">Stage D <span class="pill" data-s="running">running</span></span>
         <span class="t">100M full run on AWS</span>
-        <span class="d">Queued; the AWS login has expired.</span>
+        <span class="d">Training since 16:19 UTC; at most 30 hours.</span>
       </div>
     </div>
   </header>
@@ -377,16 +377,16 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
             search, done about 17:45 UTC; its standard tests (4k–128k, RULER, core) run beside them on the third card.</p></div>
       </div>
       <div class="now-item">
-        <span class="when">paused</span>
-        <div class="what"><span class="top">64-notes model at 100M, full budget <span class="pill" data-s="blocked">needs you</span></span>
-          <p>Queued on AWS by the 10M-context session, beside its dense, window, LSA and concept-memory models. That session
-            cannot see AWS until the login is renewed.</p>
-          <div class="cmd"><code id="cmd">aws sso login --profile m21-research</code><button type="button" id="copy">Copy</button></div>
+        <span class="when">since 16:19</span>
+        <div class="what"><span class="top">64-notes model at 100M, full budget <span class="pill" data-s="running">training</span></span>
+          <p>Started by the 10M-context session on one AWS spot machine with four L40S cards, beside its dense, window, LSA and
+            concept-memory models at the same size. It stops itself after 30 hours at most (about $219). That session's
+            100M LSA port finished at 15:52 UTC.</p>
         </div>
       </div>
     </div>
-    <p class="caption">Spend: the last projection (9 Nov) put total AWS spend for both sessions near $1,050 of the $2,000 once
-      the 100M runs finish. The live figure needs the AWS login.</p>
+    <p class="caption">Spend: AWS usage for both sessions is $670 of the $2,000 so far (read 11 Nov, 16:35 UTC, before credits;
+      AWS's figure can lag by a day). This run adds at most $219. It is the only machine running.</p>
   </section>
 
   <footer>
@@ -760,7 +760,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
   }
 
   /* ---------- copy ---------- */
-  document.getElementById("copy").addEventListener("click", (e) => {
+  document.getElementById("copy")?.addEventListener("click", (e) => {
     const t = document.getElementById("cmd").textContent;
     const btn = e.currentTarget;
     const done = () => { btn.textContent = "Copied"; setTimeout(() => (btn.textContent = "Copy"), 1600); };
