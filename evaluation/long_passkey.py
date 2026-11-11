@@ -81,7 +81,8 @@ def main() -> None:
         model.config.lm_open_levels, model.config.lm_open_pages = 2, int(a.two_level)
     has_notes = getattr(model, "memory_writer", None) is not None and \
         str(getattr(model.config, "message_override", "real")) == "real"
-    modes = ["notes_on"] + (["notes_off"] if a.notes_off and has_notes else [])
+    # the notebook-off rows do not use the search: a two-level pass would repeat the flat pass's
+    modes = ["notes_on"] + (["notes_off"] if a.notes_off and has_notes and not a.two_level else [])
     res = {"checkpoint": a.checkpoint, "open_impl": a.open_impl, "two_level": a.two_level, "lengths": {}}
     question = tok.encode(" What is the pass key? The pass key is", add_special_tokens=False)
     for L in (int(x) for x in a.lengths.split(",")):

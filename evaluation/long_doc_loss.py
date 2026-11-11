@@ -161,9 +161,10 @@ def main() -> None:
                 continue
             try:
                 with model.open_impl(a.open_impl):
+                    # notebook off / opened tokens off do not use the search: a two-level pass would repeat them
                     per_len[src] = score_source(
-                        model, ds, S, a.rows, a.device, a.notes_off and has_notes, a.per_row,
-                        open_off=a.open_off and opens(model),
+                        model, ds, S, a.rows, a.device, a.notes_off and has_notes and not a.two_level, a.per_row,
+                        open_off=a.open_off and opens(model) and not a.two_level,
                         gist_off=a.gist_off and opens(model) and has_notes and not catalogue(model),
                         open_reuse=a.open_reuse and new_per_pass(model))
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:  # a length past what fits: record it, go on
