@@ -424,6 +424,28 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     finds facts the notebook's summaries blur. And the original LSA's single-needle collapse is not the read itself
     (0.96 in our body): its body or its code path. Next: the notebook plus an exact top-k read (the notes_open arm
     asks a nearby question), and dense / window at the full budget for the shares of the gap.
+  - **LSA protocol, later pass at home (author's go-ahead 19:50 UTC Nov 11): RULER at 8k and the validation loss.**
+    Checkpoints fetched from S3 onto the servers by one-hour presigned URLs (sizes checked); the original LSA in its
+    own venv on Odra (their pinned repo and uv.lock, torch 2.13 cu129; causal-conv1d left out, no CUDA toolkit there;
+    lsa_select's reference selection, as on the L40S). RULER 8k, 13 tasks × 100 documents, one lm-eval call per task
+    (`infra/aws/jobs/e37_ruler_later.sh`): e37a Polonez GPUs 0–1 19:55–21:03, lsa Polonez GPUs 2–3 then 2 alone
+    (Polonez's 3-card cap) 20:02–21:20, original LSA Odra GPUs 0 + 2 20:15–20:59 UTC; 3090 time a task ≈ 575 s
+    (e37a), 380 s (lsa), ~200 s a GPU (original). **RULER mean 4k / 8k / 16k: lsa 0.255 / 0.241 / 0.209, e37a 0.185 /
+    0.187 / 0.136, original LSA 0.139 / 0.119 / 0.082** — the order holds at every length. At 8k: single needle 0.96 /
+    0.95 / 0.09 (lsa / e37a / original); single-2 0.92 / 0.60 / 0.68; single-3 0.53 / 0.24 / 0.10; multi-key-1 0.22
+    for all three; multi-value 0.17 / 0.15 / 0.12; word frequency 0.12 / 0.02 / 0.00; the rest near zero. e37a's
+    essay-number needle holds to 8k (0.58 → 0.60) and falls by 16k (0.14), while the top-k read keeps it (0.88 →
+    0.92 → 0.84): the notebook's summaries lose a planted number between 8k and 16k. **Validation loss**
+    (`evaluation/val_loss.py` for ours, `lsa_orig_eval.py val` for the original; the m100 trainer's eval rows,
+    1,047,441 FineWeb-Edu tokens at 4k and 1,310,640 LongDocs-lite tokens at 16k, the same rows for all three):
+    FineWeb-Edu at 4k after the trunk **3.093 original / 3.105 e37a / 3.111 lsa**, after the decay 3.162 / 3.187 /
+    3.193; LongDocs-lite at 16k after the decay 2.193 / 2.228 / 2.232 — the original LSA 0.01–0.04 nats lower
+    everywhere, our two within 0.006 of each other (the body, not the read, as in the long-document loss). The
+    trainer's own last evals came before the end of each phase (trunk at step 5,500 of 5,722: lsa 3.121; decay at
+    600 of 763: 2.255), so they sit above these final-weight numbers. Results in S3 next to each run's node evals
+    (`eval_ruler_later.json`, `later/`, `eval_val.json`). RULER 32k / 64k not run: the home cards belong to the E33t
+    capability checks until ≈ Nov 14; on AWS (one-L40S spot nodes) ≈ 15 GPU-h for 32k and ≈ 30 for 64k, waiting for
+    the author.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
