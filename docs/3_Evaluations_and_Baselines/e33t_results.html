@@ -186,7 +186,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
 <main class="wrap">
   <header>
-    <p class="eyebrow">E33t · the catalogue read · 30M-parameter models · as of 11 Nov 2026, 12:45 UTC</p>
+    <p class="eyebrow">E33t · the catalogue read · 30M-parameter models · as of 11 Nov 2026, 15:55 UTC</p>
     <h1>Our catalogue read is within a few points of LSA, and ahead of it at 128k</h1>
     <p class="lede">We changed how the model looks things up in its notebook. The notes no longer get read; they only point
       to the exact words worth rereading, like cards in a library catalogue. At 30M parameters it now recovers 91&nbsp;% of
@@ -371,10 +371,10 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
           <p>All tests in. Passwords: 2 of 20 at 128k and 1 of 20 at 1M, the first full answer from any model at 1M.</p></div>
       </div>
       <div class="now-item">
-        <span class="when">due ~15:40</span>
-        <div class="what"><span class="top">64-notes model, 64k stage <span class="pill" data-s="running">training</span></span>
-          <p>The slowest of the three (about 3,200 tokens/s on one card). Then its 256k and 1M tests run at once on
-            Odra's two free cards, flat and two-level search, done about 17:45 UTC; its standard tests run beside them.</p></div>
+        <span class="when">since 15:46</span>
+        <div class="what"><span class="top">64-notes model, after the 64k stage <span class="pill" data-s="running">testing</span></span>
+          <p>Training finished at 15:45 UTC. Its 256k and 1M tests run at once on Odra's two free cards, flat and two-level
+            search, done about 17:45 UTC; its standard tests (4k–128k, RULER, core) run beside them on the third card.</p></div>
       </div>
       <div class="now-item">
         <span class="when">paused</span>
@@ -391,7 +391,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
   <footer>
     <span>Sources: the E33t spec's results (stages A and B, scored against the same-seed AWS controls) and the stage C result
-      files on Odra and Polonez, read 11 Nov 2026 at 12:45 UTC. Scores use positions past 2k tokens, weighted by tokens.</span>
+      files on Odra and Polonez, read 11 Nov 2026 at 15:55 UTC. Scores use positions past 2k tokens, weighted by tokens.</span>
     <span>One seed per model. The same model trained twice moves by up to 7.6 points of the gap when seed and machine both
       change.</span>
   </footer>
@@ -663,7 +663,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     { who: "LSA port", when: "trained on 16k", k128: "00200000000000100000", k1m: "00010000000000000000" },
     { who: "64 notes per page", when: "trained on 16k", k128: "00000000000000100000", k1m: Z },
     { who: "64 notes, two-level search", when: "trained on 16k", k128: Z, k1m: Z },
-    { who: "LSA port", when: "after the 64k stage", k128: "00200000000000100002", k1m: "20010000000000000000" },
+    { who: "LSA port", when: "after the 64k stage", k128: "20000000000000100002", k1m: "20010000000000000000" },
     { who: "64 notes per page", when: "after the 64k stage", k128: P, k1m: P },
   ];
   const pk = document.getElementById("pk");
