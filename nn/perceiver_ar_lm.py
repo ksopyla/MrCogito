@@ -2950,7 +2950,11 @@ class Block(nn.Module):
             if self.flow is not None:
                 self.flow.sublayer(self.layer_idx, "attn", x, a)
             x = x + a
-            f = self.mlp(self.mlp_norm(x))
+            if torch.is_grad_enabled() or x.shape[1] <= _EVAL_FFN_CHUNK:
+                f = self.mlp(self.mlp_norm(x))
+            else:  # evaluation at 256k–1M: the feed-forward is per token, so pieces give the same result in less memory
+                f = torch.cat([self.mlp(self.mlp_norm(x[:, i:i + _EVAL_FFN_CHUNK]))
+                               for i in range(0, x.shape[1], _EVAL_FFN_CHUNK)], dim=1)
             if self.flow is not None:
                 self.flow.sublayer(self.layer_idx, "ffn", x, f)
             x = x + f
@@ -2961,6 +2965,9 @@ class Block(nn.Module):
         if frozen:
             message.slots = None
         return x
+
+
+_EVAL_FFN_CHUNK = 1 << 17  # tokens per feed-forward piece without gradient (E33t stage C, 1M-token rows)
 
 
 def _call_block(layer, x, x0, skip, **kwargs):
@@ -3839,6 +3846,8 @@ class PerceiverARLM(PreTrainedModel):
                     self.layers[gi].flow.round = None
                 if u is not None:
                     x = x - u  # round r's instruction is its own; the next round gets the next one
+                if not (self._collect_name_states or self._collect_loop_states):
+                    states = []  # only the last pass is used: 1M-token evals keep one copy, not one per pass
                 states.append((x, s))
                 if r < R - 1 and (self.loop_feedback_gate is not None or self._name_lens_losses is not None):
                     x = self._loop_lens(x, r, input_ids)
