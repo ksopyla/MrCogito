@@ -185,6 +185,29 @@ at 16k in E33p) show the marks are reachable at this size and data.
 - **Capability checks (if S1 holds):** the core package on the home servers (C0–C5 from scratch, seeds 0–2, ladders
   to 128k), no-harm rule against the E31 champion; targets `C1.lookup-16k` ≥ 75 % first letter at 64k and
   `C4.chain4-1k` ≥ 75 % first letter (the passes-as-lookups claim).
+  **Frozen and launched 2026-11-11 20:40 UTC on the stage-B winner, as `e33t_catalogue_n4`** (branch
+  `e33t-capability`, server checkouts `~/dev/MrCogito-e33tcap`, folders `Cache/study/e33t_core`):
+  - *The model:* a named variant in `evaluation/bapo_models.py` with every catalogue, writer and loop setting of the
+    text arm `catalogue_reuse_n4` (pinned by `tests/test_capability_catalogue.py`), on the platform every capability
+    model shares (width 960, 1 local + reading layer + 2 local layers, 128-d token embedding, a 256-token raw window
+    in the reading layer, the DNA alphabet): 35,216,173 parameters (champion 35,129,900). **One deliberate difference
+    from the champion's exams:** no QUERY boundary. The catalogue's opened tokens are raw book tokens, and the read
+    keeps every key to the query's own (document, side), so an answer side cut off at QUERY could never read them;
+    the answer reads, as in text, the raw window, 4 empty slots and up to 512 opened tokens. The champion's answer
+    reads only its notes. Short books (≤ 256 tokens) sit inside the raw window, so C0–C2 at 128–256 tokens test the
+    window, not the catalogue; at 1k about three quarters of the evidence lies beyond the window, and on the ladder
+    (2k–128k) nearly all of it.
+  - *Jobs:* phase `core_e33t_catalogue_n4` (`scripts/study_plans/e30_vs_e31.py`), 75 jobs built from the task
+    definitions: the 19 active C0–C5 tasks on seeds 0–2 (C5 as their written stage chains; tasks with no written
+    budget take their suite cell's), the C1.lookup-16k curriculum 2k → 8k → 16k, the v4 stop rule on the task's own
+    score, every task trained at ≥ 1k read at 1k–128k (64 rows per length). Micro-batches halved (memory only, the
+    same 32-row steps); every stage on sdpa attention, as the champion (16k fits once `dense_open` builds its mask in
+    query chunks, `15f804f`).
+  - *Cost* (one RTX 3090): 1.40 s per 1k step (champion 0.34 s), 2.6 s at 2k, 10.5 s at 8k, 18.8 s at 16k; ladder
+    reads 27 s per row at 128k, about an hour per ladder. About 340 GPU-hours before early stops and extensions:
+    Odra C0–C4 and the lookup curriculum (54 jobs, ~58 h on 3 cards), Polonez the C5 chains (21 jobs, ~55 h on 3 cards,
+    20 min rest every 5.5 h on one clock, never a start while 3 other cards are busy). Expected about 2026-11-14.
+    Dense ceilings and the champion's numbers come from the ledger (same tasks, recorded runs).
 - **Stage B (if S1 holds): page and note sizes.** Around the stage-A winner: 4, 8 and 16 tokens per note at
   256-token pages (64 / 32 / 16 notes), and 512-token pages with 64 notes. Four runs, about $120.
   **Approved by the author 2026-11-08 ~17:30 UTC:** the winner is `catalogue_reuse` (8 tokens per note at

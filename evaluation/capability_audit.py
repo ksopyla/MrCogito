@@ -184,6 +184,14 @@ class Run:
 
 
 RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch replaces them
+    # E33t catalogue read (`e33t_catalogue_n4`), the v4 core package, phase core_e33t_catalogue_n4; times in UTC
+    Run("e33t_core", "odra", "2026-11-11 20:40 UTC", "about 2026-11-14 07:00 UTC (58 GPU-h per card, 3 cards)",
+        "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum, seeds 0–2, ladders to 128k",
+        (), 54),
+    Run("e33t_core", "polonez", "2026-11-11 20:40 UTC (queued behind other evals)",
+        "about 2.4 days after its cards free up (55 GPU-h per card, 20 min rest every 5.5 h)",
+        "E33t catalogue read, core package part 2: the C5 curricula (pchain2, path2, path3), seeds 0–2, ladders",
+        (), 21),
     Run("v4_fix_a", "polonez", "2026-10-13 08:38", "finished 2026-10-13 17:39",
         "C2 / C6 on the fixed exams (dense, E31, E33, seeds 0–2); dense 2-hop reasoning at matched compute",
         ("first-block", "recipeA-compute"), 33),
