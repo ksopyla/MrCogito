@@ -15,7 +15,11 @@
 #   4. every 10 min and at the end: later/ruler_*.{json,log} up to the run's S3 folder (no deletes; nothing else of the
 #      run is touched) and the pass log as events_later_<node>.log;
 #   5. at the end: later/ pulled again (other nodes' lengths of the same model), merged into eval_ruler_later.json,
-#      uploaded; marker later/DONE_<node> (all of this item's pairs scored) or later/INCOMPLETE_<node>.
+#      uploaded. After the last item: marker later/DONE_<node> (every item's pairs scored, val written) or
+#      later/INCOMPLETE_<node>, in each of the node's runs.
+# ARM:LENGTHS@N scores the first N documents per task (default 100, the nodes' 4k / 16k protocol). 64k ran at @25
+# (2026-11-12): on one L40S our models' uncached 64k decoding takes 1.5-3 min a document (cost ~ length^2 there),
+# 100 documents x 13 tasks would be 30-60 h per model.
 # A spot node taken back and relaunched under the same name resumes: step 2 skips what it uploaded.
 # The original LSA runs in their venv: lsa_orig_node.sh's step 1 without causal-conv1d (only GLM's layers use it; the
 # home pass on Odra ran the same way), lm-eval 0.4.11 first on PYTHONPATH as lsa_orig_run.sh's evals.
@@ -90,12 +94,14 @@ val_item() {  # ARM: LSA's validation loss (evaluation/val_loss.py, as run at ho
   fi
 }
 
-RC=0
+RC=0; MISS=0; ARMS=""
 for it in "$@"; do
   A=${it%%:*}; LS=${it#*:}; R=$(s3run "$A"); O="$W/$A"; T0=$(date -u +%s)
-  if [ "$LS" = val ]; then val_item "$A" || RC=1; continue; fi
+  if [ "$LS" = val ]; then ARMS="$ARMS $A"; val_item "$A" || { RC=1; MISS=$((MISS + 1)); }; continue; fi
+  LIM=100; case "$LS" in *@*) LIM=${LS#*@}; LS=${LS%@*} ;; esac
+  ARMS="$ARMS $A"
   mkdir -p "$O/later"
-  log "$A: RULER $LS from $R"
+  log "$A: RULER $LS ($LIM documents per task) from $R"
   if [ "$A" = lsa_orig ]; then
     CK="$MC_DISK/ck/lsa_orig/decay/checkpoint/step-763"
     aws s3 sync --only-show-errors "$R/decay/checkpoint/step-763/" "$CK/"
@@ -110,9 +116,9 @@ for it in "$@"; do
   pass() {
     if [ "$A" = lsa_orig ]; then
       LSA_REPO="$MC_DISK/lsa" LSA_ROOT="$MC_DISK/lsa_root" PATH="$VENV/bin:$PATH" E37_LSA_ORIG=1 LSA_PY="$VENV/bin/python" \
-        LSA_OV="$OV" bash "$REPO/infra/aws/jobs/e37_ruler_later.sh" "$CK" "$O" "$D" "$LS"
+        LSA_OV="$OV" E37_RULER_LIMIT="$LIM" bash "$REPO/infra/aws/jobs/e37_ruler_later.sh" "$CK" "$O" "$D" "$LS"
     else
-      bash "$REPO/infra/aws/jobs/e37_ruler_later.sh" "$CK" "$O" "$D" "$LS"
+      E37_RULER_LIMIT="$LIM" bash "$REPO/infra/aws/jobs/e37_ruler_later.sh" "$CK" "$O" "$D" "$LS"
     fi
   }
   mkdir -p "$MC_DISK/lsa_root"
@@ -127,11 +133,16 @@ for it in "$@"; do
   for L in ${LS//,/ }; do
     n=$(ls "$O"/later/ruler_"${L}"_*.json 2>/dev/null | wc -l); [ "$n" -ge 13 ] || miss=$((miss + 13 - n))
   done
-  if [ "$miss" = 0 ]; then M=DONE; else M=INCOMPLETE; RC=1; fi
-  echo "$M $(date -u +%FT%TZ) $A $LS, $miss pairs missing, $(( ($(date -u +%s) - T0) / 60 )) min" | aws s3 cp - "$R/later/${M}_${MC_NAME}" || true
-  log "$A: $M ($miss pairs missing) after $(( ($(date -u +%s) - T0) / 60 )) min; $(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['mean'])" "$O/eval_ruler_later.json" 2>&1)"
+  MISS=$((MISS + miss)); [ "$miss" = 0 ] || RC=1
+  log "$A: RULER $LS ($LIM documents) $miss pairs missing after $(( ($(date -u +%s) - T0) / 60 )) min; $(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['mean'])" "$O/eval_ruler_later.json" 2>&1)"
 done
 kill "$SYNC" 2>/dev/null
 for it in "$@"; do up "${it%%:*}"; done
+# the node's marker, once all its items ran (the watcher relaunches a node that is gone without one)
+if [ "$MISS" = 0 ]; then M=DONE; else M=INCOMPLETE; fi
+for A in $(echo "$ARMS" | tr ' ' '\n' | sort -u); do
+  echo "$M $(date -u +%FT%TZ) $MC_NAME items: $*; $MISS pairs missing" | aws s3 cp - "$(s3run "$A")/later/${M}_${MC_NAME}" || true
+done
+log "node $M ($MISS pairs missing)"
 aws s3 cp --only-show-errors "$W/node.log" "s3://$MC_BUCKET/logs/$MC_NAME/node.log" || true
 exit $RC
