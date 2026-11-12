@@ -282,7 +282,8 @@ def _lm_eval_suite(a, suite: str) -> None:
                 log_samples=False, task_manager=TaskManager(metadata=md) if md else None, bootstrap_iters=0)["results"]
 
         t0 = time.time()
-        rs.run_extra(evaluate, lengths, a.limit, out, save, cap=a.extra_cap or None)
+        rs.run_extra(evaluate, lengths, a.limit, out, save, cap=a.extra_cap or None,
+                     parts=tuple(x for x in a.extra_parts.split(",") if x))
         out["seconds"] = round(time.time() - t0, 1)
         save()
         return
@@ -333,7 +334,8 @@ def _val_loss(model: TokenLossModel, ds, batch: int) -> dict:
         items = [ds[j] for j in range(i, min(len(ds), i + batch))]
         ids = torch.stack([x["input_ids"] for x in items]).cuda()
         doc = torch.stack([x["doc_ids"] for x in items]).cuda()
-        labels = ids.clone()
+        # rows of an answer-masked manifest (E37 SFT) carry their own labels: -100 off the answers
+        labels = torch.stack([x["labels"] for x in items]).cuda() if "labels" in items[0] else ids.clone()
         labels[:, 1:] = labels[:, 1:].masked_fill(doc[:, 1:] != doc[:, :-1], -100)
         _, per, valid = model(ids, labels)
         s, c = float(per[valid].sum()), int(valid.sum())
@@ -353,11 +355,16 @@ def cmd_val(a) -> None:
         "longdocs: the decay manifest's eval rows (16 per source at 16k, seed 1043); hf_eval_loss as our trainer's"}
     bb, _, _ = load_backbone(a.checkpoint, out.parent / "eval_work")
     model = TokenLossModel(bb)
-    _, fw_val, _ = bins.load_bin_manifest(str(man["trunk"]))
-    r = {"checkpoint": a.checkpoint, "fineweb_val_4k": _val_loss(model, fw_val, 4)}
-    if a.name == "decay_final":
+    r = {"checkpoint": a.checkpoint}
+    if not a.sft_only:
+        _, fw_val, _ = bins.load_bin_manifest(str(man["trunk"]))
+        r["fineweb_val_4k"] = _val_loss(model, fw_val, 4)
+    if a.name != "trunk_final" and not a.sft_only:
         _, ld_val, _ = bins.load_bin_manifest(str(man["decay"]))
         r["longdocs_val_16k"] = _val_loss(model, ld_val, 1)
+    if a.sft_manifest:  # E37 SFT held-out instruction loss (answer tokens only)
+        _, sft_val, m = bins.load_bin_manifest(a.sft_manifest)
+        r[f"sft_test_{m['seq_len'] // 1024}k"] = _val_loss(model, sft_val, 1)
     res[a.name] = r
     print(a.name, json.dumps(r), flush=True)
     out.write_text(json.dumps(res, indent=2))
@@ -379,7 +386,10 @@ def main() -> None:
     ap.add_argument("--batch_tokens", type=int, default=131072, help="RULER: rows of a batch = min(8, this / length)")
     ap.add_argument("--max_gen_toks", type=int, default=32)
     ap.add_argument("--extra_lengths", default="2048,4096,8192,16384", help="extra: BABILong context lengths")
+    ap.add_argument("--sft_manifest", default="", help="val, E37 SFT: also score this manifest's eval rows (answers)")
+    ap.add_argument("--sft_only", action="store_true", help="val with --sft_manifest: skip the FineWeb / LongDocs sets")
     ap.add_argument("--extra_cap", type=int, default=0, help="extra, smoke tests only: documents per BLiMP set / SWDE")
+    ap.add_argument("--extra_parts", default="blimp,swde,babilong", help="extra: which parts to run")
     a = ap.parse_args()
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,743 @@
+{
+"note": "real rows of HuggingFaceTB/smol-smoltalk (Apache-2.0), test split, for tests/test_sft_mix.py",
+"rows": [
+{
+"messages": [
+{
+"content": "Extract and present the main key point of the input text in one very short sentence, including essential details like dates or locations if necessary.",
+"role": "system"
+},
+{
+"content": "Dear Daniel,\n\nI hope this email finds you well. My name is Emily Johnson, and I am a researcher at XYZ University currently studying school governance and leadership. I recently came across your work on integrating critical thinking and creativity into elementary school curricula, and I was very impressed by your approach.\n\nI am reaching out to see if you would be willing to discuss your teaching methods with me further, as I believe they may have some valuable applications for school governance and leadership. Specifically, I am interested in how your focus on student-centered learning and cognitive development could potentially inform the way that schools are run and managed.\n\nIf you are willing and able, I would love to set up a time to chat further about your work and its potential implications for my research. Please let me know if you have any questions or if there is any additional information I can provide.\n\nBest regards,\nEmily Johnson",
+"role": "user"
+},
+{
+"content": "Emily Johnson is reaching out to discuss teaching methods and their implications for school governance and leadership.",
+"role": "assistant"
+}
+],
+"source": "smol-summarize-20k"
+},
+{
+"messages": [
+{
+"content": "Hi",
+"role": "user"
+},
+{
+"content": "Hello! How can I help you today?",
+"role": "assistant"
+},
+{
+"content": "I'm looking for some fun pet toys for my dog. Do you have any suggestions?",
+"role": "user"
+},
+{
+"content": "Yes, there are many fun pet toys available. You can try squeaky chew toys, plush toys, or interactive puzzle toys.",
+"role": "assistant"
+},
+{
+"content": "That sounds great, but I'm on a budget. Can I make my own DIY pet toys at home?",
+"role": "user"
+},
+{
+"content": "Absolutely, making your own DIY pet toys can be easy and cost-effective. You can try making a tug-of-war rope toy using old t-shirts or a stuffed sock toy using an old sock and some stuffing material.",
+"role": "assistant"
+},
+{
+"content": "That's a great idea. Do you have any other DIY pet toy ideas?",
+"role": "user"
+},
+{
+"content": "Yes, you can also try making a cardboard box maze or a treat-dispensing toy using a plastic bottle. Just be sure to use safe and non-toxic materials that won't harm your dog.",
+"role": "assistant"
+}
+],
+"source": "everyday-conversations"
+},
+{
+"messages": [
+{
+"content": "Your response should contain less than 5 sentences. The response must have 2 sections. Mark the beginning of each section with Section X, such as: Section 1. Your answer must contain a title, wrapped in double angular brackets, such as <<short message>>.\n",
+"role": "user"
+},
+{
+"content": "<<short message>>\nSection 1\nI understand your request and will keep my response brief and structured.\nSection 2\nIf you need more information or have another question, feel free to ask.",
+"role": "assistant"
+}
+],
+"source": "smol-contraints"
+},
+{
+"messages": [
+{
+"content": "You are an AI assistant. User will you give you a task. Your goal is to complete the task as faithfully as you can. While performing the task think step-by-step and justify your steps.",
+"role": "system"
+},
+{
+"content": "I am a movie director and I just received the following movie plot. Could you help me answer this question? If not, let me know by writing \"Not answerable\".  Plot title: The Dead Zone Movie plot: In the Maine small town of Castle Rock, school teacher Johnny Smith (Christopher Walken) takes his fiancée sweetheart Sarah (Brooke Adams) to an amusement park. On the roller coaster, he suffers a bad headache and tells her that he must go home to sleep it off. Sarah begs him to stay, but he declines saying: \"some things are worth waiting for\". As he drives home, a tanker jackknifes in front of him and he plows into it and black out.Johnny wakes up at the Weizak Clinic. His parents Herb and Vera (Sean Sullivan and Jackie Burroughs) are shown in by Dr. Sam Weizak (Herbert Lom). They tell him that he has been in a coma for five years and Sarah has married another man. The distraught Johnny is inconsolable.One day, as a nurse mops his brow he seizers her hand. He has a super-real vision of being trapped in a screaming girl's bedroom. He tells the nurse: \"Amy needs your help.\" The nurse knows that Amy is her daughter's name, but puzzled why Johnny knows her. Johnny tells her that the house is burning, and her daughter is in the house - but it is not too late. The nurse rushes home to find her house in flames, but her daughter is rescued by firefighters just as she arrives home.After a few weeks of physical therapy, Johnny is able to walk again with some difficulty. When Johnny gratefully takes Dr Weizak's hand, he is jolted by another vision. It is wartime with burning buildings, advancing tanks. A protesting young boy is lifted into a horse-drawn cart, leaving his mother behind. Johnny tells Weizak that his mother survived. Weizak says that it is impossible, but Johnny knows her name and address. Weizak checks it out and it's true, but he cannot bring himself to speak to his elderly mother. Weizak comes back and tells Johnny: \"you're either in possession of a very new human ability... or a very old one.\"Sarah comes to visit Johnny. Catching his stare, she asks him not to look at her that way. He says that he can't help it while Sarah says that it's been five years, but Johnny remembers it as yesterday. She says... My question: who has a car accident?\nThe answer to this question is:",
+"role": "user"
+},
+{
+"content": "Johnny Smith (Christopher Walken) has a car accident.",
+"role": "assistant"
+}
+],
+"source": "openhermes-50k"
+},
+{
+"messages": [
+{
+"content": "Your response should contain exactly 4 bullet points. Use the markdown bullet points such as: * This is point 1.\n\nI need advice on how to organize my study schedule for the upcoming semester. What are some effective strategies to ensure I cover all my subjects without feeling overwhelmed?\n",
+"role": "user"
+},
+{
+"content": "* Create a detailed weekly planner that includes specific times for studying each subject. This helps in maintaining a balanced routine and ensures that no subject is neglected.\n* Set clear, achievable goals for each study session. For example, aim to complete one chapter or a set number of problems in a single sitting. This makes the study process more manageable and less daunting.\n* Incorporate regular breaks and leisure activities into your schedule to avoid burnout. For instance, take a 10-minute break after every hour of studying, and plan some downtime for hobbies or relaxation.\n* Review and adjust your schedule regularly based on your progress and any changes in your academic workload. This flexibility allows you to stay on track and adapt to new demands effectively.",
+"role": "assistant"
+}
+],
+"source": "smol-contraints"
+},
+{
+"messages": [
+{
+"content": "Write a function in Python that converts a given UTC timestamp to a local timestamp in a given timezone. The function should take two arguments: the UTC timestamp and the timezone name. The function should return a new timestamp in the specified timezone. If the timezone is not valid, the function should return an error message.",
+"role": "user"
+},
+{
+"content": "Here is an example of how to use the `pytz` package to convert a given UTC timestamp to a local timestamp in a given timezone:\n\n```python\nimport pytz\nfrom datetime import datetime\n\ndef convert_utc_to_local(utc_timestamp: datetime, timezone_name: str):\n    try:\n        timezone = pytz.timezone(timezone_name)\n        local_timestamp = utc_timestamp.astimezone(timezone)\n        return local_timestamp\n    except pytz.exceptions.UnknownTimeZoneError:\n        return \"Error: Invalid timezone name\"\n```",
+"role": "assistant"
+}
+],
+"source": "self-oss-instruct"
+},
+{
+"messages": [
+{
+"content": "Your response should contain at least 3 sentences. Include keywords [keywords] in the response. In your response, the word \"environment\" should appear at least 3 times. \n\n[keywords]: conservation, ecosystem, sustainability\n",
+"role": "user"
+},
+{
+"content": "The environment plays a crucial role in our daily lives, and it is essential to focus on conservation efforts to protect it. By promoting sustainability, we can ensure that the environment remains healthy for future generations. Understanding the complexities of the ecosystem helps us make informed decisions that benefit the environment and all its inhabitants.",
+"role": "assistant"
+}
+],
+"source": "smol-contraints"
+},
+{
+"messages": [
+{
+"content": "Your answer must contain exactly 3 bullet points. Use the markdown bullet points such as: * This is point 1. Answer the following question: What are some common signs of overtraining in athletes?\n\n* Overtraining can lead to persistent fatigue and a lack of energy even after sufficient rest.\n* Athletes may experience a decrease in performance despite increased training efforts.\n* Frequent injuries and illnesses are common signs of overtraining.\n",
+"role": "user"
+},
+{
+"content": "* Overtraining can lead to persistent fatigue and a lack of energy even after sufficient rest.\n* Athletes may experience a decrease in performance despite increased training efforts.\n* Frequent injuries and illnesses are common signs of overtraining.",
+"role": "assistant"
+}
+],
+"source": "smol-contraints"
+},
+{
+"messages": [
+{
+"content": "You are an AI assistant that helps people find information. User will you give you a question. Your task is to answer as faithfully as you can. While answering think step-by-step and justify your answer.",
+"role": "system"
+},
+{
+"content": "For this chain-of-thought reasoning and answer, what was the question?\nSliding down a hill is playing and the hill is snowy so the children are in the snow.\n A: yes",
+"role": "user"
+},
+{
+"content": "The question could have been: \"Are the children playing in the snow when they slide down a snowy hill?\"",
+"role": "assistant"
+}
+],
+"source": "openhermes-50k"
+},
+{
+"messages": [
+{
+"content": "I have a single sentence I want revised for better style and clarity: \"During the 19th century many people died in cities from diseases that were the result of largely unsanitary conditions.\"",
+"role": "user"
+},
+{
+"content": "Here's a revised version of the sentence: \"In the 19th century, urban populations suffered high mortality rates due to diseases spawned by unsanitary conditions.\" \n\nI made a few adjustments to enhance style and clarity. I changed \"many people died\" to \"urban populations suffered high mortality rates\" to provide a more formal and descriptive way of expressing the idea. I also replaced \"that were the result of\" with \"spawned by\" to create a more concise and direct connection between the diseases and their cause. Additionally, I removed \"largely\" to simplify the sentence, as \"unsanitary conditions\" already implies a significant problem.",
+"role": "assistant"
+},
+{
+"content": "The 19 century is followed by a comma as are most centuries or decades such as the 1990's or the 1960's, correct?",
+"role": "user"
+},
+{
+"content": "When writing centuries, decades, or years in a sentence, it's common practice to use a comma after them when they function as introductory phrases or clauses. However, the comma usage is more related to the sentence structure than the century or decade itself.\n\nIn the original revision, I used a comma after \"19th century\" because it was an introductory phrase setting the time frame for the rest of the sentence. The comma helps to create a brief pause and separate the time period from the main clause. This would be the case with decades as well, such as \"In the 1990s, music trends shifted significantly.\" The comma is used after \"1990s\" because it's introducing the time period, not because it's a decade specifically.\n\nIt's worth noting that not all sentences will require a comma after the century or decade. For example, \"The 19th century was marked by significant industrial growth\" doesn't need a comma because the century is the subject of the sentence, not an introductory phrase.",
+"role": "assistant"
+},
+{
+"content": "Can you edit the next sentence. \"Developments in science and technology improved the quality of urban life by providing cities with modern sewage systems.\"",
+"role": "user"
+},
+{
+"content": "Here's a revised version of the sentence: \"Advances in science and technology led to significant improvements in urban living conditions, particularly with the installation of modern sewage systems.\"\n\nI made a few adjustments to enhance clarity and style. I changed \"Developments\" to \"Advances\" to use a more precise and dynamic term for scientific and technological progress. I also rephrased \"improved the quality of urban life\" to \"led to significant improvements in urban living conditions\" to provide a more descriptive and formal way of expressing the idea.\n\nAdditionally, I changed \"by providing cities with\" to \"particularly with the installation of\" to create a more concise and direct connection between the advances and their impact. This rephrasing also helps to emphasize the importance of modern sewage systems in improving urban living conditions.",
+"role": "assistant"
+}
+],
+"source": "smol-magpie-ultra-short"
+},
+{
+"messages": [
+{
+"content": "Write a 6-word short story. \n\n(Note: This seems simple but it requires brevity, clarity and emotion. 6-word short stories are designed to evoke a reaction in the reader.)",
+"role": "user"
+},
+{
+"content": "\"Last memory of her fades away.\"",
+"role": "assistant"
+},
+{
+"content": "Write another six-word short story.",
+"role": "user"
+},
+{
+"content": "\"His final whisper was her name.\"",
+"role": "assistant"
+},
+{
+"content": "Write a six-word short story that has some element of irony to it.",
+"role": "user"
+},
+{
+"content": "\"Fire station caught fire last night.\"",
+"role": "assistant"
+}
+],
+"source": "smol-magpie-ultra-short"
+},
+{
+"messages": [
+{
+"content": "A math student is conducting a statistical analysis on a set of data that contains some outliers. To make the analysis more robust, the student wants to use the median instead of the mean. The data set contains 11 numbers: \n\n{17, 22, 19, 23, 25, 28, 21, 23, 24, 85, 20}\n\nWhat is the median of this data set?",
+"role": "user"
+},
+{
+"content": "To find the median of the data set, first, we need to arrange the numbers in ascending order:\n\n{17, 19, 20, 21, 22, 23, 23, 24, 25, 28, 85}\n\nSince there are 11 numbers in the data set (an odd number), the median is the middle number. In this case, the median is the 6th number:\n\n17, 19, 20, 21, 22, (23), 23, 24, 25, 28, 85\n\nThe median of this data set is 23.",
+"role": "assistant"
+}
+],
+"source": "openhermes-50k"
+},
+{
+"messages": [
+{
+"content": "You're an AI assistant for text re-writing. Rewrite the input text to make it more professional and formal while retaining its essential content.",
+"role": "system"
+},
+{
+"content": "Hey Sarah,\n\nHope you're doing well! I was thinking it would be super cool if we could team up for a community health event. We could combine our efforts to raise awareness about HIV/AIDS and also educate parents about ear infections in kids. What do you think? It could be a great way to reach more people and make a real difference!\n\nLet me know what you think! Looking forward to hearing from you.\n\nCheers,\nAlex",
+"role": "user"
+},
+{
+"content": "Dear Sarah,\n\nI hope this message finds you well. I am writing to propose a collaborative effort for an upcoming community health event. I believe it would be highly beneficial if we could join forces to raise awareness about HIV/AIDS and simultaneously provide education to parents regarding ear infections in children. This partnership could significantly enhance our reach and impact within the community.\n\nI am eager to hear your thoughts on this initiative. Please let me know your availability to discuss this further.\n\nBest regards,\nAlex",
+"role": "assistant"
+}
+],
+"source": "smollm-rewrite-30k"
+},
+{
+"messages": [
+{
+"content": "You're an AI assistant for text re-writing. Rewrite the input text to make it more friendly and approachable while maintaining its main points.",
+"role": "system"
+},
+{
+"content": "Dr. Harper,\n\nI noticed that you haven't submitted your section of the research paper, and the deadline has already passed. This is a serious issue, and it puts the entire project at risk. I have a meeting with the university board tomorrow, and they will be expecting a complete draft. Your delay is unacceptable.\n\nBest regards,\nDr. Marcus Aurelius",
+"role": "user"
+},
+{
+"content": "Hi Dr. Harper,\n\nI hope this message finds you well. I wanted to touch base regarding the section of the research paper you were working on. It seems we've passed the deadline, and I haven't received your part yet. I understand things can get busy, but this is quite important as it affects the whole project.\n\nI have a meeting with the university board tomorrow, and they're expecting a complete draft. Could you please let me know if you're able to submit your section soon? Your contribution is crucial, and I really appreciate all the effort you're putting into this.\n\nThanks a lot,\nDr. Marcus Aurelius",
+"role": "assistant"
+}
+],
+"source": "smollm-rewrite-30k"
+},
+{
+"messages": [
+{
+"content": "You are a helpful assistant, who always provide explanation. Think like you are answering to a five year old.",
+"role": "system"
+},
+{
+"content": "What is the women's equivalent of the Ryder Cup????",
+"role": "user"
+},
+{
+"content": "The women's equivalent of the Ryder Cup is called the Solheim Cup. Just like the Ryder Cup is a golf competition between men's teams from Europe and the United States, the Solheim Cup is a golf competition between women's teams from Europe and the United States. They have lots of fun playing golf and try to win a shiny trophy.",
+"role": "assistant"
+}
+],
+"source": "openhermes-50k"
+},
+{
+"messages": [
+{
+"content": "You are a helpful assistant, who always provide explanation. Think like you are answering to a five year old.",
+"role": "system"
+},
+{
+"content": "Does the following review have a positive or negative opinion of the movie?\n\nsucceeds through sincerity . \nChoose from: (I) negative (II) positive",
+"role": "user"
+},
+{
+"content": "The review has a (II) positive opinion of the movie. The word \"succeeds\" means it did well, and \"sincerity\" is a good quality. So, the movie did well because of its good quality, which is a positive thing!",
+"role": "assistant"
+}
+],
+"source": "openhermes-50k"
+},
+{
+"messages": [
+{
+"content": "Write a Python function named `find_closest_pos_id` that accepts a list of WiFi fingerprint objects and a target position ID. The function should return the `pos_id` value of the closest WiFi fingerprint in the list, measured by the Manhattan distance between their lat/long coordinates.\n\nInput: A list of objects, where each object has `pos_id`, `latitude`, and `longitude` keys. A target position ID.",
+"role": "user"
+},
+{
+"content": "```python\nfrom math import fabs\n\ndef find_closest_pos_id(fingerprints, target_pos_id):\n    min_distance = float('inf')\n    closest_pos_id = None\n    for fingerprint in fingerprints:\n        distance = fabs(fingerprint['latitude'] - target_pos_id['latitude']) + fabs(fingerprint['longitude'] - target_pos_id['longitude'])\n        if distance < min_distance:\n            min_distance = distance\n            closest_pos_id = fingerprint['pos_id']\n    return closest_pos_id\n```",
+"role": "assistant"
+}
+],
+"source": "self-oss-instruct"
+},
+{
+"messages": [
+{
+"content": "Write a Python function that takes a list of PostgreSQL table column names and returns a valid SQL query to retrieve data from the table.\n\nYour code should pass the following test case:\n```python\ncolumn_names = ['col1', 'col2', 'col3']\ntable_name = 'my_table'\nexpected_query = 'SELECT col1, col2, col3 FROM my_table;'\nactual_query = sql_query_generator(column_names, table_name)\nassert actual_query == expected_query\n```",
+"role": "user"
+},
+{
+"content": "Here is an example implementation of the Python function:\n\n```python\ndef sql_query_generator(column_names, table_name):\n    columns_string = ', '.join(column_names)\n    query = f'SELECT {columns_string} FROM {table_name};'\n    return query\n```\n\nThis implementation uses the `join()` method to concatenate the column names into a comma-separated string. The resulting string is then used as the argument for the `SELECT` statement, along with the table name.",
+"role": "assistant"
+}
+],
+"source": "self-oss-instruct"
+},
+{
+"messages": [
+{
+"content": "I want to create a function to convert strings from snake_case to CamelCase. I have a list of strings that I want to convert.\n\nCreate a function called `snake_to_camel_case` that takes a string as an argument and returns a new string that follows the CamelCase convention.\n\nYour code should pass the following assertions:\n```python\nassert snake_to_camel_case('my_string') == 'MyString'\nassert snake_to_camel_case('hello_world') == 'HelloWorld'\n```",
+"role": "user"
+},
+{
+"content": "Here's how you can implement this function:\n\n```python\ndef snake_to_camel_case(string: str) -> str:\n    words = string.split('_')\n    camel_case_words = [word.capitalize() for word in words]\n    return ''.join(camel_case_words)\n```\n\nThe `split` method is used to split the snake_case string into a list of words based on the underscore. Then, the `capitalize` method is applied to each word in the list to capitalize it. Finally, the words are joined together with no spaces to get the CamelCased string.",
+"role": "assistant"
+}
+],
+"source": "self-oss-instruct"
+},
+{
+"messages": [
+{
+"content": "Provide a concise, objective summary of the input text in up to three sentences, focusing on key actions and intentions without using second or third person pronouns.",
+"role": "system"
+},
+{
+"content": "Dear Alex,\n\nThank you for reaching out! I'm glad you found my presentation interesting, and I equally enjoyed learning about your work in renewable energy solutions for off-grid communities.\n\nThe project you mentioned sounds fascinating, and I would be delighted to collaborate with you on it. Incorporating traditional 19th-century navigation methods, such as using wind patterns and ocean currents, could indeed help optimize the placement of renewable energy devices like wind turbines and tidal energy generators.\n\nI suggest we schedule a call to discuss the project in more detail and outline our next steps. Please let me know your availability, and I'll be happy to set up a meeting.\n\nBest regards,\nDr. Emily Thompson\nMaritime Historian and Researcher",
+"role": "user"
+},
+{
+"content": "Dr. Emily Thompson expresses enthusiasm about collaborating on a project that integrates 19th-century navigation techniques with renewable energy solutions for off-grid communities. She suggests scheduling a call to discuss the project in more detail and outline next steps.",
+"role": "assistant"
+}
+],
+"source": "smol-summarize-20k"
+},
+{
+"messages": [
+{
+"content": "You're an AI assistant for text re-writing. Rewrite the input text to make it more concise while preserving its core meaning.",
+"role": "system"
+},
+{
+"content": "Hi Michael,\n\nI hope you're doing well! I was thinking about our project the other day and had an idea. What do you think about submitting a proposal to present our CAD and 3D modeling tutorials at the upcoming EdTech Innovators Conference? I think it would be a great opportunity to share our work with a wider audience and get feedback from other educators in the field.\n\nLet me know what you think! If you're interested, we should start working on the proposal ASAP since the deadline is coming up soon.\n\nBest,\nEmily",
+"role": "user"
+},
+{
+"content": "Hi Michael,\n\nHope you're well! What do you think about proposing our CAD and 3D modeling tutorials for the EdTech Innovators Conference? It's a great chance to showcase our work and get feedback from peers. Let me know if you're interested, and we can start on the proposal soon.\n\nBest,\nEmily",
+"role": "assistant"
+}
+],
+"source": "smollm-rewrite-30k"
+},
+{
+"messages": [
+{
+"content": "Provide a concise, objective summary of the input text in up to three sentences, focusing on key actions and intentions without using second or third person pronouns.",
+"role": "system"
+},
+{
+"content": "Dear Dr. Lee,\n\nI hope this email finds you well. My name is Samantha Johnson, and I had the pleasure of attending your presentation on technology integration in early childhood education at the ECE conference last year. Your research resonated with me, and I have been implementing some of your strategies in my classroom with great success.\n\nI was wondering if you would be willing to share more resources or insights on this topic. I am particularly interested in how to better support minority students in my classroom through technology integration.\n\nThank you for your time and consideration.\n\nBest regards,\nSamantha Johnson",
+"role": "user"
+},
+{
+"content": "Samantha Johnson, who attended a presentation on technology integration in early childhood education at the ECE conference last year, is following up to share success in implementing the strategies discussed. She is requesting additional resources and insights, particularly on supporting minority students through technology integration.",
+"role": "assistant"
+}
+],
+"source": "smol-summarize-20k"
+},
+{
+"messages": [
+{
+"content": "Provide a concise, objective summary of the input text in up to three sentences, focusing on key actions and intentions without using second or third person pronouns.",
+"role": "system"
+},
+{
+"content": "Olivia,\n\nI understand your concerns about Sophia's development. It's natural to worry, but try not to stress too much. Every child develops at their own pace.\n\nThat being said, it's always a good idea to have a professional evaluate her, just to be sure. I'd recommend reaching out to a pediatric occupational therapist or a developmental pediatrician. They can assess Sophia's skills and provide guidance on any areas where she might need extra support.\n\nPlease don't hesitate to reach out if you need anything else. I'm here to support you and Sophia in any way I can.\n\nBest,\nEthan",
+"role": "user"
+},
+{
+"content": "Ethan reassures concerns about Sophia's development, suggesting a professional evaluation by a pediatric occupational therapist or developmental pediatrician. Ethan offers support and guidance for any additional needs.",
+"role": "assistant"
+}
+],
+"source": "smol-summarize-20k"
+},
+{
+"messages": [
+{
+"content": "You're an AI assistant for text re-writing. Rewrite the input text to make it more friendly and approachable while maintaining its main points.",
+"role": "system"
+},
+{
+"content": "Jordan,\n\nI need the nutritional data you promised by today. You haven't provided the necessary details, and it's causing delays. I thought you were supposed to be an expert. This is basic stuff, you should know this. If we don't get this information soon, the project will fail.\n\nAlex",
+"role": "user"
+},
+{
+"content": "Hi Jordan,\n\nI hope you're doing well! I just wanted to follow up on the nutritional data you mentioned. It's really important for our project, and we're starting to feel a bit delayed without it. I know this is probably a straightforward task for you, given your expertise, and we're counting on your knowledge to help us move forward smoothly.\n\nCould you let me know when you might be able to send it over? It would be a huge help!\n\nThanks so much,\nAlex",
+"role": "assistant"
+}
+],
+"source": "smollm-rewrite-30k"
+},
+{
+"messages": [
+{
+"content": "You are an AI rewriting assistant. You will be provided with a text and you need to rewrite it according to the user's instructions.",
+"role": "system"
+},
+{
+"content": "Reword the following phrase to create a more imaginative version:\nHe watched the stars twinkle in the night sky.",
+"role": "user"
+},
+{
+"content": "He gazed up at the diamond-studded canvas above, entranced by the celestial dancers that shimmered and twinkled in a mesmerizing performance.",
+"role": "assistant"
+}
+],
+"source": "explore-instruct-rewrite"
+},
+{
+"messages": [
+{
+"content": "Enhance the description of the rainforest by providing sensory details:\nThe rainforest is lush.",
+"role": "user"
+},
+{
+"content": "The lush rainforest envelops you with its verdant foliage and velvety moss that carpet the forest floor. The sound of gentle raindrops pricks at your skin, as the sweet, earthy scent of wet leaves tickles your nose. A symphony of chirping birds, buzzing insects, and scampering animals complete the audio experience of the magical jungle.",
+"role": "assistant"
+}
+],
+"source": "explore-instruct-rewrite"
+},
+{
+"messages": [
+{
+"content": "Hey!",
+"role": "user"
+},
+{
+"content": "Hello! How can I help you today?",
+"role": "assistant"
+},
+{
+"content": "I'm worried about pollution in my city. What's the main cause of pollution?",
+"role": "user"
+},
+{
+"content": "The main causes of pollution are usually industrial waste, vehicle emissions, and littering. However, it can vary depending on the location.",
+"role": "assistant"
+},
+{
+"content": "What are some simple ways to prevent pollution?",
+"role": "user"
+},
+{
+"content": "Some simple ways to prevent pollution include recycling, using public transport or carpooling, and properly disposing of trash. You can also use reusable bags and water bottles.",
+"role": "assistant"
+},
+{
+"content": "That sounds easy. What's the most important thing I can do to help?",
+"role": "user"
+},
+{
+"content": "One of the most important things you can do is to reduce your use of single-use plastics, as they contribute significantly to pollution and waste. Every small action counts, and making these changes can have a big impact when combined with the efforts of others.",
+"role": "assistant"
+}
+],
+"source": "everyday-conversations"
+},
+{
+"messages": [
+{
+"content": "You are an AI rewriting assistant. You will be provided with a text and you need to rewrite it according to the user's instructions.",
+"role": "system"
+},
+{
+"content": "Suggest changes to the following sentence to improve sentence structure and clarity:\nAn academic essay analyzing the themes in a classic novel.",
+"role": "user"
+},
+{
+"content": "In analyzing the themes of the novel, it is important to consider the author's use of symbolism and how it contributes to the overall meaning of the work.",
+"role": "assistant"
+}
+],
+"source": "explore-instruct-rewrite"
+},
+{
+"messages": [
+{
+"content": "You are an AI rewriting assistant. You will be provided with a text and you need to rewrite it according to the user's instructions.",
+"role": "system"
+},
+{
+"content": "Simplify the language by changing the following phrase to a single word:\n\"At this point in time\"",
+"role": "user"
+},
+{
+"content": "\"Now\"",
+"role": "assistant"
+}
+],
+"source": "explore-instruct-rewrite"
+},
+{
+"messages": [
+{
+"content": "Hi",
+"role": "user"
+},
+{
+"content": "Hello! How can I help you today?",
+"role": "assistant"
+},
+{
+"content": "I'm having trouble understanding what I read. Do you have any tips for me?",
+"role": "user"
+},
+{
+"content": "One strategy that can help is visualization. Try to picture the events or scenes described in the text as you read.",
+"role": "assistant"
+},
+{
+"content": "That sounds helpful. Can you give me an example of how to do that?",
+"role": "user"
+},
+{
+"content": "For example, if you're reading a story about a character walking through a forest, try to imagine what the forest looks like, what the character is wearing, and what they might be seeing and hearing. This can help make the story feel more real and memorable.",
+"role": "assistant"
+},
+{
+"content": "Okay, I think I understand. Is there anything else I can try to help me understand what I read?",
+"role": "user"
+},
+{
+"content": "Another strategy is to ask yourself questions as you read, such as \"What is the main idea of this chapter?\", \"What is the author trying to say?\", or \"How does this relate to what I already know?\" This can help you stay focused and engaged with the material.",
+"role": "assistant"
+}
+],
+"source": "everyday-conversations"
+},
+{
+"messages": [
+{
+"content": "Hi",
+"role": "user"
+},
+{
+"content": "Hello! How can I help you today?",
+"role": "assistant"
+},
+{
+"content": "I'm having trouble with my cake. It keeps sinking in the middle. Do you know why this might be happening?",
+"role": "user"
+},
+{
+"content": "Yes, there are a few reasons why your cake might be sinking. It could be due to overmixing the batter, incorrect oven temperature, or opening the oven door too often during baking.",
+"role": "assistant"
+},
+{
+"content": "That makes sense. I think I might have opened the oven door too many times. What can I do to fix this issue?",
+"role": "user"
+},
+{
+"content": "To prevent this, try to resist the temptation to check on your cake too frequently. Instead, set a timer according to the recipe's instructions and only check on it when the timer goes off. This should help your cake bake evenly and prevent it from sinking.",
+"role": "assistant"
+}
+],
+"source": "everyday-conversations"
+},
+{
+"messages": [
+{
+"content": "You are a seasoned ranger, knowledgeable in tracking and survival skills.",
+"role": "system"
+},
+{
+"content": "What's the recommended watering frequency for my succulent plants?",
+"role": "user"
+},
+{
+"content": "Succulents are desert plants and are used to dry conditions. Therefore, they should be watered less frequently than other plants. A good rule of thumb is to water your succulents once every 7-10 days in the summer and about once a month in the winter. However, it's important to let the soil dry out completely between waterings to prevent root rot. Always check the soil before watering. If it's still moist, wait a little longer.",
+"role": "assistant"
+}
+],
+"source": "smol-summarize-5k"
+},
+{
+"messages": [
+{
+"content": "You are an AI assistant that strictly follows a professional tone and does not use slang or informal language",
+"role": "system"
+},
+{
+"content": "Translate this English sentence to Spanish: 'Where is the closest restaurant?'",
+"role": "user"
+},
+{
+"content": "'¿Dónde está el restaurante más cercano?'",
+"role": "assistant"
+}
+],
+"source": "smol-summarize-5k"
+},
+{
+"messages": [
+{
+"content": "You are an AI knitting instructor, providing users with step-by-step instructions for knitting patterns",
+"role": "system"
+},
+{
+"content": "What is the most ideal season to plant roses?",
+"role": "user"
+},
+{
+"content": "As a knitting AI, I specialize in providing information related to knitting. However, generally, the best time to plant roses is in the early spring after the last frost, or in the fall at least six weeks before the first frost in your area. It's important to ensure that the plants have time to establish their roots before extreme heat or cold weather arrives. For more precise information, I recommend checking with a gardening expert or a local nursery.",
+"role": "assistant"
+}
+],
+"source": "smol-summarize-5k"
+},
+{
+"messages": [
+{
+"content": "You are an AI chatbot that speaks like Shakespeare.",
+"role": "system"
+},
+{
+"content": "Can you please translate the phrase \"I love reading books\" into Spanish?",
+"role": "user"
+},
+{
+"content": "Verily, the translation thou seeketh is \"Amo leer libros\".",
+"role": "assistant"
+}
+],
+"source": "smol-summarize-5k"
+},
+{
+"messages": [
+{
+"content": "What is 32 divided by 4.",
+"role": "user"
+},
+{
+"content": "32 divided by 4 is 8.",
+"role": "assistant"
+},
+{
+"content": "What is 16 divided by 4.",
+"role": "user"
+},
+{
+"content": "16 divided by 4 is 4.",
+"role": "assistant"
+},
+{
+"content": "What is 24 divided by 4.",
+"role": "user"
+},
+{
+"content": "24 divided by 4 is 6.",
+"role": "assistant"
+}
+],
+"source": "smol-magpie-ultra-short"
+},
+{
+"messages": [
+{
+"content": "Write a simple Python program using while loop to print numbers 1 to 10\n```python\n# suggest your code here\n```",
+"role": "user"
+},
+{
+"content": "```python\ni = 1\nwhile i <= 10:\n    print(i)\n    i += 1\n```",
+"role": "assistant"
+},
+{
+"content": "How would you write this same program but as a for loop?",
+"role": "user"
+},
+{
+"content": "```python\nfor i in range(1, 11):\n    print(i)\n```",
+"role": "assistant"
+},
+{
+"content": "Can you make the above code more Pythonic?",
+"role": "user"
+},
+{
+"content": "```python\nprint(*range(1, 11), sep='\\n')\n```",
+"role": "assistant"
+}
+],
+"source": "smol-magpie-ultra-short"
+},
+{
+"messages": [
+{
+"content": "Consider a real number line with two points, A at x = -2 and B at x = 5. What is the point halfway between points A and B on the number line? The final answer should be given in the form of a single number.",
+"role": "user"
+},
+{
+"content": "To find the point halfway between points A and B on the number line, we need to calculate the average of the x-coordinates of the two points. The x-coordinate of point A is -2, and the x-coordinate of point B is 5. \n\nThe midpoint can be calculated using the formula (x1 + x2)/2, where x1 and x2 are the x-coordinates of the two points. Plugging in the values, we get (-2 + 5)/2 = 3/2 = 1.5. \n\nSo, the point halfway between points A and B on the number line is 1.5.",
+"role": "assistant"
+},
+{
+"content": "Can you say the final answer, with just the number?",
+"role": "user"
+},
+{
+"content": "1.5",
+"role": "assistant"
+},
+{
+"content": "Can you remove the comma at the end of the prior response?",
+"role": "user"
+},
+{
+"content": "1.5",
+"role": "assistant"
+}
+],
+"source": "smol-magpie-ultra-short"
+}
+]
+}

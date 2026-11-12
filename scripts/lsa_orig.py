@@ -29,11 +29,19 @@ through torchrun. Nothing in their checkout is edited; three things are swapped 
      (their scope), clip 1.0, fp32 master weights under bf16 autocast (their runtime). Peak LR 6.4e-4: our m100 value,
      so the LR is not a difference between the arms; it lies inside the range their own seed/LR sweep trained the
      0.55B at (5e-4 and 1e-3, lsa_mqa8_lr_seeds.yaml), and their 5e-4 scaled 1/width from 1,024 to 896 is 5.7e-4.
+  4. instruction tuning (E37 SFT, docs/experiments_specs/ahead/E37_sft_sensitivity.md) — phase sft: from the decay's
+     final weights (model only, `run.init_from`), the manifest of scripts/build_sft_mix.py (--sft_manifest), as
+     scripts/run_e33n.py --phase sft trains our arms: 200M tokens = 763 steps of 16 x 16,384, warmup 22, 1 - sqrt decay
+     over the last 740 steps to 0.1 x, peak LR from --lr (the pre-flight's pick), the same row order. The items carry
+     labels (loss on the answer tokens; the LongDocs-lite replay on every token): the label of a position is the
+     item's label of the next token, still ignored across a document start and at the row's end (rows_to_batch).
 
 Usage (on the node, this repo's root as the working directory, their venv's python):
   python scripts/lsa_orig.py params                                    # parameter counts of the preset
   torchrun --standalone --nproc_per_node=1 scripts/lsa_orig.py train --phase trunk --data D --out R [--steps N]
   torchrun --standalone --nproc_per_node=1 scripts/lsa_orig.py train --phase decay --data D --out R --init STEP_DIR
+  torchrun --standalone --nproc_per_node=1 scripts/lsa_orig.py train --phase sft --data D --out R \
+      --init R/decay/checkpoint/step-763 --sft_manifest D/sft_smoltalk_16k/manifest_sft.json --lr LR
   A phase writes R/<phase>/ (torchtitan's dump folder: checkpoint/step-N, their config.json) and resumes from its
   newest checkpoint when rerun.
 """
@@ -59,11 +67,19 @@ IGNORE = -100
 BODY = dict(dim=896, n_layers=12, n_key_heads=7, n_value_heads=7, hidden_dim=2240)
 # our m100 budget (scripts/run_e33n.py SIZES["m100"]): tokens per phase, 128 rows of 4k per step, peak LR
 TRUNK_TOKENS, DECAY_TOKENS, STEP_TOKENS, LR = 3.0e9, 0.4e9, 128 * 4096, 6.4e-4
+# E37 SFT (scripts/run_e33n.py SFT): 200M tokens, 16 rows of 16k per step; its peak LR is a required argument
+SFT_TOKENS, SFT_STEP_TOKENS = 200e6, 16 * 16384
 PHASES = {
-    # seq, micro rows per pass (80 GB H100), warmup share, decay share
+    # seq, micro rows per pass (80 GB H100; sft: 24 GB home cards), warmup share, decay share
     "trunk": dict(seq=4096, micro=8, warmup=0.01, decay=0.0, tokens=TRUNK_TOKENS, ckpt=500),
     "decay": dict(seq=16384, micro=2, warmup=0.03, decay=0.97, tokens=DECAY_TOKENS, ckpt=200),
+    "sft": dict(seq=16384, micro=1, warmup=0.03, decay=0.97, tokens=SFT_TOKENS, ckpt=200, step_tokens=SFT_STEP_TOKENS),
 }
+
+
+def step_tokens(phase: str) -> int:
+    """Tokens per optimizer step: 128 x 4k (trunk, decay) or 16 x 16k (sft)."""
+    return int(PHASES[phase].get("step_tokens", STEP_TOKENS))
 
 
 def _load_by_path(name: str, path: Path):
@@ -99,15 +115,20 @@ def manifests(data: Path, out: Path) -> dict[str, Path]:
     return p
 
 
-def rows_to_batch(ids, doc):
+def rows_to_batch(ids, doc, labels=None):
     """Rows [R, S] (input ids, per-row document ids) -> their trainer's flat batch contract (lsa.training.data.corpus
     .batch_of): input, labels (next token; ignored across a document start and at the row's end), positions (restart
-    at each document), padding_mask, num_valid_tokens."""
+    at each document), padding_mask, num_valid_tokens.
+
+    `labels` [R, S] (optional): the dataset's labels in our HF convention (labels[t] is the target of position t - 1,
+    -100 = no target; data/bin_token_dataset.py with loss masks). Position t then predicts labels[t + 1] instead of
+    ids[t + 1], under the same two rules. Without it the batch is exactly as before (every next token)."""
     import torch
 
     R, S = ids.shape
+    nxt = ids if labels is None else labels
     labels = torch.full_like(ids, IGNORE)
-    labels[:, :-1] = ids[:, 1:]
+    labels[:, :-1] = nxt[:, 1:]
     labels[:, :-1] = labels[:, :-1].masked_fill(doc[:, 1:] != doc[:, :-1], IGNORE)
     start = torch.zeros_like(ids, dtype=torch.bool)
     start[:, 0] = True
@@ -168,10 +189,11 @@ def fit_kernels() -> str:
     return f"their kernels as they are ({smem} B shared memory a block)"
 
 
-def phase_numbers(phase: str, steps: int | None = None, micro: int | None = None) -> dict[str, Any]:
+def phase_numbers(phase: str, steps: int | None = None, micro: int | None = None,
+                  tokens: float | None = None) -> dict[str, Any]:
     p = PHASES[phase]
     seq = p["seq"]
-    full = int(round(p["tokens"] / STEP_TOKENS))                  # 5722 / 763, as run_e33n.train_cmd rounds
+    full = int(round((tokens or p["tokens"]) / step_tokens(phase)))  # 5722 / 763 / 763, as run_e33n.train_cmd rounds
     n = steps or full
     warm = max(1, int(p["warmup"] * full))                        # HF: int(0.01 * steps) / int(0.03 * steps)
     decay_steps = int(p["decay"] * full)                          # HF: num_decay_steps = int(0.97 * steps)
@@ -184,19 +206,23 @@ def phase_numbers(phase: str, steps: int | None = None, micro: int | None = None
 
 
 def experiment(phase: str, out: Path, *, init: str | None = None, steps: int | None = None,
-               micro: int | None = None, extra: list[str] | None = None):
-    """Their NativeConfig for one phase: the preset plus our overrides."""
+               micro: int | None = None, extra: list[str] | None = None, lr: float | None = None,
+               tokens: float | None = None):
+    """Their NativeConfig for one phase: the preset plus our overrides (lr: the sft phase's peak, required there)."""
     from lsa.training.native.config import load
 
-    z = phase_numbers(phase, steps, micro)
+    if phase == "sft" and not lr:
+        raise ValueError("phase sft needs its peak LR (--lr)")
+    lr = lr or LR
+    z = phase_numbers(phase, steps, micro, tokens)
     ov = [
         # data parallel over the GPUs torchrun gives (their default: FSDP over dp_shard); 1 for the evals
         f"run.output={out.resolve()}", f"run.name={phase}", f"run.dp_shard={int(os.environ.get('WORLD_SIZE', 1))}",
         "run.dp_replicate=1",
-        f"run.optim.steps={z['steps']}", f"run.optim.warmup_steps={z['warmup']}", f"run.optim.lr={LR}",
+        f"run.optim.steps={z['steps']}", f"run.optim.warmup_steps={z['warmup']}", f"run.optim.lr={lr}",
         f"run.optim.decay_ratio={z['decay_ratio']}", "run.optim.decay_shape=sqrt", "run.optim.schedule=wsd",
         "run.optim.min_lr_factor=0.1", "run.optim.weight_decay=0.1", "run.optim.grad_clip=1.0",
-        f"run.optim.tokens_per_rank={z['tokens_per_rank']}", f"run.optim.tokens_per_step={STEP_TOKENS}",
+        f"run.optim.tokens_per_rank={z['tokens_per_rank']}", f"run.optim.tokens_per_step={step_tokens(phase)}",
         "run.checkpoint.decay_start=false", f"run.checkpoint_every={z['ckpt']}",
         "run.runtime.seed=42", "run.runtime.autocast_bf16=true", "run.runtime.log_every=10",
         "run.runtime.activation_checkpoint=none", "run.evaluation.every=0", f"data.seq_len={z['seq']}",
@@ -264,7 +290,8 @@ def make_loader_class():
                 items = [self.ds[i] for i in self._indices(self.batches)]
                 self.batches += 1
                 yield rows_to_batch(torch.stack([x["input_ids"] for x in items]),
-                                    torch.stack([x["doc_ids"] for x in items]))
+                                    torch.stack([x["doc_ids"] for x in items]),
+                                    torch.stack([x["labels"] for x in items]) if "labels" in items[0] else None)
 
         def state_dict(self) -> dict[str, Any]:
             return {"dp_world_size": self.world,
@@ -290,8 +317,15 @@ def train(args) -> None:
 
     out = Path(args.out)
     man = manifests(Path(args.data), out)
+    if args.phase == "sft":
+        man["sft"] = Path(args.sft_manifest).resolve()
+        seq = int(json.loads(man["sft"].read_text())["seq_len"])
+        if seq != PHASES["sft"]["seq"]:
+            raise ValueError(f"sft manifest seq_len {seq} != {PHASES['sft']['seq']}")
     patch_body()
-    exp, z = experiment(args.phase, out, init=args.init, steps=args.steps, micro=args.micro)
+    lr = args.lr if args.phase == "sft" else LR
+    exp, z = experiment(args.phase, out, init=args.init, steps=args.steps, micro=args.micro, lr=lr,
+                        tokens=args.tokens if args.phase == "sft" else None)
     init_logger()
     check_label_contract()
     print(describe(exp), flush=True)
@@ -302,7 +336,7 @@ def train(args) -> None:
     config.dataloader = Loader.Config(manifest=str(man[args.phase]), order_seed=42)
     config.checkpoint.keep_latest_k = 2
     if int(os.environ.get("RANK", 0)) == 0:
-        write_json(exp.out / "config.json", {**meta(exp), "mc": {"body": BODY, "phase": z, "lr": LR,
+        write_json(exp.out / "config.json", {**meta(exp), "mc": {"body": BODY, "phase": z, "lr": lr,
                                                                  "manifest": str(man[args.phase])}})
     trainer = config.build()
     try:
@@ -354,10 +388,16 @@ def main() -> None:
     t.add_argument("--phase", required=True, choices=sorted(PHASES))
     t.add_argument("--data", required=True)
     t.add_argument("--out", required=True)
-    t.add_argument("--init", help="decay: the trunk's final step folder (.../trunk/checkpoint/step-N)")
+    t.add_argument("--init", help="decay: the trunk's final step folder (.../trunk/checkpoint/step-N); "
+                                  "sft: the decay's (.../decay/checkpoint/step-763)")
     t.add_argument("--steps", type=int, help="smoke test: stop after N steps (schedule shape of the full phase)")
     t.add_argument("--micro", type=int, help="rows per pass (gradient accumulation makes up the 128 x 4k step)")
+    t.add_argument("--sft_manifest", help="sft: manifest_sft.json of scripts/build_sft_mix.py")
+    t.add_argument("--lr", type=float, help="sft: peak LR (required; trunk and decay use 6.4e-4)")
+    t.add_argument("--tokens", type=float, help="sft: tokens of the stage (default 200e6; the LR pre-flight 20e6)")
     a = ap.parse_args()
+    if a.what == "train" and a.phase == "sft" and not (a.sft_manifest and a.lr and a.init):
+        ap.error("--phase sft needs --sft_manifest, --lr and --init (the decay's final step folder)")
     params(a) if a.what == "params" else train(a)
 
 

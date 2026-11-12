@@ -182,11 +182,20 @@ def main():
     if getattr(data_args, "bin_manifest", None):
         # E33n: fixed rows straight from GPT-2 token shards (no HF datasets, no packing pass): each item already
         # carries input_ids [S] and doc_ids [S], the PackedDataset contract the causal-LM collator reads
-        from data.bin_token_dataset import load_bin_manifest
+        from data.bin_token_dataset import load_bin_manifest, manifest_has_masks
 
         train_ds, test_ds, bin_meta = load_bin_manifest(data_args.bin_manifest)
         if int(bin_meta["seq_len"]) != int(data_args.max_seq_length):
             raise ValueError(f"bin_manifest seq_len {bin_meta['seq_len']} != max_seq_length {data_args.max_seq_length}")
+        if manifest_has_masks(bin_meta):
+            # E37 SFT: the items carry labels (loss mask applied, document starts ignored); the collator keeps them
+            # (and still ignores document starts) instead of mirroring input_ids. doc_ids flow on to the model.
+            if (getattr(data_args, "loss_span_markers", "") or "").strip():
+                raise ValueError("a bin_manifest with loss masks excludes loss_span_markers")
+            data_args.preserve_precomputed_labels = True
+            if is_main_process():
+                logger.info("bin_manifest has loss masks: training on the items' labels "
+                            "(preserve_precomputed_labels=True)")
         if is_main_process():
             logger.info("Token-shard rows: train=%s eval=%s seq=%s rule=%s per source %s", f"{len(train_ds):,}",
                         f"{len(test_ds):,}" if test_ds is not None else "none", bin_meta["seq_len"],

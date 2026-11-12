@@ -47,29 +47,38 @@ def _metric(r: dict, task: str, metric: str) -> float | None:
     return v if isinstance(v, (int, float)) else None
 
 
-def run_extra(evaluate, lengths: list[int], limit: int, out: dict, save, cap: int | None = None) -> None:
+def run_extra(evaluate, lengths: list[int], limit: int, out: dict, save, cap: int | None = None,
+              parts: tuple[str, ...] = ("blimp", "swde", "babilong")) -> None:
     """The `extra` suite. `evaluate(tasks, limit, metadata)` runs lm-eval and returns its `results`; `save()` writes
     `out` after every part so a long run keeps what it has. BLiMP and SWDE run on every document unless `cap` (smoke
-    tests only) limits them."""
-    out["results"], out["summary"] = {}, {}
+    tests only) limits them. `parts` picks a subset (a home server runs the short ones with SDPA, BABILong with flex)."""
+    out["results"], out["summary"], out["parts"] = {}, {}, list(parts)
+    if "blimp" in parts:
+        _blimp(evaluate, cap, out, save)
+    if "swde" in parts:
+        r = evaluate(["swde"], cap, None)
+        out["results"]["swde"] = r
+        out["summary"]["swde"] = _metric(r, "swde", "contains,none")
+        save()
+    if "babilong" in parts:
+        out["summary"]["babilong"] = {}
+        for L in lengths:
+            r = evaluate(BABILONG, limit, {"max_seq_lengths": babilong_config(L)})
+            out["results"][f"babilong_{L}"] = r
+            per = {t: _metric(r, t, "acc,none") for t in BABILONG}
+            vals = [v for v in per.values() if v is not None]
+            out["summary"]["babilong"][L] = {**per, "mean": sum(vals) / len(vals) if vals else None}
+            save()
+
+
+def _blimp(evaluate, cap, out, save) -> None:
     r = evaluate(["blimp"], cap, None)
     sets = [v for k, v in ((k, _metric(r, k, "acc,none")) for k in r if k.startswith("blimp_")) if v is not None]
     out["results"]["blimp"] = r
     out["summary"]["blimp"] = _metric(r, "blimp", "acc,none") or (sum(sets) / len(sets) if sets else None)
     out["summary"]["blimp_sets"] = len(sets)
     save()
-    r = evaluate(["swde"], cap, None)
-    out["results"]["swde"] = r
-    out["summary"]["swde"] = _metric(r, "swde", "contains,none")
-    save()
-    out["summary"]["babilong"] = {}
-    for L in lengths:
-        r = evaluate(BABILONG, limit, {"max_seq_lengths": babilong_config(L)})
-        out["results"][f"babilong_{L}"] = r
-        per = {t: _metric(r, t, "acc,none") for t in BABILONG}
-        vals = [v for v in per.values() if v is not None]
-        out["summary"]["babilong"][L] = {**per, "mean": sum(vals) / len(vals) if vals else None}
-        save()
+
 
 # lm-eval's RULER HotpotQA task downloads the dev set (distractor) from this host, which no longer resolves
 # (2026-11-05, from Odra and Polonez). The same 7,405 questions are on the Hub as parquet.
@@ -114,6 +123,7 @@ def main() -> None:
     ap.add_argument("--lengths", default="4096,8192,16384")
     ap.add_argument("--extra_lengths", default="2048,4096,8192,16384", help="extra: BABILong context lengths")
     ap.add_argument("--extra_cap", type=int, default=0, help="extra, smoke tests only: documents per BLiMP set / SWDE")
+    ap.add_argument("--extra_parts", default="blimp,swde,babilong", help="extra: which parts to run")
     ap.add_argument("--limit", type=int, default=100)
     ap.add_argument("--tasks", default="", help="comma-separated subset (default: the whole suite)")
     ap.add_argument("--batch", type=int, default=8)
@@ -136,8 +146,9 @@ def main() -> None:
 
     lengths = [int(x) for x in (a.extra_lengths if a.suite == "extra" else a.lengths).split(",")]
     # extra: a BABILong row is its config's length plus the 2-shot examples and the instruction; SWDE pages are short
+    babilong = a.suite == "extra" and "babilong" in a.extra_parts
     max_len = (max(lengths) + 2 * a.max_gen_toks if a.suite == "ruler"
-               else max(lengths) + max(lengths) // 8 + 512 if a.suite == "extra" else 2048)
+               else max(lengths) + max(lengths) // 8 + 512 if babilong else 4096 if a.suite == "extra" else 2048)
     lm = PerceiverARLMEval(pretrained=a.checkpoint, tokenizer=a.tokenizer, attn_backend=a.backend,
                            max_length=max_len, batch_size=a.batch, device=a.device)
     if a.notes_off:
@@ -159,7 +170,8 @@ def main() -> None:
             model=lm, tasks=tasks_, limit=limit_ if limit_ and limit_ > 0 else None, log_samples=False,
             task_manager=TaskManager(metadata=md) if md else None, bootstrap_iters=0)["results"]
         out["extra_cap"] = a.extra_cap
-        run_extra(evaluate, lengths, a.limit, out, save, cap=a.extra_cap or None)
+        run_extra(evaluate, lengths, a.limit, out, save, cap=a.extra_cap or None,
+                  parts=tuple(x for x in a.extra_parts.split(",") if x))
         out["seconds"] = round(time.time() - t0, 1)
         save()
         print(json.dumps(out["summary"], indent=1, default=str))

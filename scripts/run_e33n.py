@@ -18,10 +18,17 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
                  warmup then constant learning rate (the WSD "stable" part; LSA branches its decays from it);
          decay — from the trunk's final weights, fresh optimizer, LongDocs-lite rows of 16,384 (one document per
                  row), warmup 3 % then 1−sqrt decay over 97 % to 10 % of the peak (LSA's 32k decay shape).
+         sft   — E37 instruction tuning (docs/experiments_specs/ahead/E37_sft_sensitivity.md): from a decay's final
+                 weights, fresh optimizer, the mix of scripts/build_sft_mix.py (--sft_manifest: smol-smoltalk chats
+                 packed into 16,384-token rows, loss on the answers, plus 10 % LongDocs-lite replay), 16 rows per step,
+                 200M tokens, the decay's schedule shape at a peak LR given by --lr (the pre-flight's pick); evaluates
+                 the held-out answer loss (the manifest's eval rows) before the first step and at the last.
 
 Usage (on a node, from the repo root):
   uv run python scripts/run_e33n.py cmd --arm e33n --size s30 --phase trunk --data /opt/dlami/nvme/data --out OUT
   uv run python scripts/run_e33n.py params            # parameter counts of every arm × size
+  uv run python scripts/run_e33n.py cmd --arm lsa --size m100 --phase sft --data D --out OUT \
+      --init OUT_DECAY/decay/final --sft_manifest D/sft_smoltalk_16k/manifest_sft.json --lr 1.5e-4
 """
 from __future__ import annotations
 
@@ -80,6 +87,9 @@ ARMS = {
     "e37a_c128": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "concept",
                   "concept_block": 512, "concept_per_block": 4, "concept_sinks": 4, "concept_top_k": 512},
 }
+# E37 SFT: rows per optimizer step (16 × 16,384 = 262k tokens) and tokens of the stage, at every size
+SFT = dict(rows=16, tokens=200e6)
+
 TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"lm_open_k": 1, "lm_open_cap": 64},
              "lsa": {"lsa_window": 64, "lsa_block": 64, "lsa_top_k": 64},
              "e37a": {"concept_block": 64, "concept_per_block": 8, "concept_top_k": 64},
@@ -173,19 +183,38 @@ def manifests(data: Path, out: Path, size: str) -> dict:
     return p
 
 
+def _final_eval_every(steps: int) -> int:
+    """The smallest divisor of steps that is at least steps / 10: about ten evaluations, the last at the last step
+    (the HF Trainer evaluates only at multiples of eval_steps)."""
+    return min(d for d in range(1, steps + 1) if steps % d == 0 and d * 10 >= steps)
+
+
 def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: str | None = None,
               lr: float | None = None, tokens: float | None = None, micro: int | None = None, seed: int = 42,
               wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
-              flow: bool = False, gpus: int = 1) -> list[str]:
+              flow: bool = False, gpus: int = 1, sft_manifest: str | None = None,
+              grad_ckpt: bool = False) -> list[str]:
     z = SIZES[size]
     args, n = fit(arm, size)
-    man = manifests(data, out, size)
-    seq = json.loads(man[phase].read_text())["seq_len"]
-    tokens = tokens or (z["trunk"] if phase == "trunk" else z["decay"])
-    rows_per_step = z["rows"] * 4096 // seq  # the same tokens per step in both phases
-    rows_per_step = max(1, rows_per_step)
-    micro = micro or max(1, min(rows_per_step, (16 if phase == "trunk" else 4) if size == "s30" else
-                                (8 if phase == "trunk" else 2)))
+    if phase == "sft":
+        if not (sft_manifest and init and lr):
+            raise ValueError("phase sft needs --sft_manifest, --init (a decay's final folder) and --lr")
+        man = {"sft": Path(sft_manifest).resolve()}
+        seq = json.loads(man["sft"].read_text())["seq_len"]
+        if seq != decay_len(size):
+            raise ValueError(f"sft manifest seq_len {seq} != the decay's row length {decay_len(size)} at {size}")
+        tokens = tokens or SFT["tokens"]
+        rows_per_step = SFT["rows"]
+        # one row per pass at 16k beyond s30 (24 GB home cards); gradient accumulation makes up the 16 rows
+        micro = micro or max(1, min(rows_per_step, 2 if size == "s30" else 1))
+    else:
+        man = manifests(data, out, size)
+        seq = json.loads(man[phase].read_text())["seq_len"]
+        tokens = tokens or (z["trunk"] if phase == "trunk" else z["decay"])
+        rows_per_step = z["rows"] * 4096 // seq  # the same tokens per step in both phases
+        rows_per_step = max(1, rows_per_step)
+        micro = micro or max(1, min(rows_per_step, (16 if phase == "trunk" else 4) if size == "s30" else
+                                    (8 if phase == "trunk" else 2)))
     # gpus > 1: one model on several GPUs (data parallel, torchrun); each optimizer step still sees rows_per_step
     # rows: micro × accum × gpus. When gpus does not divide the step (64 rows on 3 GPUs) the step is rounded down
     # and the step count rises to keep the same total tokens.
@@ -208,6 +237,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
                  "--lr_scheduler_kwargs", json.dumps({"num_decay_steps": int(0.97 * steps), "decay_type": "1-sqrt",
                                                       "min_lr_ratio": 0.1})]
     save_every = max(50, steps // 10)
+    if phase == "sft" and not eval_every:
+        eval_every = _final_eval_every(steps)
     cmd += [
         "--attn_backend", backend, "--attn_pad_multiple", "1", "--use_liger", "False",
         "--bin_manifest", str(man[phase]), "--tokenizer_name", str(data / "tokenizer_gpt2"),
@@ -224,6 +255,10 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     ]
     if init:
         cmd += ["--model_name_or_path", init]
+    if phase == "sft":  # the base weights' held-out answer loss, the "before" of the stage
+        cmd += ["--eval_on_start", "True"]
+    if grad_ckpt:  # activations recomputed in backward (16k rows on a 24 GB card), never shorter rows
+        cmd += ["--gradient_checkpointing", "True"]
     if flow:  # E33p instrumentation: dynamics every 200 steps (decay: 50 of ~763) and weight snapshots
         cmd += ["--flow_every", "200" if phase == "trunk" else "50",
                 "--snapshot_every", "1000" if phase == "trunk" else "500"]
@@ -243,7 +278,7 @@ def main() -> None:
     c = sub.add_parser("cmd")
     c.add_argument("--arm", required=True, choices=sorted(ARMS))
     c.add_argument("--size", required=True, choices=sorted(SIZES))
-    c.add_argument("--phase", required=True, choices=("trunk", "decay"))
+    c.add_argument("--phase", required=True, choices=("trunk", "decay", "sft"))
     c.add_argument("--data", required=True)
     c.add_argument("--out", required=True)
     c.add_argument("--init")
@@ -257,7 +292,11 @@ def main() -> None:
     c.add_argument("--flow", action="store_true", help="E33p instrumentation (flow/grad/upd/read/select/lens keys)")
     c.add_argument("--seed", type=int, default=42, help="trainer seed: initial weights and the order rows are drawn in")
     c.add_argument("--gpus", type=int, default=1, help="GPUs for one model (data parallel via torchrun)")
+    c.add_argument("--sft_manifest", help="sft: manifest_sft.json of scripts/build_sft_mix.py")
+    c.add_argument("--grad_ckpt", action="store_true", help="gradient checkpointing (when a 16k row does not fit)")
     a = ap.parse_args()
+    if a.what == "cmd" and a.phase == "sft" and not (a.lr and a.init and a.sft_manifest):
+        ap.error("--phase sft needs --lr (the pre-flight's pick), --init (a decay's final folder) and --sft_manifest")
     if a.what == "params":
         for size in ("s30", "m100", "l300"):
             for arm in ARMS:
@@ -267,7 +306,8 @@ def main() -> None:
         return
     cmd = train_cmd(a.arm, a.size, a.phase, data=Path(a.data), out=Path(a.out), init=a.init, lr=a.lr,
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
-                    local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus)
+                    local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
+                    grad_ckpt=a.grad_ckpt)
     print(shlex.join(cmd))
 
 
