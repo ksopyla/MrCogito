@@ -185,13 +185,14 @@ class Run:
 
 RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch replaces them
     # E33t catalogue read (`e33t_catalogue_n4`), the v4 core package, phase core_e33t_catalogue_n4; times in UTC
+    # (Odra's clock, queue logs and file times are Europe/Warsaw, one hour ahead in November; Polonez runs on UTC)
     Run("e33t_core", "odra", "2026-11-11 20:40 UTC",
-        "about 2026-11-14 18:00 – 11-15 00:00 UTC (about 59 h on 3 cards from 11-12 12:17 UTC: training at 1.57 s/step, "
-        "the edge-1k ladders took 7 h before the floor stop of 11-12 12:17 UTC; early stops pull it in)",
+        "about 2026-11-14 17:00–23:00 UTC (about 58 h on 3 cards from 11-12 11:17 UTC: training at 1.57 s/step, "
+        "the edge-1k ladders took about 6 h per card before the floor stop of 11-12 11:17 UTC; early stops pull it in)",
         "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum, seeds 0–2, ladders to 128k",
         (), 54),
     Run("e33t_core", "polonez", "2026-11-11 20:40 UTC (queued behind other evals)",
-        "about 2026-11-14 08:00–12:00 UTC (cards free from 21:10 UTC; 55 GPU-h per card at 1.37 s/step as measured, "
+        "about 2026-11-14 08:00–12:00 UTC (first jobs 20:55–21:20 UTC; 55 GPU-h per card at 1.37 s/step as measured, "
         "plus 20 min rest every 5.5 h and ~1 h more per decoded ladder)",
         "E33t catalogue read, core package part 2: the C5 curricula (pchain2, path2, path3), seeds 0–2, ladders",
         (), 21),
