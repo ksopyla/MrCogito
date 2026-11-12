@@ -156,22 +156,30 @@ def lsa_groups(k: torch.Tensor, doc: torch.Tensor, *, block: int, per_block: int
 
 @torch.no_grad()
 def lsa_open_table(q: torch.Tensor, centroids: torch.Tensor, gi: GroupIndex, *, top_k: int, width: int,
-                   raw_window: int, chunk: int = 0, impl: str = "table"):
+                   raw_window: int, chunk: int = 0, impl: str = "table", q_offset: int = 0,
+                   members: Optional[torch.Tensor] = None):
     """LSA's selection for every query: score = max over query heads of cos(q_h, centre) on the buckets of blocks
     closed before the query's block; the `width` best; keys best bucket first until `top_k` (nn.exact_read.choose:
     keys of the query's document, outside its sinks and window). q [B, S, h, dh]. `impl = "list"` (E33t stage C,
-    evaluation): the choice as a ChoiceList instead of the table."""
-    B, S, h, dh = q.shape
+    evaluation): the choice as a ChoiceList instead of the table.
+
+    MrCogito, cached decoding (nn/incremental.py; list only): q holds the queries [q_offset, q_offset + Sq) of the
+    index's row; `members` passes the index's members table along (built once per index)."""
+    B, Sq, h, dh = q.shape
+    q0 = int(q_offset)
+    if (q0 or Sq != gi.codes.shape[2]) and impl != "list":
+        raise ValueError("a query range is for the list read")
+    S = q0 + Sq
     G = centroids.shape[1]
     if chunk <= 0:
         chunk = max(128, min(1024, (1 << 25) // max(B * h * G, 1) // 128 * 128))
     iq = F.normalize(q.detach().float(), dim=-1)
-    tab = (ChoiceList(gi, B, S, cap=top_k, m=min(int(width), G)) if impl == "list"
+    tab = (ChoiceList(gi, B, Sq, cap=top_k, m=min(int(width), G), row0=q0, members=members) if impl == "list"
            else OpenTable(gi, B, S, cap=top_k))
-    for s0 in range(0, S, chunk):
+    for s0 in range(q0, S, chunk):
         s1 = min(S, s0 + chunk)
         qp = torch.arange(s0, s1, device=q.device)
-        score = torch.einsum("bshd,bgd->bshg", iq[:, s0:s1], centroids).amax(2)            # [B, ch, G]
+        score = torch.einsum("bshd,bgd->bshg", iq[:, s0 - q0:s1 - q0], centroids).amax(2)  # [B, ch, G]
         visible = gi.g_close[:, None, :] <= qp[None, :, None]
         ids, off = choose(score, visible, gi, qp, m=width, cap=top_k, raw_window=raw_window)
         tab.add(s0, ids, off)

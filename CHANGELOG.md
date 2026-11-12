@@ -15,6 +15,23 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-12] - Cached greedy decoding for the Perceiver AR family
+
+- `nn/incremental.py` (new): `IncrementalDecoder` reads the row once (the model's own forward over the fixed-length
+  row the harness decoding uses, with every attention call's keys and values kept) and then runs one position per
+  step through the layers. The harness loop re-ran the whole row for every answer token (E33t stage D, 64k on one
+  L40S: 5.2 s per forward, 32 forwards, ~180 s per RULER prompt). Covered: full attention, LSA's read (buckets rebuilt
+  when the answer crosses a block end) and the catalogue read (E33t, reuse arms; exact for answers shorter than
+  raw window − page, 256 tokens for n4, longer requests refused); local sliding-window layers, the tied loop, U-net
+  skips, n-gram embeddings. Other reads (E33p's gist read, E37's concept read) raise `NotImplementedError`.
+- `evaluation/lm_eval_perceiver_ar.py`: `_model_generate` takes the cached path when the model is covered
+  (`PERCEIVER_AR_GEN_CACHE=0` keeps the old loop); same row geometry, same stop rule.
+- The list read takes a query range (`attend_list(q_offset=)`, `ChoiceList(row0=, members=)`,
+  `note_open_table(q_offset=, members=)`, `lsa_open_table(q_offset=, members=)`); defaults unchanged.
+- Tests: `tests/test_incremental_decode.py` (tokens equal the uncached loop's; each step's hidden state equals the
+  full forward's at that position, fp32; the catalogue horizon; fallback for uncovered reads).
+  `tests/test_lm_eval_perceiver_ar.py`: the stale "generation unsupported" test now checks greedy decoding.
+
 ## [2026-10-23] - Server runs from the main checkout; e31 branches archived
 
 - `e31-latent-memory` and `e31-text-memory` are merged into `dev` and archived as tags `archive/e31-latent-memory`

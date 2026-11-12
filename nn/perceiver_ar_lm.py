@@ -2172,7 +2172,7 @@ def _attend_catalogue(q, k, v, sink_k, sink_v, *, ctx: MessageCtx, key_valid, ba
 
 def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_valid, extra_k=None, extra_v=None,
                 ds: Optional[torch.Tensor] = None, n_sinks: int = 0, valid_query: bool = False,
-                chunk: int = 256) -> torch.Tensor:
+                chunk: int = 256, q_offset: int = 0) -> torch.Tensor:
     """E33t stage C (plan §10.3), evaluation at 128k–1M: the exact read without the [B, S, G] table. Per chunk of
     queries, one softmax over the raw window ‖ the raw tokens each query opened (`opened`, nn.exact_read.ChoiceList, or
     None) ‖ the extra keys: the catalogue's learned empty slots (`extra_k` / `extra_v` [n, g, dh], readable by every
@@ -2180,8 +2180,13 @@ def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_vali
     those inside the window are read there, once). Window keys: j ≤ q, q − j < raw_window, tag[j] == tag[q]; opened
     and sink keys: tag[j] == tag[q]; with `valid_query` (LSA) a query of tag < 0 reads nothing raw; key_valid[j] (or
     j == q) as in the table's masks. Same keys and weights as `_attend_catalogue` / `attend_lsa` with the table (tests:
-    `test_list_read_matches_table`). q [B,S,h,dh], k / v [B,S,g,dh], tag [B,S] int → [B,S,h,dh]; scale 1/√dh, fp32."""
-    B, S, h, dh = q.shape
+    `test_list_read_matches_table`). q [B,S,h,dh], k / v [B,S,g,dh], tag [B,S] int → [B,S,h,dh]; scale 1/√dh, fp32.
+
+    `q_offset` (cached decoding, nn/incremental.py): q holds the queries [q_offset, q_offset + Q) of the row that
+    k / v / tag cover (S = k.shape[1]); the output has Q rows."""
+    B, Q, h, dh = q.shape
+    S = int(k.shape[1])
+    q0 = int(q_offset)
     g = k.shape[2]
     rep = h // g
     rw = int(raw_window)
@@ -2189,7 +2194,7 @@ def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_vali
     kvf = key_valid.bool() if key_valid is not None else None
     tag = tag.long()
     neg = float("-inf")
-    out = torch.empty(B, S, h, v.shape[-1], dtype=q.dtype, device=q.device)
+    out = torch.empty(B, Q, h, v.shape[-1], dtype=q.dtype, device=q.device)
 
     def take(x, pos):  # x [B, S, ...] at pos [B, ch, P] → [B, ch, P, ...]
         Bp, ch, P = pos.shape
@@ -2199,11 +2204,11 @@ def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_vali
         idx = flat.view(Bp, ch * P, *([1] * (x.dim() - 2))).expand(Bp, ch * P, *x.shape[2:])
         return x.gather(1, idx).view(Bp, ch, P, *x.shape[2:])
 
-    for s0 in range(0, S, chunk):
-        s1 = min(S, s0 + chunk)
+    for s0 in range(q0, q0 + Q, chunk):
+        s1 = min(q0 + Q, s0 + chunk)
         ch = s1 - s0
         qp = torch.arange(s0, s1, device=q.device)
-        qc = q[:, s0:s1].float().reshape(B, ch, g, rep, dh)
+        qc = q[:, s0 - q0:s1 - q0].float().reshape(B, ch, g, rep, dh)
         tq = tag[:, s0:s1]
         logits, vals = [], []
         # the raw window
@@ -2263,7 +2268,7 @@ def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_vali
                 o = o + torch.einsum("bqgrp,bqpgd->bqgrd", wi, val)
             else:
                 o = o + torch.einsum("bqgrn,ngd->bqgrd", wi, val)
-        out[:, s0:s1] = o.reshape(B, ch, h, -1).to(q.dtype)
+        out[:, s0 - q0:s1 - q0] = o.reshape(B, ch, h, -1).to(q.dtype)
     return out
 
 
