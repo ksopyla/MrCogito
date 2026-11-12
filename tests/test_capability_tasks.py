@@ -105,7 +105,7 @@ def test_every_issue_and_run_points_at_real_tasks_and_issues():
         assert i.effect in ("caution", "invalid", "note") and i.meaning and i.learned and i.fix, i.id
         assert all(x in TASK_BY_ID for x in i.tasks), i.id
         assert all(r in {run.folder for run in RUNS} for r in i.runs), i.id
-    for r in RUNS:
-        assert r.settles and all(x in ISSUE_BY_ID for x in r.settles), r.folder
+    for r in RUNS:  # a re-run names the issues it settles; a new variant's core package may settle none
+        assert all(x in ISSUE_BY_ID for x in r.settles), r.folder
     assert issues_for("C1.lookup-2k", "dense") == ["dense-lr-lookup"] and issues_for("C5.pchain2-1k", "dense") == []
     assert issues_for("C3.recall8-1k", "dense") == []

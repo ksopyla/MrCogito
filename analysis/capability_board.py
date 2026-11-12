@@ -487,8 +487,9 @@ def main() -> int:
     bat = battery([l for l in ledgers if l["kind"] == "study"])
     registered = []
     try:
-        from scripts.study_plans.e30_vs_e31 import BATTERY_VARIANTS
+        from scripts.study_plans.e30_vs_e31 import BATTERY_VARIANTS, CORE_VARIANTS
         registered = [f"{k['tag']}_{k['arm']}" for k in BATTERY_VARIANTS.values()]
+        registered += [v["model"] for v in CORE_VARIANTS.values() if v["model"] not in registered]  # core-package runs
     except ImportError:
         pass
     models = sorted({e["model"] for e in ev} | {v for slot in bat.values() for v in slot})
