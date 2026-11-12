@@ -11,7 +11,8 @@
 #   DATA_DIR holds tokenizer_gpt2/ (and fineweb_edu_gpt2/, longdocs_lite_gpt2/ for the original LSA's loader).
 #   GPUs: CUDA_VISIBLE_DEVICES (default: all). Rows per batch: E37_RULER_ROWS_TOKENS / length, 1..8 (default 65536:
 #   8 at 8k, 2 at 32k, 1 at 64k, for 24 GB cards; decoding is uncached and projects only the current position).
-#   E37_RULER_LIMIT: documents per task (default 100, as the nodes). E37_BURST_MIN / E37_COOL_MIN (home heat rule):
+#   E37_RULER_LIMIT: documents per task (default 100, as the nodes; lm-eval takes the first N; the merged file records
+#   each length's limit in limit_per_length). E37_BURST_MIN / E37_COOL_MIN (home heat rule):
 #   after BURST_MIN minutes no lane takes a new pair; once all lanes are idle the GPUs rest COOL_MIN minutes, then the
 #   next burst starts (a pair started just before the deadline still finishes).
 set -uo pipefail
@@ -77,11 +78,12 @@ python3 - "$O" "$CK" "$LIM" <<'PY'
 import json, sys
 from pathlib import Path
 O, CK, LIM = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
-res = {}
+res, lims = {}, {}
 for f in sorted((O / "later").glob("ruler_*.json")):
     part = json.loads(f.read_text())
     for L, r in part["results"].items():
         res.setdefault(L, {}).update(r)
+        lims.setdefault(L, set()).add(part.get("limit"))
 mean = {}
 for L, r in res.items():
     vals = [x.get(f"{L},none") for x in r.values() if isinstance(x, dict)]
@@ -90,7 +92,9 @@ for L, r in res.items():
     print(f"RULER {L}: {len(vals)} tasks, mean {mean[L]}")
 out = {"checkpoint": CK, "suite": "ruler", "lengths": sorted(int(x) for x in res), "limit": LIM, "results": res,
        "mean": mean, "tasks": {L: len(r) for L, r in res.items()},
-       "note": "e37_ruler_later.sh: one lm-eval call per (length, task), merged; mean only with all 13 tasks"}
+       "limit_per_length": {L: sorted(v for v in s if v is not None) for L, s in lims.items()},
+       "note": "e37_ruler_later.sh: one lm-eval call per (length, task), merged; mean only with all 13 tasks; "
+               "limit_per_length = documents per task at each length (the first N of lm-eval's set)"}
 (O / "eval_ruler_later.json").write_text(json.dumps(out, indent=2, default=str))
 PY
 log "pass ended: $(left) pairs left"
