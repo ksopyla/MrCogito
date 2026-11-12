@@ -284,8 +284,10 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     ]
     if init:
         cmd += ["--model_name_or_path", init]
-    if phase == "sft":  # the base weights' held-out answer loss, the "before" of the stage
-        cmd += ["--eval_on_start", "True"]
+    if phase == "sft":
+        # the base weights' held-out answer loss (the "before"); the CE as the token mean over each optimizer step
+        # (answer counts differ by row), as the original LSA's torchtitan trainer computes it
+        cmd += ["--eval_on_start", "True", "--loss_step_token_mean", "True"]
     if grad_ckpt:  # activations recomputed in backward (16k rows on a 24 GB card), never shorter rows
         cmd += ["--gradient_checkpointing", "True"]
     if flow:  # E33p instrumentation: dynamics every 200 steps (decay: 50 of ~763) and weight snapshots

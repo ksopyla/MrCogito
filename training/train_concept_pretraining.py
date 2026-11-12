@@ -527,6 +527,7 @@ def main():
         batch_packing_mode=data_args.batch_packing_mode,
         train_lengths=train_lengths,
         length_group_mega_batch_mult=data_args.length_group_mega_batch_mult,
+        step_token_mean=optim_args.loss_step_token_mean,
     )
 
     if is_backbone:

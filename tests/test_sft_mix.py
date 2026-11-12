@@ -405,6 +405,7 @@ def test_run_e33n_sft_command(tmp_path):
                                                       "min_lr_ratio": 0.1}
     assert a["--model_name_or_path"] == "/r/decay/final" and a["--output_dir"] == str(tmp_path / "run" / "sft")
     assert a["--eval_strategy"] == "steps" and 763 % int(a["--eval_steps"]) == 0 and a["--eval_on_start"] == "True"
+    assert a["--loss_step_token_mean"] == "True"
     assert _final_eval_every(763) == 109 and _final_eval_every(76) == 19 and _final_eval_every(7) == 1
     assert not (tmp_path / "run" / "manifest_trunk.json").exists()
     with pytest.raises(ValueError, match="needs"):
@@ -450,3 +451,130 @@ def test_model_loss_counts_only_label_positions(mix):
     full = col([{**tr[i], "labels": tr[i]["input_ids"]} for i in smol_rows])
     with torch.no_grad():
         assert not torch.allclose(model(**full).loss, loss)  # the mask changes what is trained
+
+
+# ---------------------------------------------------------------- the step's token mean (--loss_step_token_mean)
+
+
+def _tiny_dense(seq):
+    from types import SimpleNamespace
+
+    from scripts.run_e33n import EOT as _EOT, VOCAB, model_args
+    from training.concept_pretraining_args import ModelArguments
+    from training.concept_pretraining_factories import _build_perceiver_ar_model
+
+    tok = type("T", (), {"pad_token_id": _EOT, "bos_token_id": _EOT, "eos_token_id": _EOT, "unk_token_id": None,
+                         "__len__": lambda self: VOCAB})()
+    fields = set(ModelArguments.__dataclass_fields__)
+    ma = ModelArguments(**{k: v for k, v in model_args("dense", "tiny").items() if k in fields})
+    ma.attn_backend, ma.use_liger = "sdpa", False
+    torch.manual_seed(0)
+    model, _, _ = _build_perceiver_ar_model(tok, ma, SimpleNamespace(max_seq_length=seq, tokenizer_name="gpt2"))
+    return model, tok, VOCAB
+
+
+def _uneven_rows(seq, vocab):
+    """Two rows, 10 and 100 answer targets."""
+    g = torch.Generator().manual_seed(1)
+    rows = []
+    for a, b in ((20, 30), (10, 110)):
+        ids = torch.randint(0, vocab, (seq,), generator=g)
+        lab = torch.full_like(ids, -100)
+        lab[a:b] = ids[a:b]
+        rows.append({"input_ids": ids, "doc_ids": torch.zeros_like(ids), "labels": lab})
+    return rows
+
+
+def _trainer_step_grads(model, tok, vocab, rows, seq, step_token_mean, out):
+    """One optimizer step of the real HF loop (2 accumulated micro-batches of 1 row, lr 0, no clipping); the gradients
+    as the optimizer would see them."""
+    from transformers import TrainerCallback, TrainingArguments
+
+    from training.concept_pretraining_objectives import OBJECTIVE_CAUSAL_LM
+    from training.concept_pretraining_trainer import PerceiverDenoiseTrainer
+
+    from accelerate.state import AcceleratorState
+
+    # fp32 like the reference: an earlier TrainingArguments(bf16=True) in this process leaves
+    # ACCELERATE_MIXED_PRECISION=bf16 in os.environ (HF keeps it when bf16=False) and accelerate's state is a singleton
+    AcceleratorState._reset_state(reset_partial_state=True)
+    grads = {}
+
+    class Grab(TrainerCallback):
+        def on_pre_optimizer_step(self, args, state, control, model=None, **kw):
+            grads.update({n: p.grad.detach().clone() for n, p in model.named_parameters() if p.grad is not None})
+
+    args = TrainingArguments(output_dir=str(out), per_device_train_batch_size=1, gradient_accumulation_steps=2,
+                             max_steps=1, learning_rate=0.0, max_grad_norm=0.0, use_cpu=True, report_to=[],
+                             save_strategy="no", logging_strategy="no", dataloader_num_workers=0, seed=0,
+                             disable_tqdm=True, optim="adamw_torch")
+    col = DataCollatorForCausalLM(tok, max_length=seq, model_vocab_size=vocab, preserve_precomputed_labels=True)
+    tr = PerceiverDenoiseTrainer(model=model, args=args, train_dataset=rows, data_collator=col,
+                                 objective_variant=OBJECTIVE_CAUSAL_LM, contrastive_weight=0.0,
+                                 contrastive_temperature=0.05, step_token_mean=step_token_mean, callbacks=[Grab()])
+    tr.train()
+    return grads, col
+
+
+@pytest.mark.parametrize("z_loss", [0.0, 1e-2])
+def test_step_token_mean_gradient(tmp_path, monkeypatch, z_loss):
+    """Uneven answer counts (10 and 100) over two accumulated rows: with --loss_step_token_mean the step's gradient is
+    the token-mean gradient (CE summed over the step's 110 targets / 110), z-loss still the mean of per-row means;
+    without it, the mean of per-row means exactly as before."""
+    import copy
+
+    monkeypatch.setenv("ACCELERATE_MIXED_PRECISION", "no")
+    seq = 128
+    model, tok, vocab = _tiny_dense(seq)
+    model.config.z_loss = z_loss
+    rows = _uneven_rows(seq, vocab)
+    ref_model = copy.deepcopy(model)
+    got_on, col = _trainer_step_grads(copy.deepcopy(model), tok, vocab, rows, seq, True, tmp_path / "on")
+    got_off, _ = _trainer_step_grads(copy.deepcopy(model), tok, vocab, rows, seq, False, tmp_path / "off")
+
+    def ref(token_mean):
+        m = copy.deepcopy(ref_model)
+        m.train()
+        bs = [col([r]) for r in rows]
+        n = [int((b["labels"][:, 1:] != -100).sum()) for b in bs]
+        assert n == [10, 100]
+        total = 0.0
+        for b, ni in zip(bs, n):
+            m.config.z_loss = z_loss
+            full = m(**b).loss                       # (CE + z) / n_i
+            if token_mean:
+                m.config.z_loss = 0.0
+                ce_mean = m(**b).loss                # CE / n_i
+                total = total + ce_mean * ni / sum(n) + (full - ce_mean) / len(bs)
+            else:
+                total = total + full / len(bs)
+        total.backward()
+        return {k: p.grad.detach().clone() for k, p in m.named_parameters() if p.grad is not None}
+
+    want_on, want_off = ref(True), ref(False)
+    assert set(got_on) == set(want_on) and len(got_on) > 10
+    keys = sorted(want_on)
+    flat = lambda g: torch.cat([g[k].flatten() for k in keys])  # noqa: E731
+    rel = lambda a, b: float((a - b).norm() / b.norm())  # noqa: E731
+    g_on, w_on, g_off, w_off = flat(got_on), flat(want_on), flat(got_off), flat(want_off)
+    assert rel(g_on, w_on) < 1e-5 and rel(g_off, w_off) < 1e-5  # float32 sum order only
+    scale = float(w_on.abs().max())
+    for k in keys:  # every parameter, at the gradient's overall scale
+        assert float((got_on[k] - want_on[k]).abs().max()) < 1e-4 * scale, k
+    assert rel(g_off, w_on) > 1e-2  # per-row means are a different gradient: the weighting really changed
+
+
+def test_ce_norm_none_is_the_old_loss():
+    seq = 128
+    model, tok, vocab = _tiny_dense(seq)
+    model.config.z_loss = 1e-2
+    col = DataCollatorForCausalLM(tok, max_length=seq, model_vocab_size=vocab, preserve_precomputed_labels=True)
+    b = col(_uneven_rows(seq, vocab)[:1])
+    with torch.no_grad():
+        old = model(**b).loss
+        assert torch.equal(model(**b, ce_norm=None).loss, old)
+        n = (b["labels"][:, 1:] != -100).sum()
+        assert torch.allclose(model(**b, ce_norm=n.float()).loss, old)   # its own count: the same loss
+        model.config.z_loss = 0.0
+        ce = model(**b).loss * n
+        assert torch.allclose(model(**b, ce_norm=torch.tensor(55.0)).loss, ce / 55.0)

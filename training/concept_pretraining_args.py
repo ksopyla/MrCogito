@@ -701,6 +701,16 @@ class DataTrainingArguments:
 class OptimizerArguments:
     """Optimizer family and Muon-specific fallback parameters."""
 
+    loss_step_token_mean: bool = field(
+        default=False,
+        metadata={
+            "help": "E37 SFT: the next-token CE is the token mean over the whole optimizer step (CE summed over "
+            "the step's target tokens on every process, divided by their count), as torchtitan trains, instead "
+            "of the mean of per-micro-batch means. Matters when rows carry uneven numbers of targets (answer-"
+            "masked rows). z-loss and auxiliary losses keep their weighting. Needs a forward with ce_norm "
+            "(perceiver_ar). Default off: trunk, decay and every earlier run unchanged."
+        },
+    )
     optimizer: str = field(
         default="adam",
         metadata={

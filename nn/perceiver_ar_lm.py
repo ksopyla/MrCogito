@@ -3872,11 +3872,19 @@ class PerceiverARLM(PreTrainedModel):
         position_offset: int = 0,
         prefix_embeds: Optional[torch.Tensor] = None,
         read_targets: Optional[torch.Tensor] = None,
+        ce_norm: Optional[torch.Tensor] = None,
     ):
         # NOTE: no **kwargs here on purpose. HF Trainer treats any VAR_KEYWORD forward as a
         # model that normalizes its own loss by num_items_in_batch and then skips the division
         # by gradient_accumulation_steps (loss and grad-clip off by accum×). This forward
         # returns a per-microbatch mean; the Trainer must do the accumulation scaling.
+        #
+        # `ce_norm` (E37 SFT, the trainer's --loss_step_token_mean): divide the next-token CE SUM by this
+        # instead of this micro-batch's own target count. PerceiverDenoiseTrainer passes the optimizer
+        # step's target count / (accumulation steps x processes), so after the Trainer's division by
+        # the accumulation steps and DDP's mean over processes the CE is the step's token mean, as
+        # torchtitan computes it. z-loss and every auxiliary term keep their per-micro-batch weighting.
+        # None: exactly the per-micro-batch mean (trunk, decay, every earlier run).
         #
         # `message_kv=(k̄, v̄, slot_pos)` + `position_offset=P` is the E21 receiver-only forward:
         # `input_ids` are the tokens from the boundary on, and the prefix is present only as the
@@ -3958,12 +3966,16 @@ class PerceiverARLM(PreTrainedModel):
         flce = self._get_flce() if (cfg.use_liger and hid.is_cuda) else None
         if flce is not None:
             n = (tgt != -100).sum().clamp(min=1)
-            loss = flce(self.lm_head.weight, hid.reshape(-1, hid.shape[-1]), tgt.reshape(-1)) / n
+            loss = flce(self.lm_head.weight, hid.reshape(-1, hid.shape[-1]), tgt.reshape(-1)) / (
+                n if ce_norm is None else ce_norm)
         else:
             ce, z, n = chunked_softcap_ce(
                 hid, self.lm_head.weight, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap, cfg.z_loss
             )
-            loss = (ce + z) / n.clamp(min=1)
+            if ce_norm is None:
+                loss = (ce + z) / n.clamp(min=1)
+            else:  # the step's token mean for the CE; the z-loss stays this micro-batch's mean
+                loss = ce / ce_norm + z / n.clamp(min=1)
         if round_tgt is not None and looped and cfg.message_round_aux > 0:
             outs = looped[0]._round_outs
             aux, k = loss.new_zeros(()), 0

@@ -42,9 +42,20 @@ class PerceiverDenoiseTrainer(Trainer):
         batch_packing_mode: str = "none",
         train_lengths=None,
         length_group_mega_batch_mult: int = 20,
+        step_token_mean: bool = False,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        # E37 SFT (--loss_step_token_mean): the CE as the token mean over the optimizer step (see compute_loss)
+        self.step_token_mean = bool(step_token_mean)
+        if self.step_token_mean:
+            import inspect
+
+            fwd = getattr(self.accelerator.unwrap_model(self.model), "forward", None)
+            if objective_variant != OBJECTIVE_CAUSAL_LM or fwd is None or \
+                    "ce_norm" not in inspect.signature(fwd).parameters:
+                raise ValueError("loss_step_token_mean needs the causal_lm objective and a model forward with "
+                                 "ce_norm (perceiver_ar)")
         self.objective_variant = objective_variant
         self.contrastive_weight = contrastive_weight
         self.contrastive_temperature = contrastive_temperature
@@ -528,7 +539,24 @@ class PerceiverDenoiseTrainer(Trainer):
             + F.cross_entropy(similarity.T, labels)
         ) / 2.0
 
+    def get_batch_samples(self, epoch_iterator, num_batches, device):
+        """With step_token_mean: the step's next-token target count over all its micro-batches and processes
+        (labels[:, 1:] != -100, the targets the model's shift trains). HF counts only for models whose forward
+        takes **kwargs, which ours deliberately does not."""
+        batch_samples, num_items = super().get_batch_samples(epoch_iterator, num_batches, device)
+        if self.step_token_mean and batch_samples and "labels" in batch_samples[0]:
+            n = torch.stack([(b["labels"][:, 1:] != -100).sum() for b in batch_samples]).sum().to(device)
+            if self.accelerator.num_processes > 1:
+                n = self.accelerator.gather(n.reshape(1)).sum()
+            num_items = n
+        return batch_samples, num_items
+
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        if self.step_token_mean and model.training and num_items_in_batch is not None:
+            # this micro-batch's CE sum / (step targets per micro-batch per process): the Trainer then divides by
+            # the accumulation steps and DDP averages the processes, so the CE is the step's token mean
+            per = self.current_gradient_accumulation_steps * self.accelerator.num_processes
+            inputs = {**inputs, "ce_norm": num_items_in_batch.clamp(min=1).float() / per}
         del num_items_in_batch
         if model.training:
             self._record_padding_metrics(inputs.get("attention_mask"))
