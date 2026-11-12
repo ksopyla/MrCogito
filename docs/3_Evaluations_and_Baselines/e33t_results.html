@@ -521,15 +521,18 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <span class="when">since 06:32</span>
         <div class="what"><span class="top">n4 at 100M: longer needle tests <span class="pill" data-s="running">running</span></span>
           <p>Started by the 10M-context session, the same tests its other 100M models get, on two AWS spot machines with one
-            L40S card each: needle puzzles at 64k (about 12 h, due about 18:30 UTC), and validation loss followed by needle
-            puzzles at 8k and 32k (about 8 h, due about 14:30 UTC).</p></div>
+            L40S card each. Both run slower than first estimated, about 72 minutes per puzzle type at 32k and 64k (13 types).
+            Needle puzzles at 64k: 3 of 13 done, due about 23:00 UTC. Validation loss and the 8k puzzles are done; the 32k
+            puzzles (2 of 13 done) are due about 23:00–23:50 UTC, past that machine's automatic stop at 22:32 UTC, so the
+            last one or two may be lost unless the 10M-context session extends it (checked 11:25 UTC).</p></div>
       </div>
       <div class="now-item">
-        <span class="when">until ~14 Nov</span>
+        <span class="when">until ~14–15 Nov</span>
         <div class="what"><span class="top">Capability checks for n4 <span class="pill" data-s="running">running</span></span>
-          <p>The leveled synthetic tasks, three seeds each, on Odra and Polonez (Polonez done about 08:00 UTC Nov 14, Odra
-            about 12:00–16:00 UTC). First result: on the simplest lookup n4 learned in 1 of 3 seeds on each server, and late;
-            the champion (E31) learns it in all three.</p></div>
+          <p>The leveled synthetic tasks, three seeds each, on Odra and Polonez (Polonez done about the morning of Nov 14,
+            Odra late Nov 14). So far n4 has lost the one-hop chain lookup at every length: one seed of three learned it,
+            and that seed falls from 86 % at 1k to 8 % at 2k; the champion (E31) scores 97–99 %. Since 12 Nov a length test
+            stops once a model scores at guessing level at two lengths in a row; the lengths not read count as guessing.</p></div>
       </div>
       <div class="now-item">
         <span class="when">open</span>
@@ -553,9 +556,10 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       </div>
     </div>
     <p class="caption">Spend: AWS usage for both sessions is about $835 of the $2,000 through 11 Nov (read 12 Nov, 07:35 UTC,
-      before credits; AWS's figure lags by up to a day), plus this morning's hours of the 100M run. The only AWS machines
-      running are four single-card machines for the longer needle tests, two for n4 and two for E37a (checked 12 Nov,
-      08:10 UTC).</p>
+      before credits; AWS's figure lags by up to a day), plus this morning's hours of the 100M run. AWS machines running
+      (checked 12 Nov, 11:25 UTC): a four-card machine training E33p notes-open, the earlier notebook read, at the full
+      token budget (since 06:37 UTC, capped at 24 h, about $180), and six single-card machines for the longer needle
+      tests, two each for n4 and E37a and one each for the LSA port and the original LSA.</p>
   </section>
 
   <footer>
