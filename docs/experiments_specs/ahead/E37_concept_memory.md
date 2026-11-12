@@ -446,6 +446,23 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     (`eval_ruler_later.json`, `later/`, `eval_val.json`). RULER 32k / 64k not run: the home cards belong to the E33t
     capability checks until ≈ Nov 14; on AWS (one-L40S spot nodes) ≈ 15 GPU-h for 32k and ≈ 30 for 64k, waiting for
     the author.
+  - **notes_open (E33p: the closed notebook with tied note keys and an exact top-64 open read), full budget (trunk
+    06:39–16:58, decay 16:58–19:18, evals 19:18–21:43 UTC Nov 12; node `e37-b-l40s-notes-open` i-0146e9d2c4732ba1a,
+    4 × L40S spot, us-east-1, self-shutdown 21:45, ≈ 15.1 h ≈ $110; job exit 0; W&B online, both runs finished):** the
+    trunk is a tie with e37a (trainer eval 3.119 / 3.119 at step 5,500, training loss 3.092 / 3.092), the decay is
+    not (trainer eval at step 600 2.348 vs 2.253). Raw loss on positions ≥ 2k, 5 sources (4 at 128k): 4k 2.379, 16k
+    **2.282**, 32k 2.393, 64k 2.367, 128k **2.104** — 0.06–0.14 nats above e37a (2.320 / 2.166 / 2.254 / 2.250 /
+    1.990) and the lsa port; the full budget gained 0.13–0.15 nats over its screen (2.532 / 2.411 / 2.544 / 2.503 /
+    2.237), as the other arms did, so the gap to e37a is the read, not the budget. Its notebook carries 0.10–0.12 nats
+    to 32k (notes off 2.497 / 2.388 / 2.488), 0.065 at 64k and 0.016 at 128k; the open read alone 0.07–0.10 (open
+    off 2.476 / 2.364 / 2.466 / 2.434 / 2.179), the gist 0.015–0.04. Positions < 512 at 16k 2.370 (e37a 2.388, the
+    lowest of all: no harm near the front). RULER mean of 13 tasks **0.066 at 4k, 0.018 at 16k** — below its own
+    screen (0.116 / 0.072) and far below e37a (0.185 / 0.136) and lsa (0.255 / 0.209); single needle 0.18 / 0.04
+    (screen 0.64 / 0.63), single-2 0.17 / 0.01, multi-key-1 0.10 / 0.01, the rest near the floor. Core mean 0.411
+    (e37a 0.416, a tie): arc_challenge 0.252, arc_easy 0.420, hellaswag 0.304, lambada 0.193, piqa 0.598, sciq 0.611,
+    winogrande 0.502. **Reading:** the closed notebook with 64 opened notes uses 16k of text worse than the concept
+    read or the top-k read, and with three times the tokens it retrieves less, not more; it is not in the later pass,
+    and the E33-family read stays behind e37a at 100M.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
