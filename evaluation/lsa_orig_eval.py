@@ -10,6 +10,8 @@ and wrapped so OUR scoring code runs on it unchanged:
            our GPT-2 tokenizer files, string-match grading, greedy answers of at most 32 tokens, one lm-eval call per
            length, max_length = longest length + 64; through lm-eval's HFLM request path as our PerceiverARLMEval.
   core     the same 8 lm-eval tasks (log-likelihood; HFLM's batching), max_length 2048, batch 32.
+  extra    run_lsa_suite.py's `extra` (BLiMP, SWDE, BABILong tasks 1-3 at --extra_lengths), the harness's own generation
+           settings, BABILong batched by length as RULER.
   val      held-out loss: the trunk manifest's FineWeb-Edu val rows at 4k (256 rows, the m100 trainer's eval set,
            document-start labels ignored as our collator does) and the decay manifest's LongDocs-lite val rows at 16k.
 
@@ -26,6 +28,7 @@ Usage (node; their venv's python; this repo's root as the working directory):
   python evaluation/lsa_orig_eval.py longdoc --checkpoint R/decay/checkpoint/step-763 --data D --out R/eval_longdoc.json
   python evaluation/lsa_orig_eval.py ruler --checkpoint ... --data D --lengths 4096,8192 --out R/ruler_a.json
   python evaluation/lsa_orig_eval.py core --checkpoint ... --data D --out R/eval_core.json
+  python evaluation/lsa_orig_eval.py extra --checkpoint ... --data D --out R/eval_extra.json
   python evaluation/lsa_orig_eval.py val --checkpoint ... --name decay_final|trunk_final --data D --out R/eval_val.json
 """
 from __future__ import annotations
@@ -263,6 +266,26 @@ def _lm_eval_suite(a, suite: str) -> None:
     rs = _load("mc_run_lsa_suite", ROOT / "evaluation" / "run_lsa_suite.py")
     tok = str(Path(a.data) / "tokenizer_gpt2")
     bb, exp, _ = load_backbone(a.checkpoint, Path(a.out).parent / "eval_work")
+    if suite == "extra":  # run_lsa_suite.py's `extra` (BLiMP, SWDE, BABILong 1-3), same row lengths as our models'
+        lengths = [int(x) for x in a.extra_lengths.split(",")]
+        max_len = max(lengths) + max(lengths) // 8 + 512
+        out = {"checkpoint": a.checkpoint, "suite": "extra", "lengths": lengths, "limit": a.limit, "notes_off": False,
+               "concept_sum_len": -1, "lm_eval": _version("lm_eval"), "model": "lsa_orig (their trainer)",
+               "max_length": max_len, "extra_cap": a.extra_cap}
+        save = lambda: Path(a.out).write_text(json.dumps(out, indent=2, default=str))
+
+        def evaluate(tasks_, limit_, md):
+            L = int(md["max_seq_lengths"][:-1]) * 1024 if md else 0  # BABILong rows: batch by length, as RULER's
+            batch = a.batch or (max(1, min(8, a.batch_tokens // L)) if L else 8)
+            return lm_eval.simple_evaluate(
+                model=make_lm(bb, tok, max_len, batch), tasks=tasks_, limit=limit_ if limit_ and limit_ > 0 else None,
+                log_samples=False, task_manager=TaskManager(metadata=md) if md else None, bootstrap_iters=0)["results"]
+
+        t0 = time.time()
+        rs.run_extra(evaluate, lengths, a.limit, out, save, cap=a.extra_cap or None)
+        out["seconds"] = round(time.time() - t0, 1)
+        save()
+        return
     lengths = [int(x) for x in a.lengths.split(",")] if suite == "ruler" else None
     max_len = max(lengths) + 2 * a.max_gen_toks if suite == "ruler" else 2048
     tasks = [t for t in a.tasks.split(",") if t] or (rs.RULER if suite == "ruler" else rs.CORE)
@@ -342,7 +365,7 @@ def cmd_val(a) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("what", choices=("longdoc", "ruler", "core", "val"))
+    ap.add_argument("what", choices=("longdoc", "ruler", "core", "val", "extra"))
     ap.add_argument("--checkpoint", required=True, help="torchtitan step folder of the decay (.../checkpoint/step-N)")
     ap.add_argument("--name", default="decay_final", help="val: the key the checkpoint's losses go under")
     ap.add_argument("--data", required=True, help="dir with fineweb_edu_gpt2/, longdocs_lite_gpt2/, tokenizer_gpt2/")
@@ -355,6 +378,8 @@ def main() -> None:
     ap.add_argument("--batch", type=int, default=0, help="0: by length (RULER) / 32 (core)")
     ap.add_argument("--batch_tokens", type=int, default=131072, help="RULER: rows of a batch = min(8, this / length)")
     ap.add_argument("--max_gen_toks", type=int, default=32)
+    ap.add_argument("--extra_lengths", default="2048,4096,8192,16384", help="extra: BABILong context lengths")
+    ap.add_argument("--extra_cap", type=int, default=0, help="extra, smoke tests only: documents per BLiMP set / SWDE")
     a = ap.parse_args()
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
