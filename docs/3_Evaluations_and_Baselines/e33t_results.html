@@ -418,7 +418,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
   <section class="section" id="m100">
     <h2>At 100M parameters (stage D)</h2>
-    <p class="intro">Four 100M models trained the same way by the 10M-context session on AWS: 3.0B FineWeb-Edu tokens at 4k,
+    <p class="intro">Five 100M models trained the same way by the 10M-context session on AWS: 3.0B FineWeb-Edu tokens at 4k,
       then 0.4B LongDocs-lite tokens at 16k, seed 42, one spot machine with four L40S cards each. No 64k stage. Loss is how
       surprised the model is by the next word on positions past 2k (lower is better; five sources, four at 128k); needle
       puzzles are the RULER mean of 13 tasks × 100 (higher is better); general knowledge is the mean of seven benchmarks in %.
@@ -429,6 +429,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <tr><td><span class="nm">E33t n4 (64 notes)</span><span class="sub">our catalogue read · 166.4M</span></td><td>2.342</td><td>2.189</td><td>2.275</td><td>2.270</td><td>2.058</td><td>23.1 · 18.3</td><td>41.6</td></tr>
         <tr><td><span class="nm">E33p LSA port</span><span class="sub">LSA's read on our backbone · 162.4M</span></td><td>2.322</td><td>2.169</td><td>2.254</td><td>2.245</td><td>1.994</td><td class="best">25.5 · 20.9</td><td>41.6</td></tr>
         <tr><td><span class="nm">E37a concept memory</span><span class="sub">the 10M-context session's model · 162.6M</span></td><td>2.320</td><td>2.166</td><td>2.254</td><td>2.250</td><td>1.990</td><td>18.5 · 13.6</td><td>41.6</td></tr>
+        <tr><td><span class="nm">E33p notes-open</span><span class="sub">the earlier notebook read (64 notes opened)</span></td><td>2.379</td><td>2.282</td><td>2.393</td><td>2.367</td><td>2.104</td><td>6.6 · 1.8</td><td>41.1</td></tr>
         <tr><td><span class="nm">Original LSA</span><span class="sub">its authors' code and backbone, our data · 162.6M</span></td><td class="best">2.284</td><td class="best">2.135</td><td class="best">2.215</td><td class="best">2.201</td><td class="best">1.925</td><td>13.9 · 8.2</td><td class="best">42.0</td></tr>
         <tr class="ref"><td><span class="nm">E33t n4, notebook off</span><span class="sub">the same model with its notes removed</span></td><td>2.496</td><td>2.386</td><td>2.489</td><td>2.433</td><td>2.123</td><td class="na">—</td><td class="na">—</td></tr>
       </tbody>
@@ -437,7 +438,11 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       On nearby text (positions under 512 at 16k) n4 is 0.016 nats behind the LSA port, so most of its gap up to 64k is the
       model's general quality; at 128k nearby text is equal and the gap is the read's. Needle puzzles differ by kind: n4 is
       best of the four on several-key and UUID needles, worse than the LSA port on the essay number (0.38 vs 0.84 at 16k)
-      and word counting (0 vs 0.09). Training took 10.4 h + 2.0 h (the LSA port 9.4 h + 1.7 h). Bold marks the best value.</p>
+      and word counting (0 vs 0.09). Training took 10.4 h + 2.0 h (the LSA port 9.4 h + 1.7 h). E33p notes-open (finished
+      12 Nov, 21:43 UTC, about $110) is the weakest of the five on long text: 0.04–0.12 nats behind n4 (0.09–0.12 from 16k to 64k), and its notebook
+      carries only 0.016 nats at 128k, though it is the best on nearby text (2.370 under 512 at 16k). It also does worse
+      on the needle puzzles than its own short screening run (0.116 / 0.072), so the catalogue read is a clear step up from
+      the read it replaced. Bold marks the best value.</p>
   </section>
 
   <section class="section" id="scorecard">
@@ -522,10 +527,9 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <div class="what"><span class="top">n4 at 100M: longer needle tests <span class="pill" data-s="running">running</span></span>
           <p>Started by the 10M-context session, the same tests its other 100M models get, on two AWS spot machines with one
             L40S card each. Both run slower than first estimated, about 72 minutes per puzzle type at 32k and 64k (13 types).
-            Needle puzzles at 64k: due about midnight UTC. Validation loss and the 8k puzzles are done, and 7 of the 13 32k
-            types; AWS took that spot machine back at 17:26 UTC and has no spare L40S card in any of our three regions, so
-            the watcher retries every 10 minutes. The last 6 types need about 7 hours once a machine is found; the finished
-            ones are saved (checked 18:25 UTC).</p></div>
+            Validation loss and the 8k puzzles are done. AWS took the 32k machine back at 17:26 UTC with 7 of 13 puzzle types
+            done (saved); a replacement started in Oregon at 19:03 UTC. The 32k and 64k puzzles are due about 02:30–03:00 UTC
+            on 13 Nov (checked 21:52 UTC).</p></div>
       </div>
       <div class="now-item">
         <span class="when">until ~14–15 Nov</span>
@@ -559,11 +563,9 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       </div>
     </div>
     <p class="caption">Spend: AWS usage for both sessions is about $835 of the $2,000 through 11 Nov (read 12 Nov, 07:35 UTC,
-      before credits; AWS's figure lags by up to a day), plus this morning's hours of the 100M run. AWS machines running
-      (checked 12 Nov, 18:25 UTC): a four-card machine training E33p notes-open, the earlier notebook read, at the full
-      token budget (since 06:37 UTC, capped at 24 h, about $180), and three single-card machines for the longer needle
-      tests (one each for n4, E37a and the LSA port). Two more needle-test machines, for n4 and E37a, wait for spot
-      capacity.</p>
+      before credits; AWS's figure lags by up to a day), plus this morning's hours of the 100M run. E33p notes-open's
+      full-budget run (four cards, 06:37–21:45 UTC) cost about $110. AWS machines running (checked 12 Nov, 21:52 UTC):
+      four small machines for the longer needle tests, two for n4 and one each for E37a and the LSA port.</p>
   </section>
 
   <footer>

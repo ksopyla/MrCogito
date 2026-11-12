@@ -470,7 +470,17 @@ at 16k in E33p) show the marks are reachable at this size and data.
     `evaluation/val_loss.py`; model code unchanged): `e37-later-cat-64k` RULER at 64k (about 12 h);
     `e37-later-cat-rest` validation loss (trunk final on FineWeb-Edu 4k; decay final on FineWeb-Edu 4k and
     LongDocs-lite 16k), then RULER at 8k and 32k (about 8 h). Results to the run's S3 folder (`eval_val.json`,
-    `later/ruler_<L>_<task>.json`, merged `eval_ruler_later.json`).
+    `later/ruler_<L>_<task>.json`, merged `eval_ruler_later.json`). Both ran slower than estimated (about 72 min per
+    task at 32k and 64k); `cat-rest` was reclaimed at 17:26 UTC with 7 of 13 32k tasks saved and relaunched in us-west-2
+    at 19:03 UTC; both due about 02:30–03:00 UTC Nov 13.
+  - **The predecessor at the same budget (E33p notes_open, run by the E37 session, 2026-11-12 06:39–21:43 UTC, 4 × L40S
+    spot, about $110; scored here from `runs/e37/e33n_m100_notes_open_tok3.0e9_seed42/` with the same pooling):** loss
+    past 2k 2.379 / 2.282 / 2.393 / 2.367 / 2.104 at 4k / 16k / 32k / 64k / 128k, 0.04–0.12 nats behind n4
+    (0.09–0.12 from 16k to 64k); notebook off 2.497 / 2.388 / 2.488 / 2.432 / 2.120, so its notebook carries 0.118 /
+    0.106 / 0.096 / 0.066 / 0.016 (n4: 0.155 / 0.197 / 0.214 / 0.163 / 0.065); near text (< 512 at 16k) 2.370, the best
+    of the five (n4 2.400); RULER 0.066 / 0.018 at 4k / 16k (its 1.0B screen 0.116 / 0.072; n4 0.231 / 0.183); core 41.1
+    (n4 41.6). **The catalogue read is a clear step up from the read it replaced at 100M**: about 1.5–2× the
+    notebook's carry up to 64k and 4× at 128k, and 3.5–10× the needle-puzzle mean.
 - **Stage-D verdict (2026-11-12 ~07:45 UTC):**
   - **At 100M with the standard recipe the catalogue does not match the LSA port:** 0.02 nats behind up to 64k and
     0.065 behind at 128k. At 4k–64k the gap is close to its 0.016-nat gap on near text, so much of it is the model's
