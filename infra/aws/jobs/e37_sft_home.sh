@@ -18,6 +18,7 @@
 #        (E37_SFT_PREFLIGHT_LRS, default 5e-5 1.5e-4 4.5e-4; the LSA port, E37_SFT_PREFLIGHT_TOKENS each) and the pick
 #   bash infra/aws/jobs/e37_sft_home.sh preflight LR GPU polonez|odra   (one pre-flight on its own card)
 #   bash infra/aws/jobs/e37_sft_home.sh pick    (lowest held-out answer loss of the finished pre-flights -> lr.txt)
+#   bash infra/aws/jobs/e37_sft_home.sh status  (what the lanes see on this server)
 # Base checkpoints: Cache/e37_sft/base/<arm>/ (ours: the decay `final` folder; lsa_orig: decay/checkpoint/step-763),
 # pulled from S3 runs/e37/ with presigned links. Data: ~/dev/MrCogito-lsa/Cache/e33n_data (read only).
 set -uo pipefail
@@ -113,15 +114,17 @@ ev_ours() {  # CK TAG  -> $R/<TAG>_{val,extra_short,extra_babilong,core,ruler,lo
       && mv "$R/${t}_ruler.json.part" "$R/${t}_ruler.json" || log "$t RULER FAILED"; }
   heat_break; [ -f "$R/${t}_longdoc.json" ] || { log "$t long-document loss"; uv run python evaluation/long_doc_loss.py \
       --checkpoint "$ck" --data "$D/longdocs_lite_gpt2" --lengths 4096,16384,32768 --rows 8 --notes_off --open_off \
-      --gist_off --out "$R/${t}_longdoc.json.part" > "$R/${t}_longdoc.log" 2>&1 \
+      --gist_off --open_reuse --out "$R/${t}_longdoc.json.part" > "$R/${t}_longdoc.log" 2>&1 \
       && mv "$R/${t}_longdoc.json.part" "$R/${t}_longdoc.json" || log "$t long-document loss FAILED"; }
 }
 sft_ours() {  # ARM INIT LR TOKENS OUTDIR RULE
-  local arm=$1 init=$2 lr=$3 tok=$4 out=$5 rule=$6 cmd ck rc
+  local arm=$1 init=$2 lr=$3 tok=$4 out=$5 rule=$6 cmd ck rc gc=${E37_SFT_GRAD_CKPT:-}
   [ -n "$(ours_ck "$out/sft")" ] && return 0
-  cmd=$(uv run python scripts/run_e33n.py cmd --arm "$arm" --size m100 --phase sft --data "$D" --out "$out" \
+  [ -f "$out/sft.grad_ckpt" ] && gc=1
+  mk() { uv run python scripts/run_e33n.py cmd --arm "$arm" --size m100 --phase sft --data "$D" --out "$out" \
         --init "$init" --sft_manifest "$MAN" --lr "$lr" --tokens "$tok" --micro "${E37_SFT_MICRO:-1}" --gpus 1 \
-        --wandb) || { log "sft command FAILED"; return 1; }
+        --wandb ${gc:+--grad_ckpt}; }
+  cmd=$(mk) || { log "sft command FAILED"; return 1; }
   echo "$cmd" > "$out/sft.cmd"
   while true; do   # bursts as infra/aws/jobs/e33n_run.sh: resume from the newest complete checkpoint
     ck=$(ls -d "$out"/sft/*/checkpoint-* 2>/dev/null | awk -F'checkpoint-' '{print $NF" "$0}' | sort -rn | cut -d' ' -f2 \
@@ -131,6 +134,10 @@ sft_ours() {  # ARM INIT LR TOKENS OUTDIR RULE
       eval "$cmd$B${ck:+ --resume_from_checkpoint $ck}" ) >> "$out/sft.log" 2>&1
     rc=$?
     [ "$rc" = 0 ] && { [ "$rule" = polonez ] && { log "sft done; heat rest 20 min"; sleep 1200; LAST_BREAK=$(date +%s); }; return 0; }
+    if [ -z "$gc" ] && tail -300 "$out/sft.log" | grep -q -i "out of memory"; then  # 16k rows never shortened
+      gc=1; touch "$out/sft.grad_ckpt"; cmd=$(mk) || return 1; echo "$cmd" > "$out/sft.cmd"
+      log "sft out of memory at micro-batch 1: retrying with gradient checkpointing"; continue
+    fi
     awk '/STARTING TRAINING/{f=0} /Wall-clock budget of/{f=1} END{exit !f}' "$out/sft.log" || [ "$rc" = 3 ] || return "$rc"
     log "sft burst ended; cooldown 20 min"; sleep 1200; LAST_BREAK=$(date +%s)
   done
@@ -234,5 +241,12 @@ if len(res) >= need:
     print("picked", best)
 EOF
     ;;
-  *) echo "mode: lane | preflight | pick"; exit 2 ;;
+  status)   # what the lanes see: per card the capability queue, our claim, processes; the busy count; the hottest card
+    for i in $(nvidia-smi --query-gpu=index --format=csv,noheader); do
+      echo "gpu$i cap_running=$(cap_running "$i" && echo yes || echo no) claim=$(cat "$CLAIMS/gpu$i" 2>/dev/null || echo -)" \
+           "procs=$(nvidia-smi -i "$i" --query-compute-apps=pid --format=csv,noheader | wc -l) busy=$(gpu_busy "$i" && echo yes || echo no)"
+    done
+    echo "busy_count=$(busy_count) max_temp=$(max_temp) lr=$(cat "$LR_FILE" 2>/dev/null || echo -)"
+    tail -5 "$W/events.log" 2>/dev/null ;;
+  *) echo "mode: lane | preflight | pick | status"; exit 2 ;;
 esac

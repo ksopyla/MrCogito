@@ -70,7 +70,14 @@ no document mask, as in its own trunk).
 - **LR pre-flight** (LSA port only, 20M tokens each): peak 5e-5, 1.5e-4, 4.5e-4. Keep the one with the lowest
   held-out answer loss; all five arms then use it, so the LR is not a difference between arms.
 - From the decay-final weights, fresh optimizer: warmup 3 %, 1−sqrt decay to 0.1× over the rest (the decay's shape),
-  AdamW (0.9, 0.95), weight decay 0.1, clip 1.0, 16 rows × 16,384 = 262k tokens per step, ~760 steps, seed 42.
+  AdamW (0.9, 0.95), weight decay 0.1, clip 1.0, 16 rows × 16,384 = 262k tokens per step, 763 steps, seed 42.
+- **Loss weighting (decided 2026-11-12):** the answer-token mean over the whole optimizer step, in both trainers
+  (torchtitan's own reduction; ours is switched to it for this phase only, auxiliary losses unchanged). The
+  per-row mean our trainer used before would have given the long-document conversations (one per row, ~200 answer
+  tokens each) about 23 % of the gradient instead of about 1 %, and only in four of the five arms. Under the token
+  mean they are a small part of the signal; if S1 fails only on the long tests, LongAlign's per-conversation
+  weighting is the first follow-up arm.
+- The held-out answer loss is scored on 256 of the test split's ~1,365 rows (about a fifth of its tokens).
 
 ## Evaluation (same prompts before and after)
 
@@ -105,8 +112,20 @@ readout).
 
 ## Plan
 
-Home servers only (no AWS spend), once the capability checks free the cards (about 2026-11-14): Polonez at most
-three cards with 5.5 h bursts and 20 min cooldowns, Odra under 80 °C, the original LSA on Odra (its venv).
+Home servers only (no AWS spend), as the capability checks free the cards: Polonez at most three cards with 5.5 h
+bursts and 20 min cooldowns, Odra under 80 °C (two cards), the original LSA on Odra (its venv). A lane starts on a card
+only after the capability queue on it has written `QUEUE-END` (an idle card between that queue's jobs or heat rests
+is not free; that session's advice, 2026-11-12 20:50 UTC). Expected (UTC, worst case of that queue):
+
+| card | free from | lane |
+|---|---|---|
+| Polonez 0 (cap: after Polonez 1's queue ends) | ~Nov 13 15:00 | the three LR pre-flights back to back, the pick, then the LSA port |
+| Polonez 1 (cap: after Polonez 2's queue ends) | ~Nov 14 00:00 | catalogue read n4 |
+| Polonez 2 (after Polonez 3's queue ends) | ~Nov 14 04:00 | concept memory |
+| Odra 0 / Odra 1 | ~Nov 14 17:00–23:00 | notes-open / the original LSA |
+
+The servers cannot reach each other, so the LR pick is copied to Odra by hand (it is needed there a day later).
+The catalogue arm's code comes from `e37-catalogue-later` (merged into `e37-sft`).
 
 | step | what | card-hours (estimate) |
 |---|---|---|
