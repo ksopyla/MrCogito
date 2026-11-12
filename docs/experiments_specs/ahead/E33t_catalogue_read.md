@@ -465,6 +465,12 @@ at 16k in E33p) show the marks are reachable at this size and data.
   - **Criteria at 100M:** S5 misses (0.82 × the LSA port's 16k speed; 0.90 × at 4k). S6's core part holds against
     every model available (within 1 point); near text at 16k is 0.016 nats worse than the LSA port. S1, S2 wait for the
     full-budget window and dense controls.
+  - **Later pass (E37's protocol, launched by the E37 session 2026-11-12 06:32 UTC):** two one-L40S spot nodes, branch
+    `e37-catalogue-later` (= `e37-catalogue` a986d08 + E37's `e37_ruler_later.sh`, `e37_ruler_later_node.sh`,
+    `evaluation/val_loss.py`; model code unchanged): `e37-later-cat-64k` RULER at 64k (about 12 h);
+    `e37-later-cat-rest` validation loss (trunk final on FineWeb-Edu 4k; decay final on FineWeb-Edu 4k and
+    LongDocs-lite 16k), then RULER at 8k and 32k (about 8 h). Results to the run's S3 folder (`eval_val.json`,
+    `later/ruler_<L>_<task>.json`, merged `eval_ruler_later.json`).
 - **Stage-D verdict (2026-11-12 ~07:45 UTC):**
   - **At 100M with the standard recipe the catalogue does not match the LSA port:** 0.02 nats behind up to 64k and
     0.065 behind at 128k. At 4k–64k the gap is close to its 0.016-nat gap on near text, so much of it is the model's

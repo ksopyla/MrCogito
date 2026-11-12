@@ -518,6 +518,13 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
             the machine is shut down. Results are in the E33t spec and <a href="#m100">above</a>.</p></div>
       </div>
       <div class="now-item">
+        <span class="when">since 06:32</span>
+        <div class="what"><span class="top">n4 at 100M: longer needle tests <span class="pill" data-s="running">running</span></span>
+          <p>Started by the 10M-context session, the same tests its other 100M models get, on two AWS spot machines with one
+            L40S card each: needle puzzles at 64k (about 12 h, due about 18:30 UTC), and validation loss followed by needle
+            puzzles at 8k and 32k (about 8 h, due about 14:30 UTC).</p></div>
+      </div>
+      <div class="now-item">
         <span class="when">until ~14 Nov</span>
         <div class="what"><span class="top">Capability checks for n4 <span class="pill" data-s="running">running</span></span>
           <p>The leveled synthetic tasks, three seeds each, on Odra and Polonez (Polonez done about 08:00 UTC Nov 14, Odra
@@ -547,7 +554,8 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     </div>
     <p class="caption">Spend: AWS usage for both sessions is about $835 of the $2,000 through 11 Nov (read 12 Nov, 07:35 UTC,
       before credits; AWS's figure lags by up to a day), plus this morning's hours of the 100M run. The only AWS machines
-      running are two single-card machines for the 10M-context session's longer needle tests.</p>
+      running are four single-card machines for the longer needle tests, two for n4 and two for E37a (checked 12 Nov,
+      08:10 UTC).</p>
   </section>
 
   <footer>
