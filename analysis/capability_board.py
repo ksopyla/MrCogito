@@ -142,6 +142,10 @@ def _ladder(task: str, j: dict) -> tuple[dict, str | None]:
         if v.get("skipped") == FLOOR_STOP:  # not read, floor stop: counts as the task's floor (scored below)
             out[int(L)] = ladder_floor(task)[0]
             continue
+        if want and v.get("decode_cap"):  # read, picked candidate not decoded (cost cap): counts as the floor
+            out[int(L)] = ladder_floor(task)[0]
+            kinds.add("candidate")
+            continue
         c = v.get("candidate") if want else None
         out[int(L)] = c if c is not None else v.get("first_acc")
         kinds.add("candidate" if c is not None else "first")
@@ -151,6 +155,14 @@ def _ladder(task: str, j: dict) -> tuple[dict, str | None]:
 def _unread(j: dict) -> list[int]:
     """Ladder lengths the floor stop left unread (`length_ladder.py --floor_stop`)."""
     return sorted(int(L) for L, v in (j["ladders"].get("ladder") or {}).items() if v.get("skipped") == FLOOR_STOP)
+
+
+def _capped(task: str, j: dict) -> list[int]:
+    """Ladder lengths whose picked-candidate score the decode cost cap left unread (`length_ladder.py --decode_cap`);
+    only a candidate-scored task loses its score there (the first letter is read at every length)."""
+    if TASK_BY_ID[task].score != "candidate":
+        return []
+    return sorted(int(L) for L, v in (j["ladders"].get("ladder") or {}).items() if v.get("decode_cap"))
 
 
 def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
@@ -193,7 +205,8 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                     budget = pre == "cmp" and m[4] in ("dense", "e31_li_m1")
                     out.append({"task": task, "model": m[4], "label": "settings-differ" if budget else "same",
                                 "seed": int(m[5]), "score": _score(task, j.get("p0"), j.get("cand")), "mean": j.get("acc"),
-                                "ladder": lad, "ladder_kind": kind, "unread": _unread(j), "source": j["source"],
+                                "ladder": lad, "ladder_kind": kind, "unread": _unread(j), "capped": _capped(task, j),
+                                "source": j["source"],
                                 "collected": "",
                                 "via": "matched-compute control (3× steps)" if budget else "v4 task recipe"})
                     continue
@@ -210,6 +223,7 @@ def evidence(ledgers: list[dict]) -> tuple[list[dict], str | None]:
                 out.append({"task": task, "model": variant, "label": label, "seed": _seed(j),
                             "score": _score(task, j.get("p0"), j.get("cand")),
                             "mean": j.get("acc"), "ladder": lad, "ladder_kind": kind, "unread": _unread(j),
+                            "capped": _capped(task, j),
                             "source": j["source"], "collected": "", "via": f"battery {slot}"})
     return out, current
 
@@ -318,6 +332,7 @@ def table(ev: list[dict]) -> dict:
                 "label": label, "score": _med([r["score"] for r in rs]), "mean": _med([r["mean"] for r in rs]),
                 "seeds": sorted({r["seed"] for r in rs if r["seed"] is not None}), "ladder": ladder,
                 "floor_stop": {L: n for L in ladder if (n := sum(int(L) in r.get("unread", ()) for r in rs))},
+                "cost_cap": {L: n for L in ladder if (n := sum(int(L) in r.get("capped", ()) for r in rs))},
                 "per_seed": {str(r["seed"]): r["score"] for r in rs if r["seed"] is not None},
                 "extra_seeds": {str(r["seed"]): r["score"] for r in labels[label]
                                 if r["seed"] is not None and r["seed"] not in SEEDS},

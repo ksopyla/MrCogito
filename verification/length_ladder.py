@@ -26,6 +26,12 @@ a row, both at or past the training length, score at the floor (the task's own s
 points), the longer lengths are not read; they are recorded as `{"skipped": "floor stop"}` and count as the floor
 on the board. The task comes from the checkpoint folder's job name (`task_of_job`); `--floor_stop off` reads them.
 
+Decode cost cap (`--decode_cap auto`, the default: 131,072 tokens; evaluation only, rule 3): at and past the cap every
+row is still read teacher-forced (first letter, every letter, CE), but the greedy decode behind the picked candidate
+(one forward per answer letter) is skipped; the rung is recorded with `"candidate_mode": "cost cap"` and
+`"decode_cap": <cap>`, and the board counts its picked score as the floor. `--decode_cap off` re-reads exactly
+those rungs.
+
 Long rows need the `flex` backend (the `sdpa` path builds a dense S x (S + C) mask:
 ~32 GB at 128k). `--backend auto` uses flex on CUDA above 8k tokens.
 """
@@ -137,6 +143,15 @@ def floor_rule(ckpt_dir: Path, mode: str) -> tuple[str, float, str] | None:
     return (task, *ladder_floor(task))
 
 
+def decode_cap(mode: str) -> int | None:
+    """The length from which the greedy decode is skipped (`--decode_cap`), or None (off)."""
+    if mode == "off":
+        return None
+    from evaluation.capability_tasks import LADDER_DECODE_CAP
+
+    return LADDER_DECODE_CAP if mode == "auto" else int(mode)
+
+
 def has_candidates(cfg, row) -> bool:
     """Several same-shaped answers are planted in the book (the picked-candidate score applies)."""
     from verification.bapo_capability_probe import _candidates
@@ -147,7 +162,7 @@ def has_candidates(cfg, row) -> bool:
 
 @torch.no_grad()
 def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: str, depth_bins: int,
-                candidate: str = "auto") -> dict:
+                candidate: str = "auto", decode: bool = True) -> dict:
     rng = np.random.default_rng(seed)
     cand_on: bool | None = None if candidate == "auto" else candidate == "on"
     cand_sum = cand_n = exact_sum = first_g_sum = 0.0
@@ -179,7 +194,7 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
         t_rows += time.time() - t0
         if cand_on is None:
             cand_on = has_candidates(cfg, rr[0])
-        if cand_on:
+        if cand_on and decode:
             from verification.bapo_capability_probe import _answer_exact
 
             t1 = time.time()
@@ -223,6 +238,10 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
                          "acc": float(np.mean(sel)) if sel else None,
                          "first_acc": float(np.mean(self_first)) if self_first else None})
     cand = {"candidate_mode": "on" if cand_on else "off"}
+    if cand_on and not decode:  # the decode cost cap: read, not decoded (the picked score counts as the floor)
+        from evaluation.capability_tasks import DECODE_CAP
+
+        cand = {"candidate_mode": DECODE_CAP}
     if cand_on and dec_rows:
         cand.update(exact=exact_sum / dec_rows, first_greedy=first_g_sum / dec_rows,
                     sec_per_row_decode=t_dec / dec_rows)
@@ -258,6 +277,9 @@ def main() -> int:
     p.add_argument("--floor_stop", default="auto",
                    help="auto: stop after two lengths in a row at the task's floor + 5 points (task from the folder name); "
                         "off: read every length; a number: that floor")
+    p.add_argument("--decode_cap", default="auto",
+                   help="auto: skip the greedy decode from 131,072 tokens on (picked score 'not read, cost cap'); "
+                        "off: decode every length (re-reads the capped rungs); a number: that length")
     p.add_argument("--recipe", default=None, help="ladder this recipe instead of the checkpoint's own exam")
     p.add_argument("--loop_rounds", type=int, default=None,
                    help="E33a: evaluate looped checkpoints with this many loops (default: as trained)")
@@ -279,15 +301,18 @@ def main() -> int:
     if out_path.exists():
         report = json.loads(out_path.read_text())  # resume: keep finished (arch, length) cells
     rule = floor_rule(ckpt_dir, args.floor_stop)
-    from evaluation.capability_tasks import FLOOR_STOP, LADDER_FLOOR_MARGIN, TASK_BY_ID
+    dcap = decode_cap(args.decode_cap)
+    from evaluation.capability_tasks import DECODE_CAP, FLOOR_STOP, LADDER_FLOOR_MARGIN, TASK_BY_ID
 
     for path in paths:
         arch = path.stem
         res = report["results"].setdefault(arch, {})
         train_len = None
         for L in args.lengths:
+            capped = L >= dcap if dcap is not None else False
             if (str(L) in res and "acc" in res[str(L)] and ("first_acc" in res[str(L)] or not args.need_first)
-                    and ("candidate_mode" in res[str(L)] or args.candidate == "off")):
+                    and ("candidate_mode" in res[str(L)] or args.candidate == "off")
+                    and not ("decode_cap" in res[str(L)] and not capped)):  # a capped rung is re-read once uncapped
                 continue
             if rule is not None:
                 if train_len is None:  # the length it was trained at, never below the task's own
@@ -320,7 +345,8 @@ def main() -> int:
             batch = max(1, args.tokens_per_batch // L)
             try:
                 ev = eval_length(model, cfg, rows=args.rows, batch=batch, seed=args.seed + L,
-                                 device=device, amp=args.amp, depth_bins=args.depth_bins, candidate=args.candidate)
+                                 device=device, amp=args.amp, depth_bins=args.depth_bins, candidate=args.candidate,
+                                 decode=not capped)
             except torch.cuda.OutOfMemoryError as e:  # report, keep going
                 res[str(L)] = {"error": f"OOM: {str(e)[:200]}", "backend": backend, "batch": batch}
                 print(f"  [{arch}] {L:>7}  OOM (batch {batch}, {backend})", flush=True)
@@ -328,6 +354,8 @@ def main() -> int:
                 torch.cuda.empty_cache()
                 out_path.write_text(json.dumps(report, indent=2))
                 continue
+            if ev["candidate_mode"] == DECODE_CAP:
+                ev["decode_cap"] = dcap
             ev["backend"] = backend
             ev["batch"] = batch
             ev["memory_slots"] = memory_slots(model, arch, L)
@@ -342,6 +370,7 @@ def main() -> int:
             print(
                 f"  [{arch}] {L:>7}  acc {ev['acc']:.3f} ±{ev['acc_se']:.3f}  first {ev['first_acc']:.3f}  "
                 + (f"picked {ev['candidate']:.3f}  " if "candidate" in ev else "")
+                + (f"picked not read (cost cap from {dcap})  " if "decode_cap" in ev else "")
                 + f"CE {ev['ce_nats']:.3f}  "
                 f"C={ev['memory_slots']}  {ev['sec_per_row']:.3f} s/row  "
                 f"peak {ev.get('peak_gb', 0):.1f} GB  [{backend}, batch {batch}]  depth {depth}",

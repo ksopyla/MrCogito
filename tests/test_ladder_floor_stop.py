@@ -11,8 +11,9 @@ import numpy as np
 import pytest
 import torch
 
-from evaluation.capability_tasks import FLOOR_STOP, LADDER_FLOOR_MARGIN, TASK_BY_ID, ladder_floor, task_of_job
-from verification.length_ladder import floor_rule, floor_stop
+from evaluation.capability_tasks import (DECODE_CAP, FLOOR_STOP, LADDER_DECODE_CAP, LADDER_FLOOR_MARGIN, TASK_BY_ID,
+                                         ladder_floor, task_of_job)
+from verification.length_ladder import decode_cap, floor_rule, floor_stop
 
 LADDER = [1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072]
 
@@ -178,3 +179,80 @@ def test_fast_greedy_decode_gives_the_same_letters():
     a = _answer_exact(model, [(ids2, lab2)], cfg=c, **kw)
     b = _answer_exact(model, [(ids2, lab2)], cfg=c, first_logits=first, **kw)
     assert a == b and a["exact"] >= 0.5                                          # rows 0 and 1 are right by construction
+
+
+# ---- decode cost cap: at 128k read every row, skip the greedy decode behind the picked candidate ----
+
+def test_decode_cap_reads_the_rung_but_skips_the_decode():
+    from tests.test_capability_catalogue import V, _build, _exam
+    from verification.length_ladder import eval_length
+
+    assert decode_cap("auto") == LADDER_DECODE_CAP == 131072 and decode_cap("off") is None and decode_cap("65536") == 65536
+    torch.manual_seed(0)
+    c, _, _, q_id = _exam("chain_parallel", rows=2, hops=1, chain_overhang=1, key_len=16)
+    model = _build(V, c, q_id).eval()
+    kw = dict(rows=4, batch=2, seed=1, device=torch.device("cpu"), amp="off", depth_bins=2)
+    full = eval_length(model, c, **kw)
+    cut = eval_length(model, c, decode=False, **kw)
+    assert full["candidate_mode"] == "on" and "candidate" in full and "sec_per_row_decode" in full
+    assert cut["candidate_mode"] == DECODE_CAP
+    assert "candidate" not in cut and "exact" not in cut and "sec_per_row_decode" not in cut
+    for k in ("acc", "first_acc", "ce_nats", "per_position_acc"):   # the teacher-forced read is unchanged
+        assert cut[k] == full[k], k
+
+
+def test_a_capped_rung_is_kept_until_the_cap_is_lifted(tmp_path, monkeypatch):
+    from verification import length_ladder
+
+    d = tmp_path / "v4_C5_path2-1k_h2_e33t_catalogue_n4_s1"
+    d.mkdir()
+    torch.save({"data": {"seq_len": 1024}}, d / "e33t_catalogue_n4.pt")
+    rungs = _rungs({L: 0.9 for L in LADDER[:-1]})
+    rungs["131072"] = {"acc": 0.8, "first_acc": 0.7, "candidate_mode": DECODE_CAP, "decode_cap": LADDER_DECODE_CAP}
+    (d / "ladder.json").write_text(json.dumps({"ckpt": str(d), "lengths": LADDER, "rows": 64,
+                                               "results": {"e33t_catalogue_n4": rungs}}))
+    argv = ["length_ladder.py", "--ckpt", str(d), "--lengths", *map(str, LADDER), "--rows", "64"]
+    monkeypatch.setattr(length_ladder, "load", lambda *a, **k: pytest.fail("a capped rung is measured under the cap"))
+    monkeypatch.setattr(sys, "argv", argv)
+    assert length_ladder.main() == 0                                 # auto: every rung measured, nothing re-read
+
+    class Reread(Exception):
+        pass
+
+    def load(path, *, seq_len, **k):
+        raise Reread(seq_len)
+    monkeypatch.setattr(length_ladder, "load", load)
+    monkeypatch.setattr(sys, "argv", argv + ["--decode_cap", "off"])
+    with pytest.raises(Reread) as e:                                 # off: exactly the capped rung is read again
+        length_ladder.main()
+    assert e.value.args == (131072,)
+
+
+def test_board_counts_a_capped_picked_score_as_the_floor(tmp_path):
+    from analysis import capability_board as cb
+    from analysis.capability_ledger import _ladder as ledger_ladder
+
+    p = tmp_path / "ladder.json"
+    p.write_text(json.dumps({"results": {"m": {
+        "1024": {"acc": 0.99, "first_acc": 1.0, "candidate": 0.98, "candidate_mode": "on"},
+        "65536": {"acc": 0.8, "first_acc": 0.7, "candidate": 0.4, "candidate_mode": "on"},
+        "131072": {"acc": 0.8, "first_acc": 0.7, "candidate_mode": DECODE_CAP, "decode_cap": LADDER_DECODE_CAP}}}}))
+    lad = ledger_ladder(p)["m"]
+    assert lad["131072"]["decode_cap"] == LADDER_DECODE_CAP          # the ledger keeps the marker
+    job = {"ladders": {"ladder": lad}}
+    path, kind = cb._ladder("C5.path2-1k", job)                       # candidate-scored: the floor, not the first letter
+    assert path == {1024: 0.98, 65536: 0.4, 131072: ladder_floor("C5.path2-1k")[0]} and kind == "candidate"
+    assert cb._capped("C5.path2-1k", job) == [131072] and cb._unread(job) == []
+    out, kind = cb._ladder("C1.lookup-16k", job)                      # first-letter task: the read rung is its score
+    assert out[131072] == 0.7 and kind == "first" and cb._capped("C1.lookup-16k", job) == []
+
+    def rec(model, seed, ladder, capped=()):
+        return {"task": "C5.path2-1k", "model": model, "label": "same", "seed": seed, "score": ladder[1024],
+                "mean": ladder[1024], "ladder": ladder, "ladder_kind": "candidate", "unread": [], "capped": list(capped),
+                "via": "v4 task recipe", "source": "x", "collected": ""}
+    champ = {1024: 0.99, 65536: 0.95, 131072: 0.9}
+    ev = [rec("e31_li_m1", s, champ) for s in (0, 1, 2)] + [rec("v", s, path, [131072]) for s in (0, 1, 2)]
+    tbl = cb.table(ev)
+    assert tbl["C5.path2-1k"]["v"]["cost_cap"] == {"131072": 3} and tbl["C5.path2-1k"]["v"]["floor_stop"] == {}
+    lost = cb.no_harm(tbl, "e31_li_m1", ["v"])["v"]["lost"]
+    assert any(x["where"] == "C5.path2-1k @ 128k" for x in lost)

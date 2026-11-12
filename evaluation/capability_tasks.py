@@ -40,7 +40,8 @@ import re
 from dataclasses import dataclass
 
 # 2026-11-12.1: the ladder floor stop (evaluation only, rule 3; recipes and budgets unchanged), see LADDER_FLOOR_MARGIN
-VERSION = "v4-draft-2026-11-12.1"
+# 2026-11-12.2: the 128k decode cost cap (evaluation only, rule 3; recipes and budgets unchanged), see LADDER_DECODE_CAP
+VERSION = "v4-draft-2026-11-12.2"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -361,6 +362,14 @@ def legacy_battery(variant: str, slot: str) -> tuple[str | None, str]:
 # rungs this way, never gain them). `length_ladder.py --floor_stop off` reads them later.
 LADDER_FLOOR_MARGIN = 0.05
 FLOOR_STOP = "floor stop"  # the `skipped` value of a rung the floor stop left unread
+
+# Decode cost cap (author via the E33t session, 2026-11-12; evaluation only, rule 3). From LADDER_DECODE_CAP tokens on, a
+# ladder still reads every row (teacher-forced: first letter, every letter, CE) but skips the greedy decode behind the
+# picked-candidate score, which costs one forward per answer letter (about 8 GPU-h at 128k on the catalogue read). The
+# picked score there is "not read, cost cap" (ledger `decode_cap`), counts as the floor in the no-harm scoring, and is
+# deferred, not dropped: `length_ladder.py --decode_cap off` re-reads exactly those rungs (with a cached decode).
+LADDER_DECODE_CAP = 131072
+DECODE_CAP = "cost cap"  # the `candidate_mode` of a rung whose picked score the cap left undecoded
 _V4_JOB = re.compile(r"^(?:confp?|v4|recA|cmp)_(C\d)_(.+?-\d+k?)(?:_h\d)?_.+_s\d+$")
 _LEN_JOB = re.compile(r"^len_(lookup|chain)_.+_s\d+(?:_(b8k|b16k))?$")
 _LEN_STAGE = {None: "2k", "b8k": "8k", "b16k": "16k"}
@@ -389,4 +398,4 @@ def ladder_floor(task_id: str) -> tuple[float, str]:
 
 __all__ = ["STOP_RULE", "TRAIN_5K", "TRAIN_19K", "TRAIN_128", "TRAIN_256", "TRAIN_1K", "TRAIN_1K_X4", "TRAIN_1K_X16", "BATTERY_V1", "FLAWED", "LADDER", "LEVELS", "LEVEL_BY_ID", "PACKAGES", "PASS_ACC", "SEEDS",
            "SUITE_V3", "TASKS", "TASK_BY_ID", "VERSION", "Level", "Task", "legacy_battery", "legacy_suite",
-           "FLOOR_STOP", "LADDER_FLOOR_MARGIN", "ladder_floor", "task_of_job"]
+           "FLOOR_STOP", "LADDER_FLOOR_MARGIN", "DECODE_CAP", "LADDER_DECODE_CAP", "ladder_floor", "task_of_job"]
