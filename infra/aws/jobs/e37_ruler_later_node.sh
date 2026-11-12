@@ -3,7 +3,9 @@
 # full-budget models (e37a = the notebook model, lsa = our LSA port, lsa_orig = the original LSA). The 8k part ran at
 # home (2026-11-11); the home cards were busy after it. A launch.sh job sized for one-L40S spot nodes (g6e.xlarge), one
 # share of the work each; any GPU count works (e37_ruler_later.sh deals the pairs out to all the node's GPUs).
-# Arguments: ARM:LENGTHS items, run in turn. Example:
+# Arguments: ARM:LENGTHS items (or ARM:val, LSA's validation loss: val_item below), run in turn. Our models' code comes
+# from the node's branch: a model whose code is on another branch (the catalogue model, e37-catalogue) runs from a
+# branch that is its branch plus these files (e37-catalogue-later). Example:
 #   MC_SPOT=1 bash infra/aws/launch.sh e37-later-e37a-64k 20 "infra/aws/jobs/e37_ruler_later_node.sh e37a:65536" \
 #     arch-10m g6e.xlarge
 # Per item:
@@ -56,10 +58,42 @@ setup_orig() {  # their venv at the pinned commit (as lsa_orig_node.sh), the lm-
   PYTHONPATH="$OV" "$VENV/bin/python" -c "import torch, torchtitan, fla, lm_eval; print('their venv: torch', torch.__version__, 'fla', fla.__version__, 'lm_eval', lm_eval.__version__, lm_eval.__file__)" 2>&1 | tee -a "$W/node.log"
 }
 VENV="$MC_DISK/lsa-venv"; OV="$MC_DISK/lmeval011"
+fetch_final() {  # S3_PHASE_DIR LOCAL: our checkpoint's final/ of that phase (trunk/ or decay/)
+  local PFX
+  PFX=$(aws s3 ls --recursive "$1" | awk '{print $4}' | grep '/final/model.safetensors$' | sed 's#/model.safetensors$##' | head -1)
+  [ -n "$PFX" ] || { log "no final/ under $1"; return 1; }
+  aws s3 sync --only-show-errors "s3://$MC_BUCKET/$PFX/" "$2/" --exclude training_args.bin
+}
+val_item() {  # ARM: LSA's validation loss (evaluation/val_loss.py, as run at home for e37a / lsa): trunk final on
+  # FineWeb-Edu val 4k, decay final on FineWeb-Edu val 4k + LongDocs-lite val 16k -> the run's eval_val.json (kept if
+  # already in S3). Data: the val shards, one FineWeb-Edu train shard (the manifest loader opens the train side too),
+  # LongDocs-lite.
+  local A=$1 R O; R=$(s3run "$1"); O="$W/$1"; mkdir -p "$O"
+  if aws s3 ls "$R/eval_val.json" >/dev/null 2>&1; then log "$A: eval_val.json is in S3 already; val skipped"; return 0; fi
+  mkdir -p "$D/fineweb_edu_gpt2"
+  for f in finewebedu_val_000000.bin finewebedu_train_000001.bin; do
+    aws s3 cp --only-show-errors "s3://$MC_BUCKET/data/fineweb_edu_gpt2/$f" "$D/fineweb_edu_gpt2/"
+  done
+  aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/longdocs_lite_gpt2/" "$D/longdocs_lite_gpt2/"
+  fetch_final "$R/trunk/" "$MC_DISK/ck/$A/trunk_final" && fetch_final "$R/decay/" "$MC_DISK/ck/$A/final" || return 1
+  log "$A: validation loss"
+  if uv run python evaluation/val_loss.py --checkpoint "$MC_DISK/ck/$A/trunk_final" --name trunk_final --no_longdocs \
+       --data "$D" --out "$O/eval_val.json" >> "$O/eval_val.log" 2>&1 \
+     && uv run python evaluation/val_loss.py --checkpoint "$MC_DISK/ck/$A/final" --name decay_final \
+       --data "$D" --out "$O/eval_val.json" >> "$O/eval_val.log" 2>&1; then
+    aws s3 cp --only-show-errors "$O/eval_val.json" "$R/eval_val.json"
+    aws s3 cp --only-show-errors "$O/eval_val.log" "$R/eval_val.log"
+    log "$A: val done: $(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print({k: round(v['fineweb_val_4k']['token_mean'], 4) for k, v in d.items() if isinstance(v, dict)})" "$O/eval_val.json")"
+  else
+    log "$A: val FAILED (tail below)"; tail -15 "$O/eval_val.log" | tee -a "$W/node.log"
+    aws s3 cp --only-show-errors "$O/eval_val.log" "$R/eval_val_${MC_NAME}_failed.log"; return 1
+  fi
+}
 
 RC=0
 for it in "$@"; do
   A=${it%%:*}; LS=${it#*:}; R=$(s3run "$A"); O="$W/$A"; T0=$(date -u +%s)
+  if [ "$LS" = val ]; then val_item "$A" || RC=1; continue; fi
   mkdir -p "$O/later"
   log "$A: RULER $LS from $R"
   if [ "$A" = lsa_orig ]; then
@@ -68,10 +102,8 @@ for it in "$@"; do
     [ -f "$CK/.metadata" ] || { log "$A: no checkpoint (.metadata missing)"; RC=1; continue; }
     setup_orig || { RC=1; continue; }
   else
-    PFX=$(aws s3 ls --recursive "$R/decay/" | awk '{print $4}' | grep '/final/model.safetensors$' | sed 's#/model.safetensors$##' | head -1)
-    [ -n "$PFX" ] || { log "$A: no final/ under $R/decay/"; RC=1; continue; }
     CK="$MC_DISK/ck/$A/final"
-    aws s3 sync --only-show-errors "s3://$MC_BUCKET/$PFX/" "$CK/" --exclude training_args.bin
+    fetch_final "$R/decay/" "$CK" || { RC=1; continue; }
   fi
   aws s3 sync --only-show-errors "$R/later/" "$O/later/" --exclude "DONE_*" --exclude "INCOMPLETE_*"
   log "$A: checkpoint $(du -sh "$CK" | cut -f1), $(ls "$O"/later/ruler_*.json 2>/dev/null | wc -l) pair files from S3; setup $(( $(date -u +%s) - T0 )) s"
