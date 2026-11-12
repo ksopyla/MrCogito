@@ -36,6 +36,23 @@ class Issue:
 
 ISSUES: tuple[Issue, ...] = (
     # ---- open: results shown with a caution mark until the named run lands
+    Issue("decode-cost-cap", "2026-11-12", "The picked candidate at 128k is not decoded yet (cost cap)",
+          "low", "open", "note", ("C1.edge-1k", "C1.keyed4-1k", "C5.pchain2-1k", "C5.path2-1k", "C5.path3-1k"),
+          ("e33t_catalogue_n4",),
+          "Since 2026-11-12 21:46 UTC (v4-draft-2026-11-12.2) a ladder reads 128k teacher-forced but does not decode "
+          "the answer, so on the candidate-scored tasks the 128k point is hollow, 'not read, cost cap', and counts as "
+          "the floor: it can only be lost. The verdict does not depend on it (the catalogue read already loses "
+          "C1.edge-1k, C3.recall8-1k and C5.pchain2-1k at the training length). C5.path2-1k seed 0's 128k was decoded "
+          "in full (started before the cap).",
+          "The greedy decode costs one forward per answer letter; on a slow long-context read that is 12–15 forwards "
+          "per row (33 s against a 2.7 s read at 32k), about 8 GPU-h a ladder at 128k. Time a decode on a model that "
+          "learned before planning a ladder budget.",
+          "Once the cached decoding (branch kv-cache, nn/incremental.py) lands on dev, extend it on e33t-capability to "
+          "the capability catalogue model (sink keys in the sliding-window step; exactness from the layout, no page "
+          "closing inside the answer span, instead of raw window − page, which is 0 here; a _greedy_answers adapter), "
+          "each with an equality test: letter for letter against the uncached decode at 32k, and the exact aggregate "
+          "scores of C5.path2-1k seed 0's full 128k decode on the same 64 rows. Then re-read the capped rungs with "
+          "length_ladder.py --decode_cap off."),
     Issue("recipeA-seeds", "2026-10-13", "With answer exits, the loop learns 2-hop reasoning on 3 of 5 seeds",
           "medium", "open", "caution", ("C5.pchain2-1k",), ("e33a_loop",),
           "Picked candidate per seed with answer exits: 94 / 94 / 4 / 94 / 10 % (seeds 0–4); without exits 98 / 95 / 93 % "
@@ -187,13 +204,15 @@ RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch rep
     # E33t catalogue read (`e33t_catalogue_n4`), the v4 core package, phase core_e33t_catalogue_n4; times in UTC
     # (Odra's clock, queue logs and file times are Europe/Warsaw, one hour ahead in November; Polonez runs on UTC)
     Run("e33t_core", "odra", "2026-11-11 20:40 UTC",
-        "about 2026-11-14 17:00–23:00 UTC (about 58 h on 3 cards from 11-12 11:17 UTC: training at 1.57 s/step, "
-        "the edge-1k ladders took about 6 h per card before the floor stop of 11-12 11:17 UTC; early stops pull it in)",
+        "cards 0–1 about 2026-11-14 17:00 – 11-15 00:00 UTC, card 2 about 11-15 03:00–10:00 UTC (from 11-12 22:20 UTC "
+        "worst case, every job at its full budget: the lookup curriculum's 8k and 16k stages untimed; card 2 runs "
+        "20–30 % slower under the heat guard, which pauses its job at 79 °C since 11-12 21:38 UTC; early stops pull it in)",
         "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum, seeds 0–2, ladders to 128k",
         (), 54),
     Run("e33t_core", "polonez", "2026-11-11 20:40 UTC (queued behind other evals)",
-        "about 2026-11-14 08:00–12:00 UTC (first jobs 20:55–21:20 UTC; 55 GPU-h per card at 1.37 s/step as measured, "
-        "plus 20 min rest every 5.5 h and ~1 h more per decoded ladder)",
+        "card 1 about 2026-11-14 06:00, card 2 about 09:00, card 3 about 14:30 UTC (from 11-12 22:20 UTC, worst case: "
+        "every C5 stage at its 19.2k-step budget, a learned final stage's ladder ~4 h under the 128k decode cost cap, "
+        "C5.path2-1k seed 0's full 128k decode until ~11-13 08:00 UTC, 20 min rest every 5 h 50 min)",
         "E33t catalogue read, core package part 2: the C5 curricula (pchain2, path2, path3), seeds 0–2, ladders",
         (), 21),
     Run("v4_fix_a", "polonez", "2026-10-13 08:38", "finished 2026-10-13 17:39",
