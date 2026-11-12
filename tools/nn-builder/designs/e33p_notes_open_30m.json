@@ -1,0 +1,801 @@
+{
+  "schema": "nn-builder/graph",
+  "version": 1,
+  "name": "notebook read 72.7M (30.2M core, notes_open)",
+  "description": "Our notebook read: the E33p 'notes_open' arm. The testbed WITH the page writer: 256-token pages, a new one every 192 (64 tokens overlap), 32 notes per page. In the reading layer (L2) the notes act as a table of contents AND are read: a query scores the notes, reopens the original tokens of the 64 best notes (up to 512 tokens), and also reads the notes' summaries and the last 512 tokens. Trained like every arm of the testbed: 1.5B tokens at 4k, then 0.2B at 16k (the decay), same data (FineWeb + LongDocs-lite), seed 1 on AWS. Result: recovers 39 % of the window-to-dense gap at 16k (LSA port: 99 %), fading to 21 % at 64k. Measured causes: 30 % of notes empty, overlapping pages reopened, summaries take a third of the attention, recall of the words full attention reads most stays at 27 % after 4 rounds (LSA port: 68 %). Parameters: 72,687,252 in total, 30,246,164 without the word tables (input table 13,493,056 + output layer 28,948,032); the page writer and notebook are 3,985,856 of them; the trainer's count and the trained checkpoint's stored weights give the same number. The testbed is called '30M' after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
+  "stacks": [
+    {
+      "id": "main",
+      "name": "Decoder (reader)",
+      "role": "decoder",
+      "width": 576,
+      "seq": {
+        "kind": "tokens"
+      },
+      "rows": [
+        {
+          "id": "main.input",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "embedding",
+              "vocab": 50257,
+              "dim": 256,
+              "ngram_tables": 0,
+              "ngram_buckets": 8192,
+              "proj": "gated_mlp",
+              "out_norm": "rmsnorm",
+              "id": "main.input.emb",
+              "label": "GPT-2 token table 50,257 × 256 + input MLP"
+            },
+            {
+              "type": "positional",
+              "kind": "rope",
+              "theta": 500000,
+              "max_len": 4096,
+              "id": "main.input.pos",
+              "label": "RoPE θ 500k (every layer but the reading layer)"
+            }
+          ],
+          "label": "input"
+        },
+        {
+          "id": "main.L0",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L0.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L0.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "pre 0 · local 128"
+        },
+        {
+          "id": "main.L1",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L1.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L1.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "pre 1 · local 128"
+        },
+        {
+          "id": "main.L2",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 1024,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": true,
+              "dual_key": true,
+              "nope": true,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L2.attn",
+              "label": "Notebook read: score notes → reopen the 64 best notes' tokens (≤512) + the notes + last 512 tokens · no RoPE"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L2.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "reading layer · notes choose and are read"
+        },
+        {
+          "id": "main.L3",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L3.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L3.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 0 (in the loop) · local 128"
+        },
+        {
+          "id": "main.L4",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L4.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L4.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 1 · local 128"
+        },
+        {
+          "id": "main.L5",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L5.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L5.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 2 · local 128"
+        },
+        {
+          "id": "main.L6",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L6.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L6.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 3 · local 128"
+        },
+        {
+          "id": "main.L7",
+          "x0_mix": true,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 9,
+              "head_dim": 64,
+              "kv_heads": 1,
+              "causal": true,
+              "window": 128,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "main.L7.attn",
+              "label": "local window 128"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1472,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "main.L7.ffn",
+              "label": "SwiGLU 1472"
+            }
+          ],
+          "label": "stack 4 · local 128"
+        },
+        {
+          "id": "main.head",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "lm_head",
+              "vocab": 50257,
+              "tied": false,
+              "bias": false,
+              "final_norm": "rmsnorm",
+              "z_loss": 0.0001,
+              "softcap": 30,
+              "chunked": true,
+              "id": "main.head.lm",
+              "label": "untied output layer 50,257"
+            }
+          ],
+          "label": "head"
+        }
+      ]
+    },
+    {
+      "id": "pages",
+      "name": "Page writer",
+      "role": "writer",
+      "width": 256,
+      "seq": {
+        "kind": "pages",
+        "of": "main",
+        "window": 256,
+        "stride": 192
+      },
+      "rows": [
+        {
+          "id": "pages.in",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "linear",
+              "out": 256,
+              "bias": false,
+              "out_norm": "rmsnorm",
+              "id": "pages.in.proj",
+              "label": "token table (256) → writer width 256"
+            },
+            {
+              "type": "positional",
+              "kind": "rope",
+              "theta": 10000,
+              "max_len": 256,
+              "id": "pages.in.pos",
+              "label": "RoPE inside the page (θ 10k)"
+            }
+          ],
+          "label": "in: 256-token pages, a new one every 192"
+        },
+        {
+          "id": "pages.enc0",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 4,
+              "head_dim": 64,
+              "kv_heads": 4,
+              "causal": false,
+              "window": 0,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "pages.enc0.attn",
+              "label": "whole page, both directions"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 512,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "pages.enc0.ffn",
+              "label": "SwiGLU 512"
+            }
+          ],
+          "label": "page layer 0"
+        },
+        {
+          "id": "pages.enc1",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "self",
+              "heads": 4,
+              "head_dim": 64,
+              "kv_heads": 4,
+              "causal": false,
+              "window": 0,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "flash",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": false,
+                "logit_scale": false
+              },
+              "id": "pages.enc1.attn",
+              "label": "whole page, both directions"
+            },
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 512,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "pages.enc1.ffn",
+              "label": "SwiGLU 512"
+            }
+          ],
+          "label": "page layer 1"
+        }
+      ]
+    },
+    {
+      "id": "notes",
+      "name": "Notebook (notes)",
+      "role": "latent",
+      "width": 512,
+      "seq": {
+        "kind": "slots",
+        "of": "pages",
+        "per_page": 32
+      },
+      "rows": [
+        {
+          "id": "notes.init",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "latent_init",
+              "address_feats": 64,
+              "norm": "rmsnorm",
+              "id": "notes.init.q",
+              "label": "32 learned slots per page"
+            }
+          ],
+          "label": "slots"
+        },
+        {
+          "id": "notes.read",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "attention",
+              "mode": "cross",
+              "heads": 8,
+              "head_dim": 64,
+              "kv_heads": 8,
+              "causal": false,
+              "window": 0,
+              "qk_norm": true,
+              "bias": false,
+              "norm": "rmsnorm",
+              "kv_norm": "rmsnorm",
+              "residual": "pre",
+              "memory": false,
+              "dual_key": false,
+              "nope": false,
+              "kernel": "eager",
+              "extras": {
+                "order_term": false,
+                "count_heads": 0,
+                "count_max": 10,
+                "pos_prior": true,
+                "logit_scale": false
+              },
+              "id": "notes.read.attn",
+              "label": "slots read their page"
+            }
+          ],
+          "label": "read page"
+        },
+        {
+          "id": "notes.ffn",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "ffn",
+              "kind": "swiglu",
+              "hidden": 1024,
+              "activation": "gelu",
+              "bias": false,
+              "experts": 1,
+              "top_k": 1,
+              "norm": "rmsnorm",
+              "residual": "pre",
+              "id": "notes.ffn.ffn",
+              "label": "SwiGLU 1024"
+            }
+          ],
+          "label": "think"
+        },
+        {
+          "id": "notes.out",
+          "x0_mix": false,
+          "cells": [
+            {
+              "type": "kv_out",
+              "entries": 1,
+              "kv_heads": 1,
+              "head_dim": 64,
+              "projections": 4,
+              "in_norms": 2,
+              "key_norm": true,
+              "id": "notes.out.kv",
+              "label": "notes: one key + one value each (1 KV head × 64)"
+            }
+          ],
+          "label": "notes"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "id": "main.skip0",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L3"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L4"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip1",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L2"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L5"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip2",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L1"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L6"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "main.skip3",
+      "kind": "skip",
+      "from": {
+        "stack": "main",
+        "row": "main.L0"
+      },
+      "to": {
+        "stack": "main",
+        "row": "main.L7"
+      },
+      "weight": "scalar"
+    },
+    {
+      "id": "wire.table",
+      "kind": "input",
+      "from": {
+        "stack": "main",
+        "cell": "main.input.emb",
+        "port": "table"
+      },
+      "to": {
+        "stack": "pages"
+      }
+    },
+    {
+      "id": "wire.pages",
+      "kind": "source",
+      "from": {
+        "stack": "pages"
+      },
+      "to": {
+        "stack": "notes",
+        "cell": "notes.read.attn"
+      }
+    },
+    {
+      "id": "wire.notes",
+      "kind": "source",
+      "from": {
+        "stack": "notes"
+      },
+      "to": {
+        "stack": "main",
+        "cell": "main.L2.attn"
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "loop.read",
+      "kind": "loop",
+      "stack": "main",
+      "rows": [
+        "main.L2",
+        "main.L3"
+      ],
+      "count": 4,
+      "round_embedding": true,
+      "feedback": "none"
+    },
+    {
+      "id": "loop.writer",
+      "kind": "loop",
+      "stack": "notes",
+      "rows": [
+        "notes.read",
+        "notes.ffn"
+      ],
+      "count": 2,
+      "round_embedding": false,
+      "feedback": "none"
+    }
+  ],
+  "run": {
+    "row_length": 4096,
+    "rows_per_step": 64,
+    "micro_batch": 4,
+    "precision": "amp_bf16",
+    "optimizer": "adamw",
+    "weight_decay": 0.1,
+    "zero_stage": 0,
+    "checkpointing": false,
+    "gpu": "rtx3090",
+    "gpu_count": 1,
+    "token_budget": 1500000000,
+    "deadline_hours": 0,
+    "mfu": 0,
+    "irregular_ratio": 0,
+    "dp_efficiency": 0.95
+  }
+}

@@ -167,7 +167,7 @@ td.l{color:var(--lsa)} td.o{color:var(--open)}
 
 <section id="design">
 <h2>The new design: notes as a card catalogue</h2>
-<p class="col small">Written up as experiment E33s: <a href="https://claude.ai/artifact/8nvSB2tGfPL4RgVi92RGUz">alignment page</a> (step-by-step flow, worked example, decision checklist); spec in docs/experiments_specs/ahead/E33s_catalogue_read.md.</p>
+<p class="col small">Written up as experiment E33t: <a href="https://claude.ai/artifact/8nvSB2tGfPL4RgVi92RGUz">alignment page</a> (step-by-step flow, worked example, decision checklist); spec in docs/experiments_specs/ahead/E33t_catalogue_read.md.</p>
 <p class="col">One coherent change to our read, keeping what is ours (a trained writer that reads a whole page and names its contents) and dropping what the measurements show is hurting. The notes stop being reading material and become a catalogue: small, balanced, never empty, organised in two levels, and searched afresh in every pass so that four passes can follow a chain of references. It is simpler than the current read (no summary path, no overlapping pages, no full choice table) and its index cost grows with pages, not with words.</p>
 <div class="props" id="props"></div>
 <div class="fig">
@@ -528,7 +528,7 @@ function calc() {
 (function plan() {
   const rows = [
     ["Now", "Finish stage 1", "Second seed of all six models on AWS; our notes model at home (same seed as the controls); copy test; probe on every model.", "Today", "≈ $120 left of stage 1"],
-    ["Stage A", "Catalogue read, 30M (spec E33s)", "Two models against the seed-1 controls: A + B + C + D + E + H with a flat search, and the same with the two-level search (F).", "2 models, ≈ 10 h", "≈ $60"],
+    ["Stage A", "Catalogue read, 30M (spec E33t)", "Two models against the seed-1 controls: A + B + C + D + E + H with a flat search, and the same with the two-level search (F).", "2 models, ≈ 10 h", "≈ $60"],
     ["Pass mark", "", "≥ 80 % of the gap at 16k; no more than 5 points lost from 16k to 64k; at least LSA's speed at 16k; no harm on short positions.", "", ""],
     ["Stage B", "Page and note sizes", "Around the stage-A winner: 4, 8 and 16 words per note at 256-word pages, and 512-word pages with 64 notes.", "4 models, ≈ 20 h", "≈ $120"],
     ["Stage C", "Two levels and long documents", "Add F; train at 16k plus a short 64k stage; test at 128k, 1M and beyond (test-only past 64k).", "2 models", "≈ $80"],

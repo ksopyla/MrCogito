@@ -431,7 +431,9 @@ def _latent_memory_kwargs(model_args) -> dict:
             "lm_key_grad", "message_loop_name_lens", "message_loop_feedback", "message_loop_feedback_temp",
             "lm_writer_input", "lm_note_rank_gate", "lm_note_order_gate", "message_loop_control",
             "message_loop_control_window", "message_loop_control_dim", "message_loop_control_heads",
-            "message_loop_control_words", "lm_note_key", "lm_open", "lm_open_k", "lm_open_cap")
+            "message_loop_control_words", "lm_note_key", "lm_open", "lm_open_k", "lm_open_cap",
+            "lm_note_read", "lm_filing", "lm_filing_iters", "lm_filing_cap", "lm_open_score", "lm_open_new_per_pass",
+            "lm_open_levels", "lm_open_pages", "lm_sinks", "lm_index_loss", "lm_index_queries", "lm_index_negatives")
     out = {k: getattr(model_args, k) for k in keys}
     out["message_write"] = "latent_memory"
     return out

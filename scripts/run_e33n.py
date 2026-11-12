@@ -9,6 +9,15 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
          notes_open / pages_open — E33p: tied note keys; each query opens the raw tokens of its 64 best notes'
                    members (its 2 best pages), ≤ 512 tokens, plus every note as gist and the 512-token window
          lsa     — E33p: LSA's released flat read on the dense arm (sinks + window + 512 keys from its best buckets)
+         catalogue / catalogue_2l — E33t: the notes only choose what opens (4 learned empty slots, no summaries in the
+                   read), balanced filing (≤ 16 per note), max-head cosine, up to 128 notes until 512 tokens, a new
+                   place per loop pass, an index loss; pages of 256 without overlap; _2l searches pages first
+         catalogue_reuse — E33t: the catalogue with the pass exclusion off (a loop pass may re-open notes earlier
+                   passes opened). The planted-password probe (2026-11-07) found the catalogue opens the key on
+                   pass 1 (94 % at 4k) but may not return to it on passes 2–4, where the LSA port and dense copy it
+         catalogue_reuse_n4 / _n16 / _p512 — E33t stage B: note and page sizes around the stage-A winner
+                   (catalogue_reuse: 256-token pages, 32 notes = 8 tokens per note): 4 and 16 tokens per note, and
+                   512-token pages with 64 notes (8 per note); everything else unchanged
          Note (2026-11-06): before then the trainer passed the loop only to notebook models, so E33n's dense arm
          trained with one round; it now loops 4 times like every other arm.
          All: E33's loop (prelude → [reading layer + 1 local layer] × 4 tied → coda), exits off, local windows 128,
@@ -71,6 +80,11 @@ ARMS = {
     "lsa": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "lsa",
             "lsa_window": 512, "lsa_sinks": 4, "lsa_block": 512, "lsa_bucket": 8, "lsa_pool": 4, "lsa_bucket_cap": 16,
             "lsa_top_k": 512},
+    # E33t (docs/experiments_specs/ahead/E33t_catalogue_read.md): the notes only choose what opens; balanced filing,
+    # max-head cosine, budget filled by tokens (up to 128 notes), a new place per pass, learned empty slots, index loss
+    "catalogue": {**_WRITER, **_LOOP, "lm_stride": 256, "lm_note_key": "tied", "lm_open": "notes", "lm_open_k": 128,
+                  "lm_open_cap": 512, "lm_note_read": "index", "lm_filing": "balanced", "lm_open_score": "max_cos",
+                  "lm_open_new_per_pass": True, "lm_sinks": 4, "lm_index_loss": 0.1},
     # E37 (docs/experiments_specs/ahead/E37_concept_memory.md): concept memory on the dense arm's reading layer —
     # balanced content concepts of 8 keys per 512-key block, exact reads of the largest estimated contributions
     # (512 tokens), one summary entry per other concept; e37b adds the looped concept reasoner
@@ -87,14 +101,29 @@ ARMS = {
     "e37a_c128": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "concept",
                   "concept_block": 512, "concept_per_block": 4, "concept_sinks": 4, "concept_top_k": 512},
 }
+ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
+ARMS["catalogue_reuse"] = {**ARMS["catalogue"], "lm_open_new_per_pass": False}  # every pass may re-open any note
+# E33t stage B (approved by the author 2026-11-08): note and page sizes around catalogue_reuse; the read's budget stays
+# 512 tokens (up to 128 notes still fills it at 4 tokens per note); the filing cap 16 is exact at 16 tokens per note
+ARMS["catalogue_reuse_n4"] = {**ARMS["catalogue_reuse"], "lm_latents": 64}                     # 4 tokens per note
+ARMS["catalogue_reuse_n16"] = {**ARMS["catalogue_reuse"], "lm_latents": 16}                    # 16 tokens per note
+ARMS["catalogue_reuse_p512"] = {**ARMS["catalogue_reuse"], "lm_window": 512, "lm_stride": 512, "lm_latents": 64}
 # E37 SFT: rows per optimizer step (16 × 16,384 = 262k tokens) and tokens of the stage, at every size
 SFT = dict(rows=16, tokens=200e6)
 
 TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"lm_open_k": 1, "lm_open_cap": 64},
              "lsa": {"lsa_window": 64, "lsa_block": 64, "lsa_top_k": 64},
+             "catalogue": {"lm_open_k": 16, "lm_open_cap": 64, "lm_index_queries": 32, "lm_index_negatives": 4,
+                           "lm_stride": 64},
+             "catalogue_2l": {"lm_open_k": 16, "lm_open_cap": 64, "lm_index_queries": 32, "lm_index_negatives": 4,
+                              "lm_stride": 64, "lm_open_pages": 2},
              "e37a": {"concept_block": 64, "concept_per_block": 8, "concept_top_k": 64},
              "e37b": {"concept_block": 64, "concept_per_block": 8, "concept_top_k": 64, "concept_reasoner_dim": 64,
                       "concept_reasoner_heads": 2}}
+TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
+TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
+TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}
+TINY_OPEN["catalogue_reuse_p512"] = {**TINY_OPEN["catalogue"], "lm_window": 128, "lm_stride": 128, "lm_latents": 16}
 TINY_WRITER = {"lm_latents": 8, "lm_latent_dim": 64, "lm_heads": 2, "lm_writer_dim": 64, "lm_enc_layers": 1,
                "lm_rounds": 1, "message_raw_window": 64, "lm_window": 64, "lm_stride": 48}
 

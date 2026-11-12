@@ -439,6 +439,22 @@ class ModelArguments:
                                                             "tokens of its best notes' members (or best pages)."})
     lm_open_k: int = field(default=0, metadata={"help": "E33p: notes (or pages) each query chooses."})
     lm_open_cap: int = field(default=512, metadata={"help": "E33p: opened raw tokens per query, at most."})
+    lm_note_read: str = field(default="gist", metadata={"help": "E33t: gist | index (the notes only choose what opens; "
+                                                                "they are not keys of the read)."})
+    lm_filing: str = field(default="argmax", metadata={"help": "E33t: argmax | balanced (Sinkhorn-balanced filing, "
+                                                               "at most lm_filing_cap tokens per note)."})
+    lm_filing_iters: int = field(default=3, metadata={"help": "E33t: Sinkhorn iterations of the balanced filing."})
+    lm_filing_cap: int = field(default=16, metadata={"help": "E33t: most tokens filed under one note."})
+    lm_open_score: str = field(default="sum_softmax", metadata={"help": "E33t: sum_softmax | max_cos (cosine of query "
+                                                                        "and note key, best query head)."})
+    lm_open_new_per_pass: bool = field(default=False, metadata={"help": "E33t: a loop pass may not open notes the "
+                                                                        "query opened in earlier passes."})
+    lm_open_levels: int = field(default=1, metadata={"help": "E33t: 1 | 2 (pages first, then their notes)."})
+    lm_open_pages: int = field(default=16, metadata={"help": "E33t: pages kept by the two-level search."})
+    lm_sinks: int = field(default=0, metadata={"help": "E33t: learned empty slots in the catalogue read."})
+    lm_index_loss: float = field(default=0.0, metadata={"help": "E33t: weight of the index loss."})
+    lm_index_queries: int = field(default=256, metadata={"help": "E33t: sampled queries per row and pass."})
+    lm_index_negatives: int = field(default=32, metadata={"help": "E33t: sampled unchosen notes per query."})
     par_global_read: str = field(default="dense", metadata={"help": "E33p: dense | lsa (LSA's released flat read on "
                                                                      "the global layer, nn/lsa_buckets.py) | concept "
                                                                      "(E37 concept memory, nn/concept_memory.py)."})

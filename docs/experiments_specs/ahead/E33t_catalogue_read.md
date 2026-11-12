@@ -1,13 +1,15 @@
-# E33s — the catalogue read: notes index the text, they are not read; balanced filing, a trained index, a new place per pass, two levels
+# E33t — the catalogue read: notes index the text, they are not read; balanced filing, a trained index, a new place per pass, two levels
 
-- **Status:** draft 2026-11-07 (author asked for it: "Yes, write the spec"). Waiting for the alignment page
-  [e33s_architecture.html](../../3_Evaluations_and_Baselines/e33s_architecture.html) and the go-ahead.
+- **Status:** **approved 2026-11-07** ("Aligned, build it") on the alignment page
+  [e33t_architecture.html](../../3_Evaluations_and_Baselines/e33t_architecture.html), every decision as shown there.
 - **Serves:** vision priority 2 (long context through the notebook) and the author's 2026-11-07 aim: chase LSA's
   quality with a simpler design of our own that can reason over memory and reach > 10M tokens (tested smaller first),
   then scale to 100–200M if 30M matches. Direct follow-up of E33p stage 1.
-- **Implementation plan:** [E33s_plan.md](E33s_plan.md) *(to be written by `implementation-plan` after alignment)*
+- **Implementation plan:** [E33t_plan.md](E33t_plan.md)
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-11-07 · closed —
-- **ID:** next free E33 letter (E33q / E33r are text-check runs, E33w / E33x the iCoT runs; E33s–v unused).
+- **ID:** E33t. Drafted as "E33s" on 2026-11-07 (commits 56ce7d5 … 2179a9d on `e33n-lsa-testbed`), but `dev` has
+  owned E33s since 2026-10-21 (multi-hop on real text taught by written reasoning, `E33s_written_chains_real_data.md`);
+  renamed the same day before any run. E33q / E33r are text-check runs, E33w / E33x the iCoT runs; E33u, E33v unused.
 - **Evidence behind it:** E33p stage 1 analysis page
   [e33p_vs_lsa.html](../../3_Evaluations_and_Baselines/e33p_vs_lsa.html) (2026-11-07): the measured limits L1–L6
   below. LSA (arXiv 2610.42147) as the reference read; SwAV's equipartition (balanced soft assignment by Sinkhorn
@@ -142,7 +144,7 @@ at 16k in E33p) show the marks are reachable at this size and data.
   the trunk ≤ the window control's; core benchmark mean within 1 point of the window control's.
 
 ## Kill criteria (set BEFORE running)
-- **K1:** after the decay the main arm recovers < 50 % of G at 16k → stop E33s; the catalogue changes do not explain
+- **K1:** after the decay the main arm recovers < 50 % of G at 16k → stop E33t; the catalogue changes do not explain
   the gap to LSA (then test LSA's key clustering inside our writer as the index, a new spec).
 - **K2 (index not learning):** by 25 % of the trunk the rank correlation between note score and read mass on the
   chosen notes is < 0.2 → stop and debug the index loss before spending the run.
@@ -160,21 +162,67 @@ at 16k in E33p) show the marks are reachable at this size and data.
   index loss's gradient reaches the writer and the keys and none flows through the choice; the two-level search with
   16 ≥ all pages equals the flat search. Then speed and memory at 4k and 16k on one GPU (K4 early check), and a tiny
   pipeline check on the Mac.
+- **Stage 0 result (2026-11-07 07:55–08:35 UTC, Polonez GPU 1, RTX 3090, `infra/aws/jobs/e33t_stage0.sh` at
+  `47339bf`):** 66 GPU tests pass (flex = SDPA reference, forward and backward; worst relative gradient difference
+  2e-6 catalogue, 8e-6 two-level); the tiny pipeline check passes for both arms (trunk then decay, instrumentation
+  on). Speed, tokens/s: catalogue trunk 4k (micro 4) 23,571, 21.2 GB · decay 16k (micro 1): catalogue 13,854,
+  two-level 15,485, LSA-native 18,697 (same GPU), E33p notes-open 10.8k (stage 0, Odra). Projected full run
+  (1.5B at 4k + 0.2B at 16k) ≈ 1.12 × LSA-native's time: **K4 passes**; at 16k alone the catalogue is 0.74 × LSA
+  (S5 asks ≥ 0.9, judged after stage A).
 - **Stage A (30M, AWS 4 × L40S spot):** the main arm and the two-level arm after the seed-1 controls of stage 1
   (queue order dense, window, LSA-native, then pages-open), about 5 hours and $30 per model. Gate: S1–S6, K1–K4.
+- **Stage A follow-up, the pass exclusion off in training (arm `catalogue_reuse`, approved by the author
+  2026-11-07 ~21:00 UTC):** the catalogue with `lm_open_new_per_pass` False and nothing else changed (same 72,687,765
+  parameters), seed 1, the stage-A recipe, then the planted-password probe on it (`infra/aws/jobs/e33t_reuse.sh`,
+  chained on the AWS node after the stage-1 seed-1 window and LSA-native controls, about $31). Why — the probe
+  (`evaluation/flow_probe.py --passkey`, 2026-11-07 20:17–20:23 UTC, 40 rows at 4k, 20 at 16k; S3
+  `runs/e33t/probe_passkey/`): the catalogue opens the key on pass 1 (94 % at 4k, 71 % at 16k, a third of its read on
+  it) but returns on passes 2–4 only 7–14 % of the time, while the LSA port and dense put 37–41 % of their read on the
+  key on pass 4; first answer token right 10 % (LSA port 25 %, dense 30 %, notes-open 0 %). The exclusion switched off
+  only at test time reopens it (85 %) but gives it 6 % of the read and lifts answers to 20 %: the passes must learn it.
+  Preliminary stage-A main arm (scored 2026-11-07 19:58 UTC against the home seed-42 controls): 75 % of G at 16k,
+  99 % at 64k. Same gates S1–S6 as the main arm; plus the probe's first-token score against the LSA port's.
 - **Capability checks (if S1 holds):** the core package on the home servers (C0–C5 from scratch, seeds 0–2, ladders
   to 128k), no-harm rule against the E31 champion; targets `C1.lookup-16k` ≥ 75 % first letter at 64k and
   `C4.chain4-1k` ≥ 75 % first letter (the passes-as-lookups claim).
 - **Stage B (if S1 holds): page and note sizes.** Around the stage-A winner: 4, 8 and 16 tokens per note at
   256-token pages (64 / 32 / 16 notes), and 512-token pages with 64 notes. Four runs, about $120.
+  **Approved by the author 2026-11-08 ~17:30 UTC:** the winner is `catalogue_reuse` (8 tokens per note at
+  256-token pages, already trained), so three new runs (`infra/aws/jobs/e33t_b.sh`): `catalogue_reuse_n4`
+  (64 notes, 72,769,685 parameters / 30,328,597 without word tables), `catalogue_reuse_n16` (16 notes, 72,646,805 /
+  30,205,717) and `catalogue_reuse_p512` (512-token pages, 64 notes, 72,900,757 / 30,459,669); only the writer's
+  note slots differ. Same gates as stage A against the seed-1 controls; the winner is the best 16k share whose 64k
+  share does not fall below it (S2), ties broken by RULER at 4k.
+  **Machines:** the planned g6e.12xlarge spot node was refused at 17:40 UTC (MaxSpotInstanceCountExceeded in every
+  us-east-1 zone: the account's 48-vCPU spot G quota is held by the 10M-context runs; on-demand G quota is 0). The
+  author chose one on-demand H100 (p5.4xlarge, $6.88/h) per model, launched from ~18:00 UTC with a retry every 5 min
+  while H100s are short, 16 h hard stop each; micro-batch 8 (trunk) / 2 (decay) on the 80 GB card, same rows per
+  optimizer step as the 4-GPU runs (64 / 16). Expected ~8–10 h and ~$60–70 per model. Caveat for the comparison:
+  one GPU instead of four, so the same data in a different micro-batch split (numerics only, no change of recipe).
+  A spot quota raise to 96 vCPUs (two 4-GPU nodes) was requested 2026-11-08 17:56 UTC for later stages.
+  **Moved to the home servers (author, 2026-11-09 ~20:20 UTC: "train what has been scheduled"):** no H100 came free
+  in 138 rounds (2026-11-08 17:58 → 2026-11-09 20:19 UTC, every us-east-1 zone, every 5 then 10 min) and the L40S
+  spot quota (64 vCPU by then, case to 96 still open) stayed held by the 10M-context node, so the AWS loop was
+  stopped at 20:22 UTC with no machine launched ($0). Launched 20:23 UTC at `0227838`, seed 1, the stage-A recipe
+  (`E33N_EXPERIMENT=E33t E33N_FLOW=1 E33N_SEED=1 E33N_RULER_LENGTHS=4096 E33N_MICRO_TRUNK=4 E33N_MICRO_DECAY=1
+  E33N_CORE_BATCH=8 bash infra/aws/jobs/e33n_run.sh ARM s30`, runs in `Cache/e33t_runs/`, W&B online):
+  `catalogue_reuse_n4` on Odra GPUs 0–1 (`E33N_GPUS=2`), `catalogue_reuse_p512` on Polonez GPUs 0–1 and
+  `catalogue_reuse_n16` on Polonez GPU 2 (both `E33N_BURST_H=5.5 E33N_COOL_MIN=20`, the heat rule; Odra GPU 2 and
+  Polonez GPU 3 idle on purpose). Same 64 rows per optimizer step (4 × 8 × 2 GPUs, 4 × 16 × 1). p512's first start
+  lost rank 1 to a SIGSEGV one second in, while both Polonez jobs were syncing the venv after the pull; relaunched
+  20:24 UTC, fine. Expected (stage-0 speed, 23.6k tokens/s per 3090 at 4k): ~12 h on two GPUs, ~24 h on one, so
+  n4 and p512 about 09:00–10:00 UTC on 2026-11-10 and n16 about 21:00 UTC.
 - **Stage C: long documents.** The winner with the two-level search, its choice stored as a short list (a gather
   read instead of the [S × G] table), trained at 16k plus a short 64k stage; evaluated at 128k, 1M and beyond.
-  Two runs, about $80.
+  Two runs, about $80. **Design proposed 2026-11-08 (plan §10, awaiting approval):** the list read for evaluation
+  only (the table is 275 GB at 1M), the 64k stage for the stage-B winner, the LSA port and the window control alike,
+  two levels first as an eval switch on the flat winner (a two-level model only if the switch loses), about $30–50.
+  Only one validation document reaches 1M tokens, so 1M is judged mainly by the planted password.
 - **Stage D (if A–C match LSA-native at 30M, with the author's approval):** 100M (`m100`: 3B + 0.4B tokens) — the
   winner, LSA-native and the two controls, about 20–25 hours each on the 4 × L40S node, $500–600 in all.
 - **Budget:** about $800–900 for A–D on top of stage 1 (≈ $220 in all), inside the $2,000 AWS goal.
-- **Launch (stage A, AWS):** `MC_SPOT=1 bash infra/aws/launch.sh e33s-a 20 "infra/aws/jobs/e33p_s1_multi.sh 1
-  catalogue catalogue_2l" e33n-lsa-testbed g6e.12xlarge` with `E33N_EXPERIMENT=E33s` (new arms in
+- **Launch (stage A, AWS):** `MC_SPOT=1 bash infra/aws/launch.sh e33t-a 20 "infra/aws/jobs/e33p_s1_multi.sh 1
+  catalogue catalogue_2l" e33n-lsa-testbed g6e.12xlarge` with `E33N_EXPERIMENT=E33t` (new arms in
   `scripts/run_e33n.py`).
 - **New foundation code:** in `nn/exact_read.py` and the closed-read path of `nn/perceiver_ar_lm.py`:
   `lm_note_read` (`gist` | `index`: summaries in the read or not), `lm_filing` (`argmax` | `balanced`, Sinkhorn
@@ -185,7 +233,8 @@ at 16k in E33p) show the marks are reachable at this size and data.
 
 ## Risks
 - **Pass exclusion may hurt** where rereading the same tokens helps; the eval switch (exclusion off) measures it
-  without a retrain, and the instrumentation shows distinct tokens per query over the passes.
+  without a retrain, and the instrumentation shows distinct tokens per query over the passes. Seen 2026-11-07 on
+  planted passwords (stage A follow-up above); the switch alone did not recover it, so `catalogue_reuse` retrains.
 - **The index loss may teach the scores to follow the read without improving recall** (a self-fulfilling loop:
   the read only sees what was chosen). The 32 sampled unchosen groups per query are there to break it; K2 watches it.
 - **Sinkhorn balancing could split a coherent group** (a long name spread over two notes); the cap of 16 and the
@@ -195,4 +244,36 @@ at 16k in E33p) show the marks are reachable at this size and data.
 - **Two levels can drop a needed page** before its notes are scored; page recall is logged, and S4 decides.
 
 ## Result
-- (filled in by experiment-track)
+- **Stage A + follow-up, scored 2026-11-08 ~16:50 UTC against the same-seed controls** (AWS seed 1, 4 × L40S;
+  share of G on positions ≥ 2k, token-weighted over sources; 128k: loss, lower is better, dense is worse than the
+  window there). Runs: catalogue 2026-11-07 11:24–15:50 UTC, catalogue_2l 15:51–20:49, window s1 2026-11-07 20:49 –
+  11-08 01:03, LSA port s1 01:03–05:05 (evals to 06:12), catalogue_reuse 07:22–12:03 (probe to 12:04); results in
+  `s3://…/runs/e33t/` and `runs/e33p/`.
+
+  | model | 4k | 16k | 32k | 64k | 128k loss |
+  |---|---|---|---|---|---|
+  | window | 0 | 0 | 0 | 0 | 2.2765 |
+  | dense | 100 | 100 | 100 | 100 | 2.3209 |
+  | LSA port (`lsa`) | 98.2 | 95.3 | 99.3 | 153.3 | 2.1441 |
+  | notes-open | 42.8 | 37.4 | 30.1 | 23.4 | — |
+  | catalogue | 70.0 | 71.1 | 72.3 | 115.2 | 2.1738 |
+  | catalogue_2l | 67.4 | 67.9 | 67.0 | 99.5 | 2.1933 |
+  | **catalogue_reuse** | **96.9** | **91.4** | **94.0** | **151.6** | **2.1395** |
+
+- **Main arm (catalogue):** S1 missed (71.1 < 80); S2 passes; K1 not hit. **S4:** the two-level arm is 3.2 points
+  behind at 16k (holds) and 15.7 behind at 64k (fails).
+- **catalogue_reuse (pass exclusion off in training, nothing else changed):** S1 passes (91.4); S2 passes; S5 0.91 ×
+  the LSA port's 16k speed (decay 39.4 vs 35.9 min; passes narrowly); the whole run 1.11 × the LSA port's wall time
+  (K4 passes); S6 passes (16k loss on positions < 512: 2.6082 vs the window's 2.6095; core mean 40.78 vs 40.83).
+  S3 not measured in its spec form (the flow probe's dense top-32 recall was not run on it).
+- **RULER at 4k (mean of tasks):** catalogue_reuse 14.1 (single needle 94 %), catalogue 6.0, catalogue_2l 1.2, LSA
+  port 15.2, dense 16.0, notes-open 5.0, window 4.1. Core benchmark means all 40.1–41.0 (no harm anywhere).
+- **Planted-password probe on catalogue_reuse:** pass 1 now rarely opens the key (23 % at 4k; catalogue 94 %), passes
+  2–4 open it 95–97 % at 4k (63–67 % at 16k) and the last pass puts 0.38 of its read on it (LSA port s42 0.37, dense
+  s1 0.41): the passes return to the key the way the LSA port's do. First answer token right 15 % at 4k (6/40) and
+  10 % at 16k (2/20), below the LSA port's 25 % / 30 % (seed 42) and dense's 30 % / 15 %; with 40 and 20 rows the
+  difference is within sampling noise (about ±7 points at 4k).
+- **Verdict:** the per-pass exclusion was the main cause of the gap to LSA. Switching it off in training (same
+  72,687,765 parameters) moves the catalogue read from 71 % to 91 % of G at 16k, level with the LSA port at 64k, and
+  gives the best 128k loss of all models. It does not beat the LSA port at ≤ 32k (1–5 points behind) and trains
+  about 10 % slower. catalogue_reuse is the stage-A winner for stages B–C.

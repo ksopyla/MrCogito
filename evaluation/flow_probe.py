@@ -126,6 +126,23 @@ def pick_queries(ids: np.ndarray, S: int, n: int, seed: int, min_pos: int = 2048
     return q, s
 
 
+def passkey_row(tokenizer, filler: list[int], S: int, depth: float, rng) -> tuple[list[int], np.ndarray, np.ndarray,
+                                                                                   list[int]]:
+    """A planted-password row (long_context_probes.build_passkey: needle at `depth`, question and answer at the end)
+    and its probe queries: the position before each answer token, and as each query's source the same token inside
+    the needle. Returns (ids [S], queries [n], sources [n], answer [n])."""
+    from evaluation.long_context_probes import build_passkey
+
+    ids, answer = build_passkey(tokenizer, filler, S, depth, rng)
+    n = len(answer)
+    ans_at = len(ids) - n
+    found = [i for i in range(ans_at - n) if ids[i:i + n] == answer]
+    if not found:
+        raise ValueError("the answer's tokens do not appear inside the needle")
+    q = np.arange(ans_at - 1, ans_at - 1 + n)
+    return ids, q, np.arange(found[0], found[0] + n), answer
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--checkpoint", required=True)
@@ -139,6 +156,15 @@ def main() -> None:
     ap.add_argument("--acts", help="write the layer outputs at the fixed tokens (B3)")
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--row_tokens", type=int, default=16384,
+                    help="document rows are drawn among rows of this length (the long-document eval's rows), then cut")
+    ap.add_argument("--passkey", action="store_true",
+                    help="planted-password rows instead of plain documents: per row a 5-digit pass key at an even "
+                         "spread of depths (needle ≥ 640 tokens before the question), the queries are the answer "
+                         "tokens and their source the key inside the needle; adds greedy correctness per row")
+    ap.add_argument("--open_eval", default="on", choices=["on", "reuse", "off", "gist_off"],
+                    help="opening arms: the read's eval switch (model.open_override); E33t 'reuse' lets a loop pass "
+                         "re-open the notes it opened in earlier passes")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -148,7 +174,8 @@ def main() -> None:
     model = load_perceiver_ar_for_eval(a.checkpoint, device=a.device, attn_backend=a.backend)
     S = a.length
     srcs = sorted(json.loads((Path(a.data) / "manifest.json").read_text())["sources"])
-    dss = {s: BinRowDataset([{"name": s, "files": [str(Path(a.data) / f"{s}_val_*.bin")]}], 16384, "doc", seed=7)
+    dss = {s: BinRowDataset([{"name": s, "files": [str(Path(a.data) / f"{s}_val_*.bin")]}], a.row_tokens, "doc",
+                            seed=7)
            for s in srcs}
     order = [(srcs[i % len(srcs)], i // len(srcs)) for i in range(a.rows)]
     ref_in = torch.load(a.dense_ref, weights_only=True) if a.dense_ref else None
@@ -156,10 +183,31 @@ def main() -> None:
     per_row, scal = [], defaultdict(list)
     dist_tot = defaultdict(lambda: torch.zeros(N_DIST, dtype=torch.float64))
     metrics = defaultdict(list)
+    if a.passkey:
+        import random
+
+        from evaluation.long_context_probes import argmax_tokens, resolve_tokenizer_name
+        from transformers import AutoTokenizer
+
+        tok_pk = AutoTokenizer.from_pretrained(resolve_tokenizer_name(a.checkpoint))
+        rng_pk = random.Random(7)
+        top_depth = 1.0 - 640 / S                                       # the needle stays beyond the 512 window
+    import contextlib
+
+    switch = contextlib.ExitStack()
+    if a.open_eval != "on":
+        switch.enter_context(model.open_override(a.open_eval))
     for r_i, (src, i) in enumerate(order):
         item = dss[src][i]
         ids, doc = item["input_ids"][:S], item["doc_ids"][:S]
-        q, fs = pick_queries(ids.numpy(), S, a.queries, seed=1000 + r_i)
+        correct = None
+        if a.passkey:
+            depth = 0.05 + (top_depth - 0.05) * (r_i + 0.5) / a.rows
+            pk, q, fs, answer = passkey_row(tok_pk, item["input_ids"].tolist(), S, depth, rng_pk)
+            assert len(pk) == S, f"passkey row has {len(pk)} tokens, not {S} (filler too short)"
+            ids, doc = torch.tensor(pk), torch.zeros(S, dtype=torch.long)
+        else:
+            q, fs = pick_queries(ids.numpy(), S, a.queries, seed=1000 + r_i)
         tok = torch.linspace(0, S - 1, min(a.tokens, S)).round().long()
         rec = ProbeRecorder(torch.from_numpy(q), tok, ref=(ref_in["rows"][r_i] if ref_in else None),
                             save_ref=bool(a.save_ref), far_src=torch.from_numpy(fs))
@@ -175,6 +223,12 @@ def main() -> None:
         finally:
             model._set_flow(None)
         stats = rec.finish(model)
+        if a.passkey:
+            pred = argmax_tokens(model, ids[None].to(a.device), int(q[0]), int(q[-1]) + 1).tolist()
+            correct = {"exact": int(pred == answer), "first": int(pred[0] == answer[0]), "depth": round(depth, 3),
+                       "distance": int(q[0] - fs[0])}
+            for k in ("exact", "first"):
+                metrics[f"passkey/{k}"].append(float(correct[k]))
         for k, v in stats.items():
             scal[k].append(v)
         for k, v in rec.metrics.items():
@@ -186,10 +240,13 @@ def main() -> None:
         if a.acts:
             for k, v in rec.acts.items():
                 acts_out[k].append(v)
-        per_row.append({"source": src, "row": i, "far_queries": int((fs >= 0).sum()),
+        per_row.append({"source": src, "row": i, "far_queries": int((fs >= 0).sum()), **(correct or {}),
                         **{k: float(np.mean(v)) for k, v in rec.metrics.items()}})
-        print(r_i, src, i, json.dumps({k: round(float(np.mean(v)), 4) for k, v in rec.metrics.items()}), flush=True)
-    res = {"checkpoint": a.checkpoint, "length": S, "rows": a.rows, "queries": a.queries,
+        print(r_i, src, i, json.dumps({**(correct or {}), **{k: round(float(np.mean(v)), 4)
+                                                               for k, v in rec.metrics.items()}}), flush=True)
+    switch.close()
+    res = {"checkpoint": a.checkpoint, "length": a.length, "rows": a.rows, "queries": a.queries,
+           "mode": "passkey" if a.passkey else "documents", "open_eval": a.open_eval,
            "metrics": {k: float(np.mean(v)) for k, v in metrics.items()},
            "scalars": {k: float(np.mean(v)) for k, v in scal.items()},
            "dist_mass": {f"r{r}": (d / d.sum().clamp_min(1e-12)).tolist() for r, d in sorted(dist_tot.items())},
