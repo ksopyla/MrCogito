@@ -433,3 +433,47 @@ at 16k in E33p) show the marks are reachable at this size and data.
     By plan §10.7 the next step would be a two-level training run; it is deferred because the flat search fits at 1M
     and the cost only matters past it (the 10M-token aim). Open for the author.
   - **Stage D** (catalogue_reuse_n4 at 100M on AWS with the E37 full protocol) runs since 2026-11-11 16:19 UTC.
+- **Stage D, 100M on the E37 full protocol (done 2026-11-12 06:19 UTC; scored 07:40 UTC from the raw JSONs):**
+  - **Run:** `catalogue_reuse_n4` at m100 (100.6M parameters without the word tables, 166.4M in total), seed 42,
+    3.0B tokens at 4k then 0.4B at 16k, no 64k stage. Node `e37-b-l40s-catalogue-reuse-n4` (i-09f3edf49946aa5f6,
+    4 × L40S spot): start 2026-11-11 16:20, trunk 16:21–02:47 (10.4 h; the LSA port 9.4 h, e37a 10.5 h on the same
+    node type), decay 02:47–04:50 (2.0 h; the LSA port 1.7 h, so 0.82 × its 16k speed), evals 04:50–06:19 UTC; exit 0,
+    no NaN; about 14 h, about $100 on spot; node terminated. Trunk eval loss 3.125 (LSA port 3.121), decay eval 2.274
+    (LSA port 2.255, e37a 2.253). Results: `s3://mrcogito-train-093337158062/runs/e37/e33n_m100_catalogue_reuse_n4_tok3.0e9_seed42/`
+    and `docs/2_Experiments_Registry/results/evaluations/E33t_D_catalogue_reuse_n4_m100/`.
+  - **Comparison:** E37's 100M models trained the same way (seed 42, same node type): e37a (E37's concept memory),
+    the LSA port and the original LSA. E37's method: loss on positions ≥ 2k, token-pooled over 5 sources (4 at 128k);
+    core uses acc_norm where present. The full-budget window and dense controls still wait for H100s, so the shares of
+    the window→dense gap (S1, S2) and S6's window comparison cannot be scored yet.
+
+    | model | 4k | 16k | 32k | 64k | 128k | 16k, positions < 512 |
+    |---|---|---|---|---|---|---|
+    | catalogue_reuse_n4 | 2.342 | 2.189 | 2.275 | 2.270 | 2.058 | 2.400 |
+    | LSA port | 2.322 | 2.169 | 2.254 | 2.245 | 1.994 | 2.384 |
+    | e37a | 2.320 | 2.166 | 2.254 | 2.250 | 1.990 | 2.388 |
+    | original LSA | 2.284 | 2.135 | 2.215 | 2.201 | 1.925 | 2.369 |
+    | n4, notebook off | 2.496 | 2.386 | 2.489 | 2.433 | 2.123 | |
+    | what n4's notebook carries | 0.155 | 0.197 | 0.214 | 0.163 | 0.065 | |
+
+  - **RULER (mean of 13 tasks, 100 prompts each):** catalogue 0.231 at 4k / 0.183 at 16k; LSA port 0.255 / 0.209;
+    e37a 0.185 / 0.136; original LSA 0.139 / 0.082. Per task (4k / 16k), catalogue vs the LSA port: single needle
+    0.97 / 0.98 vs 0.96 / 0.95; single-2 (essay, number) 0.69 / 0.38 vs 0.88 / 0.84; single-3 (UUID) 0.43 / 0.41 vs
+    0.55 / 0.27 (best of the four at 16k); multi-query 0.18 / 0.16 vs 0.05 / 0.04 (best of the four); multi-value
+    0.18 / 0.14 vs 0.13 / 0.14; multi-key-1 0.24 / 0.18 vs 0.26 / 0.27; word frequency 0.00 / 0.00 vs 0.27 / 0.09;
+    HotpotQA 0.12 / 0.08 vs 0.10 / 0.09; SQuAD 0.08 / 0.04 vs 0.03 / 0.01; the rest near zero for all.
+  - **Core mean (7 tasks, acc_norm where present):** catalogue 41.6, LSA port 41.6, e37a 41.6, original LSA 42.0 — a tie.
+  - **Criteria at 100M:** S5 misses (0.82 × the LSA port's 16k speed; 0.90 × at 4k). S6's core part holds against
+    every model available (within 1 point); near text at 16k is 0.016 nats worse than the LSA port. S1, S2 wait for the
+    full-budget window and dense controls.
+- **Stage-D verdict (2026-11-12 ~07:45 UTC):**
+  - **At 100M with the standard recipe the catalogue does not match the LSA port:** 0.02 nats behind up to 64k and
+    0.065 behind at 128k. At 4k–64k the gap is close to its 0.016-nat gap on near text, so much of it is the model's
+    general quality, not the read; at 128k the near-text losses are equal (1.709 vs 1.709) and the gap is the read's.
+  - **The read fades at 128k:** the notebook carries 0.15–0.21 nats up to 64k but 0.065 at 128k. At 30M the 16k-trained
+    catalogue kept most of its gain at 128k (0.132 nats over the window vs 0.171 at 64k), and the 64k stage is what put
+    it ahead past 128k; stage D had no 64k stage.
+  - **Needle puzzles:** close to the LSA port with a different profile (better on several-key and UUID needles, worse
+    on the essay number and word frequency), above e37a and far above the original LSA. General knowledge: a tie.
+  - **Open for the author:** the fair test of the 30M finding is the same 0.1B-token 64k stage at 100M for the
+    catalogue and the LSA port (and the window control once it exists). Without it, the LSA port stays the stronger
+    read at 100M.

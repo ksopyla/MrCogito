@@ -20,15 +20,19 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-11-11 — E33t, the catalogue read: stages A–C done at 30M, stage D (100M on AWS) running.** The notes only
+- **2026-11-12 — E33t, the catalogue read: stages A–D done.** The notes only
   index the text (never read), balanced filing, an index loss, the budget filled by tokens. Stage A: letting loop
   passes revisit notes (`catalogue_reuse`) lifts 71 → **91 %** of the window→dense gap at 16k (LSA port 95 %), level
   with LSA at 64k, best 128k loss. Stage B: 64 notes per page (`catalogue_reuse_n4`) wins narrowly over 32; 16 is too
   few. Stage C (home, $0 AWS): a 0.1B-token 64k stage lifts the gain over the window control past 128k; after it n4
   gains **0.178** nats at 256k (LSA port 0.157; four documents), level with LSA up to 128k; passwords stay rare (≤ 2/20
-  at 128k, LSA 1/20 at 1M); the two-level search loses as a test switch (trained two-level arm deferred). Stage D:
-  n4 at 100M on the E37 full protocol, AWS since 2026-11-11 16:19 UTC (30 h cap). Next: its results vs E37's 100M
-  models; capability checks for the variant. Spec [E33t](../experiments_specs/ahead/E33t_catalogue_read.md) ·
+  at 128k, LSA 1/20 at 1M); the two-level search loses as a test switch (trained two-level arm deferred). Stage D
+  (n4 at 100M on the E37 full protocol, AWS, done 2026-11-12 06:19 UTC, about $100): with the standard 16k recipe and
+  no 64k stage it trails the LSA port by 0.02 nats up to 64k and 0.065 at 128k, where its notebook's value drops to
+  0.065 nats (0.15–0.21 up to 64k); RULER 0.231 / 0.183 at 4k / 16k (LSA port 0.255 / 0.209, e37a 0.185 / 0.136);
+  core a tie (41.6). Open: the 64k stage at 100M for the catalogue and the LSA port, the fair test of the 30M lead
+  past 128k. Capability checks for the variant run on the home servers until about Nov 14. Spec
+  [E33t](../experiments_specs/ahead/E33t_catalogue_read.md) ·
   [results page](../3_Evaluations_and_Baselines/e33t_results.html).
 - **2026-11-06 — E33p, a note-indexed exact read on the LSA testbed: stage 1 training (six arms, 30M, home
   servers).** E33n closed at 30M (see below): the far-context value of natural long text is exact copying, which notes
