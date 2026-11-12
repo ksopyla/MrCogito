@@ -21,6 +21,11 @@ candidate (`--candidate auto`): the answer is decoded greedily and the nearest p
 one, the capability checks' score for those tasks (`answer_exact` in the probe); the first letter has a ~40 %
 guessing floor there.
 
+Floor stop (`--floor_stop auto`, the default; evaluation only, `capability_checks.md` rule 3): once two lengths in
+a row, both at or past the training length, score at the floor (the task's own score <= its guessing floor + 5
+points), the longer lengths are not read; they are recorded as `{"skipped": "floor stop"}` and count as the floor
+on the board. The task comes from the checkpoint folder's job name (`task_of_job`); `--floor_stop off` reads them.
+
 Long rows need the `flex` backend (the `sdpa` path builds a dense S x (S + C) mask:
 ~32 GB at 128k). `--backend auto` uses flex on CUDA above 8k tokens.
 """
@@ -96,6 +101,42 @@ def data_config(state: dict, seq_len: int, recipe: str | None = None):
     return config_for(SCALES[d["scale"]], d["task"], **over)
 
 
+def floor_stop(res: dict, lengths, L: int, *, train_len: int, floor: float, key: str,
+               margin: float | None = None) -> list[int] | None:
+    """The two rungs that stop the ladder before reading `L`, or None. Only rungs at or past the training length
+    count; a rung the stop already left unread counts as at the floor, so the stop holds for every longer length."""
+    from evaluation.capability_tasks import FLOOR_STOP, LADDER_FLOOR_MARGIN
+
+    margin = LADDER_FLOOR_MARGIN if margin is None else margin
+    prev = [x for x in sorted(set(int(v) for v in lengths)) if train_len <= x < L]
+    if len(prev) < 2:
+        return None
+
+    def at_floor(x: int) -> bool:
+        v = res.get(str(x)) or {}
+        if v.get("skipped") == FLOOR_STOP:
+            return True
+        y = v.get(key)
+        return y is not None and y <= floor + margin + 1e-9
+
+    return prev[-2:] if all(at_floor(x) for x in prev[-2:]) else None
+
+
+def floor_rule(ckpt_dir: Path, mode: str) -> tuple[str, float, str] | None:
+    """(task, floor, score key) of the floor stop for this checkpoint folder, or None (off / unknown task)."""
+    if mode == "off":
+        return None
+    from evaluation.capability_tasks import ladder_floor, task_of_job
+
+    task = task_of_job(ckpt_dir.name)
+    if mode != "auto":
+        return (task or "?", float(mode), ladder_floor(task)[1] if task else "first_acc")
+    if task is None:
+        print(f"  floor stop off: {ckpt_dir.name} is no v4 task folder", flush=True)
+        return None
+    return (task, *ladder_floor(task))
+
+
 def has_candidates(cfg, row) -> bool:
     """Several same-shaped answers are planted in the book (the picked-candidate score applies)."""
     from verification.bapo_capability_probe import _candidates
@@ -142,7 +183,8 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
             from verification.bapo_capability_probe import _answer_exact
 
             t1 = time.time()
-            ae = _answer_exact(model, [(ids, labels)], amp=amp, device=device, cfg=cfg)
+            # the teacher-forced forward above gives every greedy letter up to the first wrong one
+            ae = _answer_exact(model, [(ids, labels)], amp=amp, device=device, cfg=cfg, first_logits=logits)
             model.eval()
             t_dec += time.time() - t1
             exact_sum += ae["exact"] * ae["rows"]
@@ -213,6 +255,9 @@ def main() -> int:
     p.add_argument("--out", default=None, help="JSON path (default <ckpt>/ladder.json)")
     p.add_argument("--candidate", default="auto", choices=("auto", "on", "off"),
                    help="also decode greedily and score the picked candidate (auto: exams with several candidates)")
+    p.add_argument("--floor_stop", default="auto",
+                   help="auto: stop after two lengths in a row at the task's floor + 5 points (task from the folder name); "
+                        "off: read every length; a number: that floor")
     p.add_argument("--recipe", default=None, help="ladder this recipe instead of the checkpoint's own exam")
     p.add_argument("--loop_rounds", type=int, default=None,
                    help="E33a: evaluate looped checkpoints with this many loops (default: as trained)")
@@ -233,13 +278,32 @@ def main() -> int:
     report = {"ckpt": str(ckpt_dir), "lengths": args.lengths, "rows": args.rows, "results": {}}
     if out_path.exists():
         report = json.loads(out_path.read_text())  # resume: keep finished (arch, length) cells
+    rule = floor_rule(ckpt_dir, args.floor_stop)
+    from evaluation.capability_tasks import FLOOR_STOP, LADDER_FLOOR_MARGIN, TASK_BY_ID
+
     for path in paths:
         arch = path.stem
         res = report["results"].setdefault(arch, {})
+        train_len = None
         for L in args.lengths:
             if (str(L) in res and "acc" in res[str(L)] and ("first_acc" in res[str(L)] or not args.need_first)
                     and ("candidate_mode" in res[str(L)] or args.candidate == "off")):
                 continue
+            if rule is not None:
+                if train_len is None:  # the length it was trained at, never below the task's own
+                    st = torch.load(path, map_location="cpu", weights_only=False)
+                    train_len = max(int(st["data"]["seq_len"]),
+                                    TASK_BY_ID[rule[0]].train_len if rule[0] in TASK_BY_ID else 0)
+                    del st
+                stop = floor_stop(res, args.lengths, L, train_len=train_len, floor=rule[1], key=rule[2])
+                if stop:
+                    res[str(L)] = {"skipped": FLOOR_STOP, "floor_stop": {
+                        "task": rule[0], "floor": rule[1], "margin": LADDER_FLOOR_MARGIN, "score": rule[2],
+                        "after": stop, "train_len": train_len}}
+                    print(f"  [{arch}] {L:>7}  not read: floor stop ({' and '.join(str(x) for x in stop)} at or below "
+                          f"{100 * (rule[1] + LADDER_FLOOR_MARGIN):.0f} % on {rule[2]})", flush=True)
+                    out_path.write_text(json.dumps(report, indent=2))
+                    continue
             if arch in caps and L > caps[arch]:
                 res[str(L)] = {"skipped": f"cap {caps[arch]}"}
                 continue

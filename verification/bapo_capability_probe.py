@@ -244,30 +244,62 @@ def _candidates(cfg, row: np.ndarray, n: int) -> list[tuple[int, ...]]:
 
 
 @torch.no_grad()
+def _greedy_answers(model, ids: torch.Tensor, labels: torch.Tensor, *, amp: str, device: torch.device,
+                    message_override: str = "real", first_logits: torch.Tensor | None = None) -> torch.Tensor:
+    """`ids` with every answer letter replaced by the model's greedy letter (each from its own earlier letters).
+
+    One forward on the true answer gives every greedy letter up to and including the first wrong one (their prefixes
+    are the true letters); only the letters after it need a forward each. The letters are the ones a forward per
+    letter gives (each row's logits depend only on its own prefix), with 1 forward instead of k for a right answer.
+    `first_logits`: the logits of a forward on `ids` the caller already ran (the ladder's teacher-forced read)."""
+    cur = ids.clone()
+    m = labels != -100
+    order = [torch.nonzero(m[r]).flatten().tolist() for r in range(m.shape[0])]
+    if first_logits is None:
+        with _message_cm(model, message_override), amp_ctx(device, amp):
+            packed = model(cur, return_logits=True)
+        first_logits = packed.logits if hasattr(packed, "logits") else packed
+    start = []                                    # letters [0, start) are final after the first forward
+    for r, pos in enumerate(order):
+        j = 0
+        while j < len(pos):
+            p = pos[j]
+            cur[r, p] = first_logits[r, p - 1].argmax(-1)
+            j += 1
+            if int(cur[r, p]) != int(ids[r, p]):  # this row's prefix now differs from the forward's input
+                break
+        start.append(j)
+    todo = [r for r, pos in enumerate(order) if start[r] < len(pos)]
+    for j in range(min((start[r] for r in todo), default=0), max((len(order[r]) for r in todo), default=0)):
+        with _message_cm(model, message_override), amp_ctx(device, amp):
+            packed = model(cur, return_logits=True)
+        logits = packed.logits if hasattr(packed, "logits") else packed
+        for r in todo:
+            if start[r] <= j < len(order[r]):
+                p = order[r][j]
+                cur[r, p] = logits[r, p - 1].argmax(-1)
+    return cur
+
+
+@torch.no_grad()
 def _answer_exact(model, batches, *, amp: str, device: torch.device, message_override: str = "real",
-                  cfg=None) -> dict:
+                  cfg=None, first_logits: torch.Tensor | None = None) -> dict:
     """The answer decoded greedily (every letter from the model's own earlier letters, no teacher forcing).
 
     exact: every letter right. candidate: the planted candidate nearest to the decoded answer (Hamming; ties
     split) is the asked one: the addressing decision, without punishing a lossy copy of the right fact.
     A model that answers with a random candidate scores 1 / #candidates on both; on the first letter it
-    scores the commonest first letter among the candidates (~40 % on the parallel chains)."""
+    scores the commonest first letter among the candidates (~40 % on the parallel chains).
+    `first_logits` (one batch only): the caller's forward on that batch's `ids`, reused for the first letters."""
     model.eval()
     hits = rows = first_hits = 0
     cand_score = cand_rows = 0.0
     for ids, labels in batches:
-        cur = ids.clone()
         m = labels != -100
         k = m.sum(-1)
         order = [torch.nonzero(m[r]).flatten() for r in range(m.shape[0])]
-        for j in range(int(k.max())):
-            with _message_cm(model, message_override), amp_ctx(device, amp):
-                packed = model(cur, return_logits=True)
-            logits = packed.logits if hasattr(packed, "logits") else packed
-            for r, pos in enumerate(order):
-                if j < len(pos):
-                    p = int(pos[j])
-                    cur[r, p] = logits[r, p - 1].argmax(-1)
+        cur = _greedy_answers(model, ids, labels, amp=amp, device=device, message_override=message_override,
+                              first_logits=first_logits)
         ok = ((cur == labels) | ~m).all(-1) & (k > 0)
         hits += int(ok.sum())
         rows += int((k > 0).sum())

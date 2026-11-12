@@ -36,9 +36,11 @@ curriculum — is not fixed yet; see the calibration study in the spec) · `flaw
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
-VERSION = "v4-draft-2026-10-13.2"
+# 2026-11-12.1: the ladder floor stop (evaluation only, rule 3; recipes and budgets unchanged), see LADDER_FLOOR_MARGIN
+VERSION = "v4-draft-2026-11-12.1"
 PASS_ACC = 0.75
 SEEDS = (0, 1, 2)
 LADDER = (1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072)
@@ -352,5 +354,39 @@ def legacy_battery(variant: str, slot: str) -> tuple[str | None, str]:
     return task, "curriculum-differs"                # E31b / E33a: started from the run's own lookup-2k weights
 
 
+# Ladder floor stop (author via the E33t session, 2026-11-12; evaluation only, rule 3: recipes and budgets unchanged).
+# A length ladder stops reading longer once two lengths in a row, both at or past the training length, score at the
+# floor: the task's own score <= its guessing floor (`floor`, else `chance`) + LADDER_FLOOR_MARGIN. The lengths left
+# unread are recorded as "not read, floor stop" and count as the floor in the no-harm scoring (a variant can only lose
+# rungs this way, never gain them). `length_ladder.py --floor_stop off` reads them later.
+LADDER_FLOOR_MARGIN = 0.05
+FLOOR_STOP = "floor stop"  # the `skipped` value of a rung the floor stop left unread
+_V4_JOB = re.compile(r"^(?:confp?|v4|recA|cmp)_(C\d)_(.+?-\d+k?)(?:_h\d)?_.+_s\d+$")
+_LEN_JOB = re.compile(r"^len_(lookup|chain)_.+_s\d+(?:_(b8k|b16k))?$")
+_LEN_STAGE = {None: "2k", "b8k": "8k", "b16k": "16k"}
+_BATTERY_STAGE = {"lookup_8k": "C1.lookup-16k", "chain_8k": "C4.chain4-2k"}  # curriculum stages → their task
+
+
+def task_of_job(name: str) -> str | None:
+    """The v4 task a study job folder belongs to: `v4_C1_edge-1k_<variant>_s0`, a curriculum stage
+    `v4_C5_pchain2-1k_h1_<variant>_s0`, or the lookup curriculum `len_lookup_<variant>_s0[_b8k|_b16k]`."""
+    m = _V4_JOB.match(name)
+    if m and f"{m[1]}.{m[2]}" in TASK_BY_ID:
+        return f"{m[1]}.{m[2]}"
+    m = _LEN_JOB.match(name)
+    if m:
+        slot = f"{m[1]}_{_LEN_STAGE[m[2]]}"
+        return BATTERY_V1.get(slot) or _BATTERY_STAGE.get(slot)
+    return None
+
+
+def ladder_floor(task_id: str) -> tuple[float, str]:
+    """(guessing floor, score key in a ladder rung) of the task's own score: the picked candidate (`candidate`)
+    on candidate-scored tasks, the first letter (`first_acc`) otherwise."""
+    t = TASK_BY_ID[task_id]
+    return (t.floor if t.floor is not None else t.chance), ("candidate" if t.score == "candidate" else "first_acc")
+
+
 __all__ = ["STOP_RULE", "TRAIN_5K", "TRAIN_19K", "TRAIN_128", "TRAIN_256", "TRAIN_1K", "TRAIN_1K_X4", "TRAIN_1K_X16", "BATTERY_V1", "FLAWED", "LADDER", "LEVELS", "LEVEL_BY_ID", "PACKAGES", "PASS_ACC", "SEEDS",
-           "SUITE_V3", "TASKS", "TASK_BY_ID", "VERSION", "Level", "Task", "legacy_battery", "legacy_suite"]
+           "SUITE_V3", "TASKS", "TASK_BY_ID", "VERSION", "Level", "Task", "legacy_battery", "legacy_suite",
+           "FLOOR_STOP", "LADDER_FLOOR_MARGIN", "ladder_floor", "task_of_job"]

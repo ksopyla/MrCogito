@@ -260,6 +260,8 @@ td.cell.hidden { color: var(--ink-3); background: none !important; }
       <p class="muted">Every ready task with a length ladder, hardest level first. Each model trains at the task's length, then reads longer books with no more training.
         Ladders read the task's own score (the picked candidate on candidate-scored tasks where the ladder decoded it; older
         ladders hold only the first letter, which has a ~40 % guessing floor on those exams), median over seeds, only where every seed was read.
+        Hollow points were not read: the ladder stops once two lengths in a row, at or past the training length, score at or below the task's
+        guessing floor + 5 points (the floor stop, 2026-11-12); those lengths count as the floor in the no-harm verdict.
         The dashed line is the 75 % pass mark. Dashed cards come from an older protocol.</p>
     </div>
     <div class="multiples" id="multiples"></div>
@@ -561,13 +563,14 @@ function taskRow(t, cols, ref) {
     }
     h += `<td class="cell ${fl ? "flawed" : ""} ${legacy ? "legacy" : ""} ${pass ? "pass" : ""} ${iss.length && !fl ? "caution" : ""}" tabindex="0" data-t="${esc(t.id)}" data-m="${esc(m)}" style="${bg}">` +
       `${pct(e.score)}${legacy ? `<span class="badge">${LABEL[e.label].b}</span>` : ""}` +
-      `${L128 != null ? `<span class="sub">128k: ${pct(L128)}</span>` : ""}` +
+      `${L128 != null ? `<span class="sub">128k: ${unread(e, "131072") ? "not read" : pct(L128)}</span>` : ""}` +
       `${pass && failedSeeds(e) ? `<span class="sub">${failedSeeds(e)} seed${failedSeeds(e) > 1 ? "s" : ""} failed</span>` : ""}` +
       `${iss.length && !fl ? `<span class="warn">⚠ ${iss.length}</span>` : ""}</td>`;
   }
   return h + `</tr>`;
 }
 const failedSeeds = e => Object.values(e.per_seed || {}).filter(v => v != null && v < D.pass).length;
+const unread = (e, L) => (e && e.floor_stop && e.floor_stop[String(L)]) || 0;  // seeds not read at L (floor stop)
 function head(cols, ref) {
   return `<thead><tr><th>task</th><th>status</th>${ref ? "<th>reference</th>" : ""}` + cols.map(m =>
     `<th class="mcol"><span class="swatch" style="background:${color(m)}"></span>${esc(label(m))}</th>`).join("") + `</tr></thead><tbody>`;
@@ -591,7 +594,7 @@ document.querySelectorAll("table.ttable").forEach(tbl => {
     if (cell) {
       const t = taskBy[cell.dataset.t], e = D.table[t.id][cell.dataset.m];
       if (!e) { hideTip(); return; }
-      const lad = Object.entries(e.ladder).map(([L, v]) => `${kLen(+L)} ${pct(v)}`).join(" · ");
+      const lad = Object.entries(e.ladder).map(([L, v]) => `${kLen(+L)} ${unread(e, L) ? `not read, floor stop${unread(e, L) < e.seeds.length ? ` (${unread(e, L)} of ${e.seeds.length} seeds; counted at the floor)` : " (counted at the floor)"}` : pct(v)}`).join(" · ");
       showTip(`<div><b>${esc(label(cell.dataset.m))}</b> · ${esc(t.name)}</div>
         <div class="row"><span>${scoreName(t)} at ${kLen(t.train_len)}</span><span class="num">${pct(e.score)} %</span></div>
         <div class="row"><span>mean over answer letters</span><span class="num">${pct(e.mean)} %</span></div>
@@ -614,7 +617,7 @@ const LO = Math.log2(1024), HI = Math.log2(131072);
 const X = L => MG.l + (Math.log2(L) - LO) / (HI - LO) * (W - MG.l - MG.r);
 const Y = a => MG.t + (1 - a) * (H - MG.t - MG.b);
 // one panel: series = {model: {length: value}}
-function panel(box, {title, stage, link, kind, badge, series, label: lab}) {
+function panel(box, {title, stage, link, kind, badge, series, label: lab, unreadOf}) {
   const vs = D.models.filter(v => series[v] && Object.values(series[v]).some(y => y != null));
   if (!vs.length) return false;
   let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)} ${esc(stage)}"><g class="axis">`;
@@ -624,7 +627,9 @@ function panel(box, {title, stage, link, kind, badge, series, label: lab}) {
   for (const v of vs) {
     const pts = Object.entries(series[v]).map(([L, y]) => ({L: +L, y})).filter(p => p.y != null && p.L >= 1024).sort((a, b) => a.L - b.L);
     svg += `<g class="series" style="color:${color(v)}"><path d="${pts.map((p, i) => `${i ? "L" : "M"}${X(p.L).toFixed(1)},${Y(p.y).toFixed(1)}`).join("")}" stroke="currentColor"/>`;
-    for (const p of pts) svg += `<circle cx="${X(p.L).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3.5" fill="currentColor"/>`;
+    for (const p of pts) svg += unreadOf && unreadOf(v, p.L)
+      ? `<circle cx="${X(p.L).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3.5" fill="var(--surface)" stroke="currentColor" stroke-width="1.5"><title>not read, floor stop</title></circle>`
+      : `<circle cx="${X(p.L).toFixed(1)}" cy="${Y(p.y).toFixed(1)}" r="3.5" fill="currentColor"/>`;
     svg += `</g>`;
   }
   svg += `<line class="crosshair" x1="0" x2="0" y1="${MG.t}" y2="${H - MG.b}" visibility="hidden"/><rect x="${MG.l}" y="0" width="${W - MG.l - MG.r}" height="${H}" fill="transparent"/></svg>`;
@@ -639,7 +644,7 @@ function panel(box, {title, stage, link, kind, badge, series, label: lab}) {
     let best = lens[0]; for (const L of lens) if (Math.abs(X(L) - px) < Math.abs(X(best) - px)) best = L;
     cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best)); cross.setAttribute("visibility", "visible");
     const rows = vs.map(v => { const y = series[v][best]; if (y === undefined) return "";
-      return `<div class="row"><span><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}${lab ? ` <span class="small">${esc(lab(v))}</span>` : ""}</span><span class="num">${y != null ? pct(y) + " %" : "not scored on first letter"}</span></div>`; }).join("");
+      return `<div class="row"><span><span class="swatch" style="background:${color(v)}"></span>${esc(label(v))}${lab ? ` <span class="small">${esc(lab(v))}</span>` : ""}</span><span class="num">${unreadOf && unreadOf(v, best) ? "not read, floor stop" : y != null ? pct(y) + " %" : "not scored on first letter"}</span></div>`; }).join("");
     showTip(`<div class="small">${esc(title)} · read at ${kLen(best)} tokens</div>${rows}`, ev);
   });
   svgEl.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); hideTip(); });
@@ -659,7 +664,7 @@ function drawCharts() {  // every ready ladder task, hardest level first, from t
       const kindTxt = kinds.size > 1 || kinds.has("mixed") ? "picked candidate where read, else first letter" : kinds.has("candidate") ? "picked candidate" : "first letter";
       panel(box, {title: t.name, stage: `trained at ${kLen(t.train_len)}, ${kindTxt}`, link: t.id, series,
                   badge: legacy ? ` · <span title="${esc("some lines come from an older protocol (see the table badges)")}"><span class="badge">≈</span> mixed protocols</span>` : "",
-                  label: m => by[m].label === "same" ? "" : `(${by[m].label})`});
+                  label: m => by[m].label === "same" ? "" : `(${by[m].label})`, unreadOf: (m, L) => unread(by[m], L)});
     }
   }
   if (!box.children.length) box.innerHTML = `<p class="muted">No length results for the selected models.</p>`;
