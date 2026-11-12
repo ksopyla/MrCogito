@@ -532,6 +532,14 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
             on 13 Nov (checked 21:52 UTC).</p></div>
       </div>
       <div class="now-item">
+        <span class="when">since 22:14</span>
+        <div class="what"><span class="top">Dense control at 100M <span class="pill" data-s="running">running</span></span>
+          <p>The model that may reread every earlier word, trained by the 10M-context session on four L40S cards (spot)
+            with the same 3.0B + 0.4B tokens. Training is due about 13:30 UTC on 13 Nov, then its tests. The window control
+            (sees only the last pages) still waits for a machine. With both, n4's own pass marks at 100M can be scored:
+            the share of the gap at 16k and no fade at 64k.</p></div>
+      </div>
+      <div class="now-item">
         <span class="when">until ~14–15 Nov</span>
         <div class="what"><span class="top">Capability checks for n4 <span class="pill" data-s="running">running</span></span>
           <p>The leveled synthetic tasks, three seeds each, on Odra and Polonez (Polonez done about the morning of Nov 14,
@@ -562,10 +570,10 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
             deferred until search cost matters, past 1M.</p></div>
       </div>
     </div>
-    <p class="caption">Spend: AWS usage for both sessions is about $835 of the $2,000 through 11 Nov (read 12 Nov, 07:35 UTC,
-      before credits; AWS's figure lags by up to a day), plus this morning's hours of the 100M run. E33p notes-open's
-      full-budget run (four cards, 06:37–21:45 UTC) cost about $110. AWS machines running (checked 12 Nov, 21:52 UTC):
-      four small machines for the longer needle tests, two for n4 and one each for E37a and the LSA port.</p>
+    <p class="caption">Spend: AWS usage for both sessions is about $995 of the $2,000 through 12 Nov (read 12 Nov, 22:26 UTC,
+      before credits; AWS's figure lags by up to a day, so 12 Nov is not complete). The dense control's run adds about
+      $110–130. AWS machines running (checked 12 Nov, 22:26 UTC): a four-card machine training the dense control, and four
+      small machines for the longer needle tests, two for n4 and one each for E37a and the LSA port.</p>
   </section>
 
   <footer>
