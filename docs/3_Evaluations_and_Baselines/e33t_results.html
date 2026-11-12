@@ -522,9 +522,10 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <div class="what"><span class="top">n4 at 100M: longer needle tests <span class="pill" data-s="running">running</span></span>
           <p>Started by the 10M-context session, the same tests its other 100M models get, on two AWS spot machines with one
             L40S card each. Both run slower than first estimated, about 72 minutes per puzzle type at 32k and 64k (13 types).
-            Needle puzzles at 64k: 3 of 13 done, due about 23:00 UTC. Validation loss and the 8k puzzles are done; the 32k
-            puzzles (2 of 13 done) are due about 23:00–23:50 UTC; the 10M-context session moved that machine's automatic stop
-            from 22:32 to 02:31 UTC so they can finish (checked 11:34 UTC).</p></div>
+            Needle puzzles at 64k: due about midnight UTC. Validation loss and the 8k puzzles are done, and 7 of the 13 32k
+            types; AWS took that spot machine back at 17:26 UTC and has no spare L40S card in any of our three regions, so
+            the watcher retries every 10 minutes. The last 6 types need about 7 hours once a machine is found; the finished
+            ones are saved (checked 18:25 UTC).</p></div>
       </div>
       <div class="now-item">
         <span class="when">until ~14–15 Nov</span>
@@ -557,9 +558,10 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
     </div>
     <p class="caption">Spend: AWS usage for both sessions is about $835 of the $2,000 through 11 Nov (read 12 Nov, 07:35 UTC,
       before credits; AWS's figure lags by up to a day), plus this morning's hours of the 100M run. AWS machines running
-      (checked 12 Nov, 11:25 UTC): a four-card machine training E33p notes-open, the earlier notebook read, at the full
-      token budget (since 06:37 UTC, capped at 24 h, about $180), and six single-card machines for the longer needle
-      tests, two each for n4 and E37a and one each for the LSA port and the original LSA.</p>
+      (checked 12 Nov, 18:25 UTC): a four-card machine training E33p notes-open, the earlier notebook read, at the full
+      token budget (since 06:37 UTC, capped at 24 h, about $180), and three single-card machines for the longer needle
+      tests (one each for n4, E37a and the LSA port). Two more needle-test machines, for n4 and E37a, wait for spot
+      capacity.</p>
   </section>
 
   <footer>
