@@ -479,7 +479,7 @@ at 16k in E33p) show the marks are reachable at this size and data.
     (0.09–0.12 from 16k to 64k); notebook off 2.497 / 2.388 / 2.488 / 2.432 / 2.120, so its notebook carries 0.118 /
     0.106 / 0.096 / 0.066 / 0.016 (n4: 0.155 / 0.197 / 0.214 / 0.163 / 0.065); near text (< 512 at 16k) 2.370, the best
     of the five (n4 2.400); RULER 0.066 / 0.018 at 4k / 16k (its 1.0B screen 0.116 / 0.072; n4 0.231 / 0.183); core 41.1
-    (n4 41.6). **The catalogue read is a clear step up from the read it replaced at 100M**: about 1.5–2× the
+    (n4 41.6). **The catalogue read is a clear step up from the read it replaced at 100M**: 1.3–2.5× the
     notebook's carry up to 64k and 4× at 128k, and 3.5–10× the needle-puzzle mean.
 - **Stage-D verdict (2026-11-12 ~07:45 UTC):**
   - **At 100M with the standard recipe the catalogue does not match the LSA port:** 0.02 nats behind up to 64k and
