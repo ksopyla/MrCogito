@@ -30,11 +30,24 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-19 13:00 UTC",
-    "headline": "Compose and deduce now reach the goal without generator labels: written reasoning in the training text "
-                "gives 92 % and 99 % at 4k (R2, one run). Latest and count pass only with labels (latest 91 %) or not at "
-                "all (count 30 %); the written route for both is training.",
+    "as_of": "2026-10-23 20:30 UTC",
+    "headline": "One model meets the goal on latest, compose and deduce without generator labels: written reasoning gives "
+                "78 / 93 / 100 % at 4k (one run, warm-started). Count stays at 17 %; new sentence shapes and 3-hop "
+                "questions still fail.",
     "where": [
+        "23 Oct: both servers idle since 22 Oct 16:32 UTC. The NAS is offline, so today's results were pulled without "
+        "the NAS copy; on Polonez a few copy jobs from 16-18 Oct are still stuck waiting for it (load 16 while idle).",
+        "21-22 Oct, before the 100M real-text run E33s (Polonez, multi-hop session): the rule finds the written steps in "
+        "71 % of MuSiQue + HotpotQA bridge questions (kill line 60 %). A 30M pilot ran end to end, but every real-QA score "
+        "sat on its no-evidence floor. A pretrained SmolLM2-135M (2T tokens) fine-tuned on the same data reaches only "
+        "MuSiQue 4.7 % exact (floor 1 %) and HotpotQA 18 % (floor 7 %): at the 100M size real multi-hop QA is near the "
+        "floor, so E33s as written cannot resolve its gates.",
+        "19 Oct, written route for latest and count (Odra, training 13:20-15:16 UTC, exams to 18:59 UTC; pulled 23 Oct): "
+        "from R2, latest written as the person's last move and count as the visits listed, steps removed in three "
+        "stages, order on demand and count heads in the model. Latest 78 / 92 % at 4k / 16k with no generator labels "
+        "(E33j with labels 88 / 95 %), compose 93 / 98 %, deduce 100 / 100 %, evidence removed 0 %. Count 17 %. New "
+        "sentence shapes: latest 29 %, compose 5 %. Full exams for E33j, E33k, E33k2 and E33q on the latest data confirm "
+        "their quick exams.",
         "18 Oct evening, label-free steps (multi-hop session): hop naming without the read target still reaches deduce "
         "99 % but compose falls to 8 % (finding a two-name fact needs a read signal; written reasoning chains can give it "
         "by string match). A writer trained without any task erased fact content (probe 80 → 13 %): stage W needs "
@@ -162,12 +175,12 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Odra: E33g (order heads) then E33h (count heads), 0.3B-token warm starts from E33r, about 1.5 h each.",
-        "Polonez (multi-hop session): E33rb and dense on the reasoning data; then the content fix for deduce.",
-        "Before the AWS run: the changes in section 14 of the E33 page (exit-loss cost, far-recall data from step 0, a "
-        "switch-on detector, a compute-matched loop check).",
-        "Open for the author: whether to start the notebook-proportions sweep; give E33 more tokens or keep the "
-        "equal budget.",
+        "Nothing is running. Both servers are free.",
+        "Planned, waiting for the author's go-ahead (E33s re-scoped, 24 Oct): code fixes and the read-order check, then "
+        "the 30M from-scratch confirmation (3 E33 seeds + dense, written chains from step 0), then 100M E33 vs dense.",
+        "Before any 100M or AWS run: the changes in section 14 of the E33 page (exit-loss cost, far-recall data from "
+        "step 0, a switch-on detector, a compute-matched loop check).",
+        "Open for the author: the notebook-proportions sweep; count (no route works yet).",
     ],
 }
 
@@ -262,7 +275,17 @@ CLAIMS = [
      "evidence": "R2: answers write their chain out; a rule reads the read and naming targets off the text (99.3 % "
                  "agreement with the generator); the written steps are removed in three stages. Compose 92 / 97 %, "
                  "deduce 99 / 100 % at 4k / 16k, as with labels (94 / 98 %). 3-hop compose still 0 %.",
-     "settle": "A second seed; the same route for latest and count (running on Odra)."},
+     "settle": "A second seed, and a from-scratch run with the written chains in the data from step 0. (The same route "
+               "for latest and count ran on Odra, 19 Oct: next claim.)"},
+    {"claim": "Written as its last move in the training text, latest is learned without generator labels, given the "
+              "order term.", "state": "single run", "since": "2026-10-19",
+     "evidence": "Written route (Odra, 19 Oct 15:16 UTC, exams 18:59 UTC): R2's final + 3 × 0.1B tokens, latest answers "
+                 "written as the person's last move, count answers as their visits listed, steps removed all → drop one "
+                 "→ none; order on demand and count heads in the model (no labels). Latest 78 / 92 % at 4k / 16k (R2 18 / "
+                 "2 %; E33j with labels 88 / 95 %), harder 69 / 88 %, compose 93 / 98 %, deduce 100 / 100 %, evidence "
+                 "removed 0 %. Count 17 / 18 %: listing the visits did not teach counting. New sentence shapes: latest "
+                 "29 / 46 %, compose 5 %.",
+     "settle": "A second seed; then the from-scratch confirmation with written chains for every task."},
     {"claim": "Told which move is the newest and given a rank-among-matching-notes order term, the notebook learns latest.",
      "state": "holds", "since": "2026-10-18",
      "evidence": "E33j (E33q + every head ranked × a learned per-question switch, the last move as read and naming target): "
@@ -434,8 +457,11 @@ CLAIMS = [
      "evidence": "Earlier recipe: crowded lookup at 4k dense 42 % vs E33 39 %, keyed 39 % vs 18 %. New recipe (E33 run 1, "
                  "dense 3 runs): lookup 44 % vs 54-58 %, keyed 28 % vs 46-51 %. With spread facts E33 leads. At 16k E33 "
                  "still reads crowded facts (43 %), dense nothing. E33 run 3: lookup 46 %, keyed 34 % at 4k — the "
-                 "same picture. E31c: 43 %, 75 %, 45 % — run 2 is the exception.",
-     "settle": "—"},
+                 "same picture. E31c: 43 %, 75 %, 45 % — run 2 is the exception. Added 23 Oct: this holds for E33 trained "
+                 "on answers only. Once its loop rounds name their hop (E33q line, 13 runs) or with the key stop on the "
+                 "denser mix (E33ok, E33gk), crowded lookup at 4k is 92-100 % (E33r and E33x before them 50-55 %), above "
+                 "dense on the bridge data (82 %). All are warm starts from one E33 base.",
+     "settle": "A from-scratch run with hop naming or written chains in the data from step 0."},
     {"claim": "Trained on answers alone, no model learns compose or deduce at 30M / 1.5B, not even one step.",
      "state": "holds", "since": "2026-10-13",
      "evidence": "Every run at guessing on two-step compose and deduce (10 Oct on), and on the one-step versions "
@@ -484,7 +510,9 @@ CLAIMS = [
     {"claim": "No model counts: they know zero and roughly how many, not the number.", "state": "holds",
      "since": "2026-10-16",
      "evidence": "Accuracy by true count at 4k, 8 runs: 0 visits right 38-81 %, other counts 0-65 % with no fall-off "
-                 "with size; notebook models within one of the truth 55-65 % of the time.",
+                 "with size; notebook models within one of the truth 55-65 % of the time. Added 18-19 Oct: count heads "
+                 "(E33h 23 %), told the true number (E33k 30 %, E33k2 30 %, E33m 29 %) and visits written out (written "
+                 "route 17 %) all stay under the 35 % kill line at 4k.",
      "settle": "—"},
     {"claim": "Plain input (no word-pair/triple tables) makes dense learn.", "state": "retracted", "since": "2026-10-11",
      "evidence": "Seed 0 learned four tasks (10 Oct); seed 1 learned nothing (11 Oct 08:43).",
@@ -749,14 +777,15 @@ LADDER = [
      "when": "17 Oct 22:21 → 18 Oct 01:10 UTC training (Odra GPU 0); exams running",
      "why": "T4: let 'now' questions turn order up while every other token keeps it off. Pass: latest ≥ 60 % at 4k with "
             "compose and lookup within 5 points of E33g. Kill: latest ≤ 35 % at 4k."},
-    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "running",
-     "run": "E33j, naming + order on demand, latest supervised (Odra GPU 1)",
+    {"id": "latest_e33j_s0.odra", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain",
+     "standing": "in use", "run": "E33j, naming + order on demand, latest supervised (Odra GPU 1)",
      "model": "E33q + every head ranked (strength 4, margin 2) × a learned per-question switch · 30M, plain",
      "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
      "result": "Latest solved on the id split: 88 / 95 % at 4k / 16k (400 items; quick exam 90 / 96 %), the newest move "
                "picked 97 / 99 % (E33q 20 / 2 %); evidence removed 0 %. Compose 96 / 98 %, deduce 99 / 100 %, lookup 99 / "
                "100 %, count 22 / 25 %. The switch opens per question (bias −2.02, weight norm 0.46).",
-     "when": "18 Oct 01:56 → 09:20 UTC training (Odra GPU 1, one 20-min cooldown); quick exam 09:35 UTC",
+     "when": "18 Oct 01:56 → 09:20 UTC training (Odra GPU 1, one 20-min cooldown); quick exam 09:35 UTC; full exams in "
+             "the ledger 19 Oct",
      "why": "T4: the data now gives each latest question a one-step chain (the asked person's last move), so the read "
             "target and the naming tell round 1 which move answers; the order term gives the read a way to find it. "
             "Pass: latest ≥ 60 % at 4k with compose and deduce within 5 points of E33q. Kill: latest ≤ 35 % at 4k."},
@@ -768,14 +797,16 @@ LADDER = [
                "at 4k / 16k; count 30 / 30 %. Three of the four goal tasks in one set of weights, with generator labels.",
      "when": "18 Oct 12:50 → about 17:20 UTC (Odra GPU 1, beside E33j's exams); quick exam 17:37 UTC",
      "why": "The combined recipe: do the latest, compose and deduce fixes and the count heads live together?"},
-    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits + count naming",
-     "standing": "in use", "run": "E33k2, the count decoded (Odra)",
+    {"id": "count_e33k2_s0.odra", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count "
+     "visits + count naming", "standing": "in use", "run": "E33k2, the count decoded (Odra)",
      "model": "E33k + count loss 1.0 + the rounds name the count word (naming lens) · 30M, plain",
      "tokens": "0.3B continuation from E33k", "exams": "v2 + v2.1",
-     "result": "Count 31 / 30 % at 4k / 16k (quick exam), under the 35 % kill line. The answer now follows the count heads, "
-               "but their sum is too rough: off by 0.6-1.4 on average, rounded right 38 %, over-counting small numbers and "
-               "under-counting 9-10. Compose 89 / 95 %, deduce 98 / 100 %, lookup 94 / 94 %; latest 21 %.",
-     "when": "18 Oct 11:32 → 14:40 UTC (Odra GPU 2); quick exam 14:48", "why": "T6: E33k counts but does not say the number. Pass: "
+     "result": "Count 30 / 34 % at 4k / 16k (full exam; quick exam 31 / 30 %), under the 35 % kill line. The answer now "
+               "follows the count heads, but their sum is too rough: off by 0.6-1.4 on average, rounded right 38 %, "
+               "over-counting small numbers and under-counting 9-10. Compose 88 / 93 %, deduce 98 / 100 %, far lookup "
+               "92 / 93 %; latest 18 %.",
+     "when": "18 Oct 11:32 → 14:40 UTC (Odra GPU 2); quick exam 14:48; full exams in the ledger 19 Oct",
+     "why": "T6: E33k counts but does not say the number. Pass: "
      "count ≥ 50 % at 4k. Kill: ≤ 35 %."},
     {"id": "latest_e33jf_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain", "standing": "in use",
      "run": "E33jf, rank term always on, latest supervised (Polonez GPUs 0-1)",
@@ -793,12 +824,17 @@ LADDER = [
                "labels (E33qn with labels 94 / 98 %). Reads follow the chain (95 / 93 / 96 % per round). Latest 18 %, "
                "count 21 % (no order or count signal); 3-hop compose 0 %.",
      "when": "19 Oct, exams done 12:38 UTC", "why": "The label-free route for multi-hop: is written reasoning enough?"},
-    {"id": None, "start": "2026-10-19", "data": "written reasoning incl. latest and count tallies (3 builds)",
-     "standing": "running", "run": "Written reasoning for latest and count (Odra)",
+    {"id": "written_tc_none.odra", "start": "2026-10-19", "data": "written reasoning incl. latest and count tallies "
+     "(3 builds)", "standing": "in use", "run": "Written reasoning for latest and count (Odra)",
      "model": "E33m arch (order on demand + count heads + hop naming) from the R2 final; latest written as its last move, "
               "count as its visits listed, targets read off the text by a rule · 30M, plain",
-     "tokens": "3 × 0.1B (all → drop one → none)", "exams": "v2 + v2.1, 1k / 4k / 16k", "result": "—",
-     "when": "19 Oct from 12:43 UTC (data builds, then three training stages, about 4 h)",
+     "tokens": "3 × 0.1B (all → drop one → none)", "exams": "v2 + v2.1, 1k / 4k / 16k",
+     "result": "Latest 78 / 92 % at 4k / 16k with no generator labels (R2 18 / 2 %, E33j with labels 88 / 95 %), compose "
+               "93 / 98 %, deduce 100 / 100 %, far lookup 99 / 100 %, crowded lookup 98 % at 4k; evidence removed 0 %, "
+               "notebook off at guessing. Count 17 / 18 %: listing the visits did not teach counting. New sentence shapes "
+               "fail (latest 29 / 46 %, compose 5 %); far quotes 3 %; story loss 1.546 (R2 1.535).",
+     "when": "19 Oct 13:20 → 15:16 UTC training (Odra GPUs 1-2; a 13:16 start failed on a busy GPU 0), exams to 18:59 "
+             "UTC; pulled 23 Oct",
      "why": "T4 / T6 without generator labels. Pass: latest ≥ 70 %, count ≥ 50 % at 4k, compose / deduce within 5 "
             "points of R2."},
     {"id": "label_e33qn0_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)",
@@ -815,6 +851,34 @@ LADDER = [
      "result": "Content erased: place probe 80 → 13 %, exams 0-6 %. Continuation without back-references does not keep "
                "facts; a task-free writer needs reconstruction or recurring content.",
      "when": "18 Oct, results 18:55 UTC", "why": "Label-free stage W: can the notes be learned without any task?"},
+    {"id": "written_tc_all.odra", "start": "2026-10-19", "data": "written reasoning incl. latest and count, every step "
+     "written", "standing": "history", "run": "Written route stage 1 of 3: all steps written (Odra)",
+     "model": "E33m arch from the R2 final · 30M, plain", "tokens": "0.1B", "exams": "short check only",
+     "result": "Intermediate stage; the result is stage 3.", "when": "19 Oct 13:20 UTC onward (Odra GPUs 1-2)",
+     "why": "iCoT schedule, stage 1 of 3."},
+    {"id": "written_tc_drop1.odra", "start": "2026-10-19", "data": "written reasoning incl. latest and count, first step "
+     "dropped", "standing": "history", "run": "Written route stage 2 of 3: first step dropped (Odra)",
+     "model": "stage 1 continued · 30M, plain", "tokens": "0.1B", "exams": "short check only",
+     "result": "Intermediate stage; the result is stage 3.", "when": "19 Oct (Odra GPUs 1-2)",
+     "why": "iCoT schedule, stage 2 of 3."},
+    {"id": "written_r2s1_all.polonez", "start": "2026-10-19", "data": "written reasoning chains, every step written",
+     "standing": "history", "run": "R2 stage 1 of 3: all steps written (Polonez, multi-hop session)",
+     "model": "E33qn from E33x, targets read off the written chain by a rule · 30M, plain", "tokens": "0.1B",
+     "exams": "short lookup check only", "result": "Intermediate stage of R2; story loss 1.531. The result is stage 3.",
+     "when": "19 Oct, training done 09:38 UTC", "why": "iCoT schedule, stage 1 of 3."},
+    {"id": "written_r2s2_drop1.polonez", "start": "2026-10-19", "data": "written reasoning chains, first step dropped",
+     "standing": "history", "run": "R2 stage 2 of 3: first step dropped (Polonez, multi-hop session)",
+     "model": "R2 stage 1 continued · 30M, plain", "tokens": "0.1B", "exams": "short lookup check only",
+     "result": "Intermediate stage of R2; story loss 1.534. The result is stage 3.",
+     "when": "19 Oct, training done 10:40 UTC", "why": "iCoT schedule, stage 2 of 3."},
+    {"id": "qctl_e33qn_s0.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)",
+     "standing": "in use", "run": "E33qn + 0.3B more tokens: E33c's matched control (Polonez, multi-hop session)",
+     "model": "E33qn continued on the same data, no new part · 30M, plain", "tokens": "0.3B continuation from E33q seed 1",
+     "exams": "v2 + v2.1, 1k / 4k / 16k",
+     "result": "Compose 97 / 98 %, deduce 98 / 100 %, far lookup 100 / 100 % at 4k / 16k; 3-hop compose still 0.8 %: more "
+               "training of the same recipe does not add a third hop. Far quotes 2 / 3 %; latest 19 %; count 23 %.",
+     "when": "18 Oct, exams done 15:37 UTC", "why": "Control for E33c: is any 3-hop gain from the question control or from "
+                                                  "more tokens?"},
     {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)", "standing": "history",
      "run": "E33c, per-round question control (Polonez, multi-hop session)",
      "model": "E33q seed 1 + each round reads its next relation word from the question · 30M, plain",
@@ -828,22 +892,24 @@ LADDER = [
      "result": "Latest only partly: 92 / 37 / 28 % at 1k / 4k / 16k (evidence removed 0 %). A recency penalty by page distance "
                "is not enough; the rank among matching notes is. Compose 96 / 98 %, deduce 99 / 100 %, lookup 98 / 100 %.",
      "when": "18 Oct 07:44 → 10:40 UTC (Polonez)", "why": "T4: the page-distance alternative to the rank term."},
-    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain",
-     "standing": "running", "run": "E33q on the latest-supervised data (Odra GPU 2)",
+    {"id": "latest_e33q_s0.odra", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain",
+     "standing": "in use", "run": "E33q on the latest-supervised data (Odra GPU 2)",
      "model": "E33q (naming, no order term) · 30M, plain", "tokens": "0.3B continuation from E33q", "exams": "v2 + v2.1",
-     "result": "Quick exam (200 items): latest still 20 / 2 % at 4k / 16k (the newest move picked 29 %) even with the last "
-               "move as read target and naming target: without an order signal in the read, the supervision cannot be "
-               "met. Compose 96 / 100 %, deduce 99 / 100 %, lookup 100 / 100 %, count 24 / 26 %.",
-     "when": "18 Oct 02:35 → 05:15 UTC training; quick exam 05:45 UTC; full exams running",
+     "result": "Latest still 19 / 3 % at 4k / 16k (full exam; quick exam 20 / 2 %, the newest move picked 29 %) even with "
+               "the last move as read target and naming target: without an order signal in the read, the supervision "
+               "cannot be met. Compose 97 / 98 %, deduce 99 / 100 %, far lookup 100 / 99 %, count 24 / 24 %.",
+     "when": "18 Oct 02:35 → 05:15 UTC training; quick exam 05:45 UTC; full exams 19 Oct 15:46 UTC",
      "why": "The ablation beside E33j: do the read target and the naming alone teach latest, or is the order term needed?"},
-    {"id": None, "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits",
-     "standing": "running", "run": "E33k, count heads told the true number (Odra)",
+    {"id": "count_e33k_s0.odra", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase, latest chain + count visits",
+     "standing": "in use", "run": "E33k, count heads told the true number (Odra)",
      "model": "E33h + each count head's sum at a count question supervised with the number of visits (0.1) · 30M, plain",
      "tokens": "0.3B continuation from E33h", "exams": "v2 + v2.1",
-     "result": "Quick exam: count still 26 / 22 % at 4k / 16k, but the count heads now count — their sum at the decision "
-               "position is within 0.66 of the true number on average (rounded exact 49 %, 4k exams). The sum is not "
-               "decoded into the number word. Deduce 46 % at 4k (E33h 17 %), compose 70 / 92 %, lookup 76 / 87 %.",
-     "when": "18 Oct 02:28 → 08:30 UTC (Odra GPU 0, micro-batch 2 × 48); quick exam 08:46",
+     "result": "Count 30 / 26 % at 4k / 16k (full exam; quick exam 26 / 22 %), but the count heads now count — their sum "
+               "at the decision position is within 0.66 of the true number on average (rounded exact 49 %, 4k exams). The "
+               "sum is not decoded into the number word. Deduce 46 / 36 % (E33h 17 %), compose 70 / 91 %, far lookup "
+               "70 / 90 %.",
+     "when": "18 Oct 02:28 → 08:30 UTC (Odra GPU 0, micro-batch 2 × 48); quick exam 08:46; main exam redone 19 Oct "
+             "15:29 UTC after running out of GPU memory",
      "why": "T6: give the summing read a direct signal. Pass: count ≥ 50 % at 4k. Kill: ≤ 35 %."},
     {"id": "query_e33q_s1.polonez", "start": "2026-10-18", "data": "v2 + bridge, reasoning phase (output-word spans)",
      "standing": "in use", "run": "E33q seed 1 (Polonez, multi-hop session)", "model": "E33q, second seed · 30M, plain",
@@ -957,6 +1023,8 @@ SIGNALS = {
     "latest-labels": ("last-move labels", "privileged", "told which move answers a latest question"),
     "written": ("written reasoning", "data", "answers write their steps out in the training text; the read and naming "
                 "targets are read off that text by a rule (no generator labels); steps then removed (iCoT schedule)"),
+    "taskfree": ("task-free writer", "data", "the writer learns alone from continuing cut text through the notes; no "
+                 "questions, reader frozen"),
 }
 RECIPES = [
     {"key": "dense", "name": "Dense", "what": "full attention, the reference", "from": "from scratch, 1.5B (+0.3B "
@@ -981,6 +1049,13 @@ RECIPES = [
     {"key": "r2", "name": "R2, written reasoning", "what": "hop naming + read targets read off written chains, "
      "steps removed all → drop one → none", "from": "E33x + 3 × 0.1B", "signals": ["warm", "dense-data", "written", "name"],
      "runs": ["written_r2s3_none.polonez"]},
+    {"key": "r2tc", "name": "R2 + written latest and count", "what": "R2, then latest written as the last move and "
+     "count as the visits listed; order on demand + count heads", "from": "R2 + 3 × 0.1B",
+     "signals": ["warm", "dense-data", "written", "name", "order", "count"], "runs": ["written_tc_none.odra"]},
+    {"key": "r1", "name": "R1, naming without read target", "what": "each round names its hop's word; nothing says where "
+     "to read", "from": "E33x + 0.3B", "signals": ["warm", "dense-data", "name"], "runs": ["label_e33qn0_s0.polonez"]},
+    {"key": "r3", "name": "R3, writer without a task", "what": "writer trained alone on cut text, reader frozen",
+     "from": "E33x writer", "signals": ["warm", "taskfree"], "runs": ["stagew_e33w_s0.polonez"]},
     {"key": "e33ok", "name": "E33ok, denser mix", "what": "key stop + read target on notes, denser reasoning data",
      "from": "E33r + 0.9B", "signals": ["warm", "dense-data", "read", "keystop"],
      "runs": ["r2out_e33ok_s0.polonez", "r2out_e33gk_s0.polonez"]},
@@ -1026,6 +1101,10 @@ NAMES = {
     "e33k_plain": ("E33k, count labels", "E33h with the count heads told the true number; plain input"),
     "e33k2_plain": ("E33k2, count decoded", "E33k plus the rounds naming the count word; plain input"),
     "e33m_plain": ("E33m, all four", "E33j plus count heads told the true number; plain input"),
+    "e33qn0_plain": ("R1, hop naming without read target", "E33x plus each loop round naming its hop's word, with no "
+                                                            "target for where to read; plain input"),
+    "e33w_plain": ("R3, writer without a task", "only the writer trained, on cut text continued through the notes, "
+                                                "reader frozen; plain input"),
 }
 
 # Result rounds, keyed by "<run>.<host>" (the ledger file name). Rounds not listed here but present in the
@@ -1319,8 +1398,9 @@ GOAL = {"set": "2026-10-17", "target": 0.70, "tasks": ["latest", "compose", "cou
 
 # Decisions waiting for the author: shown at the top of the board. Remove an item when it is decided.
 DECISIONS = [
-    "Make written reasoning (R2) the base of the label-free line — and run its from-scratch confirmation, 3 seeds at "
-    "1.5B tokens (about 7 h × 3 GPUs each), once latest and count also pass the written way?",
+    "Approve the re-scoped E33s plan (24 Oct): first code fixes and one cheap check; then 3 E33 seeds and a dense run "
+    "from scratch at 30M with written chains from step 0 (about 15 h on both servers); then 100M E33 vs dense (about "
+    "1.5 days). About 225 GPU-hours on our servers in all; the plan's gates decide each step.",
     "3 hops: both labelled and written recipes stop after two. Add 3-hop chains to the written data (in-distribution), "
     "or keep 3 hops as the held-out test?",
 ]
@@ -1336,7 +1416,9 @@ ARCHS = {
              "Best so far: reads far facts in 3 of 3 runs, also at 16k; weak on crowded facts and on latest."},
     "e33": {"name": "E33 loop", "what": "E31c plus a read-think-reread loop over the notebook.",
             "analogy": "rereads its notebook several times before answering", "verdict":
-            "As good as E31c when its notebook switches on, but it did in 2 of 3 runs, at 3× the training time."},
+            "From scratch: as good as E31c when its notebook switches on, but it did in 2 of 3 runs, at 3× the training "
+            "time. The only family that learns compose, deduce and latest, once its loop is trained on written "
+            "reasoning (warm start, one run)."},
     "e33d": {"name": "E33d page distance", "what": "E33 plus a learned penalty on older notes (page distance).",
              "analogy": "E33 with page numbers in the notebook", "verdict":
              "Stopped: the page distance was never learned; latest stayed at guessing."},
@@ -1346,6 +1428,13 @@ ARCHS = {
 # measured. effect: helped / hurt / no effect / mixed / measurement (a new exam or rule, the models did not change).
 # metrics: (what is measured, before, after, unit) — unit "%" (0-100) or "runs" ("k/n").
 CHANGES = [
+    {"date": "2026-10-19", "kind": "recipe", "change": "Latest and count written out as reasoning (written route)",
+     "compared": "R2 vs R2 + 3 × 0.1B tokens with latest written as the last move and count as the visits listed "
+                 "(order on demand and count heads added, no labels)", "effect": "helped",
+     "metrics": [("latest at 4k", 18, 78, "%"), ("latest at 16k", 2, 92, "%"), ("count at 4k", 21, 17, "%"),
+                 ("compose at 4k", 92, 93, "%")],
+     "note": "Latest without generator labels (E33j with labels 88 / 95 %); listing the visits did not teach counting. "
+             "One run."},
     {"date": "2026-10-18", "kind": "recipe", "change": "Count decoded: count loss 1.0 + rounds name the count word (E33k2)",
      "compared": "E33k vs E33k + 0.3B tokens with the count naming", "effect": "no effect",
      "metrics": [("count at 4k", 26, 31, "%"), ("compose at 4k", 70, 89, "%")],
@@ -1380,8 +1469,9 @@ CHANGES = [
      "note": "The naming loss does the work; the feedback gate stayed near 0."},
     {"date": "2026-10-18", "kind": "recipe", "change": "Each loop round names its hop's word (E33q)",
      "compared": "E33r vs E33r + 0.3B tokens with the naming loss (and an unused feedback)", "effect": "helped",
-     "metrics": [("compose at 4k", 60, 94, "%"), ("deduce at 4k", 13, 99, "%"), ("far lookup at 16k", 87, 100, "%")],
-     "note": "One run; id split only — new sentence shapes and extra hops do not transfer."},
+     "metrics": [("compose at 4k", 60, 94, "%"), ("deduce at 4k", 13, 99, "%"), ("far lookup at 16k", 87, 100, "%"),
+                 ("crowded lookup at 4k", 50, 97, "%")],
+     "note": "One run; id split only — new sentence shapes and extra hops do not transfer. Crowded facts added 23 Oct."},
     {"date": "2026-10-17", "kind": "architecture", "change": "Stop the writer's key gradient (E33ok)",
      "compared": "E33r + 0.3B tokens: page read target + read-back (E33rb) vs note read target + key stop (E33ok)",
      "effect": "mixed",

@@ -150,6 +150,98 @@ SQuAD: 8.8 % with no passage, 51.6 % with the passage in context.
   4,000 (held-out loss 2.741 → 2.740), so extra continuation steps alone are unlikely to explain a 3–4× change in
   bits rebuilt.
 
+### S2 — teacher matching from the curriculum writer (Polonez GPUs 0–1, 21 Oct, 20:05–21:31 UTC)
+- **Setup:** warm start from round 4's curriculum writer (attention pooling, key/value way, 512 tokens per entry).
+  Loss: KL(teacher ‖ student) on the target tokens, where the teacher is the same frozen reader with the raw
+  memory text in context. 10 % of steps rebuild a span. Learning rate 1e-4, 4,000 steps × 32 rows, batches
+  grouped by length.
+- **Data** (`scripts/build_e36_s2_data.py`, no hand-made labels):
+  - SQuAD train passages → "Question / Answer" (87,099 rows);
+  - SYNTH English Wikipedia passages → "Question / Answer" (221,046 rows);
+  - book / PDF rows → the next 512 tokens (59,500 rows);
+  - sampled one-third each.
+- W&B: `frozen_reader_SmolLM2-360M_w3_s512m8_kv_attn_s2_20261021_200559`.
+
+| measure | before S2 (curriculum writer) | after S2 |
+|---|---|---|
+| books / PDFs, share of the raw-text gain recovered | 24.4 / 16.5 % | 24.7 / 15.8 % |
+| own span rebuilt from its entry (bits, books / PDFs) | 145 / 128 | 128 / 114 |
+| SQuAD, passage only in memory (contains) | 11.0 % | **12.6 %** |
+| SQuAD, another passage in memory (contains) | 6.4 % | **5.0 %** |
+| held-out KL to the teacher (S2 mix, nats per token) | — | 0.299 → 0.290 (steps 500 → 4,000) |
+
+SQuAD: 8.8 % with no passage, 51.6 % with the passage in context (500 items; one standard error ≈ 1.5 points).
+
+- **Facts move a little, continuation does not.**
+  - The gap between the own and another document's memory on SQuAD widens from 4.6 to 7.6 points.
+  - Memory against no memory, 12.6 vs 8.8 %, is a real but small gain; it remains far from the 51.6 % ceiling.
+  - Continuation is unchanged.
+- **The student cannot follow the teacher.** The held-out KL barely moves after the first 500 steps (0.299 →
+  0.290). With about 120–130 bits per entry and one entry per SQuAD passage, the writer cannot hold what the
+  teacher uses.
+- **What this points to:** capacity per passage. Bits per entry stayed about constant from 512 down to 128 tokens
+  per entry (S1 ladder). So a passage gets more bits only from more entries, i.e. a shorter span for passages.
+  Alternatively, a refinement of each entry at write time towards the format's 781-bit ceiling (S1 capacity
+  diagnostic).
+
+### S2 at 128 tokens per passage entry (Polonez GPUs 0–1, 22 Oct, 07:48–09:15 UTC)
+- **Setup:** as S2, warm-started from the S2 writer. Passages (SQuAD, SYNTH) are written at 128 tokens per entry,
+  up to 8 entries per passage; long documents stay at 512. The SQuAD evaluation writes passages the same way.
+- W&B: `frozen_reader_SmolLM2-360M_w3_s512m8_kv_attn_s2p128_20261022_074844`.
+
+| measure | S2 (one entry per passage) | **S2, 128 tokens per passage entry** |
+|---|---|---|
+| SQuAD from memory / another passage (contains) | 12.6 / 5.0 % | 13.0 / 5.0 % |
+| held-out KL to the teacher (nats per token) | 0.290 | 0.287 |
+| books / PDFs recovered | 24.7 / 15.8 % | 24.9 / 15.8 % |
+| own span rebuilt (bits, books / PDFs) | 128 / 114 | 123 / 112 |
+
+- **More entries per passage do not help:** SQuAD +0.4 points (noise at 500 items), KL −0.003. The
+  capacity-per-passage hypothesis is not supported.
+- **Remaining question:** can the frozen reader answer from *any* key/value entries of a passage? Or does this way
+  in carry text the reader can recite (S0: 99.98 % rebuilt) but not consult? The decisive check needs no writer:
+  optimise the entries of each SQuAD passage directly on the teacher-matching loss, then score SQuAD from them.
+  - Near 51.6 %: the writer is the limit.
+  - Near 13 %: the way in is the limit.
+
+### Oracle check — can the frozen reader answer from any key/value entries? (Polonez GPUs 0, 1, 3, 22 Oct, 13:27–14:13 UTC)
+- **Setup** (`evaluation/frozen_reader_oracle.py`, checkpoint: S2 at 128 tokens per passage entry):
+  - 200 SQuAD validation passages, up to 4 questions each (776 questions);
+  - one entry per 128-token chunk;
+  - entries optimised per passage for 300 Adam steps, starting from the writer's;
+  - "free": every per-layer key and value is free; "expander": the 576-number writer-space entries, read
+    through the trained expander.
+- **Objectives** (neither sees the scored question):
+  - rebuild the passage;
+  - teacher matching on the passage's other questions (halves).
+- Results: `Cache/e36/oracle/merged.json`.
+
+| condition (776 questions) | contains | exact | fit of the optimised entries |
+|---|---|---|---|
+| no passage | 7.5 % | 2.3 % | — |
+| passage as text in context | **50.0 %** | 17.8 % | — |
+| the trained writer's entries | 11.9 % | 3.0 % | — |
+| free entries, rebuild the passage | 9.4 % | 0.5 % | cross-entropy 0.0009: rebuilt word for word |
+| expander entries, rebuild the passage | 7.5 % | 0.8 % | cross-entropy 0.128 |
+| free entries, teacher matching on the other questions | 13.3 % | 4.3 % | KL 0.016 on those questions |
+| expander entries, teacher matching on the other questions | 13.0 % | 3.9 % | KL 0.070 |
+
+- **The way in is the limit, not the writer.** Entries from which the frozen reader rebuilds the passage word
+  for word still let it answer only 9.4 % of new questions, no better than the trained writer (11.9 %).
+  Entries fitted to the teacher on the passage's other questions answer the held-out ones at 13 %. With the
+  passage as text the same reader gets 50 %.
+- **Reading:** through key/value entries of 128-token chunks, the frozen reader can *recite* a passage when
+  walked through it token by token, but cannot *consult* it to answer a new question. No writer can do better
+  than these oracles under this way in, so further writer work (S1–S2) cannot lift SQuAD past ~13 %.
+- This matches the literature where it overlaps:
+  - QA from compressed context with a frozen decoder is weak (PISCO, OSCAR), and the decoder is usually adapted;
+  - a crammed vector does not help a small reader use its content (Progressive Cramming).
+- **What could change it:**
+  1. finer entries: a 1-token entry is the raw key/value cache, which works (50 %), so somewhere between 1 and 128
+     tokens per entry the reader regains access (an oracle at 16 / 32 / 64 maps it);
+  2. teach the reader to consult entries: a small adapter (LoRA) on the reader, trained with S2 and off when
+     the memory is empty. This relaxes the frozen-reader premise.
+
 ### Capacity diagnostic (Polonez GPU3, 21:38–21:44 UTC)
 8 held-out texts of 512 tokens (4 books, 4 PDFs). The table gives the bits one entry adds about its own span when
 the reader rebuilds it (`Cache/e36/subspace_probe.json`):

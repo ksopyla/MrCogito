@@ -54,6 +54,7 @@ from evaluation.text_checks import (  # noqa: E402
     resolve_token_args,
     TEXT_CHECKS_VERSION,
     TIERS,
+    VOCAB,
     fit_params,
     grad_accum,
     in_band,
@@ -244,7 +245,8 @@ def plan_train_job(name: str, arch: str, tier: str, *, lr: float, tokens: float,
     mean_row = float(meta["mix"]["mean_row_tokens"])
     steps = steps_for(tokens, t.global_rows, mean_row)
     save_steps = max(1, steps // 20)
-    args_model, n_params = fit_params(arch, tier)
+    # the FFN is fitted at the data's own vocabulary (text-checks data: 4,096; E33s real text: 16,384)
+    args_model, n_params = fit_params(arch, tier, vocab=int(meta.get("vocab") or VOCAB))
     args_model = resolve_token_args(args_model, data / "tokenizer")
     recipe = load_recipe(arch)
     jobdir = out / "jobs" / name
@@ -295,6 +297,9 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
     cap = "--max_items_per_cell 3" if tier == "smoke" else ""
     only = f"--tasks {' '.join(tasks)}" if tasks else ""  # single-task runs score their own task only
     ev = f"uv run python evaluation/text_checks_eval.py --tokenizer {_q(data / 'tokenizer')} {device} {cap} {only}"
+    if _meta(data).get("kind") in ("real_multihop", "real_text"):
+        return _plan_real_eval(name, arch, train_job, data=data, out=out, jobdir=jobdir, model_file=model_file, dev=dev,
+                               lengths=eval_lengths, steps=steps, curve_fractions=curve_fractions, gpu=gpu, tier=tier)
     # (output file, command): each final evaluation is skipped when its file exists (resumable)
     finals = [
         ("final_id.json", f'{dev}{ev} --checkpoint "$MODEL" --items {_q(data / "eval" / "id.jsonl")} --lengths {lens} '
@@ -338,6 +343,42 @@ def plan_eval_job(name: str, arch: str, tier: str, train_job: str, *, data: Path
             "version": TEXT_CHECKS_VERSION, "lengths": list(eval_lengths), "curve_fractions": list(curve_fractions),
             "tasks": list(tasks) if tasks else None,
             "git_commit": _git_commit()}
+    (jobdir / "job.json").write_text(json.dumps(card, indent=2))
+    return card
+
+
+def _plan_real_eval(name: str, arch: str, train_job: str, *, data: Path, out: Path, jobdir: Path, model_file: Path,
+                    dev: str, lengths: tuple, steps: int, curve_fractions: tuple, gpu: str, tier: str) -> dict:
+    """E33s real-QA data (meta kind real_multihop / real_text): the exam is evaluation/real_multihop_eval.py on
+    eval/realqa.jsonl — exact over answer + aliases at every length, the removed twin, greedy F1 on a subsample at
+    ≤ 4k; notebook arches also with the notebook off. Curves at 4k on 300 items. No copy probe."""
+    ev = f"uv run python evaluation/real_multihop_eval.py --tokenizer {_q(data / 'tokenizer')}"
+    items = _q(data / "eval" / "realqa.jsonl")
+    lens = " ".join(str(x) for x in lengths)
+    finals = [("final_realqa.json", f'{dev}{ev} --checkpoint "$MODEL" --items {items} --lengths {lens} '
+                                    f'--out "$JOB/final_realqa.json"')]
+    if ARCHES[arch].has_notebook:
+        finals.append(("final_realqa_notebook_off.json",
+                       f'{dev}{ev} --checkpoint "$MODEL" --items {items} --lengths {lens} --message_override none '
+                       f'--no_removed --gen_items 0 --out "$JOB/final_realqa_notebook_off.json"'))
+    if (jobdir / "DONE").exists() and any(not (jobdir / f).exists() for f, _ in finals):
+        (jobdir / "DONE").unlink()
+    cmds = [f'[ -f "$JOB/{f}" ] || {c} || {{ echo "EXIT {name} 1 ({f})"; exit 1; }}' for f, c in finals]
+    curve = " ".join(str(max(1, round(f * steps))) for f in curve_fractions if f < 1.0)
+    model_sel = (f'TRAIN_ROOT=$(dirname "$(dirname "$MODEL")")\n'
+                 f'CURVE=""\nfor s in {curve}; do\n'
+                 f'  CK=$(ls -d "$TRAIN_ROOT"/*/checkpoint-* 2>/dev/null | awk -F- -v s=$s \'{{d=$NF-s; if(d<0)d=-d; print d" "$0}}\' | sort -n | head -1 | cut -d" " -f2-)\n'
+                 f'  [ -n "$CK" ] && CURVE="$CURVE $CK"\ndone')
+    cmds.append(f'for CK in $CURVE; do n=$(basename "$CK"); [ -f "$JOB/curve_$n.json" ] || {dev}{ev} --checkpoint "$CK" '
+                f'--items {items} --lengths 4096 --max_items_per_cell 300 --no_removed --gen_items 0 '
+                f'--out "$JOB/curve_$n.json"; done')
+    cmds.append('find "$TRAIN_ROOT" -name "optimizer.pt" -delete 2>/dev/null || true')
+    _write(jobdir / "job.sh", EVAL_SH.format(version=TEXT_CHECKS_VERSION, job=name, when=datetime.now().isoformat(timespec="seconds"),
+                                             root=_q(ROOT), jobdir=_q(jobdir), model_file=_q(model_file),
+                                             model_sel=model_sel, cmds="\n".join(cmds)))
+    card = {"job": name, "kind": "eval", "arch": arch, "tier": tier, "train_job": train_job, "gpu": gpu,
+            "version": TEXT_CHECKS_VERSION, "lengths": list(lengths), "curve_fractions": list(curve_fractions),
+            "exam": "realqa", "git_commit": _git_commit()}
     (jobdir / "job.json").write_text(json.dumps(card, indent=2))
     return card
 
