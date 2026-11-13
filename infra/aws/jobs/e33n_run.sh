@@ -27,6 +27,8 @@
 #   decay's final weights; trainer seed E33N_LONG_SEED, default 1 for every arm, so all arms see the same rows), then
 #   the evals of that model as eval_*_long.json (the decay's own evals are kept). A run whose decay is already done
 #   starts at the 64k phase. E33N_MICRO_LONG (default 1), E33N_GRAD_CKPT=1 (recompute layers: 24 GB cards).
+#   E33N_LONG_TOKENS: tokens of the 64k phase (default: the size's, scripts/run_e33n.py SIZES; m100 at 1e8 repeats
+#   the 30M stage's 0.1B tokens, E33t stage D+).
 # E33N_LONGDOC_LENGTHS (default 4096,16384,32768,65536,131072): lengths of the long-document loss.
 # E33N_CKPT_S3=1 (AWS spot nodes): checkpoints go to S3 with the rest, and a relaunched node first pulls the run
 #   folder back, so an interrupted run resumes from its newest checkpoint instead of starting over.
@@ -138,7 +140,7 @@ if [ -n "${E33N_LONG:-}" ]; then
   LONG=$(ls -d "$R"/long/*/final 2>/dev/null | tail -1)
   if [ -z "$LONG" ]; then
     CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase long --data "$D" --out "$R" \
-          ${E33N_MICRO_LONG:+--micro $E33N_MICRO_LONG} --init "$DECAY" --eval_every 100 --wandb ${E33N_FLOW:+--flow} --seed "${E33N_LONG_SEED:-1}" --gpus "$G" ${E33N_GRAD_CKPT:+--grad_ckpt} ${E33N_CMD_EXTRA:-})
+          ${E33N_LONG_TOKENS:+--tokens $E33N_LONG_TOKENS} ${E33N_MICRO_LONG:+--micro $E33N_MICRO_LONG} --init "$DECAY" --eval_every 100 --wandb ${E33N_FLOW:+--flow} --seed "${E33N_LONG_SEED:-1}" --gpus "$G" ${E33N_GRAD_CKPT:+--grad_ckpt} ${E33N_CMD_EXTRA:-})
     echo "$CMD" > "$R/long.cmd"
     log "long start"
     phase long "$CMD" || { log "long FAILED"; tail -40 "$R/long.log"; finish; exit 1; }
