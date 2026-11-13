@@ -225,11 +225,10 @@ RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch rep
         "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum, seeds 0–2, ladders to 128k",
         (), 54),
     Run("e33t_core", "polonez", "2026-11-11 20:40 UTC (queued behind other evals)",
-        "card 2 finished 2026-11-13 04:34:53 UTC (QUEUE-END); only the path3 3-hop stages of seeds 0 and 2 are left "
-        "(the 2-hop stage learned on all seeds, 99.7 / 99.8 / 99.8 %; seed 0's ended 07:14 UTC): card 3 likely about "
-        "11-13 08:00, card 1 about 08:45 UTC (seed 1's 3-hop stage stopped early, 71 min with its ladder); worst case, "
-        "each at its 19.2k-step budget: card 3 about 11-13 14:50, card 1 about 15:00 UTC (20 min rest every "
-        "5 h 50 min; from 11-13 07:16 UTC)",
+        "card 2 finished 2026-11-13 04:34:53 UTC, card 3 07:43:38 UTC (QUEUE-END); only seed 0's path3 3-hop stage is "
+        "left, on card 1 (the 2-hop stage learned on all seeds, 99.7 / 99.8 / 99.8 %): likely about 11-13 08:50 UTC "
+        "(seeds 1 and 2 stopped early, 71 and 67 min with their ladders); worst case, at its 19.2k-step budget, about "
+        "11-13 14:50 UTC (20 min rest every 5 h 50 min, one taken 07:20–07:40 UTC; from 11-13 07:48 UTC)",
         "E33t catalogue read, core package part 2: the C5 curricula (pchain2, path2, path3), seeds 0–2, ladders",
         (), 21),
     Run("v4_fix_a", "polonez", "2026-10-13 08:38", "finished 2026-10-13 17:39",
