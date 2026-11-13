@@ -577,6 +577,21 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
       length. Cache check at 4k: 10 of 13 tasks identical, three differ by one document (multi-key-2 0.01 vs 0.00,
       multi-value 0.18 vs 0.1825, single-2 0.73 vs 0.72), mean 0.2240 cached vs 0.2226 old loop — bf16 ties, not a
       different decoding; the 4k drop against stage B (0.231) is the 64k stage's, not the cache's.
+    - **lsa, the LSA port (node `e37-long-lsa` i-0806f36773e567902, launched 21:54, training 21:57–22:58, tests
+      22:58–23:33 UTC Nov 13, ≈ 1.7 h ≈ $13; ~12 GB of 46 GB a card, ~19 s a step):** loss on positions ≥ 2k,
+      stage B → 64k stage: 4k 2.322 → 2.320, 16k 2.169 → 2.166, 32k 2.254 → 2.244, 64k 2.245 → **2.212**, 128k
+      1.994 → **1.923** (the original LSA's 1.925 at stage B: a tie). Positions < 512 at 16k 2.384 → 2.382; core
+      0.416 → 0.414. RULER mean 4k / 8k / 16k / 32k: 0.255 / 0.241 / 0.209 / 0.174 → 0.247 / 0.233 / 0.203 / 0.172
+      — about 0.01 lower to 16k (0.012 at 4k with the old loop on both); the essay number needle loses most (0.88 /
+      0.92 / 0.84 / 0.55 → 0.81 / 0.82 / 0.70 / 0.38), the UUID gains at 32k (0.20 → 0.28), single needle 0.97–0.99.
+      Cache check at 4k: 7 of 13 tasks identical, 6 differ by 1–2 documents (HotpotQA 0.07 vs 0.05, SQuAD 0.03 vs
+      0.02, single-3 0.54 vs 0.53, small shares on multi-value / common / frequent words), mean 0.2469 cached vs
+      0.2434 old loop: LSA's top-k choice flips on bf16 near-ties more often than the catalogue read; differences
+      under ~0.005 on a mean are not results.
+    - **Reading:** on long text the 64k stage helps both reads where the decay never trained (64k: −0.03 to −0.04
+      nats, 128k: −0.07 to −0.12) and leaves ≤ 16k alone; the catalogue model gains more at 128k (1.943, from 2.058)
+      and on 32k retrieval (0.125 → 0.158), the LSA port keeps the better retrieval at every length (0.172 vs 0.158
+      at 32k) but gives up part of its essay-number needle.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
