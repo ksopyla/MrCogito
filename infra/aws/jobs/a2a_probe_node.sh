@@ -6,17 +6,18 @@
 # A launch.sh job for one L40S (g6e.xlarge):
 #   MC_SPOT=1 bash infra/aws/launch.sh a2a-e37a 4 "infra/aws/jobs/a2a_probe_node.sh e37a 4096,16384,32768" BRANCH g6e.xlarge
 # Arguments: ARM (e37a | lsa | dense: the m100 full-budget runs) LENGTHS [cram]. Environment: A2A_TASKS, A2A_LIMIT (50),
-#   A2A_LIMIT_LONG (25, past 16k), A2A_BITS (8,6,4,3), A2A_TAILS (16,64).
+#   A2A_LIMIT_LONG (25, past 16k), A2A_BITS (8,6,4,3), A2A_TAILS (16,64), A2A_TAG (a suffix of the output names, so
+#   two runs of one arm can share a node: several of these jobs fit one L40S, the steps are small and CPU-bound).
 # Results: s3://BUCKET/runs/a2a_probe/<node>/ (split_<arm>.json after every task and length, logs every 5 minutes).
 set -uo pipefail
 source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-ARM="${1:?arm}"; LENGTHS="${2:?lengths}"; CRAM="${3:-}"
+ARM="${1:?arm}"; LENGTHS="${2:?lengths}"; CRAM="${3:-}"; N="${1}${A2A_TAG:+_$A2A_TAG}"
 B="s3://$MC_BUCKET/runs/e37"; OUT="s3://$MC_BUCKET/runs/a2a_probe/$MC_NAME"; W="$MC_DISK/a2a"
 mkdir -p "$W/out"
 log() { echo "[a2a_probe $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$W/out/node.log"; }
-log "start on $MC_NAME ${MC_IID:-} ($(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)); code $(git log --oneline -1 | cut -c1-60)"
+log "$N: start on $MC_NAME ${MC_IID:-} ($(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)); code $(git log --oneline -1 | cut -c1-60)"
 run="e33n_m100_${ARM}_tok3.0e9_seed42"
 key=$(aws s3 ls --recursive "$B/$run/decay/" | grep "/final/config.json" | awk '{print $4}' | head -1)
 [ -n "$key" ] || { log "$ARM: no final checkpoint under $B/$run/decay/"; exit 1; }
@@ -29,8 +30,8 @@ SYNC=$!
 uv run --with wonderwords python scripts/a2a_split_probe.py --checkpoint "$ck" --tokenizer "$W/tok" \
   --tasks "${A2A_TASKS:-niah_single_1,niah_single_2,niah_single_3}" --lengths "$LENGTHS" \
   --limit "${A2A_LIMIT:-50}" --limit_long "${A2A_LIMIT_LONG:-25}" --bits "${A2A_BITS:-8,6,4,3}" \
-  --tails "${A2A_TAILS:-16,64}" --out "$W/out/split_${ARM}.json" > "$W/out/split_${ARM}.log" 2>&1
-log "split probe: exit $? $(grep -c '^{"task"' "$W/out/split_${ARM}.log") cells"
+  --tails "${A2A_TAILS:-16,64}" --out "$W/out/split_${N}.json" > "$W/out/split_${N}.log" 2>&1
+log "split probe: exit $? $(grep -c '^{"task"' "$W/out/split_${N}.log") cells"
 aws s3 sync --only-show-errors "$W/out/" "$OUT/" || true
 if [ "$CRAM" = cram ]; then
   aws s3 cp --only-show-errors "s3://$MC_BUCKET/data/fineweb_edu_gpt2/finewebedu_val_000000.bin" "$W/val.bin"
