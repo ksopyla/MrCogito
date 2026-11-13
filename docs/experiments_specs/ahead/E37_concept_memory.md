@@ -561,6 +561,22 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
        reported apart from the filler-text ones. ≈ $110.
     Order on the one 4-GPU slot (G spot quota): the 64k stage (catalogue, then the LSA port) → dense_rope → e37a seed 7
     → lsa seed 7; the needle nodes run beside it.
+  - **64k stage at 100M (the "10M context architecture analysis" session's request, author: "Yes, run it"; recipe
+    of e33n-lsa-testbed a729ca7, branch e37-long = it + the jobs + cached decoding): 0.1B LongDocs-lite tokens in
+    rows of 65,536 from the stage-B decay final, 191 steps of 8 rows (micro 1 × accum 2 × 4 GPUs), lr 6.4e-5 →
+    6.4e-6, gradient checkpointing; one g6e.12xlarge spot node per model, 8 h hard stop; files with a `_long` suffix
+    and `long_evals/` in the run folder.** RULER with the cached decoding; the old loop on the same model at 4k as a
+    check (`eval_ruler_long.json["cache_check"]`).
+    - **catalogue_reuse_n4 (node `e37-long-catalogue-reuse-n4` i-07e15db9d75d8c8ac, launched 19:12, training
+      19:16–20:54, tests 20:54–21:37 UTC Nov 13, ≈ 2.4 h ≈ $18; ~22 GB of 46 GB a card, ~32 s a step):** loss on
+      positions ≥ 2k, stage B → 64k stage: 4k 2.342 → 2.339, 16k 2.189 → 2.187, 32k 2.275 → 2.264, 64k 2.270 →
+      **2.232**, 128k 2.058 → **1.943** (4 sources; e37a 1.990, lsa 1.994, original LSA 1.925 at stage B); notebook
+      off unchanged (−0.002 to −0.005), so the gain is the catalogue read's. Positions < 512 at 16k 2.400 → 2.399;
+      core 0.416 → 0.416. RULER mean of 13 tasks 4k / 8k / 16k / 32k: 0.231 / 0.197 / 0.183 / 0.125 → 0.224 / 0.191
+      / 0.180 / **0.158**; essay haystack at 32k number 0.08 → 0.19, UUID 0.07 → 0.21; single needle 0.99 at every
+      length. Cache check at 4k: 10 of 13 tasks identical, three differ by one document (multi-key-2 0.01 vs 0.00,
+      multi-value 0.18 vs 0.1825, single-2 0.73 vs 0.72), mean 0.2240 cached vs 0.2226 old loop — bf16 ties, not a
+      different decoding; the 4k drop against stage B (0.231) is the 64k stage's, not the cache's.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
