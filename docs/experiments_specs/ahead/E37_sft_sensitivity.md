@@ -113,19 +113,30 @@ readout).
 ## Plan
 
 Home servers only (no AWS spend), as the capability checks free the cards: Polonez at most three cards with 5.5 h
-bursts and 20 min cooldowns, Odra under 80 °C (two cards), the original LSA on Odra (its venv). A lane starts on a card
-only after the capability queue on it has written `QUEUE-END` (an idle card between that queue's jobs or heat rests
-is not free; that session's advice, 2026-11-12 20:50 UTC). On Odra the lanes wait for all three capability queues
-(its card 2 runs under a heat guard at 79 °C). Expected (UTC, that queue's worst case as of 2026-11-12 22:20 UTC):
+bursts and 20 min cooldowns, Odra under 80 °C, the original LSA on Odra (its venv is only there). A lane starts on a
+card only after the capability queue on it has written `QUEUE-END` (an idle card between that queue's jobs or heat
+rests is not free; that session's advice, 2026-11-12 20:50 UTC). Polonez's lanes share three slots: a lane takes its
+card when the card is free and fewer than three cards are busy (capability queues included), and gives it back while
+it waits for the LR pick. On Odra the lane waits for all three capability queues (its card 2 runs under a heat guard
+at 78 °C).
 
-| card | free from | lane |
+Revised 2026-11-13 04:45 UTC (the capability session's new times: Polonez cards free a day earlier, Odra card 2 a
+day later; times are its estimates, worst case in brackets):
+
+| Polonez slot | free from | lanes, in the order they get a slot |
 |---|---|---|
-| Polonez 0 (cap: after Polonez 1's queue ends) | ~Nov 14 06:00 | the three LR pre-flights back to back, the pick, then the LSA port |
-| Polonez 1 (cap: after Polonez 2's queue ends) | ~Nov 14 09:00 | catalogue read n4 |
-| Polonez 2 (after Polonez 3's queue ends) | ~Nov 14 14:30 | concept memory |
-| Odra 0 / Odra 1 (after Odra 2's queue ends) | ~Nov 15 03:00–10:00 | notes-open / the original LSA |
+| 1 (card 0 or 2; card 2's queue ended 04:35) | Nov 13 ~04:50 | the first to claim: the LR pre-flights + pick + LSA port, or concept memory |
+| 2 (card 3's queue ends) | Nov 13 ~07:30 (20:00) | the other of those two |
+| 3 (card 1's queue ends) | Nov 13 ~11:00 (Nov 14 00:00) | catalogue read n4 |
+| the first slot to finish | Nov 14 ~08:00 | notes-open, moved from Odra (its checkpoint fetched to Polonez) |
 
-The servers cannot reach each other, so the LR pick is copied to Odra by hand (it is needed there a day later).
+| Odra card | free from | lane |
+|---|---|---|
+| 0 (after all three Odra queues end; card 2 ~1.7× slower under the heat guard) | Nov 16 ~00:00–12:00 | the original LSA |
+
+Asked the capability session (2026-11-13 04:45 UTC) whether the original LSA may start on Odra card 0 once Odra
+cards 0–1 end (~Nov 14 17:00 – Nov 15 00:00), card 1 left empty; without its OK the lane keeps waiting.
+The servers cannot reach each other, so the LR pick is copied to Odra by hand.
 The catalogue arm's code comes from `e37-catalogue-later` (merged into `e37-sft`).
 
 | step | what | card-hours (estimate) |
@@ -136,7 +147,8 @@ The catalogue arm's code comes from `e37-catalogue-later` (merged into `e37-sft`
 | 3 | instruction tuning, five arms | ~50 |
 | 4 | tuned models: the whole evaluation list above | ~50 |
 
-About 120 card-hours, 1.5–2 days on six cards after the capability checks end.
+About 120 card-hours. With the 2026-11-13 times: the four Polonez arms done ~Nov 15 08:00 UTC, the original LSA
+~Nov 17 (~Nov 16 if it may start on Odra card 0 early).
 
 ## Risks
 
