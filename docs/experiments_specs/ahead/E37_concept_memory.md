@@ -506,6 +506,42 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     loss to 32k and beat it past 32k; on retrieval the top-k read and the catalogue beat it at 4k and 16k, and e37a is
     below it on the mean but above it on the planted sentence. The shares of the gap wait for the full-budget window
     (queued on the next free L40S slot).
+  - **window (floor: the reading layer sees only its block-aligned 512-token window, no long-range read), full
+    budget (trunk 08:34–17:11, decay 17:12–18:29, evals 18:29–18:56 UTC Nov 13; node `e37-b-l40s-window`
+    i-09c4804bef64d838d, 4 × L40S spot, us-east-1, launched 08:31, self-shutdown 19:00, ≈ 10.5 h ≈ $77; job exit 0):**
+    raw loss on positions ≥ 2k, 5 sources (4 at 128k): 4k 2.461, 16k **2.351**, 32k 2.449, 64k 2.397, 128k 2.086.
+    **The full-budget window → dense gap: 0.142 / 0.187 / 0.193 nats at 4k / 16k / 32k** (screen 0.144 / 0.191 /
+    0.205: the budget lowered both ends by about the same 0.17–0.20, so the long-range value of the context did not grow).
+    Positions < 512 at 16k 2.367, the lowest with the original LSA (2.369) and notes_open (2.370). RULER mean of 13
+    tasks 0.047 at 4k, 0.011 at 16k (single needle 0.13 / 0.04: the floor; only what falls in the last 512 tokens).
+    Core mean 0.421 (dense 0.422): arc_challenge 0.255, arc_easy 0.420, hellaswag 0.304, lambada 0.212, piqa 0.614,
+    sciq 0.615, winogrande 0.530.
+  - **Shares of the full-budget window → dense gap (positions ≥ 2k, the 5 sources every arm has; script
+    `full_gap.py` in the session scratchpad, the same pairing as the screen's):**
+
+    | arm | 4k | 16k | 32k | gain over window at 64k / 128k (nats) |
+    |---|---|---|---|---|
+    | e37a (concept read) | 99 % | **99 %** | 101 % | 0.147 / 0.096 |
+    | lsa (LSA's top-k read, our port) | 98 % | 97 % | 101 % | 0.153 / 0.092 |
+    | catalogue_reuse_n4 | 84 % | 86 % | 90 % | 0.127 / 0.027 |
+    | notes_open (E33p) | 58 % | 37 % | 29 % | 0.030 / −0.018 |
+    | original LSA (their body) | 125 % | 115 % | 121 % | 0.197 / 0.161 |
+    | dense | 100 % | 100 % | 100 % | 0.065 / −0.108 |
+
+    Past 32k dense is no ceiling (it trained at 16k without a position code and falls below the window model at
+    128k), so 64k and 128k are given as the gain over the window model. The original LSA passes 100 % because its
+    Gated DeltaNet body is better everywhere (validation loss 0.01–0.04 nats lower; trunk FineWeb-Edu 3.093 vs 3.105),
+    not only on far context.
+  - **Criteria at the full budget:** **S1 met** — e37a 99 % of the gap at 16k (≥ 90 %), with lsa 97 %; the
+    catalogue model 86 % (below S1's bar), notes_open 37 % (inside K1's < 60 % zone for an E33-family read). **S2:**
+    as a share, undefined past 32k (no ceiling); in nats e37a's gain over the window model is 0.185 / 0.195 / 0.147 /
+    0.096 at 16k / 32k / 64k / 128k — it holds to 32k and shrinks past it (the lsa port the same: 0.181 / 0.195 /
+    0.153 / 0.092), while dense loses all of it by 128k. **S4 missed on the short positions, met on core:**
+    positions < 512 at 16k e37a 2.388 vs window 2.367 (+0.021; lsa +0.017, dense +0.027, catalogue +0.033, notes_open
+    +0.003, original +0.002); core mean e37a 0.416 vs dense 0.422 (−0.6 points, within 1), lsa and catalogue 0.416,
+    notes_open 0.411 (−1.1, just outside). **Reading:** at 100M on 3.4B tokens our concept read and the top-k read
+    use far context as well as full attention to 32k and keep a gain to 128k where full attention loses it; both pay
+    ~0.02 nats on the first 512 positions that the window model and the original LSA do not.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
