@@ -422,8 +422,8 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       then 0.4B LongDocs-lite tokens at 16k, seed 42, one spot machine with four L40S cards each. No 64k stage. Loss is how
       surprised the model is by the next word on positions past 2k (lower is better; five sources, four at 128k); needle
       puzzles are the RULER mean of 13 tasks × 100 (higher is better); general knowledge is the mean of seven benchmarks in %.
-      The dense control at this budget is training (due about 13:30 UTC on 13 Nov) and the window control waits for a
-      machine, so shares of the gap are not available yet.</p>
+      The dense and window controls at this budget are training (tests due about 13:30 and 18:30 UTC on 13 Nov), so
+      shares of the gap are not available yet.</p>
     <div class="tablewrap"><table class="m100">
       <thead><tr><th>Model at 100M<br><span class="dir">parameters in total</span></th><th>4k</th><th>16k</th><th>32k</th><th>64k</th><th>128k</th><th>Needle puzzles<br><span class="dir">4k · 16k</span></th><th>General knowledge</th></tr></thead>
       <tbody>
@@ -555,27 +555,29 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <div class="what"><span class="top">Dense control at 100M <span class="pill" data-s="running">running</span></span>
           <p>The model that may reread every earlier word, trained by the 10M-context session on four L40S cards (spot)
             with the same 3.0B + 0.4B tokens. Training is due about 13:30 UTC on 13 Nov, then its tests. The window control
-            (sees only the last pages) still waits for a machine. With both, n4's own pass marks at 100M can be scored:
+            (sees only the last pages) has been training since 08:34 UTC on 13 Nov, with its tests due about 18:30 UTC. With both, n4's own pass marks at 100M can be scored:
             the share of the gap at 16k and no fade at 64k.</p></div>
       </div>
       <div class="now-item">
-        <span class="when">until ~15 Nov</span>
+        <span class="when">until ~16 Nov</span>
         <div class="what"><span class="top">Capability checks for n4 <span class="pill" data-s="running">running</span></span>
-          <p>The leveled synthetic tasks, three seeds each, on Odra and Polonez (Polonez done about the morning of Nov 14,
-            Odra about Nov 15, because its hottest card is slowed to stay under 80 °C). So far n4 has lost two abilities
-            against the champion (E31): the one-hop chain lookup at every length (one seed of three learned it, and that seed
-            falls from 86 % at 1k to 8 % at 2k; E31 scores 97–99 %), and recalling 8 facts, where all three seeds stayed at
-            chance for the whole training budget. Its first keep is two-hop reasoning at 1k: 98 % of answers right on two
-            seeds (E31 94 %), but it drops to 17–55 % from 2k to 64k. Tally at 13 Nov, 01:59 UTC: 2 results kept, 22 lost,
-            49 still to run. Since 12 Nov a length test stops once a model scores at guessing level at two lengths in a row,
+          <p>The leveled synthetic tasks, three seeds each. Polonez finished its part at 08:36 UTC on 13 Nov; Odra runs to
+            about midnight UTC Nov 14–15, its hottest card (slowed to stay under 80 °C) to about Nov 16. n4 keeps two- and
+            three-hop reasoning at 1k (98 % and 97 % of answers right; E31 94 % and 93 %), but loses both from 2k on. It loses
+            the one-hop chain lookup, recalling 8 facts and the plain lookup at 1k, which E31 learns: on those its training
+            never gets off the ground (only 8 of 24 first stages from random weights started). The plain lookup at 2k stays
+            at chance at both step sizes, but the dense model fails that recipe too, so it is not counted against n4. On your call the
+            lookup's 8k and 16k stages were dropped. Tally at 13 Nov, 09:57 UTC: 4 results kept, 35 lost, 34 still to run. Since 12 Nov a length test stops once a model scores at guessing level at two lengths in a row,
             and the lengths not read count as guessing; at 128k the slow answer-writing step is skipped for now and counts
             as guessing too.</p></div>
       </div>
       <div class="now-item">
-        <span class="when">open</span>
-        <div class="what"><span class="top">The 64k stage at 100M <span class="pill" data-s="waiting">your call</span></span>
-          <p>At 30M a 0.1B-token 64k stage put n4 ahead past 128k. Running it at 100M for n4 and the LSA port is the fair test
-            of whether that holds at the larger size. Not started.</p></div>
+        <span class="when">approved 13 Nov</span>
+        <div class="what"><span class="top">The 64k stage at 100M <span class="pill" data-s="waiting">queued</span></span>
+          <p>At 30M a 0.1B-token 64k stage put n4 ahead past 128k. The same 0.1B tokens of 64k-long documents now go to n4 and
+            the LSA port at 100M, starting from their finished weights, then the same tests as above. Handed to the
+            10M-context session at 10:50 UTC on 13 Nov, to run on one four-card AWS spot machine per model. Expected cost
+            about $50–80.</p></div>
       </div>
       <div class="now-item">
         <span class="when">11 Nov 17:37</span>
