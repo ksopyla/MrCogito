@@ -514,5 +514,5 @@ at 16k in E33p) show the marks are reachable at this size and data.
   6.4e-5 → 6.4e-6 (1−sqrt), the 30M stage's tokens. Then the stage-D tests with a `_long` suffix (long-document loss
   4k–128k with the notebook on and off, RULER 13 tasks at 4k–32k, core); no 64k RULER pass unless asked. Memory at
   100M is not yet checked (30M at 64k with recomputation: n4 15.6 GB, the LSA port 6.6 GB). Handed to the E37 session
-  2026-11-13 10:50 UTC, on a 4 × L40S spot node per model, hard stop 8 h; estimate about 1–1.5 h of training and
+  2026-11-13 10:47 UTC, on a 4 × L40S spot node per model, hard stop 8 h; estimate about 1–1.5 h of training and
   about 1.5 h of tests per model, about $50–80 in total.
