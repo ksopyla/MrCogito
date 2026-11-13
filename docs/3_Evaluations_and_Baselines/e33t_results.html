@@ -422,7 +422,8 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       then 0.4B LongDocs-lite tokens at 16k, seed 42, one spot machine with four L40S cards each. No 64k stage. Loss is how
       surprised the model is by the next word on positions past 2k (lower is better; five sources, four at 128k); needle
       puzzles are the RULER mean of 13 tasks × 100 (higher is better); general knowledge is the mean of seven benchmarks in %.
-      The window and dense controls at this budget still wait for H100 machines, so shares of the gap are not available yet.</p>
+      The dense control at this budget is training (due about 13:30 UTC on 13 Nov) and the window control waits for a
+      machine, so shares of the gap are not available yet.</p>
     <div class="tablewrap"><table class="m100">
       <thead><tr><th>Model at 100M<br><span class="dir">parameters in total</span></th><th>4k</th><th>16k</th><th>32k</th><th>64k</th><th>128k</th><th>Needle puzzles<br><span class="dir">4k · 16k</span></th><th>General knowledge</th></tr></thead>
       <tbody>
@@ -443,6 +444,25 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
       carries only 0.016 nats at 128k, though it is the best on nearby text (2.370 under 512 at 16k). It also does worse
       on the needle puzzles than its own short screening run (0.116 / 0.072), so the catalogue read is a clear step up from
       the read it replaced. Bold marks the best value.</p>
+    <h3 id="m100needles">Needle puzzles at every length</h3>
+    <p class="intro">The RULER mean of 13 tasks × 100 (higher is better), 100 documents a task, except the first 25 at 64k
+      (the same for every model). The single needle is one password hidden in filler text, in % found. Finished
+      13 Nov, 02:27 UTC; notes-open was not run past 16k.</p>
+    <div class="tablewrap"><table class="m100">
+      <thead><tr><th>Model at 100M</th><th>4k</th><th>8k</th><th>16k</th><th>32k</th><th>64k</th><th>Single needle<br><span class="dir">8k · 32k · 64k</span></th></tr></thead>
+      <tbody>
+        <tr><td><span class="nm">E33t n4 (64 notes)</span><span class="sub">our catalogue read</span></td><td>23.1</td><td>19.7</td><td>18.3</td><td>12.5</td><td>10.1</td><td class="best">98 · 98 · 96</td></tr>
+        <tr><td><span class="nm">E33p LSA port</span><span class="sub">LSA's read on our backbone</span></td><td class="best">25.5</td><td class="best">24.1</td><td class="best">20.9</td><td class="best">17.4</td><td class="best">15.1</td><td>96 · 96 · 96</td></tr>
+        <tr><td><span class="nm">E37a concept memory</span><span class="sub">the 10M-context session's model</span></td><td>18.5</td><td>18.7</td><td>13.6</td><td>10.6</td><td>8.8</td><td>95 · 96 · 92</td></tr>
+        <tr><td><span class="nm">Original LSA</span><span class="sub">its authors' code and backbone</span></td><td>13.9</td><td>11.9</td><td>8.2</td><td>4.0</td><td>2.8</td><td>9 · 3 · 4</td></tr>
+      </tbody>
+    </table></div>
+    <p class="caption">n4 trails the LSA port by 2–5 points at every length; its score as a share of the LSA port's falls from
+      82–91 % at 4k–16k to 72 % and 67 % at 32k and 64k. The harder needles fade past 16k for n4 and E37a alike: a number
+      hidden in essays is found 53 % of the time at 8k, 8 % at 32k and 4 % at 64k (LSA port 92 / 55 / 28 %), a UUID
+      32 / 7 / 0 % (LSA port 53 / 20 / 4 %). Validation loss is close for the three models on our backbone (FineWeb-Edu at
+      4k after the decay: n4 3.200, LSA port 3.193, E37a 3.187; LongDocs-lite at 16k: 2.250, 2.232, 2.228; lower is
+      better). Whether a 64k training stage at 100M helps n4, as it did at 30M, is not tested yet.</p>
   </section>
 
   <section class="section" id="scorecard">
@@ -523,13 +543,12 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
             the machine is shut down. Results are in the E33t spec and <a href="#m100">above</a>.</p></div>
       </div>
       <div class="now-item">
-        <span class="when">since 06:32</span>
-        <div class="what"><span class="top">n4 at 100M: longer needle tests <span class="pill" data-s="running">running</span></span>
-          <p>Started by the 10M-context session, the same tests its other 100M models get, on two AWS spot machines with one
-            L40S card each. Both run slower than first estimated, about 72 minutes per puzzle type at 32k and 64k (13 types).
-            Validation loss and the 8k puzzles are done. AWS took the 32k machine back at 17:26 UTC with 7 of 13 puzzle types
-            done (saved); a replacement started in Oregon at 19:03 UTC. The 32k and 64k puzzles are due about 02:30–03:00 UTC
-            on 13 Nov (checked 21:52 UTC).</p></div>
+        <span class="when">13 Nov 02:27</span>
+        <div class="what"><span class="top">n4 at 100M: longer needle tests <span class="pill" data-s="done">done</span></span>
+          <p>The same tests as the other 100M models (needle puzzles at 8k, 32k and 64k, plus validation loss), run by the
+            10M-context session on two one-card AWS spot machines. n4 is second of four at every length, behind the LSA port.
+            It finds a single password to 64k (96 %) but loses the harder needles past 16k, as E37a does.
+            See <a href="#m100needles">the needle table</a>.</p></div>
       </div>
       <div class="now-item">
         <span class="when">since 22:14</span>
