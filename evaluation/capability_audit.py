@@ -66,9 +66,9 @@ ISSUES: tuple[Issue, ...] = (
           "high", "open", "caution", ("C1.lookup-2k", "C1.lookup-16k"), ("dense", "e33t_catalogue_n4"),
           "Dense scores 24–29 % at step 1e-4 but passes at 5e-5 (the step E31's 2k runs use). 'Dense cannot do long "
           "lookup' is our setting, not dense's limit. The E33t catalogue read (2026-11-13) also stays at chance at "
-          "1e-4 for the full 7,200 steps: 27 / 29 % first letter on seeds 0–1 (Odra, ended 11-13 00:32 UTC), seed 2 "
-          "at chance at step 7,000. Its C1.lookup-16k curriculum starts with the same 2k stage at 5e-5, which is the "
-          "second step size; at step 1,800 of 7,200 (11-13 01:58 UTC) it is at chance too on seeds 0–1.",
+          "1e-4 for the full 7,200 steps: 27 / 29 / 27 % first letter on seeds 0–2 (Odra, ended 11-13 00:32, 00:32 "
+          "and 02:22 UTC). Its C1.lookup-16k curriculum starts with the same 2k stage at 5e-5, which is the second "
+          "step size; at step 3,700 of 7,200 (11-13 03:25 UTC) it is at chance too on seeds 0–1.",
           "One step size for every model is fair only if it suits every model; check a second step size before a "
           "'cannot'.",
           "Write 5e-5 into C1.lookup-2k and rerun dense, E31 and E33 on it (not queued yet). For the E33t catalogue "
@@ -213,7 +213,8 @@ RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch rep
         "cards 0–1 about 2026-11-14 17:00 – 11-15 00:00 UTC, card 2 about 11-15 07:00–20:00 UTC (from 11-13 02:00 UTC, "
         "worst case, every job at its full budget: the lookup curriculum's 8k and 16k stages untimed; card 2 runs "
         "about 30 % slower under the heat guard, 3.6 against 2.8 s a step, which pauses its job at 79 °C from 11-12 "
-        "21:38 UTC and at 78 °C since 11-13 01:59 UTC; early stops pull it in)",
+        "21:38 UTC and at 78 °C since 11-13 01:59 UTC, peaks now 79 °C, paused about 40 % of the time; early stops "
+        "pull it in)",
         "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum, seeds 0–2, ladders to 128k",
         (), 54),
     Run("e33t_core", "polonez", "2026-11-11 20:40 UTC (queued behind other evals)",
