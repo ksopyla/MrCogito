@@ -200,3 +200,12 @@ About 120 card-hours. With the 2026-11-13 times: the four Polonez arms done ~Nov
   is not in ready state"; any CUDA copy to it spins, and the stuck processes survive SIGKILL. Needs a reboot. The
   tuned concept-memory checkpoint is saved and intact (final at 17:19). Catalogue n4 waits: the faulted card still
   counts as busy (it sits in P2 at 55 °C), so Polonez stays at three cards.
+- **Original LSA on Odra card 0, a day early:** Odra's card-0 queue ended before 18:56 UTC Nov 13 (estimate was Nov 14
+  17:00 – Nov 15 00:00), so the lane claimed card 0 at 18:56: base held-out loss done, base extra (BLiMP, SWDE,
+  BABILong) **failed in 16 s** — lm-eval 0.4.11's BLiMP asks for the dataset `blimp`, and the original LSA's venv
+  (huggingface_hub 1.31) rejects ids without a namespace. Tuning started 19:08 UTC (24k tokens/s, step 350 of 763 at
+  20:13; done ~21:30 UTC). Fix 886c23f maps `blimp` → `nyu-mll/blimp` (same data) in `evaluation/lsa_orig_eval.py`,
+  checked on Odra (BLiMP sets and SWDE load), pulled before the tuned model's extra starts. The base extra reruns on
+  card 0 after the lane ends (tmux `e37sft-orig-base`: the same lane with `E37_SFT_ODRA_CARDS=0`; tuning and done
+  tests are skipped). The capability session moved its last seed-2 jobs to card 1 (until ~Nov 14 02:30–03:30 UTC)
+  and card 2 goes idle after ~22:00 UTC (its message, 20:10 UTC).
