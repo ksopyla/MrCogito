@@ -163,8 +163,9 @@ def main() -> None:
            "new": a.new, "bits": bits, "tails": tails, "warm_tokens": int(warm.shape[0]), "dtype": a.dtype,
            "local_window": int(m.config.pre_window), "cells": []}
     print(f"{a.checkpoint}: {probe.kind} read, {att.h} query heads of {att.dh}", flush=True)
-    for task in a.tasks.split(","):
-        for L in (int(x) for x in a.lengths.split(",")):
+    # shortest documents first, every task at a length before the next length: a run cut short keeps whole lengths
+    for L in sorted(int(x) for x in a.lengths.split(",")):
+        for task in a.tasks.split(","):
             n_docs = a.limit_long if (a.limit_long and L > 16384) else a.limit
             t_gen = time.time()
             docs = ruler_docs(task, L, n_docs, tok)
