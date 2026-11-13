@@ -211,17 +211,18 @@ RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch rep
     # E33t catalogue read (`e33t_catalogue_n4`), the v4 core package, phase core_e33t_catalogue_n4; times in UTC
     # (Odra's clock, queue logs and file times are Europe/Warsaw, one hour ahead in November; Polonez runs on UTC)
     Run("e33t_core", "odra", "2026-11-11 20:40 UTC",
-        "cards 0–1 about 2026-11-14 17:00 – 11-15 00:00 UTC, card 2 about 11-15 07:00–20:00 UTC (from 11-13 02:00 UTC, "
+        "cards 0–1 about 2026-11-14 17:00 – 11-15 00:00 UTC, card 2 about 11-16 00:00–12:00 UTC (from 11-13 04:40 UTC, "
         "worst case, every job at its full budget: the lookup curriculum's 8k and 16k stages untimed; card 2 runs "
-        "about 30 % slower under the heat guard, 3.6 against 2.8 s a step, which pauses its job at 79 °C from 11-12 "
-        "21:38 UTC and at 78 °C since 11-13 01:59 UTC, peaks now 79 °C, paused about 40 % of the time; early stops "
-        "pull it in)",
+        "about 1.7 times slower under the heat guard, 4.7 against 2.8 s a step, which pauses its job at 79 °C from "
+        "11-12 21:38 UTC and at 78 °C since 11-13 01:59 UTC: peaks 79 °C, paused about 40 % of the time; early "
+        "stops pull it in)",
         "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum, seeds 0–2, ladders to 128k",
         (), 54),
     Run("e33t_core", "polonez", "2026-11-11 20:40 UTC (queued behind other evals)",
-        "card 1 about 2026-11-14 06:00, card 2 about 09:00, card 3 about 14:30 UTC (from 11-12 22:20 UTC, worst case: "
-        "every C5 stage at its 19.2k-step budget, a learned final stage's ladder ~4 h under the 128k decode cost cap, "
-        "C5.path2-1k seed 0's full 128k decode until ~11-13 08:00 UTC, 20 min rest every 5 h 50 min)",
+        "card 2 finished 2026-11-13 04:34:53 UTC (QUEUE-END); card 1 about 11-13 11:00 (seed 0's full 128k decode "
+        "until ~08:00, then path3 stages h2 and h3), card 3 about 11-13 07:30 UTC; worst case, every remaining C5 stage "
+        "at its 19.2k-step budget: card 1 about 11-14 00:00, card 3 about 11-13 20:00 UTC (20 min rest every 5 h 50 "
+        "min; from 11-13 04:40 UTC)",
         "E33t catalogue read, core package part 2: the C5 curricula (pchain2, path2, path3), seeds 0–2, ladders",
         (), 21),
     Run("v4_fix_a", "polonez", "2026-10-13 08:38", "finished 2026-10-13 17:39",
