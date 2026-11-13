@@ -97,7 +97,7 @@ ISSUES: tuple[Issue, ...] = (
           "started, not only the median, and try a longer budget or a written warm-up before a 'cannot'.",
           "Not queued. More seeds or a longer budget on the missed tasks would settle it; a written warm-up stage would"
           " be a protocol change for every model. Seed 2 of C1.keyed4-1k, C2.lookalike-1k, C4.chain4-1k, C0.copy-512 "
-          "and C1.lookup-512 is still to come (Odra card 2)."),
+          "and C1.lookup-512 is still to come (keyed4 on Odra card 2, the rest on card 1 from 11-13 20:08 UTC)."),
     Issue("dense-lr-lookup", "2026-10-13", "Dense fails the 2k lookup only at our standard step size",
           "high", "open", "caution", ("C1.lookup-2k", "C1.lookup-16k"), ("dense", "e33t_catalogue_n4"),
           "Dense scores 24–29 % at step 1e-4 but passes at 5e-5 (the step E31's 2k runs use). 'Dense cannot do long "
@@ -250,17 +250,21 @@ RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch rep
     # E33t catalogue read (`e33t_catalogue_n4`), the v4 core package, phase core_e33t_catalogue_n4; times in UTC
     # (Odra's clock, queue logs and file times are Europe/Warsaw, one hour ahead in November; Polonez runs on UTC)
     Run("e33t_core", "odra", "2026-11-11 20:40 UTC",
-        "cards 0–1 finished 2026-11-13 18:45:33 and 18:27:38 UTC (QUEUE-END); card 2 about "
-        "11-14 09:00–16:00 UTC, later if one of its 1k runs learns and reads its full ladder to 128k (from 11-13 "
-        "18:30 UTC; the earlier estimate, 11-16 / 11-17, priced every ladder at its full length, but a run at chance "
-        "stops its ladder after two rungs at the floor, and the 512, 256 and 128-token runs take minutes to an hour; "
-        "the lookup curriculum's 8k and 16k stages, never counted here, were dropped by the author on 11-13 (marked "
-        "10:44 UTC); card 2 runs "
+        "cards 0–1 finished 2026-11-13 18:45:33 and 18:27:38 UTC (QUEUE-END). On the author's yes (11-13 20:05 UTC) "
+        "card 2's last nine seed-2 jobs (C2.lookalike-1k, C4.chain4-1k, copy and lookup at 512, 256 and 128, "
+        "C2.lookalike-128) moved to card 1, the same commands from card 2's script, started 20:08:27 UTC; card 0 runs "
+        "the E37 fine-tuning since 19:08 UTC. Card 2 ends after its C1.keyed4-1k seed 2 (about 22:00 UTC): a holder "
+        "process keeps its queue from starting another job and a helper stops that queue by PID once keyed4's DONE "
+        "lands. Card 1 ends about 11-14 02:30–03:30 UTC, later if one of its 1k runs learns and reads its full ladder "
+        "to 128k (cool-card times: a 1k run about 1 h 55 min, a 512 run 0.9–1.2 h, the 256 and 128 runs minutes). "
+        "Earlier estimates: 11-16 / 11-17 priced every ladder at its full length (a run at chance stops after two "
+        "rungs at the floor); 11-14 09:00–16:00 UTC with card 2 alone. The lookup curriculum's 8k and 16k stages, "
+        "never counted here, were dropped by the author on 11-13 (marked 10:44 UTC). Card 2 runs "
         "under a heat guard that pauses its job at 79 °C from 11-12 21:38 UTC and at 78 °C from 11-13 01:59 UTC, "
         "paused about 40 % of the time; that still let card 2 touch 80 °C in 19 ten-minute windows and 81 °C in 3 "
         "(01:59–14:18 UTC), above the author's 80 °C line. Since 11-13 14:39 UTC it pauses at 75 °C, resumes at "
         "71 °C and checks every 0.3 s: peak 77 °C, paused 59 % of the time, 2.5–3.0 against 1.41 s a step on cards 0–1 "
-        "(the 1 s check, 14:18–14:39 UTC, still peaked at 79 °C); early stops pull it in)",
+        "(the 1 s check, 14:18–14:39 UTC, still peaked at 79 °C).",
         "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum's 2k stage (its 8k and "
         "16k stages dropped), seeds 0–2, ladders to 128k",
         (), 48),
