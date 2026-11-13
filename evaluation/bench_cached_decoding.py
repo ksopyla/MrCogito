@@ -42,6 +42,7 @@ def main() -> None:
     ap.add_argument("--dtype", default="bfloat16")
     ap.add_argument("--skip_uncached_above", type=int, default=0, help="time only the cached path past this length")
     ap.add_argument("--out", default="")
+    ap.add_argument("--warmup", type=int, default=1, help="1: one short untimed run of each path per length first")
     a = ap.parse_args()
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     from transformers import AutoTokenizer
@@ -68,24 +69,39 @@ def main() -> None:
         body = tok(filler * (L // 20 + 1))["input_ids"][: L - len(needle) - len(q)]
         at = len(body) // 3
         ids = torch.tensor([body[:at] + needle + body[at:] + q], device=a.device)
-        res = {}
-        for cached in (True, False):
-            if not cached and a.skip_uncached_above and L > a.skip_uncached_above:
-                continue
-            os.environ["PERCEIVER_AR_GEN_CACHE"] = "1" if cached else "0"
-            _sync(a.device)
-            t0 = time.time()
-            g = PerceiverARLMEval._model_generate(fake, ids.clone(), ids.shape[1] + a.new, stop=None)
-            _sync(a.device)
-            res[cached] = (g[0, ids.shape[1]:].tolist(), time.time() - t0)
-        row = dict(length=L, needle=num, cached_s=round(res[True][1], 2), answer=tok.decode(res[True][0]))
-        if False in res:
+        L0, P = ids.shape[1], fake.GEN_PAD
+        # warm-up: the fewest answer tokens that give the same padded row, so flex attention's graph for this shape
+        # is compiled before either timed run (otherwise the first path timed pays for the compile)
+        warm = max(1, -(-(L0 + a.new) // P) * P - P + 1 - L0)
+        res, row = {}, dict(length=L, needle=num)
+        try:
+            for cached in (True, False):
+                if not cached and a.skip_uncached_above and L > a.skip_uncached_above:
+                    continue
+                os.environ["PERCEIVER_AR_GEN_CACHE"] = "1" if cached else "0"
+                if a.warmup:
+                    PerceiverARLMEval._model_generate(fake, ids.clone(), L0 + warm, stop=None)
+                if a.device.startswith("cuda"):
+                    torch.cuda.reset_peak_memory_stats()
+                _sync(a.device)
+                t0 = time.time()
+                g = PerceiverARLMEval._model_generate(fake, ids.clone(), L0 + a.new, stop=None)
+                _sync(a.device)
+                res[cached] = (g[0, L0:].tolist(), time.time() - t0)
+                if a.device.startswith("cuda"):
+                    row["cached_peak_gb" if cached else "uncached_peak_gb"] = round(torch.cuda.max_memory_allocated() / 2**30, 1)
+        except torch.cuda.OutOfMemoryError as e:  # a long row past the card: keep what was timed, go on to the next length
+            row["error"] = f"out of memory ({str(e)[:80]})"
+            torch.cuda.empty_cache()
+        if True in res:
+            row.update(cached_s=round(res[True][1], 2), answer=tok.decode(res[True][0]))
+        if True in res and False in res:
             row.update(uncached_s=round(res[False][1], 2), same=res[True][0] == res[False][0],
                        speedup=round(res[False][1] / max(res[True][1], 1e-9), 1))
         rows.append(row)
         print(json.dumps(row), flush=True)
-    if a.out:
-        Path(a.out).write_text(json.dumps(dict(checkpoint=a.checkpoint, kind=kind, rows=rows), indent=1))
+        if a.out:  # after every length, so a crash at a long one keeps the shorter ones
+            Path(a.out).write_text(json.dumps(dict(checkpoint=a.checkpoint, kind=kind, rows=rows), indent=1))
 
 
 if __name__ == "__main__":
