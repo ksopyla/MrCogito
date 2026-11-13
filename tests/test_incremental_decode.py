@@ -2,7 +2,8 @@
 
 The cached decoding must write the tokens of the uncached harness loop
 (`evaluation/lm_eval_perceiver_ar.PerceiverARLMEval._model_generate`, one forward over the fixed-length row per token),
-and each step's hidden state must equal that forward's at the same position: full attention, LSA's read (answers that
+and each step's hidden state must equal that forward's at the same position: full attention (with and without
+RoPE on the reading layer), LSA's read (answers that
 cross a block end, so the buckets are rebuilt), the catalogue read (E33t, reuse arm), E33p's notes read (pages rewritten
 as the answer grows) and E37's concept read (with the reasoner and the length scale), with a left-padded row.
 """
@@ -27,7 +28,7 @@ from tests.test_note_open import make as make_notes
 CAT_REUSE = dict(CAT, lm_open_new_per_pass=False)
 DEEP = dict(pre_layers=2, stack_layers=3)
 REASONER = dict(concept_reasoner_layers=1, concept_reasoner_dim=16, concept_reasoner_heads=2)
-ARMS = ["dense", "lsa", "catalogue", "notes", "concept", "concept_reasoner", "concept_scaled"]
+ARMS = ["dense", "dense_rope", "lsa", "catalogue", "notes", "concept", "concept_reasoner", "concept_scaled"]
 
 
 class _Tok:
@@ -42,6 +43,8 @@ def _model(arm, deep=False):
     extra = DEEP if deep else {}
     if arm == "dense":
         return make_lsa(**DENSE, **extra)
+    if arm == "dense_rope":  # E37's fair full-attention control: RoPE on the reading layer too
+        return make_lsa(**dict(DENSE, global_nope=False), **extra)
     if arm == "lsa":
         return make_lsa(**LSA, **extra)
     if arm == "catalogue":

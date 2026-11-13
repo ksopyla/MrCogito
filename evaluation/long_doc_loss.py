@@ -135,6 +135,9 @@ def main() -> None:
     ap.add_argument("--concept_sum_len", type=int, default=-1,
                     help="E37 concept read: length scale of the summaries' weight past this row length (the training "
                          "length; 0 = off; default: the checkpoint's own setting)")
+    ap.add_argument("--rope_theta", type=float, default=0.0,
+                    help="eval-time RoPE base for every layer (0 = the checkpoint's own); E37's dense_rope control at "
+                         "an NTK-style base past its 16k training length")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -159,6 +162,10 @@ def main() -> None:
         if not set_concept_sum_len(model, a.concept_sum_len):
             raise SystemExit("--concept_sum_len: the checkpoint has no concept read")
         res["concept_sum_len"] = a.concept_sum_len
+    if a.rope_theta > 0:  # read at every forward (rope_cos_sin(pos, head_dim, config.rope_theta, ...))
+        res["rope_theta_trained"] = float(model.config.rope_theta)
+        model.config.rope_theta = float(a.rope_theta)
+        res["rope_theta"] = float(a.rope_theta)
     for S in (int(x) for x in a.lengths.split(",")):
         per_len = {}
         for src in srcs:

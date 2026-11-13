@@ -30,15 +30,17 @@ CUDA_DIR=$(ls -d /usr/local/cuda-12.* 2>/dev/null | sort -V | tail -1)
 [ -n "$CUDA_DIR" ] && export CUDA_HOME="$CUDA_DIR" PATH="$CUDA_DIR/bin:$PATH"   # their inline kernels build with nvcc
 REPO="$(pwd)"
 B="s3://$MC_BUCKET/runs/e37"; D="$MC_DISK/data"; W="$MC_DISK/later"
+# the pair folder and merged file (e37_ruler_later.sh); e37_needles_node.sh sets needles / eval_ruler_needles.json
+SUB=${E37_RULER_SUB:-later}; MERGED=${E37_RULER_MERGED:-eval_ruler_later.json}; export E37_RULER_SUB=$SUB E37_RULER_MERGED=$MERGED
 mkdir -p "$D" "$W"
 log() { echo "[e37_later_node $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$W/node.log"; }
 [ $# -ge 1 ] || { log "no ARM:LENGTHS items given"; exit 1; }
 s3run() { if [ "$1" = lsa_orig ]; then echo "$B/lsa_orig_m100_tok3.0e9_seed42"; else echo "$B/e33n_m100_$1_tok3.0e9_seed42"; fi; }
 up() {  # ARM: this node's pair files and pass log to the run's S3 folder
   local R; R=$(s3run "$1")
-  [ -d "$W/$1/later" ] || return 0
-  aws s3 sync --only-show-errors "$W/$1/later/" "$R/later/" --exclude "*" --include "ruler_*.json" --include "ruler_*.log" || true
-  [ -f "$W/$1/events.log" ] && aws s3 cp --only-show-errors "$W/$1/events.log" "$R/events_later_${MC_NAME}.log" || true
+  [ -d "$W/$1/$SUB" ] || return 0
+  aws s3 sync --only-show-errors "$W/$1/$SUB/" "$R/$SUB/" --exclude "*" --include "ruler_*.json" --include "ruler_*.log" || true
+  [ -f "$W/$1/events.log" ] && aws s3 cp --only-show-errors "$W/$1/events.log" "$R/events_${SUB}_${MC_NAME}.log" || true
 }
 ( while sleep 600; do for it in "$@"; do up "${it%%:*}"; done; done ) & SYNC=$!
 log "start on $MC_NAME ${MC_IID:-} ($(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader | tr '\n' ' ')); items: $*; code $(git -C "$REPO" log --oneline -1 | cut -c1-60)"
@@ -94,13 +96,43 @@ val_item() {  # ARM: LSA's validation loss (evaluation/val_loss.py, as run at ho
   fi
 }
 
+ntk_item() {  # ARM: the long-document loss (as e37_evals.sh: 4k-128k, rows 8, the same flags) at an eval-time
+  # RoPE base on every layer (E37_NTK_THETA, default 4.28e6 = NTK-aware 500k x 8^(64/62) for 16k -> 128k, head_dim 64)
+  # -> the run's eval_longdoc_ntk.json (kept if already in S3)
+  local A=$1 R O TH=${E37_NTK_THETA:-4.28e6}; R=$(s3run "$1"); O="$W/$1"; mkdir -p "$O"
+  if aws s3 ls "$R/eval_longdoc_ntk.json" >/dev/null 2>&1; then log "$A: eval_longdoc_ntk.json is in S3 already"; return 0; fi
+  aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/longdocs_lite_gpt2/" "$D/longdocs_lite_gpt2/"
+  fetch_final "$R/decay/" "$MC_DISK/ck/$A/final" || return 1
+  log "$A: long-document loss at RoPE base $TH"
+  if uv run python evaluation/long_doc_loss.py --checkpoint "$MC_DISK/ck/$A/final" --data "$D/longdocs_lite_gpt2" \
+       --lengths 4096,16384,32768,65536,131072 --rows 8 --notes_off --open_off --gist_off --rope_theta "$TH" \
+       --out "$O/eval_longdoc_ntk.json" > "$O/eval_longdoc_ntk.log" 2>&1 && ! grep -q '"error"' "$O/eval_longdoc_ntk.json"; then
+    aws s3 cp --only-show-errors "$O/eval_longdoc_ntk.json" "$R/eval_longdoc_ntk.json"
+    aws s3 cp --only-show-errors "$O/eval_longdoc_ntk.log" "$R/eval_longdoc_ntk.log"
+    log "$A: long-document loss at base $TH done"
+  else
+    log "$A: long-document loss at base $TH FAILED (tail below)"; tail -15 "$O/eval_longdoc_ntk.log" | tee -a "$W/node.log"
+    aws s3 cp --only-show-errors "$O/eval_longdoc_ntk.log" "$R/eval_longdoc_ntk_${MC_NAME}_failed.log"; return 1
+  fi
+}
+cached_or_refuse() {  # CHECKPOINT: with E37_REQUIRE_CACHE=1, the model must take the cached decoding (nn/incremental.py
+  # raises NotImplementedError for reads it does not cover, and the harness would fall back to the slow loop silently)
+  [ -n "${E37_REQUIRE_CACHE:-}" ] || return 0
+  uv run python -c "import sys; sys.path.insert(0, '.')
+from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval
+from nn.incremental import decode_kind
+print('cached decoding:', decode_kind(load_perceiver_ar_for_eval(sys.argv[1], device='cpu', attn_backend='sdpa')))" "$1" 2>&1 | tail -1
+  return "${PIPESTATUS[0]}"
+}
+
 RC=0; MISS=0; ARMS=""
 for it in "$@"; do
   A=${it%%:*}; LS=${it#*:}; R=$(s3run "$A"); O="$W/$A"; T0=$(date -u +%s)
   if [ "$LS" = val ]; then ARMS="$ARMS $A"; val_item "$A" || { RC=1; MISS=$((MISS + 1)); }; continue; fi
+  if [ "$LS" = ntk ]; then ARMS="$ARMS $A"; ntk_item "$A" || { RC=1; MISS=$((MISS + 1)); }; continue; fi
   LIM=100; case "$LS" in *@*) LIM=${LS#*@}; LS=${LS%@*} ;; esac
   ARMS="$ARMS $A"
-  mkdir -p "$O/later"
+  mkdir -p "$O/$SUB"
   log "$A: RULER $LS ($LIM documents per task) from $R"
   if [ "$A" = lsa_orig ]; then
     CK="$MC_DISK/ck/lsa_orig/decay/checkpoint/step-763"
@@ -110,9 +142,13 @@ for it in "$@"; do
   else
     CK="$MC_DISK/ck/$A/final"
     fetch_final "$R/decay/" "$CK" || { RC=1; continue; }
+    if ! c=$(cached_or_refuse "$CK"); then
+      log "$A: no cached decoding for this model ($c); item skipped"; RC=1; MISS=$((MISS + 13)); continue
+    fi
+    [ -n "$c" ] && log "$A: $c"
   fi
-  aws s3 sync --only-show-errors "$R/later/" "$O/later/" --exclude "DONE_*" --exclude "INCOMPLETE_*"
-  log "$A: checkpoint $(du -sh "$CK" | cut -f1), $(ls "$O"/later/ruler_*.json 2>/dev/null | wc -l) pair files from S3; setup $(( $(date -u +%s) - T0 )) s"
+  aws s3 sync --only-show-errors "$R/$SUB/" "$O/$SUB/" --exclude "DONE_*" --exclude "INCOMPLETE_*"
+  log "$A: checkpoint $(du -sh "$CK" | cut -f1), $(ls "$O"/$SUB/ruler_*.json 2>/dev/null | wc -l) pair files from S3; setup $(( $(date -u +%s) - T0 )) s"
   pass() {
     if [ "$A" = lsa_orig ]; then
       LSA_REPO="$MC_DISK/lsa" LSA_ROOT="$MC_DISK/lsa_root" PATH="$VENV/bin:$PATH" E37_LSA_ORIG=1 LSA_PY="$VENV/bin/python" \
@@ -125,23 +161,23 @@ for it in "$@"; do
   pass >> "$W/node.log" 2>&1
   up "$A"
   # merge with what the other nodes uploaded for this model (a rerun with nothing left only merges)
-  aws s3 sync --only-show-errors "$R/later/" "$O/later/" --exclude "DONE_*" --exclude "INCOMPLETE_*"
+  aws s3 sync --only-show-errors "$R/$SUB/" "$O/$SUB/" --exclude "DONE_*" --exclude "INCOMPLETE_*"
   pass >> "$W/node.log" 2>&1
   up "$A"
-  aws s3 cp --only-show-errors "$O/eval_ruler_later.json" "$R/eval_ruler_later.json" || true
+  aws s3 cp --only-show-errors "$O/$MERGED" "$R/$MERGED" || true
   miss=0
   for L in ${LS//,/ }; do
-    n=$(ls "$O"/later/ruler_"${L}"_*.json 2>/dev/null | wc -l); [ "$n" -ge 13 ] || miss=$((miss + 13 - n))
+    n=$(ls "$O"/$SUB/ruler_"${L}"_*.json 2>/dev/null | wc -l); [ "$n" -ge 13 ] || miss=$((miss + 13 - n))
   done
   MISS=$((MISS + miss)); [ "$miss" = 0 ] || RC=1
-  log "$A: RULER $LS ($LIM documents) $miss pairs missing after $(( ($(date -u +%s) - T0) / 60 )) min; $(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['mean'])" "$O/eval_ruler_later.json" 2>&1)"
+  log "$A: RULER $LS ($LIM documents) $miss pairs missing after $(( ($(date -u +%s) - T0) / 60 )) min; $(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['mean'])" "$O/$MERGED" 2>&1)"
 done
 kill "$SYNC" 2>/dev/null
 for it in "$@"; do up "${it%%:*}"; done
 # the node's marker, once all its items ran (the watcher relaunches a node that is gone without one)
 if [ "$MISS" = 0 ]; then M=DONE; else M=INCOMPLETE; fi
 for A in $(echo "$ARMS" | tr ' ' '\n' | sort -u); do
-  echo "$M $(date -u +%FT%TZ) $MC_NAME items: $*; $MISS pairs missing" | aws s3 cp - "$(s3run "$A")/later/${M}_${MC_NAME}" || true
+  echo "$M $(date -u +%FT%TZ) $MC_NAME items: $*; $MISS pairs missing" | aws s3 cp - "$(s3run "$A")/$SUB/${M}_${MC_NAME}" || true
 done
 log "node $M ($MISS pairs missing)"
 aws s3 cp --only-show-errors "$W/node.log" "s3://$MC_BUCKET/logs/$MC_NAME/node.log" || true

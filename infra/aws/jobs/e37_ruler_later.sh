@@ -10,7 +10,10 @@
 #     LSA_PY = its python, LSA_OV = the folder with lm-eval 0.4.11 put ahead of theirs, as lsa_orig_run.sh does).
 #   DATA_DIR holds tokenizer_gpt2/ (and fineweb_edu_gpt2/, longdocs_lite_gpt2/ for the original LSA's loader).
 #   GPUs: CUDA_VISIBLE_DEVICES (default: all). Rows per batch: E37_RULER_ROWS_TOKENS / length, 1..8 (default 65536:
-#   8 at 8k, 2 at 32k, 1 at 64k, for 24 GB cards; decoding is uncached and projects only the current position).
+#   8 at 8k, 2 at 32k, 1 at 64k and 128k, for 24 GB cards). Our models decode with the cached path where this branch
+#   has nn/incremental.py (one prefill, then one position a step; PERCEIVER_AR_GEN_CACHE=0 for the old loop).
+#   E37_RULER_SUB / E37_RULER_MERGED: the pair folder and the merged file (default later / eval_ruler_later.json; the
+#   needles pass of 2026-11-13 writes needles / eval_ruler_needles.json, so the old-loop 64k@25 pairs stay apart).
 #   E37_RULER_LIMIT: documents per task (default 100, as the nodes; lm-eval takes the first N; the merged file records
 #   each length's limit in limit_per_length). E37_BURST_MIN / E37_COOL_MIN (home heat rule):
 #   after BURST_MIN minutes no lane takes a new pair; once all lanes are idle the GPUs rest COOL_MIN minutes, then the
@@ -20,7 +23,8 @@ CK="${1:?checkpoint}"; O="${2:?out dir}"; D="${3:?data dir}"; LENGTHS="${4:-8192
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1 \
   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 cd "$(dirname "$0")/../../.." || exit 1
-P="$O/later"; mkdir -p "$P"
+SUB=${E37_RULER_SUB:-later}; MERGED=${E37_RULER_MERGED:-eval_ruler_later.json}
+P="$O/$SUB"; mkdir -p "$P"
 IFS=, read -ra GL <<< "${CUDA_VISIBLE_DEVICES:-$(seq -s, 0 $(( $(nvidia-smi -L | wc -l) - 1 )))}"
 LIM=${E37_RULER_LIMIT:-100}; RT=${E37_RULER_ROWS_TOKENS:-65536}
 TASKS=(niah_single_1 niah_single_2 niah_single_3 niah_multikey_1 niah_multikey_2 niah_multikey_3 niah_multiquery
@@ -53,7 +57,7 @@ lane() {  # GPU DEADLINE(epoch, 0 = none)
     if one "$g" "$L" "$t" "$B" && [ -f "$P/ruler_${L}_${t}.json" ]; then
       log "GPU $g: RULER $L $t done in $(( $(date -u +%s) - s )) s"
     else
-      log "GPU $g: RULER $L $t FAILED after $(( $(date -u +%s) - s )) s (see later/ruler_${L}_${t}.log)"
+      log "GPU $g: RULER $L $t FAILED after $(( $(date -u +%s) - s )) s (see $SUB/ruler_${L}_${t}.log)"
     fi
   done
 }
@@ -74,12 +78,12 @@ while :; do
   log "burst $burst done, $n pairs left: GPUs rest ${E37_COOL_MIN:-20} min"; sleep $(( ${E37_COOL_MIN:-20} * 60 ))
 done
 
-python3 - "$O" "$CK" "$LIM" <<'PY'
+python3 - "$O" "$CK" "$LIM" "$SUB" "$MERGED" <<'PY'
 import json, sys
 from pathlib import Path
-O, CK, LIM = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
+O, CK, LIM, SUB, MERGED = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
 res, lims = {}, {}
-for f in sorted((O / "later").glob("ruler_*.json")):
+for f in sorted((O / SUB).glob("ruler_*.json")):
     part = json.loads(f.read_text())
     for L, r in part["results"].items():
         res.setdefault(L, {}).update(r)
@@ -93,8 +97,8 @@ for L, r in res.items():
 out = {"checkpoint": CK, "suite": "ruler", "lengths": sorted(int(x) for x in res), "limit": LIM, "results": res,
        "mean": mean, "tasks": {L: len(r) for L, r in res.items()},
        "limit_per_length": {L: sorted(v for v in s if v is not None) for L, s in lims.items()},
-       "note": "e37_ruler_later.sh: one lm-eval call per (length, task), merged; mean only with all 13 tasks; "
+       "pairs": SUB, "note": "e37_ruler_later.sh: one lm-eval call per (length, task), merged; mean only with all 13 tasks; "
                "limit_per_length = documents per task at each length (the first N of lm-eval's set)"}
-(O / "eval_ruler_later.json").write_text(json.dumps(out, indent=2, default=str))
+(O / MERGED).write_text(json.dumps(out, indent=2, default=str))
 PY
 log "pass ended: $(left) pairs left"
