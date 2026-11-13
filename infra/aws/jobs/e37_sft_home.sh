@@ -5,7 +5,10 @@
 #   wait   until this card is free for 15 min: no process, no claim by another lane, and no capability-check queue
 #          still running on it (its log has no QUEUE-END yet); Polonez: fewer than 3 busy cards counted the same way
 #          (the heat rule); Odra: every capability queue on the server ended (its hot card 2 runs under a heat guard
-#          that pauses at 79 °C; a lane slipping in during a pause would slow it) and every card under 78 °C
+#          that pauses at 78 °C; a lane slipping in during a pause would slow it) and every card under 78 °C.
+#          E37_SFT_ODRA_CARDS="0 1" narrows both Odra checks to those cards (the capability session's OK, 2026-11-13
+#          ~04:50 UTC: the original LSA on card 0 once its card 0-1 queues end, card 1 left empty, card 2 left to its
+#          own guard, which swings it between 73 and 79 °C by design)
 #   mix    build the instruction mix once per server (scripts/build_sft_mix.py; a lock keeps two lanes from racing)
 #   base   the base model: held-out instruction loss + FineWeb/LongDocs val, `extra` (BLiMP, SWDE, BABILong 1-3)
 #   lr     wait for Cache/e37_sft/lr.txt (the pre-flight's pick) unless E37_SFT_LR is set
@@ -49,9 +52,10 @@ gpu_busy() {
   cap_running "$1" || [ -f "$CLAIMS/gpu$1" ] \
     || nvidia-smi -i "$1" --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -q .
 }
-any_cap_running() {
+ODRA_CARDS="${E37_SFT_ODRA_CARDS:-}"   # empty: every card
+any_cap_running() {  # [CARD ...]: a capability queue still runs on one of these cards (default: every card)
   local i
-  for i in $(nvidia-smi --query-gpu=index --format=csv,noheader); do cap_running "$i" && return 0; done
+  for i in ${*:-$(nvidia-smi --query-gpu=index --format=csv,noheader)}; do cap_running "$i" && return 0; done
   return 1
 }
 busy_count() {
@@ -59,12 +63,16 @@ busy_count() {
   for i in $(nvidia-smi --query-gpu=index --format=csv,noheader); do gpu_busy "$i" && n=$((n + 1)); done
   echo "$n"
 }
-max_temp() { nvidia-smi --query-gpu=temperature.gpu --format=csv,noheader | sort -n | tail -1; }
+max_temp() {  # [CARD ...]: the hottest of these cards (default: every card)
+  local ids; ids=$(echo "$*" | tr ' ' ',')
+  nvidia-smi ${ids:+-i "$ids"} --query-gpu=temperature.gpu --format=csv,noheader | sort -n | tail -1
+}
 wait_gpu() {  # GPU HOSTRULE: 3 checks 5 min apart, then claim the GPU (released when the lane ends)
   local gpu=$1 rule=$2 ok=0
   while true; do
     if ! gpu_busy "$gpu" && { [ "$rule" != polonez ] || [ "$(busy_count)" -lt 3 ]; } \
-       && { [ "$rule" != odra ] || { ! any_cap_running && [ "$(max_temp)" -lt 78 ]; }; }; then ok=$((ok + 1)); else ok=0; fi
+       && { [ "$rule" != odra ] || { ! any_cap_running $ODRA_CARDS && [ "$(max_temp $ODRA_CARDS)" -lt 78 ]; }; }; then
+      ok=$((ok + 1)); else ok=0; fi
     if [ "$ok" -ge 3 ]; then
       ( flock 9; if ! gpu_busy "$gpu" && { [ "$rule" != polonez ] || [ "$(busy_count)" -lt 3 ]; }; then
           echo "$$ $LANE" > "$CLAIMS/gpu$gpu"; exit 0; fi; exit 1 ) 9> "$CLAIMS/.lock" && break
@@ -252,7 +260,8 @@ EOF
       echo "gpu$i cap_running=$(cap_running "$i" && echo yes || echo no) claim=$(cat "$CLAIMS/gpu$i" 2>/dev/null || echo -)" \
            "procs=$(nvidia-smi -i "$i" --query-compute-apps=pid --format=csv,noheader | wc -l) busy=$(gpu_busy "$i" && echo yes || echo no)"
     done
-    echo "busy_count=$(busy_count) max_temp=$(max_temp) lr=$(cat "$LR_FILE" 2>/dev/null || echo -)"
+    echo "busy_count=$(busy_count) max_temp=$(max_temp) max_temp_checked=$(max_temp $ODRA_CARDS)" \
+         "lr=$(cat "$LR_FILE" 2>/dev/null || echo -)"
     tail -5 "$W/events.log" 2>/dev/null ;;
   *) echo "mode: lane | preflight | pick | status"; exit 2 ;;
 esac
