@@ -41,8 +41,9 @@ ISSUES: tuple[Issue, ...] = (
           ("e33t_catalogue_n4",),
           "Since 2026-11-12 21:46 UTC (v4-draft-2026-11-12.2) a ladder reads 128k teacher-forced but does not decode "
           "the answer, so on the candidate-scored tasks the 128k point is hollow, 'not read, cost cap', and counts as "
-          "the floor: it can only be lost. The verdict does not depend on it (the catalogue read already loses "
-          "C1.edge-1k, C3.recall8-1k and C5.pchain2-1k at the training length). C5.path2-1k seed 0's 128k was decoded "
+          "the floor: it can only be lost. The verdict does not depend on it: the catalogue read already loses "
+          "C1.edge-1k and C3.recall8-1k at the training length and C5.path2-1k at 2k–16k, and at 128k the champion "
+          "is below the pass mark on the C5 tasks (path2 35 %, pchain2 9 %), so no capped C5 cell can be lost. C5.path2-1k seed 0's 128k was decoded "
           "in full (started before the cap). The first capped rung: C5.path2-1k seed 1 at 128k, written "
           "2026-11-13 01:53:49 UTC (first letter 67 %, picked not decoded).",
           "The greedy decode costs one forward per answer letter; on a slow long-context read that is 12–15 forwards "
