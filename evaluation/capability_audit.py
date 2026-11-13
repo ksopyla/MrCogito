@@ -66,6 +66,23 @@ ISSUES: tuple[Issue, ...] = (
           "A median over 3 seeds hides a 1-in-3 failure; headline claims need more seeds and the per-seed scores.",
           "Author's decision: make the no-exit loop the registered E33 variant on recipe A (and run its seeds 3–4).",
           ("v4_fix_c",)),
+    Issue("catalogue-startup", "2026-11-13", "The catalogue read either learns a task or never starts",
+          "high", "open", "caution",
+          ("C0.copy-1k", "C1.edge-1k", "C1.lookup-2k", "C3.recall8-1k", "C5.pchain2-1k"), ("e33t_catalogue_n4",),
+          "Every catalogue-read job so far either learns to 97–99 % or stays at chance for its whole budget with "
+          "nothing reaching the answer (flow 0.000), never in between. From random init 8 of 22 first stages started: "
+          "C5.path2-1k and C5.path3-1k stage 1 on all three seeds (some only after 15–19k of their 19.2k steps), "
+          "C1.edge-1k and C5.pchain2-1k on one seed of three (edge seed 1: 99 % at 1k, seeds 0 and 2 at chance); "
+          "C0.copy-1k (seeds 0–1, ended 2026-11-13 08:01 UTC), C1.lookup-2k (seeds 0–2 at 1e-4, 0–1 at 5e-5) and "
+          "C3.recall8-1k (seeds 0–2) never started. So the read can learn a content lookup from scratch, and its "
+          "losses at the training length are failures to start that depend on the seed, not a ceiling: they count as "
+          "lost under the protocol, never as 'cannot'. A plausible cause, not tested: the note scores learn only "
+          "where the read's attention already lands, and the read learns only through the answer, so evidence "
+          "outside the answer's 256-token window gives no signal until a page is opened by chance.",
+          "A read that must be found before it can be learned can fail by never starting; report how many seeds "
+          "started, not only the median, and try a longer budget or a written warm-up before a 'cannot'.",
+          "Not queued. More seeds or a longer budget on the missed tasks would settle it; a written warm-up stage would "
+          "be a protocol change for every model. C0.copy-1k seed 2 is still queued (Odra card 2)."),
     Issue("dense-lr-lookup", "2026-10-13", "Dense fails the 2k lookup only at our standard step size",
           "high", "open", "caution", ("C1.lookup-2k", "C1.lookup-16k"), ("dense", "e33t_catalogue_n4"),
           "Dense scores 24–29 % at step 1e-4 but passes at 5e-5 (the step E31's 2k runs use). 'Dense cannot do long "
