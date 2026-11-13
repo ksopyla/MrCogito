@@ -5,15 +5,17 @@ Agent A reads a document and keeps the reading layer's memory of it. Agent B get
 document, and reads A's memory at the reading layer (nn/agent_split.py). Documents and questions are RULER's needle
 tasks, built by lm-eval's own generator and scored its way (the reference string found in the reply).
 
-Per task, length and document, the same question is answered seven ways:
+Per task, length and document, the same question is answered these ways (each costs one position per token B
+processes, ~25 ms on an L40S whatever the length, so the conditions and --new set the run time):
   joint    one agent reads [document + question] and answers: the usual cached decoding, the reference
   relay    A reads, B steps through the question with its local layers still reading A's last tokens: must equal joint
   split    A reads; B has the question only and reads A's memory
-  bitsN    split, with A's memory on a grid of N bits per number (how much of the 16 bits the answer uses)
+  bitsN    warm, with A's memory on a grid of N bits per number (how much of the 16 bits the answer uses); on the
+           first --bits_docs documents of a cell
   tailN    split, but B's local layers still read A's last N tokens (how much of A's raw ending B leans on)
   warm     split, and B's own text starts with a neutral preamble of its own (WARM) before the question, so its local
            layers do not start on an empty window; nothing more of A's crosses
-  swap     split, but B reads the memory of the previous document: the answer must come from the memory
+  swap     warm, but B reads the memory of the previous document: the answer must come from the memory
   alone    B with no memory at all: the floor
 
 It also records what each way costs:
@@ -130,9 +132,10 @@ def main() -> None:
     ap.add_argument("--lengths", default="4096,16384")
     ap.add_argument("--limit", type=int, default=50, help="documents per task and length")
     ap.add_argument("--limit_long", type=int, default=0, help="documents at lengths past 16k (0 = --limit)")
-    ap.add_argument("--bits", default="8,4,2,1")
-    ap.add_argument("--tails", default="16,64", help="A's last tokens B's local layers still read (tailN conditions)")
-    ap.add_argument("--new", type=int, default=32, help="answer tokens (RULER caps at 32)")
+    ap.add_argument("--bits", default="8,4")
+    ap.add_argument("--bits_docs", type=int, default=15, help="documents per cell that also get the bitsN conditions")
+    ap.add_argument("--tails", default="16", help="A's last tokens B's local layers still read (tailN conditions)")
+    ap.add_argument("--new", type=int, default=12, help="answer tokens (a 7-digit number takes 5; UUIDs need 32)")
     ap.add_argument("--nll_docs", type=int, default=3, help="documents per cell sized in bits under the model")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--backend", default="flex")
@@ -166,7 +169,7 @@ def main() -> None:
             t_gen = time.time()
             docs = ruler_docs(task, L, n_docs, tok)
             conds = (["joint", "relay", "split"] + [f"tail{w}" for w in tails] + ["warm"]
-                     + [f"bits{b}" for b in bits] + ["warm_alone", "alone", "swap"])
+                     + [f"bits{b}" for b in bits] + ["alone", "swap"])
             score = {c: [] for c in conds}
             follows, rows, secs = [], [], {"read_A": [], "B_with_memory": [], "one_agent": []}
             sizes, same_tokens, prev = [], 0, None
@@ -218,11 +221,9 @@ def main() -> None:
                     twb = torch.cat([warm, tb])
                     dec.listen(split=True)
                     rec["warm"] = say(dec.answer(twb, a.new, eos=eos))
-                    for b in bits:  # the coarse memory, read the better of the two ways B can start
+                    for b in (bits if di < a.bits_docs else []):  # the coarse memory, B starting on its preamble
                         dec.listen(split=True, bits=b)
                         rec[f"bits{b}"] = say(dec.answer(twb, a.new, eos=eos))
-                    dec.listen(blank=True)
-                    rec["warm_alone"] = say(dec.answer(twb, a.new, eos=eos))
                     dec.listen(blank=True)
                     rec["alone"] = say(dec.answer(tb, a.new, eos=eos))
                     if prev is not None and prev[0].S >= prev[0].L0 + len(twb) + a.new:
