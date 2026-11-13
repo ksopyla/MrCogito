@@ -473,7 +473,7 @@ at 16k in E33p) show the marks are reachable at this size and data.
     `later/ruler_<L>_<task>.json`, merged `eval_ruler_later.json`). Both ran slower than estimated (about 72 min per
     task at 32k and 64k); `cat-rest` was reclaimed at 17:26 UTC with 7 of 13 32k tasks saved and relaunched in us-west-2
     at 19:03 UTC; both due about 02:30–03:00 UTC Nov 13.
-    **Result (finished 2026-11-13 02:27 UTC; files read and checked here 08:20 UTC; same files and limits for all four
+    **Result (finished 2026-11-13 02:27 UTC; files read and checked here about 08:15 UTC; same files and limits for all four
     models, 100 documents a task at 8k and 32k, the first 25 at 64k):** RULER mean of 13 tasks at 8k / 32k / 64k:
     n4 0.197 / 0.125 / 0.101; LSA port 0.241 / 0.174 / 0.151; E37a 0.187 / 0.106 / 0.088; original LSA 0.119 /
     0.040 / 0.028. n4 is second of four at every length from 4k to 64k, behind the LSA port by 0.024–0.050; its score as a
