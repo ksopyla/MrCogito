@@ -58,6 +58,13 @@ def test_collect_study_and_suite(tmp_path):
     assert row["seed"] == "1" and row["p0"] == 0.9 and row["ladders"]["ladder"]["2048"]["first_acc"] == 0.95
     assert "by_depth" not in row["ladders"]["ladder"]["2048"]
 
+    dropped = study / "len_lookup_e31_li_m1_s1_b8k"  # removed from a running queue: DONE (so it skips) + DROPPED
+    dropped.mkdir()
+    (dropped / "DONE").write_text("")
+    (dropped / "DROPPED").write_text("dropped by the author")
+    by_name = {j["name"]: j for j in collect(study, "odra")["jobs"]}
+    assert by_name[dropped.name]["status"] == "dropped" and by_name[job.name]["status"] == "done"
+
     suite = tmp_path / "suite" / "30m" / "L3.lookup-1k" / "seed0"
     suite.mkdir(parents=True)
     (suite / "job.json").write_text(json.dumps({"suite_version": "v3", "tier": "full", "size": "30m",

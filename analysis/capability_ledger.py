@@ -54,7 +54,11 @@ def _r(x, nd=5):
 
 def _status(d: Path, results: dict) -> str:
     """DONE / FAILED markers; a job without a marker counts as done once its rung JSON has results
-    (the probe writes it at the end; runs from before the markers have no marker at all)."""
+    (the probe writes it at the end; runs from before the markers have no marker at all). DROPPED (its text says
+    who dropped it, when and why) wins over DONE: a queue skips a job whose DONE exists, so a job removed from a
+    running queue carries both, and it is never a result."""
+    if (d / "DROPPED").exists():
+        return "dropped"
     if (d / "DONE").exists():
         return "done"
     if (d / "FAILED").exists():

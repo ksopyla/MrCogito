@@ -94,7 +94,8 @@ ISSUES: tuple[Issue, ...] = (
           "and that ends at chance too: 24 / 24 % first letter on seeds 0–1 after the full 7,200 steps (ended 11-13 "
           "06:08 UTC; floor stop from 8k), seed 2 at chance at step 2,900. So for the catalogue read the miss is not "
           "the step size: it fails the 2k lookup at both 1e-4 and 5e-5, where dense and E31 pass at 5e-5. Its "
-          "C1.lookup-16k stages 2–3 (8k, 16k) still run, at the end of each Odra queue, from these chance weights.",
+          "C1.lookup-16k stages 2–3 (8k, 16k) would have started from these chance weights; the author dropped them "
+          "(2026-11-13, marked on Odra 10:44 UTC), so its C1.lookup-16k stays not run.",
           "One step size for every model is fair only if it suits every model; check a second step size before a "
           "'cannot'.",
           "Write 5e-5 into C1.lookup-2k and rerun dense, E31 and E33 on it (not queued yet). The E33t catalogue "
@@ -237,12 +238,14 @@ RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch rep
     # (Odra's clock, queue logs and file times are Europe/Warsaw, one hour ahead in November; Polonez runs on UTC)
     Run("e33t_core", "odra", "2026-11-11 20:40 UTC",
         "cards 0–1 about 2026-11-14 17:00 – 11-15 00:00 UTC, card 2 about 11-16 00:00–12:00 UTC (from 11-13 04:40 UTC, "
-        "worst case, every job at its full budget: the lookup curriculum's 8k and 16k stages untimed; card 2 runs "
+        "worst case, every job at its full budget; the lookup curriculum's 8k and 16k stages, never counted here, were "
+        "dropped by the author on 11-13 (marked 10:44 UTC), so the queues end here instead of hours later; card 2 runs "
         "about 1.7 times slower under the heat guard, 4.7 against 2.8 s a step, which pauses its job at 79 °C from "
         "11-12 21:38 UTC and at 78 °C since 11-13 01:59 UTC: peaks 79 °C, paused about 40 % of the time; early "
         "stops pull it in)",
-        "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum, seeds 0–2, ladders to 128k",
-        (), 54),
+        "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum's 2k stage (its 8k and "
+        "16k stages dropped), seeds 0–2, ladders to 128k",
+        (), 48),
     Run("e33t_core", "polonez", "2026-11-11 20:40 UTC (queued behind other evals)",
         "finished 2026-11-13 08:36:27 UTC, all 21 jobs (QUEUE-END: card 2 04:34:53, card 3 07:43:38, card 1 "
         "08:36:27 UTC); pulled 08:40 UTC",

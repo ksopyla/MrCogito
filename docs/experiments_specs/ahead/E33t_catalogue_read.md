@@ -208,6 +208,11 @@ at 16k in E33p) show the marks are reachable at this size and data.
     Odra C0–C4 and the lookup curriculum (54 jobs, ~58 h on 3 cards), Polonez the C5 chains (21 jobs, ~55 h on 3 cards,
     20 min rest every 5.5 h on one clock, never a start while 3 other cards are busy). Expected about 2026-11-14.
     Dense ceilings and the champion's numbers come from the ledger (same tasks, recorded runs).
+  - *Dropped by the author, 2026-11-13:* the C1.lookup-16k curriculum's 8k and 16k stages (6 jobs, seeds 0–2). Its
+    2k stage ended at chance at both step sizes (1e-4: 27 / 29 / 27 %; 5e-5: 24 / 24 % first letter on seeds 0–1),
+    and the later stages would start from those weights. The target `C1.lookup-16k` therefore reads "not run".
+    Marked on Odra at 10:44 UTC: each folder holds a `DROPPED` note and a `DONE` marker, so the running queues skip
+    the jobs; the ledger reads them as dropped, never as results.
 - **Stage B (if S1 holds): page and note sizes.** Around the stage-A winner: 4, 8 and 16 tokens per note at
   256-token pages (64 / 32 / 16 notes), and 512-token pages with 64 notes. Four runs, about $120.
   **Approved by the author 2026-11-08 ~17:30 UTC:** the winner is `catalogue_reuse` (8 tokens per note at
