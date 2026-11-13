@@ -542,6 +542,25 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     notes_open 0.411 (−1.1, just outside). **Reading:** at 100M on 3.4B tokens our concept read and the top-k read
     use far context as well as full attention to 32k and keep a gain to 128k where full attention loses it; both pay
     ~0.02 nats on the first 512 positions that the window model and the original LSA do not.
+  - **Checks before any claim (author 2026-11-13 ~20:50 UTC, relayed by the "100M model review and next steps"
+    session: "Yes, start checks"; AWS spend before them ≈ $1,265 to mid-Nov 13 by Cost Explorer, before credits;
+    budget $2,000):**
+    1. **Fair full-attention control, `dense_rope`:** the dense arm with RoPE on the reading layer (par_global_nope
+       false, rope_theta 500k as the local layers; arch-10m 5f9cb36; commands differ from dense's only in that flag,
+       same 96.5M non-embedding parameters). Every read here, dense included, has no position code on the reading
+       layer, which is why dense spreads thin past 32k. Full m100 protocol, seed 42, 4 × L40S spot, the stage-B
+       evals; also the long-document loss at an eval-time NTK-style base on every layer (4.28e6 = 500k × 8^(64/62),
+       16k → 128k), reported as a separate row. ≈ $75.
+    2. **Second seeds** for e37a and the lsa port (seed 7: initial weights and row order; the data are the same),
+       full m100 protocol on 4 × L40S, the same evals. ≈ $105 each.
+    3. **Needles with cached decoding** (branch e37-needles = e37-long + arch-10m; `infra/aws/jobs/e37_needles_node.sh`
+       on one-L40S spot nodes): RULER at 64k on all 100 documents per task and at 128k, plus RULER 4k cached to set
+       against the stage-B old-loop 4k, for e37a, lsa, catalogue, dense, dense_rope; the original LSA at 64k and
+       128k on its own uncached path. Pairs in each run's `needles/` folder, merged into `eval_ruler_needles.json`
+       (the old-loop 64k@25 pairs stay in `later/`). The essay-haystack tasks (single-2 number, single-3 UUID) are
+       reported apart from the filler-text ones. ≈ $110.
+    Order on the one 4-GPU slot (G spot quota): the 64k stage (catalogue, then the LSA port) → dense_rope → e37a seed 7
+    → lsa seed 7; the needle nodes run beside it.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
