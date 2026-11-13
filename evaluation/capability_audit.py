@@ -71,13 +71,16 @@ ISSUES: tuple[Issue, ...] = (
           "Dense scores 24–29 % at step 1e-4 but passes at 5e-5 (the step E31's 2k runs use). 'Dense cannot do long "
           "lookup' is our setting, not dense's limit. The E33t catalogue read (2026-11-13) also stays at chance at "
           "1e-4 for the full 7,200 steps: 27 / 29 / 27 % first letter on seeds 0–2 (Odra, ended 11-13 00:32, 00:32 "
-          "and 02:22 UTC). Its C1.lookup-16k curriculum starts with the same 2k stage at 5e-5, which is the second "
-          "step size; at step 3,700 of 7,200 (11-13 03:25 UTC) it is at chance too on seeds 0–1.",
+          "and 02:22 UTC). Its C1.lookup-16k curriculum starts with the same 2k stage at 5e-5, the second step size, "
+          "and that ends at chance too: 24 / 24 % first letter on seeds 0–1 after the full 7,200 steps (ended 11-13 "
+          "06:08 UTC; floor stop from 8k), seed 2 at chance at step 2,900. So for the catalogue read the miss is not "
+          "the step size: it fails the 2k lookup at both 1e-4 and 5e-5, where dense and E31 pass at 5e-5. Its "
+          "C1.lookup-16k stages 2–3 (8k, 16k) still run, at the end of each Odra queue, from these chance weights.",
           "One step size for every model is fair only if it suits every model; check a second step size before a "
           "'cannot'.",
-          "Write 5e-5 into C1.lookup-2k and rerun dense, E31 and E33 on it (not queued yet). For the E33t catalogue "
-          "read, the 5e-5 point comes from its C1.lookup-16k stage 1 (e33t_core on Odra, about 11-13 06:00 UTC for "
-          "seeds 0–1).", ("e33t_core",)),
+          "Write 5e-5 into C1.lookup-2k and rerun dense, E31 and E33 on it (not queued yet). The E33t catalogue "
+          "read's part is settled by its C1.lookup-16k stage 1 (e33t_core on Odra): chance at 5e-5 on seeds 0–1.",
+          ("e33t_core",)),
     Issue("chain4-counting", "2026-10-13", "The in-order chain can be answered by counting hop markers",
           "medium", "open", "caution", ("C4.chain4-1k",), (),
           "The chain is the first 4 hop blocks in reading order, so a reader that counts them answers without the "
