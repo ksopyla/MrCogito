@@ -45,7 +45,10 @@ ISSUES: tuple[Issue, ...] = (
           "C1.edge-1k and C3.recall8-1k at the training length and C5.path2-1k at 2k–16k, and at 128k the champion "
           "is below the pass mark on the C5 tasks (path2 35 %, pchain2 9 %), so no capped C5 cell can be lost. C5.path2-1k seed 0's 128k was decoded "
           "in full (started before the cap). The first capped rung: C5.path2-1k seed 1 at 128k, written "
-          "2026-11-13 01:53:49 UTC (first letter 67 %, picked not decoded).",
+          "2026-11-13 01:53:49 UTC (first letter 67 %, picked not decoded). The 128k reference, C5.path2-1k seed 0's "
+          "full decode, ended 2026-11-13 05:31:28 UTC: on its 64 rows candidate 0.1828125, exact 0.015625 (1 of 64), "
+          "first_greedy 0.875, at 296 s a row decoded against 25 s read (5.3 GPU-h); raw ladder.json in the NAS "
+          "archive e33t_core.polonez.",
           "The greedy decode costs one forward per answer letter; on a slow long-context read that is 12–15 forwards "
           "per row (33 s against a 2.7 s read at 32k), about 8 GPU-h a ladder at 128k. Time a decode on a model that "
           "learned before planning a ladder budget.",
@@ -219,10 +222,10 @@ RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch rep
         "E33t catalogue read, core package part 1: C0–C4 and the C1.lookup-16k curriculum, seeds 0–2, ladders to 128k",
         (), 54),
     Run("e33t_core", "polonez", "2026-11-11 20:40 UTC (queued behind other evals)",
-        "card 2 finished 2026-11-13 04:34:53 UTC (QUEUE-END); card 1 about 11-13 11:00 (seed 0's full 128k decode "
-        "until ~08:00, then path3 stages h2 and h3), card 3 about 11-13 07:30 UTC; worst case, every remaining C5 stage "
-        "at its 19.2k-step budget: card 1 about 11-14 00:00, card 3 about 11-13 20:00 UTC (20 min rest every 5 h 50 "
-        "min; from 11-13 04:40 UTC)",
+        "card 2 finished 2026-11-13 04:34:53 UTC (QUEUE-END); card 1 about 11-13 08:30 (seed 0's full 128k decode "
+        "ended 05:31 UTC; path3 stages h2 and h3 left), card 3 about 11-13 07:30 UTC; worst case, every remaining C5 "
+        "stage at its 19.2k-step budget: card 1 about 11-13 21:30, card 3 about 11-13 20:00 UTC (20 min rest every "
+        "5 h 50 min; from 11-13 05:37 UTC)",
         "E33t catalogue read, core package part 2: the C5 curricula (pchain2, path2, path3), seeds 0–2, ladders",
         (), 21),
     Run("v4_fix_a", "polonez", "2026-10-13 08:38", "finished 2026-10-13 17:39",
