@@ -4,6 +4,7 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
 
   arms   window  — reading layer sees only its last 512 raw tokens (E31c writer built, notes switched off)
          dense   — reading layer: full causal attention over every earlier raw token (E18-style raw global read)
+         dense_rope — dense with RoPE on the reading layer (every other arm's read has no position code)
          e33     — E33: last 512 raw tokens + every note of every closed 256-token page (full note read)
          e33n    — E33n: last 512 raw tokens + the 64 best notes per query and head (top-k note read)
          notes_open / pages_open — E33p: tied note keys; each query opens the raw tokens of its 64 best notes'
@@ -73,7 +74,11 @@ _WRITER = {
 ARMS = {
     "window": {**_WRITER, **_LOOP, "message_override": "none"},
     "dense": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP},
-    "e33": {**_WRITER, **_LOOP},
+    # E37 fair full-attention control (author 2026-11-13: "Yes, start checks"): the dense arm with RoPE on the reading
+    # layer too (rope_theta 500k, as the local layers); "dense" reads without a position code (par_global_nope, as
+    # every read here), which spreads thin past twice its 16k training length
+    "dense_rope": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_nope": "false"},
+    "e33":{**_WRITER, **_LOOP},
     "e33n": {**_WRITER, **_LOOP, "lm_read_topk": 64},
     # E33p (docs/experiments_specs/ahead/E33p_note_indexed_exact_read.md): the notes as an index, per-query choice
     "notes_open": {**_WRITER, **_LOOP, "lm_note_key": "tied", "lm_open": "notes", "lm_open_k": 64, "lm_open_cap": 512},

@@ -314,6 +314,10 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     dense (S1, S2); retrieval of a single exact needle says its top-k routing is the weak part at 100M. Next
     measurement (cheap, eval only, on a saved checkpoint): the flow probe — does e37a's opened set contain the
     needle's block at 100M (it did at 30M, single needle 0.94)?
+    - **Correction (2026-11-10, stage B):** at the full budget e37a's single needle is back to 0.96 / 0.96 and its
+      RULER mean is 0.185 / 0.136, so the screen's drop was the budget for the read that picks blocks (a third of
+      the optimizer steps), not a defect of the routing; dense needed fewer steps for it. The full-budget controls
+      decide the comparison.
 - **Stage B (if S1 holds):** the full m100 protocol for e37 (a or b), lsa and dense (+ original LSA if its stack
   runs), ≈ $450.
   - **Go-ahead (author, 2026-11-09 ~20:30 UTC):** all the needed models at 100M on the full token budget (3.0B trunk +
@@ -330,6 +334,214 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
   - **Evals:** e37_evals.sh on each node (long-document loss 4k–128k, RULER 13 tasks at 4k and 16k, core). LSA's
     protocol adds RULER at 8k, 32k and 64k and held-out FineWeb-Edu loss at 4k: a separate pass on the saved
     checkpoints after training (RULER past 16k costs hours per model with uncached decoding).
+  - **No H100 at all (20:31 UTC Nov 9 → 12:30 UTC Nov 10, every 5 min, every zone):** the original LSA moved to the
+    L40S slot (its node job runs their stack on sm89 with their Triton kernels, `infra/aws/jobs/lsa_orig_node.sh`);
+    `e37-b-l40s` was terminated at 12:49 UTC right after e37a's evals (lsa had trained 5 minutes; its S3
+    checkpoints resume later). Slot order: e37a → original LSA → lsa → the parent session's catalogue arm
+    (catalogue_reuse, branch e37-catalogue, its own budget). Quota requests pending: G spot 96 (us-east-1, us-east-2,
+    us-west-2), P on demand 64 (us-west-2), 32 (us-east-2).
+  - **e37a, full budget (trunk 22:28–09:00, decay 09:00–11:06, evals 11:06–12:43 UTC Nov 9–10; 4 × L40S spot,
+    ≈ $105):** raw loss on positions ≥ 2k, 5 sources (4 at 128k): 4k 2.320, 16k **2.166**, 32k 2.254, 64k 2.250,
+    128k **1.990** (screen 2.493, 2.334, 2.442, 2.417, 2.148: −0.16 to −0.19 nats at every length); with the length
+    scale off 2.166 / 2.317 / 2.156 at 16k / 64k / 128k (the scale still carries 0.07–0.17 nats past 16k). Loss on
+    positions < 512 at 16k 2.388 (screen 2.602). RULER mean of 13 tasks **0.185 at 4k, 0.136 at 16k** (screen 0.066 /
+    0.055; screening dense 0.192 / 0.138); single needle **0.96 / 0.96** (screen 0.27 / 0.38), single-2 0.58 / 0.14,
+    multi-key-1 0.29 / 0.26, multi-value 0.12 / 0.15; variable tracking, word frequency and multi-key-2/3 stay near
+    zero. Core mean of 7 accuracy tasks 0.416 (screen 0.397): arc_challenge 0.247, arc_easy 0.422, hellaswag 0.303,
+    lambada 0.201, piqa 0.599, sciq 0.633, winogrande 0.510. Shares of the gap wait for the full-budget window and
+    dense.
+  - **Original LSA, full budget (launched 14:01:16 UTC Nov 10; node `lsa-orig-l40s` i-00da766f90443a5a1, 4 × L40S
+    spot, launched 13:02:55 UTC, 24 h cap):** their code (github.com/Prefrontal-AI/latent-sparse-attention, pinned at
+    5ebea732d639576d2a7579b0de40e6252f9001f5) in its own venv from their uv.lock (torch 2.13.0+cu129, torchtitan
+    @56a721b, flash-linear-attention 0.5.2, causal-conv1d 1.7.0 built on the node); torchtitan's Trainer through their
+    `trainer_config`, nothing in their checkout edited (`scripts/lsa_orig.py`, `infra/aws/jobs/lsa_orig_node.sh` →
+    `lsa_orig_run.sh`). **Model:** their `qwen35_0_8b_gpt2/pretrain_fineweb_lsa.yaml` (lsa_mqa8, FineWeb trunk) with
+    the Qwen3.5 body shrunk to our size: hidden 896, 12 layers (9 Gated DeltaNet + LSA at layers 3, 7, 11: their 3 : 1),
+    Gated DeltaNet 7 key / 7 value heads of 128, SwiGLU 2,240, tied GPT-2 embeddings (50,304), their GPT-2 inits;
+    attention layer exactly theirs (8 query heads over 1 KV head, d 128, no RoPE, output gate, QK-norm, `kind: lsa`,
+    `coarse: false`, `fast_read: true`, window 512, block 512, pool 4, buckets 8 / cap 16, 4 sinks, top_k 1024, max
+    over query heads); **162,632,318 parameters** (45.07M embedding, 117.56M other). **Data and budget:** our m100
+    rows (data/bin_token_dataset.py, the 32 FineWeb-Edu shards; LongDocs-lite) in our HF trainer's order
+    (`torch.randperm(N, seed 42)`, checked against `Trainer.get_train_dataloader`; the same 128 × 4k rows every step
+    on 1 or 4 GPUs: the first 30 trunk losses repeat the smoke's to 4 decimals); positions restart at every document
+    (torchtitan then resets the Gated DeltaNet there), labels across a document start ignored; trunk 5,722 steps
+    (3.0B), warmup 57, constant; decay 763 steps of 32 × 16k from the trunk's weights (fresh optimizer), warmup 22,
+    1 − sqrt over 740 to 0.1 ×; AdamW (0.9, 0.95), wd 0.1 on matrices (their scope), clip 1.0, fp32 weights under
+    bf16 autocast, peak **6.4e-4** (ours, so the LR is no difference between arms; inside their 0.55B sweep 5e-4 /
+    1e-3; their 5e-4 × 1,024 / 896 = 5.7e-4); their FSDP over the 4 GPUs, micro-batch 4 × 4k / 1 × 16k.
+    **Deviations, all forced:** their fused LSA read has no document mask, so in the packed 4k trunk the 3 LSA layers
+    read across documents (as in their own FineWeb trunk); on the L40S their LSA layer runs their Triton read
+    (gather_sparse) and, because lsa_select's tiles need 105–168 KiB of shared memory and the L40S has 99 KiB
+    (measured), their reference selection (their CUDA kernels are sm_90 only); evals in their venv with lm-eval 0.4.11
+    (ours) put ahead of their 0.4.13; rows padded with <|endoftext|> to a multiple of 512 (causal, never read back),
+    and RULER generation without left padding (their read has no padding mask). **Smoke (200 + 100 steps, 13:17–14:00
+    UTC):** trunk loss 11.01 → 4.99, decay 5.55 → 3.73, no NaN, 18.5 GiB a GPU; **75.3k tokens/s at 4k and 71.7k at
+    16k for the node** (18.8k / 17.9k a GPU); every eval ran end to end (long-document loss at 4k and 128k, val,
+    core, RULER 4k / 16k; batched generation = one by one on the real model). **Evals on the node:** our models' set
+    (`evaluation/lsa_orig_eval.py`, which runs `long_doc_loss.py`'s scoring and `run_lsa_suite.py`'s lm-eval protocol
+    on their model): long-document loss 4k–128k (8 rows a source, plus `open_off` = their LSA layers at top_k 0),
+    FineWeb-Edu val at 4k, core, RULER 13 tasks at 4k and 16k; 8k / 32k / 64k in the later pass for every model.
+    **Gate passed:** 12.6 h of training + ~1 h of evals → expected finish **≈ 03:45–04:15 UTC Nov 11** (trunk ≈
+    01:05, decay ≈ 02:40), ≈ $105 at $7.24 / h. Results: `s3://…/runs/e37/lsa_orig_m100_tok3.0e9_seed42/`
+    (eval_longdoc.json, eval_val.json, eval_core.json, eval_ruler.json; checkpoints every 500 / 200 steps, a relaunch
+    resumes). No H100 came free (20:44 UTC Nov 9 → 12:30 UTC Nov 10, every 5 min).
+  - **Original LSA, result (trunk 14:01–01:00, decay 01:00–02:32, evals 02:32–03:17 UTC Nov 10–11; node gone 03:18,
+    ≈ 14.3 h ≈ $107; job exit 0):** same size (162.6M), data, token budget and node evals as full e37a. Raw loss on
+    positions ≥ 2k, 5 sources (4 at 128k): 4k 2.284, 16k **2.135**, 32k 2.215, 64k 2.201, 128k **1.925** — 0.03–0.07
+    nats below e37a at every length (2.320 / 2.166 / 2.254 / 2.250 / 1.990); positions < 512 at 16k 2.369 (e37a 2.388).
+    Their read off (`open_off`, LSA layers at top_k 0, Gated DeltaNet unchanged): 2.432 / 2.334 / 2.386 / 2.079 at
+    4k / 16k / 64k / 128k, so the sparse read carries 0.15–0.20 nats. RULER mean of 13 tasks **0.139 at 4k, 0.082 at
+    16k** (e37a 0.185 / 0.136); single needle (repeated-sentence haystack) **0.10 / 0.04** (e37a 0.96 / 0.96), but
+    single-2 (essay haystack, number) 0.63 / 0.46 (e37a 0.58 / 0.14) and single-3 0.19 / 0.06 (e37a 0.13 / 0.03);
+    multi-key-1 0.30 / 0.27, multi-value 0.16 / 0.04, common words 0.14 / 0.02, the rest near zero as for e37a. Core
+    mean 0.420 (e37a 0.416, a tie): arc_challenge 0.240, arc_easy 0.415, hellaswag 0.309, lambada 0.202, piqa 0.590,
+    sciq 0.665, winogrande 0.522. FineWeb-Edu val at 4k 3.162 after the decay (3.093 after the trunk: the long-document
+    decay costs 0.07 nats on short web text). **Reading:** the original LSA predicts long text a little better, e37a
+    retrieves a planted fact far better; their single-needle collapse on the repeated-sentence haystack (while the
+    essay haystack works) is unexplained — the eval saved no generations, so the next check is a few RULER samples.
+    Their body is 9 Gated DeltaNet (recurrent) + 3 LSA layers against our local-attention layers around one looped
+    reading layer, so the loss gap is not the read alone; the lsa arm (their read in our body) separates the two.
+  - **lsa (our port: LSA's top-k read in our body), full budget (trunk 03:40–13:05, decay 13:06–14:46, evals
+    14:47–15:52 UTC Nov 11; node `e37-b-l40s-lsa` i-0e44d4a99d1d8f0ae, 4 × L40S spot, self-shutdown 15:54, ≈ 12.3 h ≈
+    $90; job exit 0):** training loss at the end of the trunk 3.095 (e37a 3.092; trunk eval 3.121), of the decay 2.333
+    (e37a 2.330; decay eval 2.255 vs 2.253). Raw loss on positions ≥ 2k, 5 sources (4 at 128k): 4k 2.322, 16k
+    **2.169**, 32k 2.254, 64k 2.245, 128k **1.994** — a tie with e37a (2.320 / 2.166 / 2.254 / 2.250 / 1.990, within
+    0.005 everywhere), and 0.03–0.07 nats above the original LSA (2.284 / 2.135 / 2.215 / 2.201 / 1.925); positions
+    < 512 at 16k 2.384 (e37a 2.388). Its read off (`open_off`): 2.505 / 2.389 / 2.492 / 2.435 / 2.126, so the top-k
+    read carries 0.13–0.24 nats (the original's 0.15–0.22). RULER mean of 13 tasks **0.255 at 4k, 0.209 at 16k** — the
+    best of the three (e37a 0.185 / 0.136, original LSA 0.139 / 0.082; screen lsa 0.104 / 0.092). Single needle
+    0.96 / 0.95 (e37a 0.96 / 0.96, original 0.10 / 0.04); the gain is on the essay haystacks: single-2 (number)
+    **0.88 / 0.84** (e37a 0.58 / 0.14, original 0.63 / 0.46), single-3 (UUID) **0.55 / 0.27** (e37a 0.13 / 0.03,
+    original 0.19 / 0.06), and word frequency 0.27 / 0.09 (e37a 0.01 / 0.06); multi-key-1 0.26 / 0.27, multi-value
+    0.12 / 0.14, multi-query 0.05 / 0.04, QA 0.10 / 0.09 (HotpotQA) and 0.03 / 0.01 (SQuAD), common words 0.06 / 0.01,
+    variable tracking and multi-key-2/3 near zero as for the others. Core mean 0.416 (e37a 0.416, original 0.420, a
+    tie): arc_challenge 0.266, arc_easy 0.413, hellaswag 0.305, lambada 0.212, piqa 0.600, sciq 0.596, winogrande
+    0.522. No notebook in this arm (`has_notebook: false`), so no notes-off file. W&B: trunk and decay runs synced
+    from the node's offline logs (15:57 UTC). **Reading:** with the body held fixed, LSA's exact top-k read and our
+    notebook predict long text equally well, so the original LSA's 0.03–0.07-nat edge comes from its Gated DeltaNet
+    body, not its read. On retrieval the top-k read is clearly ahead of the notebook: the same single-needle score and
+    far better on the essay haystack with numbers and UUIDs at 16k (0.84 vs 0.14; 0.27 vs 0.03), i.e. the exact read
+    finds facts the notebook's summaries blur. And the original LSA's single-needle collapse is not the read itself
+    (0.96 in our body): its body or its code path. Next: the notebook plus an exact top-k read (the notes_open arm
+    asks a nearby question), and dense / window at the full budget for the shares of the gap.
+  - **LSA protocol, later pass at home (author's go-ahead 19:50 UTC Nov 11): RULER at 8k and the validation loss.**
+    Checkpoints fetched from S3 onto the servers by one-hour presigned URLs (sizes checked); the original LSA in its
+    own venv on Odra (their pinned repo and uv.lock, torch 2.13 cu129; causal-conv1d left out, no CUDA toolkit there;
+    lsa_select's reference selection, as on the L40S). RULER 8k, 13 tasks × 100 documents, one lm-eval call per task
+    (`infra/aws/jobs/e37_ruler_later.sh`): e37a Polonez GPUs 0–1 19:55–21:03, lsa Polonez GPUs 2–3 then 2 alone
+    (Polonez's 3-card cap) 20:02–21:20, original LSA Odra GPUs 0 + 2 20:15–20:59 UTC; 3090 time a task ≈ 575 s
+    (e37a), 380 s (lsa), ~200 s a GPU (original). **RULER mean 4k / 8k / 16k: lsa 0.255 / 0.241 / 0.209, e37a 0.185 /
+    0.187 / 0.136, original LSA 0.139 / 0.119 / 0.082** — the order holds at every length. At 8k: single needle 0.96 /
+    0.95 / 0.09 (lsa / e37a / original); single-2 0.92 / 0.60 / 0.68; single-3 0.53 / 0.24 / 0.10; multi-key-1 0.22
+    for all three; multi-value 0.17 / 0.15 / 0.12; word frequency 0.12 / 0.02 / 0.00; the rest near zero. e37a's
+    essay-number needle holds to 8k (0.58 → 0.60) and falls by 16k (0.14), while the top-k read keeps it (0.88 →
+    0.92 → 0.84): the notebook's summaries lose a planted number between 8k and 16k. **Validation loss**
+    (`evaluation/val_loss.py` for ours, `lsa_orig_eval.py val` for the original; the m100 trainer's eval rows,
+    1,047,441 FineWeb-Edu tokens at 4k and 1,310,640 LongDocs-lite tokens at 16k, the same rows for all three):
+    FineWeb-Edu at 4k after the trunk **3.093 original / 3.105 e37a / 3.111 lsa**, after the decay 3.162 / 3.187 /
+    3.193; LongDocs-lite at 16k after the decay 2.193 / 2.228 / 2.232 — the original LSA 0.01–0.04 nats lower
+    everywhere, our two within 0.006 of each other (the body, not the read, as in the long-document loss). The
+    trainer's own last evals came before the end of each phase (trunk at step 5,500 of 5,722: lsa 3.121; decay at
+    600 of 763: 2.255), so they sit above these final-weight numbers. Results in S3 next to each run's node evals
+    (`eval_ruler_later.json`, `later/`, `eval_val.json`). RULER 32k / 64k not run: the home cards belong to the E33t
+    capability checks until ≈ Nov 14; on AWS (one-L40S spot nodes) ≈ 15 GPU-h for 32k and ≈ 30 for 64k, waiting for
+    the author.
+  - **notes_open (E33p: the closed notebook with tied note keys and an exact top-64 open read), full budget (trunk
+    06:39–16:58, decay 16:58–19:18, evals 19:18–21:43 UTC Nov 12; node `e37-b-l40s-notes-open` i-0146e9d2c4732ba1a,
+    4 × L40S spot, us-east-1, self-shutdown 21:45, ≈ 15.1 h ≈ $110; job exit 0; W&B online, both runs finished):** the
+    trunk is a tie with e37a (trainer eval 3.119 / 3.119 at step 5,500, training loss 3.092 / 3.092), the decay is
+    not (trainer eval at step 600 2.348 vs 2.253). Raw loss on positions ≥ 2k, 5 sources (4 at 128k): 4k 2.379, 16k
+    **2.282**, 32k 2.393, 64k 2.367, 128k **2.104** — 0.06–0.14 nats above e37a (2.320 / 2.166 / 2.254 / 2.250 /
+    1.990) and the lsa port; the full budget gained 0.13–0.15 nats over its screen (2.532 / 2.411 / 2.544 / 2.503 /
+    2.237), as the other arms did, so the gap to e37a is the read, not the budget. Its notebook carries 0.10–0.12 nats
+    to 32k (notes off 2.497 / 2.388 / 2.488), 0.065 at 64k and 0.016 at 128k; the open read alone 0.07–0.10 (open
+    off 2.476 / 2.364 / 2.466 / 2.434 / 2.179), the gist 0.015–0.04. Positions < 512 at 16k 2.370 (e37a 2.388, the
+    lowest of all: no harm near the front). RULER mean of 13 tasks **0.066 at 4k, 0.018 at 16k** — below its own
+    screen (0.116 / 0.072) and far below e37a (0.185 / 0.136) and lsa (0.255 / 0.209); single needle 0.18 / 0.04
+    (screen 0.64 / 0.63), single-2 0.17 / 0.01, multi-key-1 0.10 / 0.01, the rest near the floor. Core mean 0.411
+    (e37a 0.416, a tie): arc_challenge 0.252, arc_easy 0.420, hellaswag 0.304, lambada 0.193, piqa 0.598, sciq 0.611,
+    winogrande 0.502. **Reading:** the closed notebook with 64 opened notes uses 16k of text worse than the concept
+    read or the top-k read, and with three times the tokens it retrieves less, not more; it is not in the later pass,
+    and the E33-family read stays behind e37a at 100M.
+  - **LSA protocol, later pass on AWS (author 2026-11-12: "Yes, 32k and 64k"): RULER at 32k and 64k** for e37a, lsa
+    and the original LSA; for the parent session's catalogue model (catalogue_reuse_n4, branch e37-catalogue-later)
+    also RULER 8k and the validation loss. Six one-L40S nodes (g6e.xlarge spot first; g6e.2xlarge spot and g6e.xlarge
+    on demand in us-east-2 as fallbacks), `infra/aws/jobs/e37_ruler_later_node.sh`: one lm-eval call per (length,
+    task), pair files to S3 every 10 min, a relaunch skips finished pairs, a DONE marker per node; 06:16 UTC Nov 12 →
+    02:27 UTC Nov 13 (e37a 32k done 20:37, e37a 64k 22:50, catalogue 64k 22:37, lsa 01:31, original 14:17,
+    catalogue val + 8k + 32k 02:27). Uncached decoding at 64k, measured per document: e37a 140 s, lsa 88 s,
+    catalogue 175 s, original 24.6 s, so **64k uses the first 25 documents of each task** (all 100 × 13 would be
+    30–60 h a model; ± 0.1 on a task near 0.5), 8k and 32k all 100 (`limit_per_length` in each merged file). Three
+    spot interruptions (original 13:42, e37a 64k and catalogue 17:26 UTC), relaunched 13:54, 18:36 (g6e.2xlarge) and
+    19:03 (us-west-2), only the pair in work lost; ≈ 90 node-hours ≈ $120–150. **RULER mean of 13 tasks, 4k / 8k /
+    16k / 32k / 64k: lsa 0.255 / 0.241 / 0.209 / 0.174 / 0.151, catalogue 0.231 / 0.197 / 0.183 / 0.125 / 0.101,
+    e37a 0.185 / 0.187 / 0.136 / 0.106 / 0.088, original LSA 0.139 / 0.119 / 0.082 / 0.040 / 0.028** — the same order
+    at every length. Single needle at 32k / 64k: e37a 0.96 / 0.92, lsa 0.96 / 0.96, catalogue 0.98 / 0.96, original
+    0.03 / 0.04. Essay haystack, number (single-2): lsa **0.55 / 0.28**, original 0.11 / 0.04, catalogue 0.08 / 0.04,
+    e37a 0.06 / 0.00; UUID (single-3): lsa 0.20 / 0.04, catalogue 0.07 / 0.00, original 0.04 / 0.00, e37a 0.01 /
+    0.00. Multi-key-1: lsa 0.31 / 0.20, catalogue 0.19 / 0.12, original 0.16 / 0.08, e37a 0.14 / 0.04; multi-value:
+    catalogue 0.15 / 0.06, lsa 0.14 / 0.15, e37a 0.09 / 0.02, original 0.01 / 0.00; HotpotQA at 64k 0.16–0.20 for all
+    but the catalogue (0.08); the rest near zero. Catalogue at 8k: single needle 0.98, single-2 0.53, single-3 0.32,
+    multi-query 0.18, multi-value 0.18. **Catalogue validation loss:** FineWeb-Edu at 4k after the trunk 3.112,
+    after the decay 3.200; LongDocs-lite at 16k after the decay 2.250 (e37a 3.105 / 3.187 / 2.228, lsa 3.111 / 3.193 /
+    2.232, original 3.093 / 3.162 / 2.193). **Reading:** past 16k every read loses the essay needles first; LSA's
+    exact top-k read keeps the most (the number needle 0.55 at 32k against ≤ 0.11 for the others), the planted
+    sentence holds near 0.96 to 64k for all three of our reads and never for the original LSA (its body or code
+    path, not the read). The catalogue read sits between lsa and e37a on retrieval at every length and 0.02 nats
+    above e37a on long-text loss (positions ≥ 2k 0.02–0.07, LongDocs val 0.022).
+  - **dense (ceiling: the reading layer attends to every earlier token, no position code), full budget (trunk
+    22:14–06:22, decay 06:23–07:39, evals 07:39–08:03 UTC Nov 12–13; node `e37-b-l40s-dense` i-092a42761dc19cc7c,
+    4 × L40S spot, us-east-1d, launched 22:12 by the queue when the notes_open node freed the G-spot slot,
+    self-shutdown 08:04, ≈ 9.9 h ≈ $72; job exit 0; W&B online, both runs finished):** trainer evals a tie with e37a
+    (trunk 3.119 / 3.119, decay at step 600 2.252 / 2.253). Raw loss on positions ≥ 2k, 5 sources (4 at 128k): 4k
+    2.319, 16k **2.163**, 32k 2.256, 64k 2.332, 128k **2.194** (e37a 2.320 / 2.166 / 2.254 / 2.250 / 1.990, lsa 2.322
+    / 2.169 / 2.254 / 2.245 / 1.994): a tie to 32k (twice its 16k training length), then worse (+0.08 at 64k, +0.20
+    at 128k) — full attention without positions spreads thin where the block reads stay put. Positions < 512
+    at 16k 2.394 (e37a 2.388). RULER mean of 13 tasks **0.210 at 4k, 0.175 at 16k** — between e37a (0.185 / 0.136)
+    and the catalogue / lsa (0.231 / 0.183, 0.255 / 0.209); single needle 0.77 / 0.71 (e37a 0.96 / 0.96), single-2
+    0.88 / 0.61, single-3 0.09 / 0.14, multi-key-1 0.26 / 0.35, multi-query 0.12 / 0.17, multi-value 0.18 / 0.19,
+    common words 0.17 / 0.03, word frequency 0.12 / 0.02. Core mean 0.422 (e37a 0.416, original 0.420, a tie):
+    arc_challenge 0.259, arc_easy 0.416, hellaswag 0.304, lambada 0.197, piqa 0.596, sciq 0.655, winogrande 0.528.
+    **Reading:** at the full budget the notebook (e37a) and the top-k read (lsa) reach the dense ceiling on long-text
+    loss to 32k and beat it past 32k; on retrieval the top-k read and the catalogue beat it at 4k and 16k, and e37a is
+    below it on the mean but above it on the planted sentence. The shares of the gap wait for the full-budget window
+    (queued on the next free L40S slot).
+  - **window (floor: the reading layer sees only its block-aligned 512-token window, no long-range read), full
+    budget (trunk 08:34–17:11, decay 17:12–18:29, evals 18:29–18:56 UTC Nov 13; node `e37-b-l40s-window`
+    i-09c4804bef64d838d, 4 × L40S spot, us-east-1, launched 08:31, self-shutdown 19:00, ≈ 10.5 h ≈ $77; job exit 0):**
+    raw loss on positions ≥ 2k, 5 sources (4 at 128k): 4k 2.461, 16k **2.351**, 32k 2.449, 64k 2.397, 128k 2.086.
+    **The full-budget window → dense gap: 0.142 / 0.187 / 0.193 nats at 4k / 16k / 32k** (screen 0.144 / 0.191 /
+    0.205: the budget lowered both ends by about the same 0.17–0.20, so the long-range value of the context did not grow).
+    Positions < 512 at 16k 2.367, the lowest with the original LSA (2.369) and notes_open (2.370). RULER mean of 13
+    tasks 0.047 at 4k, 0.011 at 16k (single needle 0.13 / 0.04: the floor; only what falls in the last 512 tokens).
+    Core mean 0.421 (dense 0.422): arc_challenge 0.255, arc_easy 0.420, hellaswag 0.304, lambada 0.212, piqa 0.614,
+    sciq 0.615, winogrande 0.530.
+  - **Shares of the full-budget window → dense gap (positions ≥ 2k, the 5 sources every arm has; script
+    `full_gap.py` in the session scratchpad, the same pairing as the screen's):**
+
+    | arm | 4k | 16k | 32k | gain over window at 64k / 128k (nats) |
+    |---|---|---|---|---|
+    | e37a (concept read) | 99 % | **99 %** | 101 % | 0.147 / 0.096 |
+    | lsa (LSA's top-k read, our port) | 98 % | 97 % | 101 % | 0.153 / 0.092 |
+    | catalogue_reuse_n4 | 84 % | 86 % | 90 % | 0.127 / 0.027 |
+    | notes_open (E33p) | 58 % | 37 % | 29 % | 0.030 / −0.018 |
+    | original LSA (their body) | 125 % | 115 % | 121 % | 0.197 / 0.161 |
+    | dense | 100 % | 100 % | 100 % | 0.065 / −0.108 |
+
+    Past 32k dense is no ceiling (it trained at 16k without a position code and falls below the window model at
+    128k), so 64k and 128k are given as the gain over the window model. The original LSA passes 100 % because its
+    Gated DeltaNet body is better everywhere (validation loss 0.01–0.04 nats lower; trunk FineWeb-Edu 3.093 vs 3.105),
+    not only on far context.
+  - **Criteria at the full budget:** **S1 met** — e37a 99 % of the gap at 16k (≥ 90 %), with lsa 97 %; the
+    catalogue model 86 % (below S1's bar), notes_open 37 % (inside K1's < 60 % zone for an E33-family read). **S2:**
+    as a share, undefined past 32k (no ceiling); in nats e37a's gain over the window model is 0.185 / 0.195 / 0.147 /
+    0.096 at 16k / 32k / 64k / 128k — it holds to 32k and shrinks past it (the lsa port the same: 0.181 / 0.195 /
+    0.153 / 0.092), while dense loses all of it by 128k. **S4 missed on the short positions, met on core:**
+    positions < 512 at 16k e37a 2.388 vs window 2.367 (+0.021; lsa +0.017, dense +0.027, catalogue +0.033, notes_open
+    +0.003, original +0.002); core mean e37a 0.416 vs dense 0.422 (−0.6 points, within 1), lsa and catalogue 0.416,
+    notes_open 0.411 (−1.1, just outside). **Reading:** at 100M on 3.4B tokens our concept read and the top-k read
+    use far context as well as full attention to 32k and keep a gain to 128k where full attention loses it; both pay
+    ~0.02 nats on the first 512 positions that the window model and the original LSA do not.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).

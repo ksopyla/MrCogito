@@ -49,8 +49,11 @@ EVAL_MAX = 131072
 
 
 def _load(name: str, path: Path):
+    if name in sys.modules:
+        return sys.modules[name]
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod   # @dataclass under `from __future__ import annotations` looks its module up here
     spec.loader.exec_module(mod)
     return mod
 
@@ -78,6 +81,7 @@ def load_backbone(checkpoint: str, work: Path):
     exp, _ = LO.experiment("decay", work, extra=[f"data.seq_len={EVAL_MAX}", f"run.optim.tokens_per_rank={EVAL_MAX}"])
     from lsa.training.native.benchmark.run import load_backbone as their_load_backbone
 
+    print(f"[lsa_orig_eval] kernels: {LO.fit_kernels()}", flush=True)
     bb = their_load_backbone(exp, checkpoint)
     from lsa.training.native.layers import MultiresInnerAttention
 
