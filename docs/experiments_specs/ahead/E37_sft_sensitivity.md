@@ -170,4 +170,33 @@ About 120 card-hours. With the 2026-11-13 times: the four Polonez arms done ~Nov
 
 ## Result
 
-*(not run yet)*
+**Interim, 2026-11-13 20:15 UTC (two of five arms partly scored; not a verdict).**
+
+- **LR pick (Polonez card 0, 06:39–09:47 UTC):** held-out answer loss of the LSA port after 20M tokens: 5e-5 1.908,
+  1.5e-4 1.806, **4.5e-4 1.714** (base 2.215). Picked 4.5e-4; copied to Odra 09:47. **K1 not hit** (best move 0.50,
+  bar 0.02).
+- **Tuning (200M tokens, 763 steps, ~6 h a model with the burst rests):** LSA port 10:56–16:10, notes-open
+  10:41–17:10, concept memory 10:43–17:19 UTC (all on Polonez); held-out eval loss fell smoothly, no NaN.
+- **Scores so far** (base → tuned; loss lower is better, accuracy higher is better):
+
+| test | LSA port | notes-open |
+|---|---|---|
+| held-out answer loss (smol-smoltalk test, 16k rows) | 2.215 → 1.389 | 2.237 → 1.386 |
+| FineWeb-Edu val loss at 4k | 3.193 → 3.296 | 3.195 → 3.293 |
+| LongDocs-lite val loss at 16k | 2.232 → 2.331 | 2.323 → 2.432 |
+| BLiMP | 78.8 → 78.4 % | 77.9 → 78.3 % |
+| SWDE (contains) | 32.9 → 41.2 % | 27.0 → 35.0 % |
+| BABILong 1–3, mean of 2k–16k | 5.3 → 3.8 % | 2.6 → (16k pending; 2k–8k at the floor as before) |
+| core, mean of 7 (acc_norm where defined) | 41.6 (AWS) → 42.6 | (pending) |
+
+  Concept memory and catalogue n4 base: held-out answer loss 2.222 / 2.243, BLiMP 79.2 / 77.8 %, SWDE 37.6 / 29.6 %,
+  BABILong mean 5.7 / 2.8 %.
+- **Reading so far:** the stage teaches the format (answer loss −0.83 nats), adds 8 points on SWDE for both arms
+  (same size: no architecture difference yet), gives nothing on BABILong (at the floor before and after), keeps
+  BLiMP and core, and costs ~0.10 nats of plain-text prediction at 4k and 16k (3× the 0.03 no-harm bar; the
+  official long-document test runs last). RULER 4k / 16k pending (S1, S2).
+- **Polonez card 2 fault (2026-11-13 17:39:31 UTC):** Xid 62 (internal micro-controller halt) the second concept
+  memory's first tuned test started, after its 20 min rest; the card reports power "Unknown Error" and clocks "System
+  is not in ready state"; any CUDA copy to it spins, and the stuck processes survive SIGKILL. Needs a reboot. The
+  tuned concept-memory checkpoint is saved and intact (final at 17:19). Catalogue n4 waits: the faulted card still
+  counts as busy (it sits in P2 at 55 °C), so Polonez stays at three cards.
