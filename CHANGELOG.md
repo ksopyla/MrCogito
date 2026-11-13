@@ -15,6 +15,22 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-13] - Cached decoding covers E37's concept read and E33p's notes read
+
+- Branch `kv-cache` merges `e37-catalogue-later` (the E37 concept read from `arch-10m`, the catalogue model, the later-pass
+  files), so one branch carries every 100M reading layer.
+- `nn/incremental.py`: E37's concept read (`decode_kind` → "concept"): concepts and the reasoner's updates rebuilt from
+  the cache when the answer crosses a block end; one query's choice (`choose`, the table row of t) and one fp32
+  softmax over sinks ‖ block-aligned window ‖ opened members ‖ summaries with their bias and the length scale.
+- `nn/incremental.py`: E33p's notes read (notes_open, "notes"): the pages holding the newest position are rewritten
+  every step (the writer on that page alone, tied keys redone per pass); the previous position is redone first,
+  since the page it read closes one position later once the next token is written. Answers up to raw window − page
+  (256 tokens for notes_open), as for the catalogue.
+- `nn/incremental.py`: a catalogue scored by a softmax over the visible notes is refused (the cached notebook lacks the
+  pages holding answer tokens; the cosine score used by every E33t arm does not depend on them).
+- Tests: concept arms (plain, reasoner, length scale) and the notes arm in `tests/test_incremental_decode.py`; the
+  step test's row is long enough for the answer's block to have concepts.
+
 ## [2026-11-12] - Cached greedy decoding for the Perceiver AR family
 
 - `nn/incremental.py` (new): `IncrementalDecoder` reads the row once (the model's own forward over the fixed-length

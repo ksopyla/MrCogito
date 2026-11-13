@@ -170,7 +170,8 @@ class PerceiverARLMEval(HFLM):
         row, as in training.
 
         Cached (2026-11-12, nn/incremental.py): the same row is read once and each step runs only the new position,
-        with the same tokens; models the cache does not cover yet (and `PERCEIVER_AR_GEN_CACHE=0`) keep the loop
+        with the same tokens; full attention, LSA's read, the catalogue read and (2026-11-13) E37's concept read and
+        E33p's notes read. Models the cache does not cover yet (and `PERCEIVER_AR_GEN_CACHE=0`) keep the loop
         below."""
         ids = context
         attn = generation_kwargs.get("attention_mask")

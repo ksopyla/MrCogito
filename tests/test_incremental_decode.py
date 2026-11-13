@@ -3,7 +3,8 @@
 The cached decoding must write the tokens of the uncached harness loop
 (`evaluation/lm_eval_perceiver_ar.PerceiverARLMEval._model_generate`, one forward over the fixed-length row per token),
 and each step's hidden state must equal that forward's at the same position: full attention, LSA's read (answers that
-cross a block end, so the buckets are rebuilt) and the catalogue read (E33t, reuse arm), with a left-padded row.
+cross a block end, so the buckets are rebuilt), the catalogue read (E33t, reuse arm), E33p's notes read (pages rewritten
+as the answer grows) and E37's concept read (with the reasoner and the length scale), with a left-padded row.
 """
 from __future__ import annotations
 
@@ -13,15 +14,20 @@ import pytest
 import torch
 
 from nn.incremental import IncrementalDecoder, decode_kind
+from nn.perceiver_ar_lm import PerceiverARLM
 from tests.test_catalogue_read import CAT
 from tests.test_catalogue_read import make as make_cat
+from tests.test_concept_memory import CONCEPT
+from tests.test_latent_memory import cfg as lm_base_cfg
 from tests.test_lsa_read import DENSE, LSA
 from tests.test_lsa_read import make as make_lsa
-from tests.test_note_open import NOTES, row
+from tests.test_note_open import NOTES, PAGES, row
 from tests.test_note_open import make as make_notes
 
 CAT_REUSE = dict(CAT, lm_open_new_per_pass=False)
 DEEP = dict(pre_layers=2, stack_layers=3)
+REASONER = dict(concept_reasoner_layers=1, concept_reasoner_dim=16, concept_reasoner_heads=2)
+ARMS = ["dense", "lsa", "catalogue", "notes", "concept", "concept_reasoner", "concept_scaled"]
 
 
 class _Tok:
@@ -40,6 +46,23 @@ def _model(arm, deep=False):
         return make_lsa(**LSA, **extra)
     if arm == "catalogue":
         return make_cat(seed=2, **CAT_REUSE, **extra)
+    if arm == "notes":  # E33p notes read: pages of 16 every 12 tokens, raw window 32; the answer rewrites its pages
+        return make_notes(seed=4, **NOTES, **extra)
+    if arm.startswith("concept"):  # E37, blocks of 16: a 150-token prompt and 12 answer tokens cross 160
+        kw = dict(CONCEPT, **extra)
+        if arm == "concept_reasoner":
+            kw.update(REASONER)
+        if arm == "concept_scaled":  # the length scale acts past 48 tokens
+            kw.update(concept_sum_len=48)
+        torch.manual_seed(3)
+        m = PerceiverARLM(lm_base_cfg(**kw)).eval()
+        for layer in m.layers:
+            layer.attn.wo.weight.data.normal_(0, 0.2)
+            layer.mlp.down.weight.data.normal_(0, 0.2)
+        rs = m.layers[m.config.global_layer_index].attn.concept_reasoner
+        if rs is not None:
+            rs.out.weight.data.normal_(0, 0.2)
+        return m
     raise ValueError(arm)
 
 
@@ -61,13 +84,13 @@ def _generate(m, ids, attn, new, monkeypatch, cached, pad=16):
     return PerceiverARLMEval._model_generate(fake, ids.clone(), ids.shape[1] + new, stop=None, attention_mask=attn)
 
 
-@pytest.mark.parametrize("arm", ["dense", "lsa", "catalogue"])
+@pytest.mark.parametrize("arm", ARMS)
 def test_kinds(arm):
-    assert decode_kind(_model(arm)) == arm
+    assert decode_kind(_model(arm)) == arm.split("_")[0]
 
 
 @pytest.mark.parametrize("deep", [False, True], ids=["small", "deep"])
-@pytest.mark.parametrize("arm", ["dense", "lsa", "catalogue"])
+@pytest.mark.parametrize("arm", ARMS)
 @pytest.mark.parametrize("pad", [16, 256])
 def test_cached_decoding_writes_the_uncached_tokens(arm, deep, pad, monkeypatch):
     m = _model(arm, deep)
@@ -88,12 +111,13 @@ def test_cached_decoding_writes_the_uncached_tokens(arm, deep, pad, monkeypatch)
     assert torch.equal(got, want)
 
 
-@pytest.mark.parametrize("arm", ["dense", "lsa", "catalogue"])
+@pytest.mark.parametrize("arm", ARMS)
 def test_each_step_equals_the_full_forward(arm):
     """Hidden states of the cached steps vs the uncached forward over the same row at the same position, fp32. The
-    LSA prompt ends 10 tokens before a block end (block 32), so the steps cross it and the buckets are rebuilt."""
+    LSA prompt ends 10 tokens before a block end (block 32), so the steps cross it and the buckets are rebuilt; the
+    concept prompt crosses a block end of 16 (the concepts and the reasoner's updates are rebuilt)."""
     m = _model(arm)
-    L0, new, Lb = 150, 12, 176
+    L0, new, Lb = 150, 12, 208  # long enough that the block holding the answer has concepts (E37: (Lb − 1) // 16 − 1 blocks)
     ids, attn = _prompt(L0)
     buf = torch.zeros(2, Lb, dtype=torch.long)
     buf[:, :L0] = ids
@@ -112,10 +136,11 @@ def test_each_step_equals_the_full_forward(arm):
             h = dec.step(answer[:, i])
 
 
-def test_catalogue_refuses_answers_past_the_exact_horizon(monkeypatch):
-    """The prefill's notes are exact while the answer is shorter than raw_window − lm_window (16 here); a longer
-    request falls back to the uncached loop, which still decodes."""
-    m = _model("catalogue")
+@pytest.mark.parametrize("arm", ["catalogue", "notes"])
+def test_note_reads_refuse_answers_past_the_exact_horizon(arm, monkeypatch):
+    """A page holding answer tokens has no member old enough to open while the answer is shorter than raw_window −
+    lm_window (16 for both test models); a longer request falls back to the uncached loop, which still decodes."""
+    m = _model(arm)
     assert IncrementalDecoder(m).max_new_tokens() == int(m.config.message_raw_window) - int(m.config.lm_window)
     ids, attn = _prompt()
     with pytest.raises(NotImplementedError):
@@ -126,9 +151,11 @@ def test_catalogue_refuses_answers_past_the_exact_horizon(monkeypatch):
     assert torch.equal(got, want)
 
 
-def test_unsupported_reads_fall_back(monkeypatch):
-    """E33p's notes read (gist) is not cached yet: the decoder refuses it and the harness keeps the uncached loop."""
-    m = make_notes(**NOTES)
+@pytest.mark.parametrize("which", ["pages", "catalogue_softmax"])
+def test_unsupported_reads_fall_back(which, monkeypatch):
+    """Not cached: E33p's page-level opening, and a catalogue scored by a softmax over the visible notes (the pages
+    holding answer tokens would count). The decoder refuses them and the harness keeps the uncached loop."""
+    m = make_notes(**PAGES) if which == "pages" else make_cat(seed=2, **dict(CAT_REUSE, lm_open_score="sum_softmax"))
     with pytest.raises(NotImplementedError):
         IncrementalDecoder(m)
     ids, attn = _prompt()
