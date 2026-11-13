@@ -91,8 +91,8 @@ ISSUES: tuple[Issue, ...] = (
           "lookup' is our setting, not dense's limit. The E33t catalogue read (2026-11-13) also stays at chance at "
           "1e-4 for the full 7,200 steps: 27 / 29 / 27 % first letter on seeds 0–2 (Odra, ended 11-13 00:32, 00:32 "
           "and 02:22 UTC). Its C1.lookup-16k curriculum starts with the same 2k stage at 5e-5, the second step size, "
-          "and that ends at chance too: 24 / 24 % first letter on seeds 0–1 after the full 7,200 steps (ended 11-13 "
-          "06:08 UTC; floor stop from 8k), seed 2 at chance at step 2,900. So for the catalogue read the miss is not "
+          "and that ends at chance too: 22.7 / 28.5 / 21.9 % first letter on seeds 0–2 after the full 7,200 steps "
+          "(ended 11-13 06:08, 06:08 and 11:40 UTC). So for the catalogue read the miss is not "
           "the step size: it fails the 2k lookup at both 1e-4 and 5e-5, where dense and E31 pass at 5e-5. Its "
           "C1.lookup-16k stages 2–3 (8k, 16k) would have started from these chance weights; the author dropped them "
           "(2026-11-13, marked on Odra 10:44 UTC), so its C1.lookup-16k stays not run.",

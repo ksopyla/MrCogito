@@ -209,7 +209,7 @@ at 16k in E33p) show the marks are reachable at this size and data.
     20 min rest every 5.5 h on one clock, never a start while 3 other cards are busy). Expected about 2026-11-14.
     Dense ceilings and the champion's numbers come from the ledger (same tasks, recorded runs).
   - *Dropped by the author, 2026-11-13:* the C1.lookup-16k curriculum's 8k and 16k stages (6 jobs, seeds 0–2). Its
-    2k stage ended at chance at both step sizes (1e-4: 27 / 29 / 27 %; 5e-5: 24 / 24 % first letter on seeds 0–1),
+    2k stage ended at chance at both step sizes (first letter on seeds 0–2, 1e-4: 27 / 29 / 27 %; 5e-5: 23 / 29 / 22 %),
     and the later stages would start from those weights. The target `C1.lookup-16k` therefore reads "not run".
     Marked on Odra at 10:44 UTC: each folder holds a `DROPPED` note and a `DONE` marker, so the running queues skip
     the jobs; the ledger reads them as dropped, never as results.
