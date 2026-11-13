@@ -128,12 +128,16 @@ day later; times are its estimates, worst case in brackets):
 | 1 (card 0 or 2; card 2's queue ended 04:35) | Nov 13 ~04:50 | the first to claim: the LR pre-flights + pick + LSA port, or concept memory |
 | 2 (card 3's queue ends) | Nov 13 ~07:30 (20:00) | the other of those two |
 | 3 (card 1's queue ends) | Nov 13 ~11:00 (Nov 14 00:00) | catalogue read n4 |
-| the first slot to finish | Nov 14 ~08:00 | notes-open, moved from Odra (its checkpoint fetched to Polonez) |
+| any slot, card 3 | after the LR pre-flights claim card 0 (~07:45) and a slot frees (~08:00, when concept memory gives its card back to wait for the LR) | notes-open, moved from Odra |
 
 | Odra card | free from | lane |
 |---|---|---|
 | 0 (after Odra's card 0 and 1 queues end; temperature checked on cards 0–1 only) | Nov 14 ~17:00 – Nov 15 00:00 | the original LSA |
-| 1 (after all three Odra queues end; card 2 ~1.7× slower under its heat guard) | Nov 16 ~00:00–12:00 | notes-open, only as a fallback if its checkpoint cannot reach Polonez |
+
+Notes-open moved to Polonez on 2026-11-13 06:04 UTC: its checkpoint was fetched from S3 at 06:03 (all eight files
+the S3 sizes, the weights byte-identical to Odra's copy), its lane waits on card 3 until the LR pre-flights hold
+card 0 (so it never takes their slot), and Odra's card-1 fallback lane was stopped before it had claimed a card.
+Its base tests now fill the hours the other lanes spend waiting for the LR.
 
 The capability session agreed (2026-11-13 ~04:50 UTC) to the original LSA on Odra card 0 once its card 0–1 queues
 end, card 1 left empty while its card 2 runs (more heat pauses for its last seed, a few hours, against 1–1.5 days of
