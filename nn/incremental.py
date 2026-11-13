@@ -169,6 +169,9 @@ class IncrementalDecoder:
         self.cfg = model.config
         self.kind = decode_kind(model)
         self.gi = self.cfg.global_layer_index
+        # probes (scripts/a2a_split_probe.py): trace(r, t, keys_read [B, n], summaries_read [B, C] or None), called by
+        # the concept read with what the query t read on loop pass r; None = off, no effect on the outputs
+        self.trace: Optional[Callable] = None
 
     # ------------------------------------------------------------------ limits
     def max_new_tokens(self) -> Optional[int]:
@@ -546,6 +549,8 @@ class IncrementalDecoder:
                 ks = cidx.mu_k[:, :, None].to(K.dtype)
                 vs = (cidx.mu_v if dv is None else cidx.mu_v + dv.to(cidx.mu_v.dtype))[:, :, None].to(V.dtype)
         mask = keep & (doc == doc_t[:, None]) & (doc_t >= 0)[:, None]                      # [B, n]
+        if self.trace is not None:
+            self.trace(r, t, mask, None if sbias is None else torch.isfinite(sbias).any(1))
         kk, vv = K[:, :n, 0].float(), vt[:, :, 0].float()                                  # one key head
         bias = torch.zeros(B, n, device=q.device).masked_fill(~mask, float("-inf"))[:, None].expand(B, h, n)
         if sbias is not None:

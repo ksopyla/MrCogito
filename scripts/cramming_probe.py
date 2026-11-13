@@ -41,6 +41,21 @@ def load_decoder(checkpoint: str, device: str, backend: str):
     return m.eval()
 
 
+def shard_texts(path: str, longest: int, n: int, eot: int = 50256) -> list[dict]:
+    """The first `n` documents of a token shard with at least `longest` tokens, each starting at its <|endoftext|>."""
+    import numpy as np
+
+    from data.bin_token_dataset import open_shard
+
+    toks = np.asarray(open_shard(path)[:20_000_000]).astype(np.int64)
+    starts = np.flatnonzero(toks == eot)
+    ends = np.append(starts[1:], len(toks))
+    keep = [int(s) for s, e in zip(starts, ends) if e - s >= longest][:n]
+    if len(keep) < n:
+        raise ValueError(f"{path}: only {len(keep)} documents of {longest}+ tokens in the first 20M tokens")
+    return [{"input_ids": toks[s:s + longest].tolist()} for s in keep]
+
+
 def run(model, rows: torch.Tensor, K: int, steps: int, lr: float, device) -> dict:
     """rows [T, N] token ids (BOS first). Returns per-text accuracy, CE without / with vectors, steps used."""
     T, N = rows.shape
@@ -83,7 +98,9 @@ def run(model, rows: torch.Tensor, K: int, steps: int, lr: float, device) -> dic
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--checkpoint", required=True)
-    p.add_argument("--data", required=True, help="text-checks data dir (stories/eval rows are the texts)")
+    p.add_argument("--data", default="", help="text-checks data dir (stories/eval rows are the texts)")
+    p.add_argument("--bin", default="", help="instead of --data: a GPT-2 token shard (data/bin_token_dataset.py); the "
+                                             "texts are its first documents long enough, <|endoftext|> first")
     p.add_argument("--lengths", type=int, nargs="+", default=[16, 32, 64, 128, 256])
     p.add_argument("--vectors", type=int, nargs="+", default=[1])
     p.add_argument("--n_texts", type=int, default=8)
@@ -97,8 +114,12 @@ def main():
     device = a.device or ("cuda" if torch.cuda.is_available() else "cpu")
     backend = "sdpa"
     model = load_decoder(a.checkpoint, device, backend)
-    ds = load_from_disk(os.path.join(a.data, "stories", "eval"))
-    res = {"checkpoint": a.checkpoint, "steps": a.steps, "lr": a.lr, "cells": []}
+    if a.bin:
+        ds = shard_texts(a.bin, max(a.lengths), a.n_texts)
+    else:
+        ds = load_from_disk(os.path.join(a.data, "stories", "eval"))
+    res = {"checkpoint": a.checkpoint, "steps": a.steps, "lr": a.lr, "hidden": int(model.config.hidden_size),
+           "texts": a.bin or a.data, "cells": []}
     t0 = time.time()
     for K in a.vectors:
         for N in a.lengths:
