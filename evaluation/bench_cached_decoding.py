@@ -31,6 +31,35 @@ def _sync(dev: str) -> None:
         torch.mps.synchronize()
 
 
+@torch.no_grad()
+def _divergence(m, tok, ids, cached: list, uncached: list, pad: int, new: int) -> dict:
+    """Where the two answers first differ, and how close the uncached path's choice was there: the logit gap between
+    the token it wrote and the token the cache wrote, from one uncached forward over the same padded row (the
+    adapter's layout). A gap within bf16 rounding of the logits (~0.05 at these magnitudes) is a near-tie flip."""
+    import torch.nn.functional as F
+
+    i = next((k for k, (c, u) in enumerate(zip(cached, uncached)) if c != u), min(len(cached), len(uncached)))
+    out = dict(at=i, cached=tok.decode(cached), uncached=tok.decode(uncached))
+    if i >= min(len(cached), len(uncached)):
+        return out  # one answer is a prefix of the other (an early end of sequence)
+    L0 = ids.shape[1]
+    Lb = -(-(L0 + new) // pad) * pad
+    buf = torch.full((1, Lb), tok.eos_token_id, dtype=ids.dtype, device=ids.device)
+    buf[0, :L0] = ids[0]
+    buf[0, L0:L0 + i] = torch.tensor(uncached[:i], device=ids.device)
+    doc = torch.full((1, Lb), -1, dtype=torch.long, device=ids.device)
+    doc[0, :L0 + i] = 0
+    h = m.hidden_states(buf, doc_ids=doc)[:, L0 + i - 1]
+    z = F.linear(h, m.lm_head.weight).float()[0]
+    cap = m.config.logit_softcap
+    if cap:
+        z = cap * torch.tanh(z / cap)
+    top = z.topk(2)
+    out.update(cached_tok=tok.decode([cached[i]]), uncached_tok=tok.decode([uncached[i]]),
+               gap=round(float(z[uncached[i]] - z[cached[i]]), 4), top2_gap=round(float(top.values[0] - top.values[1]), 4))
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--checkpoint", required=True)
@@ -70,9 +99,10 @@ def main() -> None:
         at = len(body) // 3
         ids = torch.tensor([body[:at] + needle + body[at:] + q], device=a.device)
         L0, P = ids.shape[1], fake.GEN_PAD
-        # warm-up: the fewest answer tokens that give the same padded row, so flex attention's graph for this shape
-        # is compiled before either timed run (otherwise the first path timed pays for the compile)
-        warm = max(1, -(-(L0 + a.new) // P) * P - P + 1 - L0)
+        # warm-up: a few answer tokens on the same padded row, so flex attention's graph for this shape is compiled
+        # and the cached path's step code has run before either timed run (2026-11-13 on the L40S: a warm-up of one
+        # token runs no cached step, and dense 16k then timed 7 s of first-step set-up against 0.5 s at 32k)
+        warm = max(3, -(-(L0 + a.new) // P) * P - P + 1 - L0)
         res, row = {}, dict(length=L, needle=num)
         try:
             for cached in (True, False):
@@ -98,6 +128,8 @@ def main() -> None:
         if True in res and False in res:
             row.update(uncached_s=round(res[False][1], 2), same=res[True][0] == res[False][0],
                        speedup=round(res[False][1] / max(res[True][1], 1e-9), 1))
+            if not row["same"]:
+                row["diverge"] = _divergence(m, tok, ids, res[True][0], res[False][0], fake.GEN_PAD, a.new)
         rows.append(row)
         print(json.dumps(row), flush=True)
         if a.out:  # after every length, so a crash at a long one keeps the shorter ones
