@@ -259,9 +259,28 @@ def _version(mod: str) -> str:
     return f"{getattr(m, '__version__', '?')} ({Path(m.__file__).parent})"
 
 
+def _redirect_moved_datasets() -> None:
+    """lm-eval 0.4.11's BLiMP loads the dataset `blimp`, which the Hub moved to `nyu-mll/blimp` (same data). The original
+    LSA's venv has huggingface_hub 1.x, which rejects ids without a namespace (Odra, 2026-11-13: the base extra failed
+    at once); our models' venv still follows the old redirect. Map the moved id before lm-eval asks for it."""
+    import datasets
+
+    if getattr(datasets.load_dataset, "_moved_ids", False):
+        return
+    moved, orig = {"blimp": "nyu-mll/blimp"}, datasets.load_dataset
+
+    def load_dataset(path=None, *args, **kw):
+        return orig(moved.get(path, path), *args, **kw)
+
+    load_dataset._moved_ids = True
+    datasets.load_dataset = load_dataset
+
+
 def _lm_eval_suite(a, suite: str) -> None:
     import lm_eval
     from lm_eval.tasks import TaskManager
+
+    _redirect_moved_datasets()
 
     rs = _load("mc_run_lsa_suite", ROOT / "evaluation" / "run_lsa_suite.py")
     tok = str(Path(a.data) / "tokenizer_gpt2")
