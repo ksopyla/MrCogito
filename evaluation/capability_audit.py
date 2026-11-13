@@ -72,11 +72,11 @@ ISSUES: tuple[Issue, ...] = (
            "C3.recall8-1k", "C5.pchain2-1k"),
           ("e33t_catalogue_n4",),
           "Every catalogue-read job so far either learns to 97–99 % or stays at chance for its whole budget with "
-          "nothing reaching the answer (flow 0.000), never in between. From random init 8 of 28 first stages started: "
+          "nothing reaching the answer (flow 0.000), never in between. From random init 8 of 29 first stages started: "
           "C5.path2-1k and C5.path3-1k stage 1 on all three seeds (some only after 15–19k of their 19.2k steps), "
           "C1.edge-1k and C5.pchain2-1k on one seed of three (edge seed 1: 99 % at 1k, seeds 0 and 2 at chance); "
-          "C0.copy-1k (seeds 0–1, ended 2026-11-13 08:01 UTC), C1.lookup-1k (seeds 0–1, ended 09:56 UTC), C1.keyed4-1k "
-          "(seeds 0–1, ended 12:17 UTC: picked candidate 26 / 30 %, a guess gets 25 %), C2.lookalike-1k (seeds 0–1, "
+          "C0.copy-1k (seeds 0–2, ended 2026-11-13 08:01, 08:01 and 14:24 UTC: 25.8 / 20.7 / 19.9 % first letter), "
+          "C1.lookup-1k (seeds 0–1, ended 09:56 UTC), C1.keyed4-1k (seeds 0–1, ended 12:17 UTC: picked candidate 26 / 30 %, a guess gets 25 %), C2.lookalike-1k (seeds 0–1, "
           "ended 14:12 UTC: 25.8 / 27.0 % first letter, flow 0.000), C1.lookup-2k (seeds 0–2 at both 1e-4 and 5e-5) "
           "and C3.recall8-1k (seeds 0–2) never started. So the read can learn a content lookup from scratch, and its "
           "losses at the training length are failures to start that depend on the seed, not a ceiling: they count as "
@@ -86,8 +86,8 @@ ISSUES: tuple[Issue, ...] = (
           "A read that must be found before it can be learned can fail by never starting; report how many seeds "
           "started, not only the median, and try a longer budget or a written warm-up before a 'cannot'.",
           "Not queued. More seeds or a longer budget on the missed tasks would settle it; a written warm-up stage would "
-          "be a protocol change for every model. Seed 2 of C0.copy-1k, C1.lookup-1k, C1.keyed4-1k and C2.lookalike-1k is "
-          "still to come (Odra card 2)."),
+          "be a protocol change for every model. Seed 2 of C1.lookup-1k, C1.keyed4-1k and C2.lookalike-1k is still to "
+          "come (Odra card 2)."),
     Issue("dense-lr-lookup", "2026-10-13", "Dense fails the 2k lookup only at our standard step size",
           "high", "open", "caution", ("C1.lookup-2k", "C1.lookup-16k"), ("dense", "e33t_catalogue_n4"),
           "Dense scores 24–29 % at step 1e-4 but passes at 5e-5 (the step E31's 2k runs use). 'Dense cannot do long "
