@@ -21,6 +21,7 @@
 # Smoke tests: E33N_CMD_EXTRA="--local" (laptop trainer settings), E33N_SKIP_EVAL=1 (stop after the decay).
 # E33p: E33N_EXPERIMENT=E33p (W&B / run id, S3 prefix runs/e33p/), E33N_FLOW=1 (instrumentation + weight
 #   snapshots, plan §8). E33N_SEED=N: trainer seed N (default 42), run folder gets _seedN.
+# E33N_DECAY_TOKENS: tokens of the long decay (default: the size's, scripts/run_e33n.py SIZES).
 # E33N_GPUS=N: one model on N GPUs (data parallel, torchrun; same rows per optimizer step), and the three evals run
 #   side by side on separate GPUs. On a home server pair it with CUDA_VISIBLE_DEVICES=0,1,2.
 # E33N_LONG=1 (E33t stage C): after the decay, a 64k phase (LongDocs-lite rows of 65,536, 0.1B tokens at s30, from the
@@ -125,7 +126,7 @@ sync_up
 DECAY=$(ls -d "$R"/decay/*/final 2>/dev/null | tail -1)
 if [ -z "$DECAY" ]; then
   CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase decay --data "$D" --out "$R" \
-        ${LR:+--lr $LR} ${E33N_MICRO_DECAY:+--micro $E33N_MICRO_DECAY} --init "$TRUNK" --eval_every 200 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} --gpus "$G" ${E33N_CMD_EXTRA:-})
+        ${LR:+--lr $LR} ${E33N_DECAY_TOKENS:+--tokens $E33N_DECAY_TOKENS} ${E33N_MICRO_DECAY:+--micro $E33N_MICRO_DECAY} --init "$TRUNK" --eval_every 200 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} --gpus "$G" ${E33N_CMD_EXTRA:-})
   echo "$CMD" > "$R/decay.cmd"
   log "decay start"
   phase decay "$CMD" || { log "decay FAILED"; tail -40 "$R/decay.log"; finish; exit 1; }

@@ -15,6 +15,7 @@ export PATH="$HOME/.local/bin:$PATH" PYTHONPATH=.
 source scripts/remote_paths.sh >/dev/null 2>&1 || true
 RUN="${RUN:?set RUN=<run folder>}"
 MANIFEST="${MANIFEST:-$DATASETS_TOK_DIR/e36_longdoc_4k6_v1_manifest.json}"
+EVAL_MANIFEST="${EVAL_MANIFEST:-$DATASETS_TOK_DIR/e36_longdoc_4k6_v1_manifest.json}"  # the evaluation always reads the long-document rows
 EVAL_ROWS="${EVAL_ROWS:-256}"          # held-out rows per source for the continuation measure
 SQUAD_ITEMS="${SQUAD_ITEMS:-500}"
 EVAL_EXTRA="${EVAL_EXTRA:-}"
@@ -27,7 +28,7 @@ if [ -n "${S0_READER:-}" ]; then
     [ -f "$OUT" ] && { echo "$(stamp) S0 done: $OUT"; exit 0; }
     echo "$(stamp) S0 reader=$S0_READER gpu=$GPU_IDS" | tee -a "$RUN/launch.log"
     CUDA_VISIBLE_DEVICES="$GPU_IDS" uv run python evaluation/frozen_reader_eval.py --reader "$S0_READER" \
-        --manifest "$MANIFEST" --rows_per_source "$EVAL_ROWS" --squad_items "$SQUAD_ITEMS" --cramming \
+        --manifest "$EVAL_MANIFEST" --rows_per_source "$EVAL_ROWS" --squad_items "$SQUAD_ITEMS" --cramming \
         --out "$OUT" $EVAL_EXTRA 2>&1 | tee -a "$RUN/s0.log"
     echo "$(stamp) S0 finished" | tee -a "$RUN/launch.log"
     exit 0
@@ -38,11 +39,13 @@ export FR_READER="${FR_READER:-HuggingFaceTB/SmolLM2-360M}" FR_WRITER_INIT="${FR
 export FR_WRITER_LAYERS="${FR_WRITER_LAYERS:-3}" FR_SPAN="${FR_SPAN:-512}" FR_MEM_SPANS="${FR_MEM_SPANS:-8}"
 export FR_WAY="${FR_WAY:-input}" FR_RECON_FRAC="${FR_RECON_FRAC:-0.2}" FR_ENTRY_POSITIONS="${FR_ENTRY_POSITIONS:-span_mid}"
 export FR_WRITER_POOL="${FR_WRITER_POOL:-mean}" FR_CURRICULUM="${FR_CURRICULUM:-}"
+export FR_OBJECTIVE="${FR_OBJECTIVE:-continuation}" FR_INIT_CHECKPOINT="${FR_INIT_CHECKPOINT:-}"
+export FR_PASSAGE_SPAN="${FR_PASSAGE_SPAN:-0}"
 export PRETOKENIZED_MANIFEST="$MANIFEST" TOKENIZER_NAME="$FR_READER" MAX_SEQ_LENGTH=4610
 export PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-8}" GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-2}"
 export LEARNING_RATE="${LEARNING_RATE:-3e-4}" MAX_STEPS="${MAX_STEPS:-6000}" WARMUP_STEPS="${WARMUP_STEPS:-200}"
 export LR_SCHEDULER_TYPE=cosine WEIGHT_DECAY=0.01 MAX_GRAD_NORM=1.0 OPTIMIZER=adam
-export BATCH_PACKING_MODE=none DATALOADER_NUM_WORKERS=2 EVAL_BATCH_SIZE=8 GRADIENT_CHECKPOINTING=False
+export BATCH_PACKING_MODE="${BATCH_PACKING_MODE:-none}" DATALOADER_NUM_WORKERS=2 EVAL_BATCH_SIZE=8 GRADIENT_CHECKPOINTING=False
 export EVAL_STEPS="${EVAL_STEPS:-500}" SAVE_STEPS="${SAVE_STEPS:-500}" SAVE_TOTAL_LIMIT=3 LOGGING_STEPS=25
 export MAX_EVAL_SAMPLES=256 LOAD_BEST_MODEL_AT_END=False SEED="${SEED:-0}"
 export TRAIN_OUTPUT_DIR="$RUN/train" EXPERIMENT_ID="E36-$(basename "$RUN")" PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
@@ -61,7 +64,7 @@ OUT="$RUN/eval_final.json"
 if [ ! -f "$OUT" ]; then
     echo "$(stamp) S1 eval $FINAL" | tee -a "$RUN/launch.log"
     CUDA_VISIBLE_DEVICES="${GPU_IDS%%,*}" uv run python evaluation/frozen_reader_eval.py --checkpoint "$FINAL" \
-        --manifest "$MANIFEST" --rows_per_source "$EVAL_ROWS" --squad_items "$SQUAD_ITEMS" --out "$OUT" $EVAL_EXTRA \
+        --manifest "$EVAL_MANIFEST" --rows_per_source "$EVAL_ROWS" --squad_items "$SQUAD_ITEMS" --out "$OUT" $EVAL_EXTRA \
         2>&1 | tee -a "$RUN/eval.log"
     echo "$(stamp) S1 eval finished: $OUT" | tee -a "$RUN/launch.log"
 fi
