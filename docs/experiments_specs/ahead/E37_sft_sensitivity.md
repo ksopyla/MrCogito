@@ -117,8 +117,8 @@ bursts and 20 min cooldowns, Odra under 80 °C, the original LSA on Odra (its ve
 card only after the capability queue on it has written `QUEUE-END` (an idle card between that queue's jobs or heat
 rests is not free; that session's advice, 2026-11-12 20:50 UTC). Polonez's lanes share three slots: a lane takes its
 card when the card is free and fewer than three cards are busy (capability queues included), and gives it back while
-it waits for the LR pick. On Odra the lane waits for all three capability queues (its card 2 runs under a heat guard
-at 78 °C).
+it waits for the LR pick. On Odra the original LSA's lane waits for the capability queues on cards 0 and 1 and for
+those two cards under 78 °C (card 2 keeps its own queue and heat guard).
 
 Revised 2026-11-13 04:45 UTC (the capability session's new times: Polonez cards free a day earlier, Odra card 2 a
 day later; times are its estimates, worst case in brackets):
