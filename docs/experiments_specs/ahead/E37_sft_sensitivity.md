@@ -132,11 +132,12 @@ day later; times are its estimates, worst case in brackets):
 
 | Odra card | free from | lane |
 |---|---|---|
-| 0 (after all three Odra queues end; card 2 ~1.7× slower under the heat guard) | Nov 16 ~00:00–12:00 | the original LSA |
+| 0 (after Odra's card 0 and 1 queues end; temperature checked on cards 0–1 only) | Nov 14 ~17:00 – Nov 15 00:00 | the original LSA |
+| 1 (after all three Odra queues end; card 2 ~1.7× slower under its heat guard) | Nov 16 ~00:00–12:00 | notes-open, only as a fallback if its checkpoint cannot reach Polonez |
 
-Asked the capability session (2026-11-13 04:45 UTC) whether the original LSA may start on Odra card 0 once Odra
-cards 0–1 end (~Nov 14 17:00 – Nov 15 00:00), card 1 left empty; without its OK the lane keeps waiting.
-The servers cannot reach each other, so the LR pick is copied to Odra by hand.
+The capability session agreed (2026-11-13 ~04:50 UTC) to the original LSA on Odra card 0 once its card 0–1 queues
+end, card 1 left empty while its card 2 runs (more heat pauses for its last seed, a few hours, against 1–1.5 days of
+card 0). The servers cannot reach each other, so the LR pick is copied to Odra by hand.
 The catalogue arm's code comes from `e37-catalogue-later` (merged into `e37-sft`).
 
 | step | what | card-hours (estimate) |
@@ -148,7 +149,7 @@ The catalogue arm's code comes from `e37-catalogue-later` (merged into `e37-sft`
 | 4 | tuned models: the whole evaluation list above | ~50 |
 
 About 120 card-hours. With the 2026-11-13 times: the four Polonez arms done ~Nov 15 08:00 UTC, the original LSA
-~Nov 17 (~Nov 16 if it may start on Odra card 0 early).
+~Nov 15 17:00 – Nov 16 00:00.
 
 ## Risks
 
