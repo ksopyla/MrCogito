@@ -239,7 +239,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
               flow: bool = False, gpus: int = 1, sft_manifest: str | None = None,
               grad_ckpt: bool = False, compile: str = "off", liger: bool = False, rows: int | None = None,
-              workers: int = 6) -> list[str]:
+              workers: int = 6, fast: bool = False) -> list[str]:
+    liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
     if phase == "sft":
@@ -304,6 +305,9 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     ]
     if compile != "off":  # the whole model through torch.compile (the attention kernel is compiled either way)
         cmd += ["--model_compile", compile]
+    if fast:  # the 2026-11-14 speed settings: Liger's fused loss (above) and the compiled concept grouping
+        if args.get("par_global_read") == "concept":
+            cmd += ["--concept_compile", "True"]
     if init:
         cmd += ["--model_name_or_path", init]
     if phase == "sft":
@@ -351,6 +355,9 @@ def main() -> None:
     c.add_argument("--compile", default="off", choices=("off", "static", "dynamic"),
                    help="torch.compile the whole model (static: fixed row shapes)")
     c.add_argument("--liger", action="store_true", help="Liger's fused linear + cross-entropy for the loss")
+    c.add_argument("--fast", action="store_true",
+                   help="the speed settings measured 2026-11-14: --liger plus the compiled concept grouping (E37 "
+                        "arms); same loss function and same concepts, pair it with a larger --micro")
     c.add_argument("--rows", type=int, help="speed checks only: rows per optimizer step instead of the size's")
     c.add_argument("--workers", type=int, default=6, help="dataloader worker processes per GPU")
     c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
@@ -367,7 +374,8 @@ def main() -> None:
     cmd = train_cmd(a.arm, a.size, a.phase, data=Path(a.data), out=Path(a.out), init=a.init, lr=a.lr,
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
                     local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
-                    grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers)
+                    grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
+                    fast=a.fast)
     print(shlex.join(cmd))
 
 

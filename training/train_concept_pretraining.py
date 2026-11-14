@@ -323,6 +323,8 @@ def main():
         finally:
             del query, key
 
+    if getattr(model_args, "concept_compile", False):
+        os.environ["CONCEPT_COMPILE"] = "1"
     compile_mode = str(getattr(model_args, "model_compile", "off") or "off").lower()
     if model_args.torch_compile_dynamic and compile_mode == "off":
         compile_mode = "dynamic"

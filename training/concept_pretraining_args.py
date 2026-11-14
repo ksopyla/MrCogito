@@ -114,6 +114,11 @@ class ModelArguments:
         metadata={"help": "Compile the whole model: 'off' | 'static' (torch.compile(dynamic=False): fixed row "
                           "shapes, as in the bin-manifest phases) | 'dynamic' (same as --torch_compile_dynamic)."},
     )
+    concept_compile: bool = field(
+        default=False,
+        metadata={"help": "E37 concept read: compile the grouping of keys into concepts (same labels, a fixed "
+                          "~50 ms less per step at 100M). Sets CONCEPT_COMPILE=1 for nn/concept_memory.py."},
+    )
     objective_variant: str = field(
         default=OBJECTIVE_RECONSTRUCTION,
         metadata={"help": "One of: reconstruction, reconstruction+contrastive, prefix_suffix."},
