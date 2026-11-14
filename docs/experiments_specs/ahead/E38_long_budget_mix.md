@@ -1,9 +1,9 @@
 # E38 — Two 100M models on a modern data mix: longer budget, SmolLM2 tokenizer, far-context data
 
-- **Status:** approved and in build (author, 2026-11-14: "Train two best models 100M with a longer data budget, with
-  a better tokenizer and data mix; try to find some multi-hop or reasoning data in Hugging Face"; budget raised the
-  same day: "Increase our budget to $4000"). Data builders and launcher written 2026-11-14; runs pending the data
-  build and a free 4-GPU slot.
+- **Status:** approved; data built, runs waiting for the 4-GPU slot (author, 2026-11-14: "Train two best models 100M
+  with a longer data budget, with a better tokenizer and data mix; try to find some multi-hop or reasoning data in
+  Hugging Face"; budget raised the same day: "Increase our budget to $4000"). `m21mix_v1` is in S3 since 07:58 UTC
+  Nov 14; the pipeline check and the L40S speed check ran the same morning.
 - **Serves:** the meridian21 goal of 2026-11-13 (first models and a demo for investors: show that the memory
   architecture uses far context on real long documents) and Vision priority 2 (long context). Not a new
   architecture: the two best 100M reads of E37 stage B, unchanged, on better data. A data and protocol experiment,
@@ -87,6 +87,41 @@ to `s3://…/data/m21mix_v1/` (`scripts/build_m21_mix.py`, `scripts/build_reason
 - **Validation:** per source, a hash-held-out set; for the five Common Pile long-document sources the same
   documents as LongDocs-lite's validation, so E37 and E38 models can be scored on the same documents.
 
+### Data build record (2026-11-14)
+Built 07:23–07:58 UTC on one 32-core spot node (`m21-data`, $0.71) plus a 16-core node for the constructed rows
+(`m21-reason`, 07:32–07:46 UTC, $0.19): **13.76B train tokens, 20 sources, 174 shards, 25.7 GiB** in
+`s3://…/data/m21mix_v1/`, every shard named in `mix.json` present. Five sources (finemath, math_textbooks, books, pdfs,
+hansard) were built and uploaded but lost their `done.json` to a folder-sync race; the markers were copied by hand on
+the node and both job scripts now copy file by file.
+
+| source | train tokens | documents (or rows) | shards | bytes per token |
+|---|---|---|---|---|
+| fineweb_edu | 4.000B | 3,849,215 | 41 | 4.56 |
+| dclm_edu | 2.300B | 1,663,910 | 24 | 4.40 |
+| pdfs | 1.200B | 23,055 | 13 | 3.58 |
+| code_files | 0.850B | 733,178 | 9 | 3.27 |
+| books | 0.750B | 7,255 | 8 | 3.90 |
+| wiki_rewrite | 0.700B | 599,554 | 8 | 3.16 |
+| code_repos | 0.600B | 13,436 | 7 | 3.26 |
+| rqa | 0.520B | 64,170 | 6 | 3.02 |
+| finemath | 0.520B | 318,485 | 6 | 3.13 |
+| math_textbooks | 0.350B | 163,795 | 4 | 3.59 |
+| doab | 0.300B | 3,154 | 4 | 3.98 |
+| arxiv | 0.300B | 9,052 | 4 | 2.74 |
+| usgpo | 0.300B | 3,807 | 4 | 4.15 |
+| hansard | 0.300B | 5,002 | 4 | 4.78 |
+| infinibyte | 0.250B | 13,813 | 3 | 3.54 |
+| multihop_16k | 0.200B | 12,207 rows | 3 | 3.64 |
+| chat | 0.130B | 145,575 | 2 | 4.44 |
+| lookup_16k | 0.100B | 6,104 rows | 2 | 3.90 |
+| multihop_64k | 0.060B | 916 rows | 1 | 3.64 |
+| lookup_64k | 0.030B | 458 rows | 1 | 3.94 |
+
+Supply (`scripts/run_e33n.py mixinfo`): one pass over the data is larger than the budget in every phase, so no row is
+read twice — trunk 8.50B tokens a pass (limited by the code files) for 8.0B, decay 3.25B (limited by chat) for 3.0B,
+long 0.60B (limited by the 64k multi-hop libraries) for 0.5B. No source is empty at any phase's length and every
+evaluation source has rows at 4k, 16k and 64k.
+
 ## Training protocol
 `scripts/run_e33n.py --mix DATA/m21mix_v1 --fast`, size m100, 128 rows of 4k per optimizer step in every phase
 (128 × 4k, 32 × 16k, 8 × 64k).
@@ -96,11 +131,14 @@ to `s3://…/data/m21mix_v1/` (`scripts/build_m21_mix.py`, `scripts/build_reason
 - **long:** 0.5B tokens from the decay's weights, 6.4e-5 → 6.4e-6, each layer recomputed in the backward (as E37's
   64k stage, 5× the tokens).
 - **Speed settings (`--fast`, measured 2026-11-14):** Liger's fused linear + cross-entropy (the same loss: equal in
-  fp32, 7e-5 apart in bf16) and the compiled concept grouping (same labels), with 8 / 2 / 1 rows per pass and 48 GB
-  card. AdamW, betas 0.9 / 0.95, weight decay 0.1, clip 1.0, bf16, flex attention — unchanged.
+  fp32, 7e-5 apart in bf16) and the compiled concept grouping (same labels), with 4 / 1 / 1 rows per pass and 48 GB
+  card (as E37: larger passes add no speed on an L40S). AdamW, betas 0.9 / 0.95, weight decay 0.1, clip 1.0, bf16, flex attention — unchanged.
 - **Compute:** one 4 × L40S spot node per model (checkpoints every 400 steps to S3; `infra/aws/keep_running.sh`
-  relaunches after an interruption and stops before the budget cap), or one on-demand H100 per model if that
-  starts sooner. Estimate before the L40S speed check: 35–45 h and $250–330 per model.
+  relaunches after an interruption and stops before the budget cap). No on-demand H100 was available on 2026-11-14
+  (07:13 UTC, all six zones). Measured on one L40S with `--fast`: 30.3k tokens/s at 4k (old settings 20.3k) and
+  20.4k at 16k (old 15.2k), with the E37 micro-batches (4 and 1 rows per pass). On four cards that is about 18 h
+  for the trunk, 10 h for the decay and an estimated 4–5 h for the 64k phase: about 37 h and $260 per model with
+  its tests.
 
 ## Evaluation
 - Long-document loss by position at 4k–128k on the seven long sources, in nats per token and bits per byte
