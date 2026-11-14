@@ -22,7 +22,7 @@ MIX="${E38_MIX:-m21mix_v1}"; TT="${E38_TRUNK_TOKENS:-8.0e9}"; D="$MC_DISK/data"
 if [ "${MEM:-0}" -ge 70000 ]; then MT=8; MD=2; else MT=4; MD=1; fi
 export E33N_EXPERIMENT=E38 E33N_SEED="$SEED" E33N_GPUS="$G" E33N_CKPT_S3=1 E33N_SKIP_EVAL=1 E33N_MIX="$MIX" \
   E33N_LONG=1 E33N_GRAD_CKPT=1 E33N_MICRO_TRUNK="${E38_MICRO_TRUNK:-$MT}" E33N_MICRO_DECAY="${E38_MICRO_DECAY:-$MD}" \
-  E33N_MICRO_LONG=1 E33N_CMD_EXTRA="--fast --save_every ${E38_SAVE_EVERY:-400}"
+  E33N_MICRO_LONG=1 E33N_CMD_EXTRA="--fast --save_every ${E38_SAVE_EVERY:-800}"
 unset E33N_FLOW
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -41,12 +41,14 @@ for ARM in "$@"; do
     E33N_LONGDOC_ARGS="--sources books,arxiv,doab,usgpo,hansard,pdfs,code_repos --eot 0 --tokenizer $D/$MIX/tokenizer"
   echo "[e38_full] $(ts) $ARM tests"
   if [ -n "$DECAY" ] && [ ! -f "$R/eval_longdoc_decay.json" ]; then   # what the 64k phase changed: the 16k model's loss
-    ( CUDA_VISIBLE_DEVICES=0 uv run python evaluation/long_doc_loss.py --checkpoint "$DECAY" --data "$D/$MIX" \
-        --lengths 4096,16384,65536 --rows 8 $E33N_LONGDOC_ARGS --out "$R/eval_longdoc_decay.json" \
-        > "$R/eval_longdoc_decay.log" 2>&1 || echo "[e38_full] $ARM decay long-document loss FAILED" ) &
+    # before the main tests and alone on its card (about a quarter of an hour): two evaluations on one card can
+    # run it out of memory, and the main tests' marker must be the last file written
+    CUDA_VISIBLE_DEVICES=0 uv run python evaluation/long_doc_loss.py --checkpoint "$DECAY" --data "$D/$MIX" \
+      --lengths 4096,16384,65536 --rows 8 $E33N_LONGDOC_ARGS --out "$R/eval_longdoc_decay.json" \
+      > "$R/eval_longdoc_decay.log" 2>&1 || echo "[e38_full] $ARM decay long-document loss FAILED"
+    aws s3 cp --only-show-errors "$R/eval_longdoc_decay.json" "$S3R/eval_longdoc_decay.json" 2>/dev/null || true
   fi
   bash "$HERE/e37_evals_long.sh" "$LONG" "$R" "$D" "$S3R" || echo "[e38_full] $(ts) $ARM tests incomplete"
-  wait
   aws s3 sync --only-show-errors "$R/" "$S3R/" || true
   echo "[e38_full] $(ts) $ARM done"
 done

@@ -420,7 +420,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         sched = ["--lr_scheduler_type", "warmup_stable_decay", "--warmup_steps", str(max(1, int(0.03 * steps))),
                  "--lr_scheduler_kwargs", json.dumps({"num_decay_steps": int(0.97 * steps), "decay_type": "1-sqrt",
                                                       "min_lr_ratio": 0.1})]
-    save_every = int(save_every) if save_every else max(50, steps // 10)
+    # --save_every N: at most N steps between checkpoints, and never fewer than ten checkpoints in a phase
+    save_every = min(int(save_every), max(50, steps // 10)) if save_every else max(50, steps // 10)
     if phase == "sft" and not eval_every:
         eval_every = _final_eval_every(steps)
     cmd += [
@@ -494,8 +495,8 @@ def main() -> None:
     c.add_argument("--mix_lenient", action="store_true",
                    help="small check builds: leave out a source with no row at a phase's length and share a stream "
                         "source that has too few shards to split, instead of stopping")
-    c.add_argument("--save_every", type=int, help="checkpoint every N optimizer steps (default: a tenth of the "
-                                                  "phase; long spot runs lose less with a shorter interval)")
+    c.add_argument("--save_every", type=int, help="checkpoint at least every N optimizer steps (default and upper "
+                                                  "bound: a tenth of the phase; long spot runs lose less)")
     c.add_argument("--mix", help="a built data mix (scripts/build_m21_mix.py output dir): its tokenizer, sources, "
                                  "row lengths and tokens per phase replace the GPT-2 FineWeb-Edu / LongDocs-lite data")
     c.add_argument("--fast", action="store_true",

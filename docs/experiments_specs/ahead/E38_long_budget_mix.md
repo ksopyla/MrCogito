@@ -133,7 +133,7 @@ evaluation source has rows at 4k, 16k and 64k.
 - **Speed settings (`--fast`, measured 2026-11-14):** Liger's fused linear + cross-entropy (the same loss: equal in
   fp32, 7e-5 apart in bf16) and the compiled concept grouping (same labels), with 4 / 1 / 1 rows per pass and 48 GB
   card (as E37: larger passes add no speed on an L40S). AdamW, betas 0.9 / 0.95, weight decay 0.1, clip 1.0, bf16, flex attention — unchanged.
-- **Compute:** one 4 × L40S spot node per model (checkpoints every 400 steps to S3; `infra/aws/keep_running.sh`
+- **Compute:** one 4 × L40S spot node per model (a checkpoint to S3 at least every 800 steps and ten per phase; `infra/aws/keep_running.sh`
   relaunches after an interruption and stops before the budget cap). No on-demand H100 was available on 2026-11-14
   (07:13 UTC, all six zones). Measured on one L40S with `--fast`: 30.3k tokens/s at 4k (old settings 20.3k) and
   20.4k at 16k (old 15.2k), with the E37 micro-batches (4 and 1 rows per pass). On four cards that is about 18 h
@@ -187,7 +187,7 @@ E37 score and is re-read once that reference is measured (plan step 6).
   shared documents, and the trunk's K1 check isolates the tokenizer + web part at equal tokens.
 - **Constructed rows leak a template:** they are ≤ 9 % of the decay and 15 % of the long phase; tests that share
   their format (RULER) are labelled; the long-document loss and the essay needles do not share it.
-- **Spot interruptions** over multi-day runs: checkpoints every 400 steps (~40 min) to S3, automatic relaunch.
+- **Spot interruptions** over multi-day runs: a checkpoint to S3 at least every 800 steps (under an hour of work), automatic relaunch.
 - **Licences:** the Nemotron synthetic subsets are CC BY 4.0 but their cards note that the generating models'
   terms may apply; FineWeb-Edu, DCLM-Edu and FineMath are ODC-By / CC BY; Common Pile is openly licensed. Weights
   stay private or gated until the IP decision.
