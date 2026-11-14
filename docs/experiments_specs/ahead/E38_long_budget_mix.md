@@ -171,6 +171,32 @@ E37 score and is re-read once that reference is measured (plan step 6).
 - **K3:** S5 fails by half (< 0.05 nats) → the stronger local model no longer needs the notebook at 16k; report it
   and move the claim to 64k–128k only.
 
+## Leaderboard recipe (added 2026-11-14, evening)
+The author wants the 100M models on the Tiny-ML Leaderboard (huggingface.co/spaces/Glint-Research/Tiny-ML-Leaderboard)
+and, after comparing tokenizers, chose **"SmolLM2, bigger body"** (19:20 UTC). The board admits models up to 150M
+parameters in total, a shared input/output table counted once; every model trained so far (about 162M with separate
+tables) is over the cap, including the running long concept-memory run.
+
+- **Shared table:** `--lm_head_tied` (`nn/perceiver_ar_lm.TiedFactorizedHead`): the output reuses the input table
+  E [49,152 × 384] through one projection, logits = (h·Pᵀ)·Eᵀ. Loss, gradients and save/load match an explicit tied
+  reference; the fused GPU loss equals the chunked one with it (Odra, 18 GPU tests).
+- **Size `m120t`:** width 896, 3 local + 9 stacked layers (7 at m100), FFN 2,816; body 120.8M (m100: 96.5M).
+  Totals: concept memory, LSA port and fair full attention 141.51M (the trainer counts 141,506,208), catalogue
+  145.61M. It trains only from a built mix and refuses a vocabulary larger than SmolLM2's.
+- **Data:** `m21mix_v2` (Nemotron-CC High-Quality, Diverse-QA and Math in the web half; SmolLM2 tokens). None of the
+  board's tests (BLiMP, ARC, WikiText) is in any training source; the board flags disclosed benchmark training.
+- **Optimizer:** AdamW, or Muon from one peak (`--muon_peak`: trunk and decay at the peak, the 64k phase at a tenth)
+  if the paid Muon test passes its mark (≥ 0.03 lower held-out loss than AdamW at the same step).
+- **Job:** `infra/aws/jobs/e38_board.sh SEED OPT ARM...` (OPT = adam | muon:PEAK); same phases, tests and resume.
+- **Memory:** 4 rows of 4k and 1 row of 16k each peak at about 20 GB on a 24 GB card (Odra probe), so the 48 GB AWS
+  cards keep the m100 pass sizes.
+- **Scoring:** `evaluation/run_lm_eval_suite.py --tier leaderboard` (BLiMP acc over 67 sets, ARC-Easy acc, WikiText-2
+  byte perplexity, 0-shot) and `evaluation/tiny_ml_board.py` (the board's formula; five entries reproduce the live
+  page's scores to 2 decimals; snapshot of 100 entries, 2026-11-14).
+- **Pass mark for the board (set before running):** at least the board's 12B-token reference, JugnuLM-53M
+  (BLiMP 78.1, ARC-Easy 51.4, WikiText-2 2.04) on BLiMP and ARC-Easy, i.e. the middle of the board; ARC-Easy
+  < 45 % after the full budget means the recipe, not the size, is the limit.
+
 ## Plan
 1. Engineering (done 2026-11-14, branch `eng-100m`): cache + tuning + architecture branches merged; `--fast`;
    read-once / answer-many decoding; `--mix`; job and keeper scripts.

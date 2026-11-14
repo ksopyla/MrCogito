@@ -15,6 +15,21 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-14] - Tiny-ML Leaderboard recipe: shared input/output table, a bigger body under 150M, board scoring
+
+Author, 2026-11-14: submit the 100M models to the Tiny-ML Leaderboard; then "SmolLM2, bigger body". Branch `eng-100m`.
+
+- **Shared table (`--lm_head_tied`):** `nn/perceiver_ar_lm.TiedFactorizedHead`, the output as (h·Pᵀ)·Eᵀ with the input
+  table E; every loss path (plain, chunked, Liger fused, softcap) takes the projected states and the table. Tests:
+  `tests/test_tied_head.py`, the CUDA fused-loss test over plain and tied heads.
+- **Size `m120t` in `scripts/run_e33n.py`:** 896 wide, 9 stacked layers, FFN 2,816, tied, SmolLM2 vocabulary:
+  141.5M total (catalogue 145.6M). `run_e33n.py sizes` prints each arm's total.
+- **`--muon_peak`:** a whole Muon run from one peak (64k phase at a tenth); `infra/aws/jobs/e38_full.sh` takes
+  `E38_SIZE`, `E38_OPT`; `infra/aws/jobs/e38_board.sh` is the leaderboard recipe on `m21mix_v2`; `E33N_TAG` names runs.
+- **Board scoring:** `evaluation/run_lm_eval_suite.py --tier leaderboard` and `evaluation/tiny_ml_board.py`
+  (reproduces the live board's score), board snapshot under `evaluation/leaderboards/`.
+- **Pipeline check by size:** `infra/aws/jobs/e38_pipeline_check.sh SCALE ARM SIZE`.
+
 ## [2026-11-14] - Engineering pass for the 100M models: branches merged, faster training, read-once decoding, data mixes
 
 Author, 2026-11-14: "please implement the engineering improvements and merge to dev, inform other agents what have
