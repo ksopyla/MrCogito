@@ -228,6 +228,84 @@ def manifests(data: Path, out: Path, size: str) -> dict:
     return p
 
 
+def mix_manifests(mix_dir: Path, out: Path) -> tuple[dict, dict]:
+    """Phase manifests of a built data mix (scripts/build_m21_mix.py: DIR/mix.json, DIR/tokenizer/,
+    DIR/<source>_train_*.bin and <source>_val_*.bin). Returns (manifest paths per phase, the mix).
+
+    A "stream" source that several phases read (web text in the trunk and again, as replay, in the long phases) is
+    split by shards: the last phase takes shards from the end until it has its share of that phase's tokens (+3 %),
+    the one before takes the next ones, the trunk keeps the rest — no token is read in two phases. "doc" sources
+    (long documents) are shared: the 64k phase reads the documents long enough for it, as E37's 64k stage did."""
+    import glob
+    import os
+
+    mix_dir = Path(mix_dir)
+    mix = json.loads((mix_dir / "mix.json").read_text())
+    phases, eot = mix["phases"], int(mix["eot"])
+    out.mkdir(parents=True, exist_ok=True)
+    shards = {}
+    for ph in phases.values():
+        for s in ph["train"]:
+            shards.setdefault(s["name"], sorted(glob.glob(str(mix_dir / f"{s['name']}_train_*.bin"))))
+
+    def rule_of(ph: dict, s: dict) -> str:
+        return s.get("rule", ph.get("rule", "stream"))
+
+    def n_tok(f: str) -> int:
+        return (os.path.getsize(f) - 256 * 4) // 2
+
+    stream_users = {}
+    for name_ph, ph in phases.items():
+        for s in ph["train"]:
+            if rule_of(ph, s) == "stream":
+                stream_users.setdefault(s["name"], []).append(name_ph)
+    order = [k for k in ("long", "decay", "trunk") if k in phases] + [k for k in phases if k not in ("long", "decay", "trunk")]
+    taken = {name: 0 for name in shards}  # shards already given away, from the end
+    paths = {}
+    for name_ph in order:
+        ph = phases[name_ph]
+        seq = int(ph["seq_len"])
+        train = []
+        for s in ph["train"]:
+            name, rule = s["name"], rule_of(ph, s)
+            files = shards[name]
+            if not files:
+                raise FileNotFoundError(f"mix {mix_dir}: no shard of source {name} (phase {name_ph})")
+            if rule == "stream" and len(stream_users.get(name, [])) > 1:
+                avail = files[: len(files) - taken[name]]
+                first_user = [k for k in ("trunk", "decay", "long") if k in stream_users[name]][0]
+                if name_ph == first_user:
+                    use = avail
+                else:
+                    need, got, use = float(s["weight"]) * float(ph["tokens"]) * 1.03, 0, []
+                    for f in reversed(avail):
+                        if got >= need:
+                            break
+                        use.insert(0, f)
+                        got += n_tok(f)
+                    taken[name] += len(use)
+                if not use:
+                    raise ValueError(f"mix {mix_dir}: source {name} has no shard left for phase {name_ph}")
+                files = use
+            e = {"name": name, "files": files, "weight": float(s["weight"])}
+            if rule != ph.get("rule", "stream"):
+                e["rule"] = rule
+            train.append(e)
+        rules = {s["name"]: rule_of(ph, s) for s in ph["train"]}
+        ev = []
+        for s in ph.get("eval", []):
+            e = {"name": s["name"], "files": [str(mix_dir / f"{s['name']}_val_*.bin")], "rows": int(s["rows"])}
+            r = s.get("rule", rules.get(s["name"], ph.get("rule", "stream")))
+            if r != ph.get("rule", "stream"):
+                e["rule"] = r
+            ev.append(e)
+        m = {"seq_len": seq, "rule": ph.get("rule", "stream"), "eot": eot, "seed": int(ph.get("seed", 42)),
+             "train": train, "eval": ev}
+        paths[name_ph] = out / f"manifest_{name_ph}.json"
+        paths[name_ph].write_text(json.dumps(m, indent=2))
+    return paths, mix
+
+
 def _final_eval_every(steps: int) -> int:
     """The smallest divisor of steps that is at least steps / 10: about ten evaluations, the last at the last step
     (the HF Trainer evaluates only at multiples of eval_steps)."""
@@ -239,10 +317,11 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
               flow: bool = False, gpus: int = 1, sft_manifest: str | None = None,
               grad_ckpt: bool = False, compile: str = "off", liger: bool = False, rows: int | None = None,
-              workers: int = 6, fast: bool = False) -> list[str]:
+              workers: int = 6, fast: bool = False, mix: str | None = None) -> list[str]:
     liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
+    tokenizer = str(data / "tokenizer_gpt2")
     if phase == "sft":
         if not (sft_manifest and init and lr):
             raise ValueError("phase sft needs --sft_manifest, --init (a decay's final folder) and --lr")
@@ -255,7 +334,14 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         # one row per pass at 16k beyond s30 (24 GB home cards); gradient accumulation makes up the 16 rows
         micro = micro or max(1, min(rows_per_step, 2 if size == "s30" else 1))
     else:
-        man = manifests(data, out, size)
+        if mix:  # a built data mix: its tokenizer, sources, row lengths and tokens per phase
+            man, mx = mix_manifests(Path(mix), out)
+            if phase not in man:
+                raise ValueError(f"mix {mix} has no phase {phase!r}")
+            tokenizer = str(Path(mix) / mx.get("tokenizer", "tokenizer"))
+            tokens = tokens or float(mx["phases"][phase]["tokens"])
+        else:
+            man = manifests(data, out, size)
         seq = json.loads(man[phase].read_text())["seq_len"]
         tokens = tokens or z[phase]
         rows_per_step = z["rows"] * 4096 // seq  # the same tokens per step in every phase
@@ -291,7 +377,7 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         eval_every = _final_eval_every(steps)
     cmd += [
         "--attn_backend", backend, "--attn_pad_multiple", "1", "--use_liger", "True" if liger else "False",
-        "--bin_manifest", str(man[phase]), "--tokenizer_name", str(data / "tokenizer_gpt2"),
+        "--bin_manifest", str(man[phase]), "--tokenizer_name", tokenizer,
         "--max_seq_length", str(seq), "--batch_packing_mode", "none",
         "--per_device_train_batch_size", str(micro), "--per_device_eval_batch_size", str(max(1, micro // 2)),
         "--gradient_accumulation_steps", str(accum), "--learning_rate", str(lr), "--max_steps", str(steps),
@@ -355,6 +441,8 @@ def main() -> None:
     c.add_argument("--compile", default="off", choices=("off", "static", "dynamic"),
                    help="torch.compile the whole model (static: fixed row shapes)")
     c.add_argument("--liger", action="store_true", help="Liger's fused linear + cross-entropy for the loss")
+    c.add_argument("--mix", help="a built data mix (scripts/build_m21_mix.py output dir): its tokenizer, sources, "
+                                 "row lengths and tokens per phase replace the GPT-2 FineWeb-Edu / LongDocs-lite data")
     c.add_argument("--fast", action="store_true",
                    help="the speed settings measured 2026-11-14: --liger plus the compiled concept grouping (E37 "
                         "arms); same loss function and same concepts, pair it with a larger --micro")
@@ -375,7 +463,7 @@ def main() -> None:
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
                     local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
                     grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
-                    fast=a.fast)
+                    fast=a.fast, mix=a.mix)
     print(shlex.join(cmd))
 
 
