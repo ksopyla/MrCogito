@@ -542,6 +542,56 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     notes_open 0.411 (−1.1, just outside). **Reading:** at 100M on 3.4B tokens our concept read and the top-k read
     use far context as well as full attention to 32k and keep a gain to 128k where full attention loses it; both pay
     ~0.02 nats on the first 512 positions that the window model and the original LSA do not.
+  - **Checks before any claim (author 2026-11-13 ~20:50 UTC, relayed by the "100M model review and next steps"
+    session: "Yes, start checks"; AWS spend before them ≈ $1,265 to mid-Nov 13 by Cost Explorer, before credits;
+    budget $2,000):**
+    1. **Fair full-attention control, `dense_rope`:** the dense arm with RoPE on the reading layer (par_global_nope
+       false, rope_theta 500k as the local layers; arch-10m 5f9cb36; commands differ from dense's only in that flag,
+       same 96.5M non-embedding parameters). Every read here, dense included, has no position code on the reading
+       layer, which is why dense spreads thin past 32k. Full m100 protocol, seed 42, 4 × L40S spot, the stage-B
+       evals; also the long-document loss at an eval-time NTK-style base on every layer (4.28e6 = 500k × 8^(64/62),
+       16k → 128k), reported as a separate row. ≈ $75.
+    2. **Second seeds** for e37a and the lsa port (seed 7: initial weights and row order; the data are the same),
+       full m100 protocol on 4 × L40S, the same evals. ≈ $105 each.
+    3. **Needles with cached decoding** (branch e37-needles = e37-long + arch-10m; `infra/aws/jobs/e37_needles_node.sh`
+       on one-L40S spot nodes): RULER at 64k on all 100 documents per task and at 128k, plus RULER 4k cached to set
+       against the stage-B old-loop 4k, for e37a, lsa, catalogue, dense, dense_rope; the original LSA at 64k and
+       128k on its own uncached path. Pairs in each run's `needles/` folder, merged into `eval_ruler_needles.json`
+       (the old-loop 64k@25 pairs stay in `later/`). The essay-haystack tasks (single-2 number, single-3 UUID) are
+       reported apart from the filler-text ones. ≈ $110.
+    Order on the one 4-GPU slot (G spot quota): the 64k stage (catalogue, then the LSA port) → dense_rope → e37a seed 7
+    → lsa seed 7; the needle nodes run beside it.
+  - **64k stage at 100M (the "10M context architecture analysis" session's request, author: "Yes, run it"; recipe
+    of e33n-lsa-testbed a729ca7, branch e37-long = it + the jobs + cached decoding): 0.1B LongDocs-lite tokens in
+    rows of 65,536 from the stage-B decay final, 191 steps of 8 rows (micro 1 × accum 2 × 4 GPUs), lr 6.4e-5 →
+    6.4e-6, gradient checkpointing; one g6e.12xlarge spot node per model, 8 h hard stop; files with a `_long` suffix
+    and `long_evals/` in the run folder.** RULER with the cached decoding; the old loop on the same model at 4k as a
+    check (`eval_ruler_long.json["cache_check"]`).
+    - **catalogue_reuse_n4 (node `e37-long-catalogue-reuse-n4` i-07e15db9d75d8c8ac, launched 19:12, training
+      19:16–20:54, tests 20:54–21:37 UTC Nov 13, ≈ 2.4 h ≈ $18; ~22 GB of 46 GB a card, ~32 s a step):** loss on
+      positions ≥ 2k, stage B → 64k stage: 4k 2.342 → 2.339, 16k 2.189 → 2.187, 32k 2.275 → 2.264, 64k 2.270 →
+      **2.232**, 128k 2.058 → **1.943** (4 sources; e37a 1.990, lsa 1.994, original LSA 1.925 at stage B); notebook
+      off unchanged (−0.002 to −0.005), so the gain is the catalogue read's. Positions < 512 at 16k 2.400 → 2.399;
+      core 0.416 → 0.416. RULER mean of 13 tasks 4k / 8k / 16k / 32k: 0.231 / 0.197 / 0.183 / 0.125 → 0.224 / 0.191
+      / 0.180 / **0.158**; essay haystack at 32k number 0.08 → 0.19, UUID 0.07 → 0.21; single needle 0.99 at every
+      length. Cache check at 4k: 10 of 13 tasks identical, three differ by one document (multi-key-2 0.01 vs 0.00,
+      multi-value 0.18 vs 0.1825, single-2 0.73 vs 0.72), mean 0.2240 cached vs 0.2226 old loop — bf16 ties, not a
+      different decoding; the 4k drop against stage B (0.231) is the 64k stage's, not the cache's.
+    - **lsa, the LSA port (node `e37-long-lsa` i-0806f36773e567902, launched 21:54, training 21:57–22:58, tests
+      22:58–23:33 UTC Nov 13, ≈ 1.7 h ≈ $13; ~12 GB of 46 GB a card, ~19 s a step):** loss on positions ≥ 2k,
+      stage B → 64k stage: 4k 2.322 → 2.320, 16k 2.169 → 2.166, 32k 2.254 → 2.244, 64k 2.245 → **2.212**, 128k
+      1.994 → **1.923** (the original LSA's 1.925 at stage B: a tie). Positions < 512 at 16k 2.384 → 2.382; core
+      0.416 → 0.414. RULER mean 4k / 8k / 16k / 32k: 0.255 / 0.241 / 0.209 / 0.174 → 0.247 / 0.233 / 0.203 / 0.172
+      — about 0.01 lower to 16k (0.012 at 4k with the old loop on both); the essay number needle loses most (0.88 /
+      0.92 / 0.84 / 0.55 → 0.81 / 0.82 / 0.70 / 0.38), the UUID gains at 32k (0.20 → 0.28), single needle 0.97–0.99.
+      Cache check at 4k: 7 of 13 tasks identical, 6 differ by 1–2 documents (HotpotQA 0.07 vs 0.05, SQuAD 0.03 vs
+      0.02, single-3 0.54 vs 0.53, small shares on multi-value / common / frequent words), mean 0.2469 cached vs
+      0.2434 old loop: LSA's top-k choice flips on bf16 near-ties more often than the catalogue read; differences
+      under ~0.005 on a mean are not results.
+    - **Reading:** on long text the 64k stage helps both reads where the decay never trained (64k: −0.03 to −0.04
+      nats, 128k: −0.07 to −0.12) and leaves ≤ 16k alone; the catalogue model gains more at 128k (1.943, from 2.058)
+      and on 32k retrieval (0.125 → 0.158), the LSA port keeps the better retrieval at every length (0.172 vs 0.158
+      at 32k) but gives up part of its essay-number needle.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
