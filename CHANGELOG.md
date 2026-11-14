@@ -38,8 +38,24 @@ been done. Test it properly, and compare to past runs." Branch `eng-100m` (workt
 
   The bare step without the Trainer gives the old settings' speed (13,089 vs 13,076): the trainer and the dataloader
   add nothing. 57 % of e37a's forward is the reading layer (four passes), and the step has a fixed cost per pass that
-  larger batches spread. L40S numbers: `infra/aws/jobs/eng_check_node.sh` (queued, results in
-  `s3://…/runs/eng_check/`).
+  larger batches spread on the 3090.
+
+  One L40S, the card of every 100M run to date (`infra/aws/jobs/eng_check_node.sh`, spot g6e.xlarge in us-west-2,
+  07:17–08:30 UTC, ~$2; `s3://…/runs/eng_check/eng-check/`), 60 steps each, tokens per second (peak GB):
+
+  | model, phase | old settings | `--fast`, same rows per pass | `--fast`, more rows per pass |
+  |---|---|---|---|
+  | e37a, trunk 4k (4 rows) | 20,334 (29.4); with `--flow` 20,350 | 30,280 (19.2), +49 % | 6: 29,202 · 8: 30,523 (34.6) · 10: 30,399 (42.3) |
+  | e37a, decay 16k (1 row) | 15,218 (21.6) | 20,439 (19.3), +34 % | 2: 20,164 (35.1) · 3: out of memory |
+  | lsa, trunk 4k (4 rows) | 22,667 (28.7); with `--flow` 22,689 | 31,536 (18.3), +39 % | 6: 31,046 · 8: 32,495 (33.0) · 10: 32,724 (40.3) |
+  | lsa, decay 16k (1 row) | 17,566 (20.8) | 23,404 (18.5), +33 % | 2: 23,541 (33.4) · 3: out of memory |
+
+  The old settings reproduce the past runs (4 × 20.3k = 81k; stage B measured 79k on four cards). On the L40S more
+  rows per pass add nothing, so the long runs keep the E37 micro-batches and gain from the fused loss and the
+  compiled grouping alone.
+- **Same quality:** e37a m100 trunk, seed 42, 400 optimizer steps of 16 rows, one RTX 3090 each (Odra, 07:12–07:50
+  UTC). Held-out FineWeb-Edu loss at steps 100 / 200 / 300 / 400: old 6.2147 / 5.5052 / 5.1449 / 4.9117; `--fast` (4
+  rows per pass instead of 2) 6.1946 / 5.4920 / 5.1417 / 4.9122. Wall time 2,258 s vs 1,485 s (1.52×).
 - **Whole-model `torch.compile` is not usable** on these models with torch 2.11 (`--compile static`, kept as a switch):
   after graph breaks on the forward's data-dependent branches the process aborts inside dynamo's guard code ("failed to
   add version watcher to dict"). The earlier estimate of 1.5–2× from compiling was wrong.
@@ -47,7 +63,18 @@ been done. Test it properly, and compare to past runs." Branch `eng-100m` (workt
   (`DocumentSession`, with a CLI). A document is prefilled once; each question restores the snapshot, writes its
   tokens as steps and decodes. Every read type (dense, dense + RoPE, LSA, catalogue, notes, concept, concept +
   reasoner, concept + length scale) answers with the tokens of a fresh prefill over document + question
-  (`tests/test_incremental_decode.py`). `evaluation/bench_cached_decoding.py --questions N` times it.
+  (`tests/test_incremental_decode.py`). `evaluation/bench_cached_decoding.py --questions N` times it. On one L40S,
+  100M stage-B models, a needle question with a 32-token answer, bf16, seconds:
+
+  | model | length | fresh prompt, cached (2026-11-13 path) | read once | then each question | same answer |
+  |---|---|---|---|---|---|
+  | e37a | 16k / 64k / 128k | 1.10 / 4.92 / 16.55 | 0.46 / 4.26 / 15.89 | 1.06 / 1.06 / 1.07 | yes |
+  | dense | 16k / 64k / 128k | 0.45 / 1.03 / 2.23 | 0.07 / 0.42 / 1.17 | 0.59 / 0.90 / 1.62 | yes |
+
+  For the concept read a question costs about a second whatever the document's length (its step reads 512 opened
+  tokens and the summaries), so at 128k a question is 15× cheaper than a fresh prompt once the document is read;
+  full attention's step reads every key, so its saving is small. Peak memory with the snapshot: 4.5 GB at 64k and
+  10.8 GB at 128k for e37a.
 - **Data mixes:** `scripts/run_e33n.py --mix DIR` trains on a built mix (its tokenizer, sources, row lengths and
   tokens per phase; a stream source read by several phases is split by shards); `evaluation/long_doc_loss.py
   --sources / --eot / --tokenizer` (bits per byte, to compare tokenizers on the same documents); `E33N_MIX`,
@@ -55,7 +82,12 @@ been done. Test it properly, and compare to past runs." Branch `eng-100m` (workt
 - **Operations:** `infra/aws/keep_running.sh` (relaunches a spot job until its done-marker is in S3; refuses a launch
   that could pass the cap), `infra/aws/jobs/e38_full.sh`, `scripts/profile_train_step.py`; `MC_BUDGET_USD` default
   4,000 (author, 2026-11-14: "Increase our budget to $4000").
-- **Tests:** 1,583 passed on the merged branch before the changes; the one failure
+- **E38 data (`m21mix_v1`):** `scripts/build_m21_mix.py`, `scripts/build_reasoning_rows.py`, their node jobs and
+  `scripts/run_e33n.py mixinfo`. Built 07:23–07:58 UTC on two CPU nodes for $0.90: 13.76B train tokens, 20 public
+  sources, SmolLM2 tokens, 25.7 GiB in S3; no source short in any phase. Pipeline check on Odra
+  (`infra/aws/jobs/e38_pipeline_check.sh`): a 1 % build, a 30M e37a through trunk, decay and the 64k phase with
+  evaluations, resume, then the tests in quick form.
+- **Tests:** 1,599 passed after the changes (1,583 on the merged branch before them); the one failure
   (`test_launcher_e05_profile_reaches_canonical_parser`) is the same on dev.
 
 ---
