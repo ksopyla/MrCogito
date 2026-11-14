@@ -4,7 +4,7 @@
 # Three phases from the mix's own budget (scripts/run_e33n.py --mix): trunk 8.0B tokens in rows of 4,096, decay 3.0B
 # in rows of 16,384, long 0.5B in rows of 65,536; then the tests of the 64k model (e37_evals_long.sh: long-document
 # loss by position 4k-128k, RULER 4k-32k with cached decoding, core) and the long-document loss of the 16k model.
-# Speed settings of 2026-11-14 (--fast: fused loss, compiled concept grouping) with larger micro-batches.
+# Speed settings of 2026-11-14 (--fast: fused loss, compiled concept grouping), the E37 runs' micro-batches.
 # Each arm trains on all the node's GPUs, one after another; checkpoints go to S3, so after a spot interruption the
 # same launch resumes; an arm whose eval_core_long.json is in S3 is skipped. A launch.sh job cannot pass environment
 # variables to the node, hence this wrapper.
@@ -16,8 +16,10 @@ G=$(nvidia-smi -L | wc -l)
 MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
 source /etc/mrcogito.env
 MIX="${E38_MIX:-m21mix_v1}"; TT="${E38_TRUNK_TOKENS:-8.0e9}"; D="$MC_DISK/data"
-# rows per pass and card with the fused loss (L40S 48 GB: eng_check_node.sh, 2026-11-14; 80 GB cards take twice that)
-if [ "${MEM:-0}" -ge 70000 ]; then MT=16; MD=4; else MT=8; MD=2; fi
+# rows per pass and card: the E37 runs' own (4 at 4k, 1 at 16k on a 48 GB card; twice that on 80 GB). On one L40S
+# with --fast, 4 / 6 / 8 / 10 rows at 4k all give 29-30.5k tokens/s (old settings: 20.3k) and 1 / 2 rows at 16k
+# both ~20.3k (old: 15.2k), so larger passes only cost memory (eng_check_node.sh, us-west-2, 2026-11-14)
+if [ "${MEM:-0}" -ge 70000 ]; then MT=8; MD=2; else MT=4; MD=1; fi
 export E33N_EXPERIMENT=E38 E33N_SEED="$SEED" E33N_GPUS="$G" E33N_CKPT_S3=1 E33N_SKIP_EVAL=1 E33N_MIX="$MIX" \
   E33N_LONG=1 E33N_GRAD_CKPT=1 E33N_MICRO_TRUNK="${E38_MICRO_TRUNK:-$MT}" E33N_MICRO_DECAY="${E38_MICRO_DECAY:-$MD}" \
   E33N_MICRO_LONG=1 E33N_CMD_EXTRA="--fast --save_every ${E38_SAVE_EVERY:-400}"
