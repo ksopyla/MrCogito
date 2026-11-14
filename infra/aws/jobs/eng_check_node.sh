@@ -4,6 +4,7 @@
 # ones, on the card type every 100M run to date used, and the read-once / answer-many timing next to the cached and
 # uncached decoding of 2026-11-13.
 #   MC_SPOT=1 bash infra/aws/launch.sh eng-check 3 "infra/aws/jobs/eng_check_node.sh" eng-100m g6e.xlarge
+#   bash infra/aws/launch.sh eng-check-h100 2 "infra/aws/jobs/eng_check_node.sh h100" eng-100m p5.4xlarge   (on demand)
 # Part 1, training (real trainer, real shards, 8 rows of 4k / 2 rows of 16k per optimizer step, 60 steps each):
 #   old   = the settings of every run to 2026-11-14 (chunked loss; micro-batch 4 at 4k and 1 at 16k per card)
 #   fast  = scripts/run_e33n.py --fast (fused loss, compiled concept grouping) at several micro-batches
@@ -16,6 +17,10 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 D="$MC_DISK/data"; W="$MC_DISK/eng_check"; OUT="s3://$MC_BUCKET/runs/eng_check/$MC_NAME"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ARMS=(${ENG_ARMS:-e37a lsa})
+# first JOB word: the card profile. l40s (default, 48 GB): micro-batches up to 10 / 3; h100 (80 GB): up to 20 / 6,
+# training speed only (the decoding was timed on the L40S)
+PROFILE="${1:-l40s}"
+if [ "$PROFILE" = h100 ]; then TM=(8 12 16 20); DM=(2 4 6); ENG_SKIP_DECODE=1; else TM=(4 6 8 10); DM=(1 2 3); fi
 mkdir -p "$D/fineweb_edu_gpt2" "$W"
 log() { echo "[eng_check $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$W/node.log"; }
 up() { aws s3 sync --only-show-errors "$W/" "$OUT/" --exclude "*/checkpoint-*" --exclude "*.safetensors" --exclude "*.pt" --exclude "ckpt/*" --exclude "*.gpu" || true; }
@@ -40,14 +45,9 @@ if [ -z "${ENG_SKIP_SPEED:-}" ]; then
   for arm in "${ARMS[@]}"; do
     one "$arm" trunk 4 8 old_m4 ""
     one "$arm" trunk 4 8 old_m4_flow "--flow"       # as the E37 runs were launched (E33p instrumentation on)
-    one "$arm" trunk 4 8 fast_m4 "--fast"
-    one "$arm" trunk 6 12 fast_m6 "--fast"
-    one "$arm" trunk 8 16 fast_m8 "--fast"
-    one "$arm" trunk 10 20 fast_m10 "--fast"
+    for m in "${TM[@]}"; do one "$arm" trunk "$m" $(( 2 * m )) "fast_m$m" "--fast"; done
     one "$arm" decay 1 2 old_m1 ""
-    one "$arm" decay 1 2 fast_m1 "--fast"
-    one "$arm" decay 2 4 fast_m2 "--fast"
-    one "$arm" decay 3 6 fast_m3 "--fast"
+    for m in "${DM[@]}"; do one "$arm" decay "$m" $(( 2 * m )) "fast_m$m" "--fast"; done
   done
 fi
 
