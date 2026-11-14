@@ -592,6 +592,28 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
       nats, 128k: −0.07 to −0.12) and leaves ≤ 16k alone; the catalogue model gains more at 128k (1.943, from 2.058)
       and on 32k retrieval (0.125 → 0.158), the LSA port keeps the better retrieval at every length (0.172 vs 0.158
       at 32k) but gives up part of its essay-number needle.
+  - **Needles with cached decoding (check 3; one g6e.xlarge spot node per model, branch e37-needles 7b6b394, the
+    stage-B decay finals; RULER 13 tasks on 100 documents a task at 4k / 64k / 128k, one harness call per length ×
+    task; files in each run's `needles/`, merged in `eval_ruler_needles.json`):**
+    - **The documents differ from stage B's.** RULER draws its needle documents from Python's global random state,
+      which lm-eval seeds once per harness call (`random.seed` in `simple_evaluate`). Stage B ran the 13 tasks in one
+      call, the needle nodes one task per call, so only the first task (single-1) gets the same documents: 4k cached
+      vs stage B there dense 0.78 vs 0.77, lsa 0.96 vs 0.96. The other tasks move by up to 0.15 either way
+      (lsa frequent words 0.12 vs 0.27, dense single-3 0.22 vs 0.09); means dense 0.208 vs 0.210, lsa 0.247 vs
+      0.255. So the clean cache checks stay the 64k stage's (same documents, both paths), and per-task RULER at 100
+      documents carries ±0.05–0.15 of document-draw noise. Within the needle pass every model sees the same documents
+      (fresh seed per call, the same GPT-2 tokenizer), so the models compare fairly with each other.
+    - **dense (node `e37-needles-dense`, done 00:09 UTC Nov 14, ≈ 2.8 h ≈ $5):** mean 4k / 64k / 128k 0.208 /
+      0.073 / 0.083. Essay number 0.93 / **0.00 / 0.00**, essay UUID 0.22 / 0.00 / 0.00; the other 11 tasks 0.141 /
+      0.086 / 0.098, nearly all from the filler-text single needle (0.78 / 0.87 / 0.99) and QA (HotpotQA 0.04 /
+      0.06 / 0.06).
+    - **lsa, the LSA port (node `e37-needles-lsa`, done 04:27 UTC Nov 14, ≈ 6.8 h ≈ $12):** mean 0.247 / 0.139 /
+      0.128. Essay number 0.93 / **0.21 / 0.17**, essay UUID 0.62 / 0.03 / 0.06; the other 11 0.151 / 0.142 / 0.131
+      (single-1 0.96 / 0.97 / 0.98, multi-key-1 0.20 / 0.31 / 0.19, multi-value 0.14 / 0.15 / 0.17). 64k on 100
+      documents agrees with the old-loop later pass on 25 (mean 0.150; essay number 0.28, UUID 0.04).
+    - **Reading so far:** full attention whose reading layer has no position code finds no essay needle at 64k or
+      128k; the LSA port's top-k read still finds about one essay number in five at 64k and one in six at 128k. Both
+      find the filler-text needle at every length. e37a, catalogue, the original LSA and dense_rope to follow.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
