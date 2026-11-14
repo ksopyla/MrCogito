@@ -560,7 +560,12 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
        (the old-loop 64k@25 pairs stay in `later/`). The essay-haystack tasks (single-2 number, single-3 UUID) are
        reported apart from the filler-text ones. ≈ $110.
     Order on the one 4-GPU slot (G spot quota): the 64k stage (catalogue, then the LSA port) → dense_rope → e37a seed 7
-    → lsa seed 7; the needle nodes run beside it.
+    → lsa seed 7; the needle nodes run beside it. **Changed Nov 14** (author's order, relayed by "100M model review and
+    next steps"): the E38 leaderboard runs go first. e37a seed 7 took the slot when the old E38 long run was stopped
+    (launched 21:47 UTC Nov 14, `e37-b-l40s-e37a-s7` i-00d119b79cce2d64e). It gives the slot back at its first trunk
+    checkpoint after the E38 Muon test ends (~05:00 UTC Nov 15) and resumes from that checkpoint, then lsa seed 7,
+    once the four leaderboard runs are done (~20 Nov). The resumed run differs from an unbroken one only in the
+    restart.
   - **64k stage at 100M (the "10M context architecture analysis" session's request, author: "Yes, run it"; recipe
     of e33n-lsa-testbed a729ca7, branch e37-long = it + the jobs + cached decoding): 0.1B LongDocs-lite tokens in
     rows of 65,536 from the stage-B decay final, 191 steps of 8 rows (micro 1 × accum 2 × 4 GPUs), lr 6.4e-5 →
@@ -624,14 +629,16 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
       0.06 / 0.08). 4k single-1 0.96 vs stage B 0.96.
     - **The original LSA, its own uncached path (node `e37-needles-orig-64k`, done 09:12 UTC Nov 14, ≈ 9.3 h ≈ $16):**
       64k mean 0.022; essay number 0.06, UUID 0.00, single-1 0.01, multi-key-1 0.11 (its stage-B 4k: 0.139, single-1
-      0.10, essay number 0.63). 128k on `e37-needles-orig-128k`, 9 of 13 tasks at 16:08 UTC, ~01:00 Nov 15.
+      0.10, essay number 0.63). **128k (node `e37-needles-orig-128k`, 00:37–21:54 UTC Nov 14, ≈ 21.3 h ≈ $37):**
+      mean 0.025; essay number 0.11, UUID 0.00, single-1 0.02, multi-key-1 0.04, HotpotQA 0.11 (64k: 0.07) — at
+      the floor with dense_rope, below dense (0.083) and far below the LSA port (0.128).
     - **dense_rope (node `e37-needles-dense-rope`, launched 10:21 UTC Nov 14, ≈ 2.9 h ≈ $5):** mean 0.216 / **0.019 /
       0.013**. Essay number 0.85 / 0.00 / 0.00, UUID 0.31 / 0.00 / 0.00; single-1 0.94 / **0.14 / 0.07** (stage B 4k
       0.95, same documents).
     - **Reading:** past 32k only the LSA port's top-k read keeps finding essay needles (about one number in five at
-      64k, one in six at 128k); e37a, the catalogue read and dense find 0–4 in 100, the original LSA 6. The filler-text
+      64k, one in six at 128k); e37a, the catalogue read and dense find 0–4 in 100, the original LSA 6 / 11. The filler-text
       needle separates the reads with a position code from the rest: e37a, lsa, catalogue and dense find it at
-      0.87–0.99 to 128k, dense_rope at 0.14 / 0.07 and the original LSA at 0.01 at 64k.
+      0.87–0.99 to 128k, dense_rope at 0.14 / 0.07 and the original LSA at 0.01 / 0.02.
   - **dense_rope, the fair full-attention control (stage B; node `e37-b-l40s-dense-rope-s42` i-0f800024fdee8fb2c,
     trunk 23:46 Nov 13 – 07:55, decay 07:55–09:12 UTC Nov 14; RULER 16k failed on that node, so its evals were
     redone on relaunch i-0f1d6f00ca512c0d8, 09:50–10:18; ≈ 10.4 h ≈ $79):** loss on positions ≥ 2k (5 sources, 4
