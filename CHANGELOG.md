@@ -15,6 +15,16 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-14] - Plain W&B names for the AWS long runs
+
+- `training/utils_training.init_wandb` reads `MC_WANDB_NAME` (display name), `MC_WANDB_TAGS` (extra comma-separated
+  tags) and `MC_WANDB_NOTES` from the environment; the run id, which resume relies on, stays the coded identifier,
+  now also stored as config `run_name_code`. Nothing changes for jobs that set none of them.
+- `infra/aws/jobs/e38_full.sh` sets them per arm in plain words ("150M concept memory, Muon"; tags E38, size, mix,
+  arm, optimizer, seed, plus `leaderboard` from `e38_board.sh`), and `e33n_run.sh` adds the stage ("stage 1 of 3").
+- Checked: `tests/test_training_runtime_contract.py::test_init_wandb_takes_plain_labels_from_the_job`, and a two-stage
+  Odra run with offline W&B logged "30M concept memory, AdamW, stage 1 of 3" and "… stage 2 of 3".
+
 ## [2026-11-14] - Tiny-ML Leaderboard recipe: shared input/output table, a bigger body under 150M, board scoring
 
 Author, 2026-11-14: submit the 100M models to the Tiny-ML Leaderboard; then "SmolLM2, bigger body". Branch `eng-100m`.
