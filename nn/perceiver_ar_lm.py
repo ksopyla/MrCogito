@@ -4153,11 +4153,13 @@ class PerceiverARLM(PreTrainedModel):
             loss = per.sum() / valid.sum().clamp(min=1)
             return CausalLMOutput(loss=loss, logits=None), per, valid
 
-        flce = self._get_flce() if (cfg.use_liger and hid.is_cuda) else None
+        # Liger's fused loss returns CE + z-loss as one sum with its gradient built in, so the two cannot be scaled
+        # apart. With ce_norm (the step's token mean for the CE, the z-loss kept per micro-batch) the chunked path
+        # below is used instead, so both paths give ce / ce_norm + z / n (review of 2026-11-14).
+        flce = self._get_flce() if (cfg.use_liger and hid.is_cuda and ce_norm is None) else None
         if flce is not None:
             n = (tgt != -100).sum().clamp(min=1)
-            loss = flce(self.lm_head.weight, hid.reshape(-1, hid.shape[-1]), tgt.reshape(-1)) / (
-                n if ce_norm is None else ce_norm)
+            loss = flce(self.lm_head.weight, hid.reshape(-1, hid.shape[-1]), tgt.reshape(-1)) / n
         else:
             ce, z, n = chunked_softcap_ce(
                 hid, self.lm_head.weight, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap, cfg.z_loss
