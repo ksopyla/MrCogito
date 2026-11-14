@@ -8,6 +8,10 @@
 # Usage: MC_SPOT=1 MC_BUDGET_USD=4000 bash infra/aws/keep_running.sh NAME MAX_HOURS "JOB" BRANCH TYPE DONE_KEY [INTERVAL_S]
 #   DONE_KEY: an S3 key in the bucket (e.g. runs/e38/<run>/eval_core_long.json); when it exists the loop ends.
 #   KEEP_MAX_LAUNCHES (default 12): give up after this many launches (a job that keeps dying is not a spot problem).
+#   KEEP_WAIT_KEYS (optional): space-separated S3 keys that must all exist before the FIRST launch — another
+#     queue's done-markers, so this job takes a shared slot only after those runs have finished.
+#   KEEP_WAIT_UNTIL (optional, with KEEP_WAIT_KEYS): a UTC time "YYYY-MM-DDTHH:MM" after which the loop stops waiting
+#     and exits with code 5 instead of launching (someone has to look at why the other runs are late).
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 source "$HERE/env.sh"
@@ -28,6 +32,18 @@ t = sys.stdin.read()
 m = re.search(r'total ≈ \\\$([0-9.]+)', t)
 print(m.group(1) if m else 'nan')"
 }
+if [ -n "${KEEP_WAIT_KEYS:-}" ]; then
+  say "waiting for: $KEEP_WAIT_KEYS${KEEP_WAIT_UNTIL:+ (until $KEEP_WAIT_UNTIL UTC)}"
+  while true; do
+    missing=""
+    for k in $KEEP_WAIT_KEYS; do aws s3 ls "s3://$MC_BUCKET/$k" >/dev/null 2>&1 || missing="$missing $k"; done
+    [ -z "$missing" ] && { say "all wait keys are in S3"; break; }
+    if [ -n "${KEEP_WAIT_UNTIL:-}" ] && [ "$(date -u +%Y-%m-%dT%H:%M)" \> "$KEEP_WAIT_UNTIL" ]; then
+      say "STOP (waited until $KEEP_WAIT_UNTIL UTC): still missing$missing"; exit 5
+    fi
+    sleep "$INTERVAL"
+  done
+fi
 while true; do
   if aws s3 ls "s3://$MC_BUCKET/$DONE_KEY" >/dev/null 2>&1; then say "done: $DONE_KEY is in S3"; exit 0; fi
   if alive; then sleep "$INTERVAL"; continue; fi
