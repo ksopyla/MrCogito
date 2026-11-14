@@ -6,6 +6,9 @@ and each step's hidden state must equal that forward's at the same position: ful
 RoPE on the reading layer), LSA's read (answers that
 cross a block end, so the buckets are rebuilt), the catalogue read (E33t, reuse arm), E33p's notes read (pages rewritten
 as the answer grows) and E37's concept read (with the reasoner and the length scale), with a left-padded row.
+Since 2026-11-14 also with swa sinks (every windowed query reads its document's first token), the catalogue's precise
+limit for a known layout (raw window = page, as in the capability checks), and the capability scorer's cached greedy
+letters (`verification/bapo_capability_probe._greedy_answers_cached`) against its one-forward-per-letter loop.
 """
 from __future__ import annotations
 
@@ -39,8 +42,8 @@ class _Tok:
         return " ".join(str(t) for t in toks)
 
 
-def _model(arm, deep=False):
-    extra = DEEP if deep else {}
+def _model(arm, deep=False, **kw):
+    extra = dict(DEEP if deep else {}, **kw)
     if arm == "dense":
         return make_lsa(**DENSE, **extra)
     if arm == "dense_rope":  # E37's fair full-attention control: RoPE on the reading layer too
@@ -48,17 +51,17 @@ def _model(arm, deep=False):
     if arm == "lsa":
         return make_lsa(**LSA, **extra)
     if arm == "catalogue":
-        return make_cat(seed=2, **CAT_REUSE, **extra)
+        return make_cat(seed=2, **dict(CAT_REUSE, **extra))
     if arm == "notes":  # E33p notes read: pages of 16 every 12 tokens, raw window 32; the answer rewrites its pages
         return make_notes(seed=4, **NOTES, **extra)
     if arm.startswith("concept"):  # E37, blocks of 16: a 150-token prompt and 12 answer tokens cross 160
-        kw = dict(CONCEPT, **extra)
+        ckw = dict(CONCEPT, **extra)
         if arm == "concept_reasoner":
-            kw.update(REASONER)
+            ckw.update(REASONER)
         if arm == "concept_scaled":  # the length scale acts past 48 tokens
-            kw.update(concept_sum_len=48)
+            ckw.update(concept_sum_len=48)
         torch.manual_seed(3)
-        m = PerceiverARLM(lm_base_cfg(**kw)).eval()
+        m = PerceiverARLM(lm_base_cfg(**ckw)).eval()
         for layer in m.layers:
             layer.attn.wo.weight.data.normal_(0, 0.2)
             layer.mlp.down.weight.data.normal_(0, 0.2)
@@ -246,3 +249,111 @@ def test_document_session_answers_as_a_fresh_prompt(arm):
         while want and want[-1] == 0:
             want.pop()
         assert toks == want and text == _Tok.decode(want) and sec >= 0
+
+
+# ---------------------------------------------------------------- 2026-11-14: sinks, the layout limit, the scorer
+def _steps_match(m, L0, new, Lb, seed=7, atol=1e-4):
+    """Every cached step's hidden state vs the uncached forward over the same row at the same position (fp32)."""
+    ids, attn = _prompt(L0)
+    buf = torch.zeros(2, Lb, dtype=torch.long)
+    buf[:, :L0] = ids
+    doc = torch.full((2, Lb), -1, dtype=torch.long)
+    doc[:, :L0] = torch.where(attn.bool(), 0, -1)
+    torch.manual_seed(seed)
+    answer = torch.randint(3, 80, (2, new))
+    dec = IncrementalDecoder(m)
+    with torch.no_grad():
+        h = dec.prefill(buf.clone(), doc.clone(), L0)
+        for i in range(new):
+            want = m.hidden_states(buf, doc_ids=doc)[:, L0 - 1 + i]
+            torch.testing.assert_close(h, want, rtol=atol, atol=atol)
+            buf[:, L0 + i] = answer[:, i]
+            doc[:, L0 + i] = 0
+            h = dec.step(answer[:, i])
+    return buf, doc
+
+
+@pytest.mark.parametrize("arm", ["dense", "lsa", "catalogue", "notes", "concept_reasoner"])
+def test_swa_sinks_steps_equal_the_full_forward(arm):
+    """swa_sink (the capability models' local layers): a windowed query also reads its document's first token. The
+    windows here are 4–6 tokens and the left-padded row's document starts at 9, so the sink is a key outside the
+    window on every step, per row; the sinks change the hidden states (the test is not vacuous)."""
+    m = _model(arm, swa_sink=True)
+    assert decode_kind(m) == arm.split("_")[0]
+    buf, doc = _steps_match(m, 150, 12, 208)
+    plain = _model(arm)
+    plain.load_state_dict(m.state_dict())
+    with torch.no_grad():
+        assert not torch.allclose(m.hidden_states(buf, doc_ids=doc)[:, 149:161],
+                                  plain.hidden_states(buf, doc_ids=doc)[:, 149:161], atol=1e-3)
+
+
+def _e33t_layout(**kw):
+    """The capability layout in small: the catalogue (reuse arm) with a raw window of one page (16 = 16) and sinks."""
+    return _model("catalogue", message_raw_window=16, swa_sink=True, **kw)
+
+
+def test_catalogue_layout_limit():
+    """Raw window = page: the general limit is 0 answer tokens; with the layout known the answer may run until its
+    queries are one raw window past the start of the page holding its first token. L0 = 150 sits 6 tokens into the
+    page [144, 160): 16 − 6 + 1 = 11 tokens; a page start gives 17; a row whose last page overlaps (S = 200: pages
+    0, 16, …, 176 and 184) keeps the earliest page holding L0."""
+    m = _e33t_layout()
+    dec = IncrementalDecoder(m)
+    assert dec.max_new_tokens() == 0
+    assert dec.max_new_tokens(150, 208) == 11
+    assert dec.max_new_tokens(144, 208) == 17
+    assert dec.max_new_tokens(190, 200) == 16 - (190 - 176) + 1
+    with pytest.raises(NotImplementedError):
+        dec.greedy(torch.zeros(2, 208, dtype=torch.long), torch.zeros(2, 208, dtype=torch.long), 150, 12, eos=0)
+
+
+@pytest.mark.parametrize("L0", [150, 144])
+def test_catalogue_layout_steps_equal_the_full_forward(L0):
+    """Every token up to the layout limit is the uncached forward's (the limit is exact, not only safe), with the
+    notes opening: the prompt is 9 pages longer than the raw window."""
+    m = _e33t_layout(deep=True)
+    new = IncrementalDecoder(m).max_new_tokens(L0, 208)
+    _steps_match(m, L0, new, 208)
+
+
+def _exam_batch(S=208, L0=180, seed=3):
+    """Capability-shaped rows (one document, no padding): answer letters at [L0, L0 + 6) and [L0 + 7, L0 + 12), an
+    unscored separator between them (a written path's), the row's own tokens after the answer."""
+    g = torch.Generator().manual_seed(seed)
+    ids = torch.randint(3, 80, (2, S), generator=g)
+    labels = torch.full_like(ids, -100)
+    for lo, hi in ((L0, L0 + 6), (L0 + 7, L0 + 12)):
+        labels[:, lo:hi] = ids[:, lo:hi]
+    return ids, labels
+
+
+@pytest.mark.parametrize("arm", ["dense", "lsa", "catalogue_layout"])
+def test_scorer_cached_letters_equal_the_per_letter_loop(arm):
+    """The capability scorer's greedy letters: one read and a step per position give the letters of the
+    one-forward-per-letter loop (`_greedy_answers`), separators teacher-forced as there; the answer spans
+    [180, 192) inside the page [176, 192) (raw window = page). Random weights: most letters are wrong, so the loop
+    runs its later forwards."""
+    from verification.bapo_capability_probe import _answer_exact, _greedy_answers
+
+    m = _e33t_layout(deep=True) if arm == "catalogue_layout" else _model(arm, swa_sink=True)
+    ids, labels = _exam_batch()
+    dev = torch.device("cpu")
+    want = _greedy_answers(m, ids, labels, amp="off", device=dev)
+    got = _greedy_answers(m, ids, labels, amp="off", device=dev, decode="cached")
+    assert torch.equal(got, want)
+    assert not torch.equal(want, ids)  # the decoded letters are not the true ones
+    a = _answer_exact(m, [(ids, labels)], amp="off", device=dev)
+    b = _answer_exact(m, [(ids, labels)], amp="off", device=dev, decode="cached")
+    assert a == b
+
+
+def test_scorer_cached_refuses_past_the_layout_limit():
+    """An answer crossing into the next page past the raw window falls outside the exact limit: refused before any
+    work (the ladder's `--decode auto` then keeps the per-letter loop)."""
+    from verification.bapo_capability_probe import _greedy_answers
+
+    m = _e33t_layout()
+    ids, labels = _exam_batch(L0=170)  # page [160, 176): 16 − 10 + 1 = 7 < 12 positions
+    with pytest.raises(NotImplementedError):
+        _greedy_answers(m, ids, labels, amp="off", device=torch.device("cpu"), decode="cached")

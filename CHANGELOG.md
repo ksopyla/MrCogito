@@ -15,6 +15,30 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-14] - Cached decoding for the capability checks: sink keys, the catalogue's layout limit, the scorer adapter
+
+Lead's decision (2026-11-12): the cached decode for the capability ladders goes on `e33t-capability` once `kv-cache` is
+on dev (it is, since c7fdc707), each piece with an equality test, then checked on a real checkpoint before it re-reads
+the 128k rungs the decode cost cap left unread. Evaluation only: recipes, budgets, scores and VERSION unchanged.
+
+- **Sink keys** (`nn/incremental.py`): the capability models' windowed layers also read their document's first token
+  (`swa_sink`); the cached step now adds that key when it lies before the window, per row. The decoder accepted no
+  model with sinks before.
+- **The catalogue's precise limit** (`IncrementalDecoder.max_new_tokens(L0, S)`): the prefill's notes stay exact while
+  every query of the answer is less than a raw window after the start of the earliest page holding an answer token,
+  i.e. rw − (L0 − s0) + 1 tokens. The general limit raw_window − page is 0 in the capability checks (both 256); an
+  answer inside one page always fits there. `greedy()` uses it; the limit is tight (one token past it already
+  differs on the test model).
+- **The scorer adapter** (`verification/bapo_capability_probe._greedy_answers(decode="cached")`): one read, then one
+  step per position from the first answer letter, separators teacher-forced as in the per-letter loop; scoring split
+  into `_answer_scores` / `_answer_summary` (same results). The ladder takes `--decode full|cached|auto` (default
+  `full`, the old loop) and records `"decode": "cached"` on a rung it decoded that way (kept in the ledger).
+- **Tests** (`tests/test_incremental_decode.py`, 12 new): sinks on the dense, LSA, catalogue, notes and concept reads
+  (step hidden states equal the full forward; the sinks change them), the layout limit and its steps at the limit,
+  the scorer's cached letters equal to the per-letter loop on capability-shaped rows, and the refusal past the limit.
+- **`verification/check_cached_decode.py`:** on a real checkpoint, the ladder's own rows at one length, both decodes
+  letter by letter (`--letters`) or the cached scores against a full decode in a ladder JSON (`--ref`).
+
 ## [2026-11-14] - Engineering pass for the 100M models: branches merged, faster training, read-once decoding, data mixes
 
 Author, 2026-11-14: "please implement the engineering improvements and merge to dev, inform other agents what have

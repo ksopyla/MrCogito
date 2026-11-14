@@ -32,6 +32,13 @@ row is still read teacher-forced (first letter, every letter, CE), but the greed
 `"decode_cap": <cap>`, and the board counts its picked score as the floor. `--decode_cap off` re-reads exactly
 those rungs.
 
+Cached decode (`--decode cached`, 2026-11-14; default `full`, the old loop): the greedy letters behind the picked
+candidate come from one read of the row and one step per later answer position (nn/incremental.IncrementalDecoder via
+`_greedy_answers_cached`), the same letters as one forward per letter up to float rounding
+(tests/test_incremental_decode.py, and checked letter for letter on a real checkpoint by
+verification/check_cached_decode.py). `auto` uses it when the decoder covers the model and the layout, else the old
+loop; the rung records `"decode": "cached"` when it was used.
+
 Long rows need the `flex` backend (the `sdpa` path builds a dense S x (S + C) mask:
 ~32 GB at 128k). `--backend auto` uses flex on CUDA above 8k tokens.
 """
@@ -162,7 +169,7 @@ def has_candidates(cfg, row) -> bool:
 
 @torch.no_grad()
 def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: str, depth_bins: int,
-                candidate: str = "auto", decode: bool = True) -> dict:
+                candidate: str = "auto", decode: bool = True, decoder: str = "full") -> dict:
     rng = np.random.default_rng(seed)
     cand_on: bool | None = None if candidate == "auto" else candidate == "on"
     cand_sum = cand_n = exact_sum = first_g_sum = 0.0
@@ -198,8 +205,19 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
             from verification.bapo_capability_probe import _answer_exact
 
             t1 = time.time()
+            if decoder == "auto":  # cached when the decoder covers this model and layout (decided on the first batch)
+                from verification.bapo_capability_probe import cached_decode_plan
+
+                try:
+                    cached_decode_plan(model, ids, labels)
+                    decoder = "cached"
+                except NotImplementedError as e:
+                    print(f"  cached decode refused ({e}); the old loop decodes", flush=True)
+                    decoder = "full"
+                t1 = time.time()
             # the teacher-forced forward above gives every greedy letter up to the first wrong one
-            ae = _answer_exact(model, [(ids, labels)], amp=amp, device=device, cfg=cfg, first_logits=logits)
+            ae = _answer_exact(model, [(ids, labels)], amp=amp, device=device, cfg=cfg, first_logits=logits,
+                               decode=decoder)
             model.eval()
             t_dec += time.time() - t1
             exact_sum += ae["exact"] * ae["rows"]
@@ -247,6 +265,8 @@ def eval_length(model, cfg, *, rows: int, batch: int, seed: int, device, amp: st
                     sec_per_row_decode=t_dec / dec_rows)
         if cand_n:
             cand.update(candidate=cand_sum / cand_n, candidate_rows=int(cand_n))
+        if decoder == "cached":
+            cand["decode"] = "cached"
     return {
         **cand,
         "acc": acc, "acc_se": se, "ce_nats": ce_sum / max(ce_n, 1), "rows": len(row_acc),
@@ -280,6 +300,9 @@ def main() -> int:
     p.add_argument("--decode_cap", default="auto",
                    help="auto: skip the greedy decode from 131,072 tokens on (picked score 'not read, cost cap'); "
                         "off: decode every length (re-reads the capped rungs); a number: that length")
+    p.add_argument("--decode", default="full", choices=("full", "cached", "auto"),
+                   help="greedy decode behind the picked candidate: full (one forward per letter), cached (one read, "
+                        "one step per position; nn/incremental.py), auto (cached when supported)")
     p.add_argument("--recipe", default=None, help="ladder this recipe instead of the checkpoint's own exam")
     p.add_argument("--loop_rounds", type=int, default=None,
                    help="E33a: evaluate looped checkpoints with this many loops (default: as trained)")
@@ -346,7 +369,7 @@ def main() -> int:
             try:
                 ev = eval_length(model, cfg, rows=args.rows, batch=batch, seed=args.seed + L,
                                  device=device, amp=args.amp, depth_bins=args.depth_bins, candidate=args.candidate,
-                                 decode=not capped)
+                                 decode=not capped, decoder=args.decode)
             except torch.cuda.OutOfMemoryError as e:  # report, keep going
                 res[str(L)] = {"error": f"OOM: {str(e)[:200]}", "backend": backend, "batch": batch}
                 print(f"  [{arch}] {L:>7}  OOM (batch {batch}, {backend})", flush=True)

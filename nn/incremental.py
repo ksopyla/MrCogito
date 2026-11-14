@@ -19,6 +19,9 @@ reading layer derives from many keys is rebuilt when it could change for the cur
   window. A page holding answer tokens starts after L0 − lm_window, so it has no member that old while the answer is
   shorter than raw_window − lm_window (256 tokens for E33t n4): the prefill's notes are exact for such answers (with
   the cosine score, which does not depend on the other visible notes), and a longer request is refused up front.
+  With the row's layout known the limit is the precise one (2026-11-14, `max_new_tokens(L0, S)`): every query of the
+  answer stays less than a raw window after the start of the earliest page holding an answer token, which an answer
+  inside one page always does when the raw window is at least a page (the capability checks: both 256).
 * E37's concept read (2026-11-13): concepts of a closed 512-key block are visible two blocks later, and with the
   reasoner the block before the query's own reads the reasoned update. When the decoding reaches a block end and that
   block holds answer tokens, every pass's concepts and updates are rebuilt from the cache (`build_concepts`).
@@ -42,8 +45,8 @@ catalogue and notes reads the question and the answer together stay under `max_n
 
 Supported; anything else raises NotImplementedError before any work, so callers keep the uncached path: perceiver
 par_mode, causal, no message boundary, one global layer, the tied loop over [global read + span layers] with loop
-markers (and the prelude gate), sliding-window local layers without sinks; the reading layer is full attention,
-LSA's read, E37's concept read (with or without the reasoner and the length scale), the catalogue read (index notes
+markers (and the prelude gate), sliding-window local layers (with or without the document's first token as a sink
+key, 2026-11-14); the reading layer is full attention, LSA's read, E37's concept read (with or without the reasoner and the length scale), the catalogue read (index notes
 on non-overlapping pages, cosine score, no pass exclusion, one level), or E33p's notes read (tied keys, notes or
 nothing opened, argmax filing, the writer reading the token table). Not yet: page-level opening, note-age or count
 heads, write-back hooks, loop control, loop feedback.
@@ -119,8 +122,10 @@ def decode_kind(model: PerceiverARLM) -> str:
         _refuse("loop control / loop feedback")
     if m._loop_rounds_override:
         _refuse("a loop-round override")
-    if bool(getattr(cfg, "write_back_hook", False)) or bool(getattr(cfg, "swa_sink", False)):
-        _refuse("write-back hook / swa sinks")
+    if bool(getattr(cfg, "write_back_hook", False)):
+        _refuse("write-back hook")
+    # swa sinks (2026-11-14): a windowed query also reads its local document's first token; the local document is the
+    # document here (no message boundary, so one side per document), and the step adds that key (`_window_read`)
     if any(b.read_rounds != 1 for b in m.layers):
         _refuse("read rounds inside a block")
     if m._notes_override is not None or m._note_keep is not None or m._note_capture is not None:
@@ -214,11 +219,30 @@ class IncrementalDecoder:
         self.gi = self.cfg.global_layer_index
 
     # ------------------------------------------------------------------ limits
-    def max_new_tokens(self) -> Optional[int]:
-        """Longest answer the cached state stays exact for (None = any)."""
-        if self.kind in ("catalogue", "notes"):  # a page holding answer tokens has no member old enough to open
-            return int(self.cfg.message_raw_window) - int(self.cfg.lm_window)
-        return None
+    def max_new_tokens(self, L0: Optional[int] = None, S: Optional[int] = None) -> Optional[int]:
+        """Longest answer the cached state stays exact for (None = any).
+
+        The note reads keep the prefill's notes of the pages holding answer tokens; they stay exact while no such page
+        can open, i.e. none has a member older than the raw window of a query of the answer. With any page layout that
+        holds for answers shorter than raw_window − lm_window. With the row's layout known (`L0` the first answer
+        position, `S` the row length) the catalogue's limit is the precise one (2026-11-14): s0 = the start of the
+        earliest page holding a position ≥ L0; the token at p comes from the query p − 1, which opens a member j only
+        when p − 1 − j ≥ raw_window (`note_open_table`'s eligibility), and j ≥ s0, so every token up to s0 + raw_window
+        is exact: rw − (L0 − s0) + 1 tokens. An answer inside the page holding its first token always fits when the
+        raw window is at least a page (the capability checks: raw window 256, pages of 256, where the general limit
+        is 0)."""
+        if self.kind not in ("catalogue", "notes"):
+            return None
+        rw, W = int(self.cfg.message_raw_window), int(self.cfg.lm_window)
+        if self.kind == "catalogue" and L0 is not None and S is not None:
+            mult = int(self.cfg.attn_pad_multiple)
+            S = -(-int(S) // mult) * mult if mult > 1 else int(S)  # the forward's own right padding
+            geo = self.m.memory_writer.geometry(S)
+            held = [s for s in geo.starts if s + int(geo.window) > int(L0)]
+            if not held:
+                return None  # no page holds a position from L0 on: the prefill's notes are the row's
+            return max(0, rw - (int(L0) - min(held)) + 1)
+        return rw - W
 
     # ------------------------------------------------------------------ prefill
     @torch.no_grad()
@@ -501,7 +525,7 @@ class IncrementalDecoder:
         if (i, r) in self.X:
             self.X[(i, r)][:, t] = h[:, 0]
         if att.pattern == "swa":
-            o = self._window_read(q, K, V, t, int(att.window))
+            o = self._window_read(q, K, V, t, int(att.window), sink=bool(att.sink))
         elif self.kind == "dense":
             o = self._window_read(q, K, V, t, t + 1)
         elif self.kind == "lsa":
@@ -514,11 +538,20 @@ class IncrementalDecoder:
             o = self._catalogue_read(q, K, V, r, t)
         return att.wo(o.reshape(B, 1, att.h * att.dh))
 
-    def _window_read(self, q, K, V, t, w):
-        """Keys [t − w + 1, t] of the query's document (make_mask_pred: causal, window, same document)."""
+    def _window_read(self, q, K, V, t, w, sink: bool = False):
+        """Keys [t − w + 1, t] of the query's document (make_mask_pred: causal, window, same document); with `sink`
+        (swa_sink) also the key of the document's first token when it lies before the window (`sink_pos`)."""
         lo = max(0, t - w + 1)
         k, v = K[:, lo:t + 1], V[:, lo:t + 1]
         ok = self.doc[:, lo:t + 1] == self.doc[:, t:t + 1]                                  # [B, L]
+        if sink:
+            ds = self._ds_col(t)                                                             # [B]
+            far = ds < lo                                       # inside the window the first token is a key already
+            if bool(far.any()):
+                b = torch.arange(K.shape[0], device=K.device)
+                k = torch.cat([K[b, ds][:, None], k], 1)
+                v = torch.cat([V[b, ds][:, None], v], 1)
+                ok = torch.cat([far[:, None], ok], 1)  # the same document by construction
         h, g = q.shape[2], k.shape[2]
         qt, kt, vt = q.transpose(1, 2), k.transpose(1, 2), v.transpose(1, 2)
         if g != h:
@@ -695,7 +728,7 @@ class IncrementalDecoder:
         """The uncached harness loop with a cache: buf / doc [B, Lb] as `_model_generate` builds them (prompt in
         [0, L0), eos and document −1 after). `check(buf, t, done)` → done, after each written token (stop strings).
         Returns buf[:, :t] with the answer written, eos after a row's first eos."""
-        limit = self.max_new_tokens()
+        limit = self.max_new_tokens(L0, buf.shape[1])
         if limit is not None and new > limit:
             _refuse(f"answers longer than {limit} tokens for this read")
         h = self.prefill(buf, doc, L0)

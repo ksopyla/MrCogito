@@ -243,15 +243,73 @@ def _candidates(cfg, row: np.ndarray, n: int) -> list[tuple[int, ...]]:
     return sorted(set(out))
 
 
+def cached_decode_plan(model, ids: torch.Tensor, labels: torch.Tensor):
+    """(decoder, first answer position, last answer position) for `_greedy_answers_cached`, or None (no answer);
+    NotImplementedError when the decoder does not cover the model or this answer layout. Call it inside the forward's
+    message override (the decoder checks the model's switches)."""
+    from nn.incremental import IncrementalDecoder
+
+    cols = torch.nonzero((labels != -100).any(0)).flatten()
+    if cols.numel() == 0:
+        return None
+    L0, last = int(cols[0]), int(cols[-1])
+    if L0 == 0:
+        raise NotImplementedError("cached decoding: an answer at position 0 has no prompt")
+    dec = IncrementalDecoder(model)
+    limit = dec.max_new_tokens(L0, ids.shape[1])
+    if limit is not None and last - L0 + 1 > limit:
+        raise NotImplementedError(f"cached decoding: {last - L0 + 1} answer positions, exact up to {limit} here")
+    return dec, L0, last
+
+
+@torch.no_grad()
+def _greedy_answers_cached(model, ids: torch.Tensor, labels: torch.Tensor, *, amp: str, device: torch.device,
+                           message_override: str = "real") -> torch.Tensor:
+    """`_greedy_answers` with the row read once (nn/incremental.IncrementalDecoder, 2026-11-14).
+
+    The prefill is the forward over `ids` (every row one document, as the exam's own forward sees it); from the first
+    answer position on, each position is one step: an answer position gets the greedy letter from the step before, any
+    other the row's own token, as `_greedy_answers` leaves it. The letters are its letters (each depends only on its
+    own prefix) up to float rounding of the step's read. Raises NotImplementedError, before any work, when the decoder
+    does not cover the model or the answer is past the read's exact limit for this layout."""
+    import torch.nn.functional as F
+
+    cur = ids.clone()
+    m = labels != -100
+    with _message_cm(model, message_override), amp_ctx(device, amp):
+        plan = cached_decode_plan(model, ids, labels)
+        if plan is None:
+            return cur
+        dec, L0, last = plan
+        h = dec.prefill(ids, torch.zeros_like(ids), L0)
+        W = model.lm_head.weight
+        sc = float(model.config.logit_softcap or 0.0)
+        for p in range(L0, last + 1):
+            if bool(m[:, p].any()):
+                lg = F.linear(h, W).float()  # as the forward's logits (`PerceiverARLM.forward`)
+                if sc:
+                    lg = sc * torch.tanh(lg / sc)
+                cur[:, p] = torch.where(m[:, p], lg.argmax(-1), ids[:, p])
+            if p < last:
+                h = dec.step(cur[:, p])
+    return cur
+
+
 @torch.no_grad()
 def _greedy_answers(model, ids: torch.Tensor, labels: torch.Tensor, *, amp: str, device: torch.device,
-                    message_override: str = "real", first_logits: torch.Tensor | None = None) -> torch.Tensor:
+                    message_override: str = "real", first_logits: torch.Tensor | None = None,
+                    decode: str = "full") -> torch.Tensor:
     """`ids` with every answer letter replaced by the model's greedy letter (each from its own earlier letters).
 
     One forward on the true answer gives every greedy letter up to and including the first wrong one (their prefixes
     are the true letters); only the letters after it need a forward each. The letters are the ones a forward per
     letter gives (each row's logits depend only on its own prefix), with 1 forward instead of k for a right answer.
-    `first_logits`: the logits of a forward on `ids` the caller already ran (the ladder's teacher-forced read)."""
+    `first_logits`: the logits of a forward on `ids` the caller already ran (the ladder's teacher-forced read).
+    `decode="cached"`: the same letters from one read and one step per later position (`_greedy_answers_cached`)."""
+    if decode == "cached":
+        return _greedy_answers_cached(model, ids, labels, amp=amp, device=device, message_override=message_override)
+    if decode != "full":
+        raise ValueError(f"decode {decode!r}")
     cur = ids.clone()
     m = labels != -100
     order = [torch.nonzero(m[r]).flatten().tolist() for r in range(m.shape[0])]
@@ -282,49 +340,64 @@ def _greedy_answers(model, ids: torch.Tensor, labels: torch.Tensor, *, amp: str,
 
 
 @torch.no_grad()
+def _answer_scores(ids: torch.Tensor, labels: torch.Tensor, cur: torch.Tensor, cfg=None) -> dict:
+    """Counts for one batch of decoded answers `cur` (`_greedy_answers`): hits (every letter right), rows, first_hits,
+    and with `cfg` the picked-candidate sum and its row count (`_answer_exact` explains the scores)."""
+    m = labels != -100
+    k = m.sum(-1)
+    order = [torch.nonzero(m[r]).flatten() for r in range(m.shape[0])]
+    ok = ((cur == labels) | ~m).all(-1) & (k > 0)
+    out = {"hits": int(ok.sum()), "rows": int((k > 0).sum()),
+           "first_hits": sum(int(cur[r, pos[0]] == labels[r, pos[0]]) for r, pos in enumerate(order) if len(pos)),
+           "cand_score": 0.0, "cand_rows": 0.0}
+    if cfg is not None:
+        ids_np, cur_np, lab_np = ids.cpu().numpy(), cur.cpu().numpy(), labels.cpu().numpy()
+        for r, pos in enumerate(order):
+            pos = pos.cpu().numpy()
+            if getattr(cfg, "chain_answer_path", False):
+                pos = pos[-int(cfg.key_len):]  # a written path: score the final node
+            cands = _candidates(cfg, ids_np[r], len(pos)) if len(pos) else []
+            ans = tuple(int(x) for x in lab_np[r, pos])
+            if ans not in cands:
+                continue
+            pred = cur_np[r, pos]
+            dist = [int((np.array(c) != pred).sum()) for c in cands]
+            best = [c for c, d in zip(cands, dist) if d == min(dist)]
+            out["cand_score"] += (ans in best) / len(best)
+            out["cand_rows"] += 1
+    return out
+
+
+def _answer_summary(counts: list[dict]) -> dict:
+    """`_answer_exact`'s result from the per-batch counts of `_answer_scores`."""
+    hits, rows, first_hits = (sum(c[k] for c in counts) for k in ("hits", "rows", "first_hits"))
+    cand_score, cand_rows = sum(c["cand_score"] for c in counts), sum(c["cand_rows"] for c in counts)
+    out = {"exact": hits / max(rows, 1), "first_greedy": first_hits / max(rows, 1), "rows": rows}
+    if cand_rows:
+        out["candidate"] = cand_score / cand_rows
+        out["candidate_rows"] = int(cand_rows)
+    return out
+
+
+@torch.no_grad()
 def _answer_exact(model, batches, *, amp: str, device: torch.device, message_override: str = "real",
-                  cfg=None, first_logits: torch.Tensor | None = None) -> dict:
+                  cfg=None, first_logits: torch.Tensor | None = None, decode: str = "full") -> dict:
     """The answer decoded greedily (every letter from the model's own earlier letters, no teacher forcing).
 
     exact: every letter right. candidate: the planted candidate nearest to the decoded answer (Hamming; ties
     split) is the asked one: the addressing decision, without punishing a lossy copy of the right fact.
     A model that answers with a random candidate scores 1 / #candidates on both; on the first letter it
     scores the commonest first letter among the candidates (~40 % on the parallel chains).
-    `first_logits` (one batch only): the caller's forward on that batch's `ids`, reused for the first letters."""
+    `first_logits` (one batch only): the caller's forward on that batch's `ids`, reused for the first letters.
+    `decode`: "full" (one forward per letter) or "cached" (`_greedy_answers_cached`)."""
     model.eval()
-    hits = rows = first_hits = 0
-    cand_score = cand_rows = 0.0
+    counts = []
     for ids, labels in batches:
-        m = labels != -100
-        k = m.sum(-1)
-        order = [torch.nonzero(m[r]).flatten() for r in range(m.shape[0])]
         cur = _greedy_answers(model, ids, labels, amp=amp, device=device, message_override=message_override,
-                              first_logits=first_logits)
-        ok = ((cur == labels) | ~m).all(-1) & (k > 0)
-        hits += int(ok.sum())
-        rows += int((k > 0).sum())
-        first_hits += sum(int(cur[r, pos[0]] == labels[r, pos[0]]) for r, pos in enumerate(order) if len(pos))
-        if cfg is not None:
-            ids_np, cur_np, lab_np = ids.cpu().numpy(), cur.cpu().numpy(), labels.cpu().numpy()
-            for r, pos in enumerate(order):
-                pos = pos.cpu().numpy()
-                if getattr(cfg, "chain_answer_path", False):
-                    pos = pos[-int(cfg.key_len):]  # a written path: score the final node
-                cands = _candidates(cfg, ids_np[r], len(pos)) if len(pos) else []
-                ans = tuple(int(x) for x in lab_np[r, pos])
-                if ans not in cands:
-                    continue
-                pred = cur_np[r, pos]
-                dist = [int((np.array(c) != pred).sum()) for c in cands]
-                best = [c for c, d in zip(cands, dist) if d == min(dist)]
-                cand_score += (ans in best) / len(best)
-                cand_rows += 1
+                              first_logits=first_logits, decode=decode)
+        counts.append(_answer_scores(ids, labels, cur, cfg))
     model.train()
-    out = {"exact": hits / max(rows, 1), "first_greedy": first_hits / max(rows, 1), "rows": rows}
-    if cand_rows:
-        out["candidate"] = cand_score / cand_rows
-        out["candidate_rows"] = int(cand_rows)
-    return out
+    return _answer_summary(counts)
 
 
 def _guess_floors(cfg, batches) -> dict | None:

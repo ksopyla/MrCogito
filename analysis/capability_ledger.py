@@ -45,7 +45,8 @@ _NOT_RUNG = ("job.json", "summary.json", "cost_bench.json")
 _LADDER_KEYS = ("acc", "acc_se", "first_acc", "first_acc_se", "rows", "ce_nats", "sec_per_row", "peak_gb",
                 "memory_slots", "candidate", "candidate_rows", "exact", "first_greedy",
                 "skipped", "floor_stop",  # a rung left unread: {"skipped": "floor stop" | "cap …", "floor_stop": {…}}
-                "decode_cap")  # read, but the picked candidate not decoded (the cost cap length)
+                "decode_cap",  # read, but the picked candidate not decoded (the cost cap length)
+                "decode")  # "cached": the picked candidate decoded with the cached decoder (nn/incremental.py)
 
 
 def _r(x, nd=5):
