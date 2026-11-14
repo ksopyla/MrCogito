@@ -75,3 +75,32 @@ def test_train_cmd_takes_tokenizer_tokens_and_rows_from_the_mix(tmp_path):
     assert "--concept_compile" not in cmd  # not a concept arm
     cmd = train_cmd("e37a", "tiny", "trunk", data=tmp_path, out=tmp_path / "run", mix=str(d), fast=True, tokens=640)
     assert cmd[cmd.index("--concept_compile") + 1] == "True" and "--model_compile" not in cmd
+
+
+def test_lenient_mode_for_small_builds(tmp_path):
+    """One web shard for three phases, and a phase source with no row: strict stops, lenient shares and leaves out;
+    an evaluation source with no row at the phase's length is always left out."""
+    import pytest
+
+    from scripts.run_e33n import mix_supply
+
+    d = _mix(tmp_path)
+    for i in range(2, 7):
+        (d / f"web_train_{i:06d}.bin").unlink()
+    mix = json.loads((d / "mix.json").read_text())
+    mix["phases"]["long"]["supply"] = [{"name": "books", "rows_available": 0, "rows_needed": 3},
+                                       {"name": "web", "rows_available": 5, "rows_needed": 3}]
+    mix["phases"]["long"]["eval_supply"] = [{"name": "books", "rows_available": 0, "rows_needed": 2}]
+    mix["phases"]["decay"]["supply"] = [{"name": "books", "rows_available": 12, "rows_needed": 8},
+                                        {"name": "web", "rows_available": 10, "rows_needed": 5},
+                                        {"name": "hop", "rows_available": 10, "rows_needed": 3}]
+    (d / "mix.json").write_text(json.dumps(mix))
+    sup = mix_supply(mix)
+    assert sup["long"]["empty"] == ["books"] and sup["long"]["eval_empty"] == ["books"]
+    assert sup["decay"]["limited_by"] == "books" and sup["decay"]["rows_per_pass"] == 24  # 12 rows at half the weight
+    with pytest.raises(ValueError):
+        mix_manifests(d, tmp_path / "strict")
+    paths, _ = mix_manifests(d, tmp_path / "run", lenient=True)
+    man = {k: json.loads(p.read_text()) for k, p in paths.items()}
+    assert [s["name"] for s in man["long"]["train"]] == ["web"] and man["long"]["eval"] == []
+    assert all(len([s for s in m["train"] if s["name"] == "web"][0]["files"]) == 1 for m in man.values())

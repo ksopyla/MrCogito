@@ -228,14 +228,43 @@ def manifests(data: Path, out: Path, size: str) -> dict:
     return p
 
 
-def mix_manifests(mix_dir: Path, out: Path) -> tuple[dict, dict]:
+def mix_supply(mix: dict) -> dict:
+    """What a built mix can feed each phase, from mix.json alone (the builder's supply report). Per phase: the rows
+    one pass over the data holds — data.bin_token_dataset.BinRowDataset keeps the sources in the proportion of
+    their weights, so the scarcest source relative to its weight sets the size of a pass — and how many passes the
+    phase's token budget makes. A source with no row at the phase's length is listed under "empty"."""
+    out = {}
+    for name, ph in mix["phases"].items():
+        seq, tokens = int(ph["seq_len"]), float(ph["tokens"])
+        avail = {s["name"]: s.get("rows_available") for s in ph.get("supply", [])}
+        w = {s["name"]: float(s["weight"]) for s in ph["train"]}
+        # no report (a hand-written mix.json): nothing is known to be empty, and the size of a pass is unknown
+        empty = [n for n in w if n in avail and not avail[n]]
+        live = {n: w[n] for n in w if avail.get(n)}
+        tot_w = sum(live.values()) or 1.0
+        per = {n: avail[n] / (live[n] / tot_w) for n in live}
+        limit = min(per, key=per.get) if per else None
+        rows = int(per[limit]) if limit else 0
+        ev = {s["name"]: s.get("rows_available") for s in ph.get("eval_supply", [])}
+        out[name] = {"seq_len": seq, "tokens": tokens, "rows_per_pass": rows, "tokens_per_pass": rows * seq,
+                     "passes": round(tokens / (rows * seq), 2) if rows else None, "limited_by": limit,
+                     "empty": empty, "eval_empty": [n for n, r in ev.items() if not r],
+                     "rows_available": avail}
+    return out
+
+
+def mix_manifests(mix_dir: Path, out: Path, lenient: bool = False) -> tuple[dict, dict]:
     """Phase manifests of a built data mix (scripts/build_m21_mix.py: DIR/mix.json, DIR/tokenizer/,
     DIR/<source>_train_*.bin and <source>_val_*.bin). Returns (manifest paths per phase, the mix).
 
     A "stream" source that several phases read (web text in the trunk and again, as replay, in the long phases) is
     split by shards: the last phase takes shards from the end until it has its share of that phase's tokens (+3 %),
     the one before takes the next ones, the trunk keeps the rest — no token is read in two phases. "doc" sources
-    (long documents) are shared: the 64k phase reads the documents long enough for it, as E37's 64k stage did."""
+    (long documents) are shared: the 64k phase reads the documents long enough for it, as E37's 64k stage did.
+
+    An evaluation source with no row at a phase's length (the builder's eval_supply) is left out of that phase's
+    evaluation. A training source with no row or no shard is an error — unless `lenient` (small check builds): then
+    it is left out with a note, and a shared stream source with too few shards to split is read by every phase."""
     import glob
     import os
 
@@ -260,6 +289,17 @@ def mix_manifests(mix_dir: Path, out: Path) -> tuple[dict, dict]:
             if rule_of(ph, s) == "stream":
                 stream_users.setdefault(s["name"], []).append(name_ph)
     order = [k for k in ("long", "decay", "trunk") if k in phases] + [k for k in phases if k not in ("long", "decay", "trunk")]
+    supply = mix_supply(mix)
+
+    def note(msg: str) -> None:
+        print(f"mix note: {msg}", file=sys.stderr)
+
+    # a shared stream source needs at least one shard per phase that reads it, or it cannot be split
+    unsplit = {n for n, users in stream_users.items() if len(users) > 1 and len(shards.get(n, [])) < len(users)}
+    if unsplit and not lenient:
+        raise ValueError(f"mix {mix_dir}: too few shards to split between phases: {sorted(unsplit)}")
+    for n in sorted(unsplit):
+        note(f"{n} has {len(shards[n])} shard(s) for {len(stream_users[n])} phases: every phase reads all of it")
     taken = {name: 0 for name in shards}  # shards already given away, from the end
     paths = {}
     for name_ph in order:
@@ -269,9 +309,13 @@ def mix_manifests(mix_dir: Path, out: Path) -> tuple[dict, dict]:
         for s in ph["train"]:
             name, rule = s["name"], rule_of(ph, s)
             files = shards[name]
-            if not files:
-                raise FileNotFoundError(f"mix {mix_dir}: no shard of source {name} (phase {name_ph})")
-            if rule == "stream" and len(stream_users.get(name, [])) > 1:
+            if not files or name in supply[name_ph]["empty"]:
+                why = "no shard" if not files else f"no row of {seq} tokens"
+                if not lenient:
+                    raise FileNotFoundError(f"mix {mix_dir}: {why} of source {name} (phase {name_ph})")
+                note(f"phase {name_ph}: {name} left out ({why})")
+                continue
+            if rule == "stream" and len(stream_users.get(name, [])) > 1 and name not in unsplit:
                 avail = files[: len(files) - taken[name]]
                 first_user = [k for k in ("trunk", "decay", "long") if k in stream_users[name]][0]
                 if name_ph == first_user:
@@ -294,6 +338,9 @@ def mix_manifests(mix_dir: Path, out: Path) -> tuple[dict, dict]:
         rules = {s["name"]: rule_of(ph, s) for s in ph["train"]}
         ev = []
         for s in ph.get("eval", []):
+            if s["name"] in supply[name_ph]["eval_empty"]:
+                note(f"phase {name_ph}: no evaluation row of {seq} tokens in {s['name']}, left out of the evaluation")
+                continue
             e = {"name": s["name"], "files": [str(mix_dir / f"{s['name']}_val_*.bin")], "rows": int(s["rows"])}
             r = s.get("rule", rules.get(s["name"], ph.get("rule", "stream")))
             if r != ph.get("rule", "stream"):
@@ -318,7 +365,7 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               flow: bool = False, gpus: int = 1, sft_manifest: str | None = None,
               grad_ckpt: bool = False, compile: str = "off", liger: bool = False, rows: int | None = None,
               workers: int = 6, fast: bool = False, mix: str | None = None,
-              save_every: int | None = None) -> list[str]:
+              save_every: int | None = None, mix_lenient: bool = False) -> list[str]:
     liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
@@ -336,7 +383,7 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         micro = micro or max(1, min(rows_per_step, 2 if size == "s30" else 1))
     else:
         if mix:  # a built data mix: its tokenizer, sources, row lengths and tokens per phase
-            man, mx = mix_manifests(Path(mix), out)
+            man, mx = mix_manifests(Path(mix), out, lenient=mix_lenient)
             if phase not in man:
                 raise ValueError(f"mix {mix} has no phase {phase!r}")
             tokenizer = str(Path(mix) / mx.get("tokenizer", "tokenizer"))
@@ -421,6 +468,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="what", required=True)
     sub.add_parser("params")
+    mi = sub.add_parser("mixinfo", help="what a built mix can feed each phase (reads DIR/mix.json only)")
+    mi.add_argument("--mix", required=True)
     c = sub.add_parser("cmd")
     c.add_argument("--arm", required=True, choices=sorted(ARMS))
     c.add_argument("--size", required=True, choices=sorted(SIZES))
@@ -442,6 +491,9 @@ def main() -> None:
     c.add_argument("--compile", default="off", choices=("off", "static", "dynamic"),
                    help="torch.compile the whole model (static: fixed row shapes)")
     c.add_argument("--liger", action="store_true", help="Liger's fused linear + cross-entropy for the loss")
+    c.add_argument("--mix_lenient", action="store_true",
+                   help="small check builds: leave out a source with no row at a phase's length and share a stream "
+                        "source that has too few shards to split, instead of stopping")
     c.add_argument("--save_every", type=int, help="checkpoint every N optimizer steps (default: a tenth of the "
                                                   "phase; long spot runs lose less with a shorter interval)")
     c.add_argument("--mix", help="a built data mix (scripts/build_m21_mix.py output dir): its tokenizer, sources, "
@@ -453,6 +505,24 @@ def main() -> None:
     c.add_argument("--workers", type=int, default=6, help="dataloader worker processes per GPU")
     c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
     a = ap.parse_args()
+    if a.what == "mixinfo":
+        f = Path(a.mix)
+        mix = json.loads((f / "mix.json" if f.is_dir() else f).read_text())
+        srcs = mix.get("sources", {})
+        print(f"mix {mix.get('name')}: {sum(float(v.get('tokens', 0)) for v in srcs.values()) / 1e9:.2f}B train tokens in "
+              f"{len(srcs)} sources; missing: {mix.get('missing') or 'none'}; external missing: "
+              f"{mix.get('external_missing') or 'none'}")
+        for name, r in mix_supply(mix).items():
+            passes = f"{r['passes']:.2f}" if r["passes"] else "n/a"
+            print(f"{name:6} rows of {r['seq_len']:>6}: budget {r['tokens'] / 1e9:.2f}B tokens, one pass "
+                  f"{r['tokens_per_pass'] / 1e9:.3f}B ({r['rows_per_pass']:,} rows, limited by {r['limited_by']}) "
+                  f"-> {passes} passes; empty: {r['empty'] or 'none'}; no eval rows: {r['eval_empty'] or 'none'}")
+            ph = mix["phases"][name]
+            for sup in ph.get("supply", []):
+                av, need = sup.get("rows_available"), sup.get("rows_needed")
+                flag = "  SHORT" if (av is not None and need and av < need) or not av else ""
+                print(f"         {sup['name']:15} {sup.get('rule', ''):6} rows {av if av is not None else 0:>9,} of {need:>9,} needed{flag}")
+        return
     if a.what == "cmd" and a.phase == "sft" and not (a.lr and a.init and a.sft_manifest):
         ap.error("--phase sft needs --lr (the pre-flight's pick), --init (a decay's final folder) and --sft_manifest")
     if a.what == "params":
@@ -466,7 +536,7 @@ def main() -> None:
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
                     local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
                     grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
-                    fast=a.fast, mix=a.mix, save_every=a.save_every)
+                    fast=a.fast, mix=a.mix, save_every=a.save_every, mix_lenient=a.mix_lenient)
     print(shlex.join(cmd))
 
 

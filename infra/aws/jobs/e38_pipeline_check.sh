@@ -30,7 +30,7 @@ from scripts.run_e33n import mix_manifests
 d = Path(sys.argv[1])
 mix = json.loads((d / "mix.json").read_text())
 assert not mix.get("missing") and not mix.get("external_missing"), (mix.get("missing"), mix.get("external_missing"))
-paths, _ = mix_manifests(d, d.parent / "manifests")
+paths, _ = mix_manifests(d, d.parent / "manifests", lenient=True)   # a small build: few shards, few 64k documents
 for ph, p in paths.items():
     tr, ev, m = load_bin_manifest(str(p))
     print(f"{ph}: {len(tr)} train rows of {m['seq_len']} {tr.rows_per_source}; {len(ev)} eval rows")
@@ -39,7 +39,7 @@ PY
 say "2/4 training, $ARM at 30M: trunk -> decay -> long"
 export E33N_DATA="$C" E33N_RUNS="$C/runs" E33N_MIX="$MIX" E33N_EXPERIMENT=E38check E33N_SKIP_EVAL=1 E33N_LONG=1 \
   E33N_GRAD_CKPT=1 E33N_MICRO_TRUNK=2 E33N_MICRO_DECAY=1 E33N_MICRO_LONG=1 E33N_DECAY_TOKENS=8e5 E33N_LONG_TOKENS=2.8e6 \
-  E33N_CMD_EXTRA="--fast --rows 2 --eval_every 20 --save_every 20" WANDB_MODE=offline
+  E33N_CMD_EXTRA="--fast --rows 2 --eval_every 20 --save_every 20 --mix_lenient" WANDB_MODE=offline
 bash infra/aws/jobs/e33n_run.sh "$ARM" s30 "" 4e5 > "$C/train.log" 2>&1 || fail "e33n_run.sh (see $C/train.log and $C/runs/*/*.log)"
 R=$(ls -d "$C"/runs/e33n_s30_"$ARM"_tok4e5* | tail -1)
 LONG=$(ls -d "$R"/long/*/final 2>/dev/null | tail -1)
