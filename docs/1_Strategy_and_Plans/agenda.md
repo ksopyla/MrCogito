@@ -20,6 +20,12 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-14 — E37c, two-agent split training (agent-to-agent session; approved by the author 14 Nov).** The concept-read 100M model is fine-tuned on
+  long-document rows cut at random points (0.2B tokens, one L40S, about $11): after a cut the local layers see only their own side, the reading
+  layer still reads everything. Tests whether agent B's cold start is learnable: pass = 80 % of the gap between memory-only (63 / 43 / 35 %) and
+  one agent (100 / 97 / 90 %) closed at 4k / 16k / 32k; stop = under 61 % at 16k, then the hand-over keeps A's last tokens. Spec
+  [E37c](../experiments_specs/ahead/E37c_two_agent_split_training.md) ·
+  [alignment page](../3_Evaluations_and_Baselines/e37c_architecture.html).
 - **2026-11-12 — E33t, the catalogue read: stages A–D done.** The notes only
   index the text (never read), balanced filing, an index loss, the budget filled by tokens. Stage A: letting loop
   passes revisit notes (`catalogue_reuse`) lifts 71 → **91 %** of the window→dense gap at 16k (LSA port 95 %), level

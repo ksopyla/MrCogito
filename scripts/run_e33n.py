@@ -32,6 +32,11 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
                  at the rate the decay ended on (10 % of the peak) with a 3 % warmup, then 1−sqrt to 1 % of the peak.
                  Its own row order (manifest seed 2042) and, by default, trainer seed 1 for every arm, so all arms
                  see the same rows. --grad_ckpt recomputes each layer in the backward (24 GB cards at 64k).
+         split — E37c (docs/experiments_specs/ahead/E37c_two_agent_split_training.md): from the decay's final weights,
+                 fresh optimizer, the decay's rows of 16,384 in another order (manifest seed 3042), every row cut at
+                 random points (gaps log-uniform in [--cut_min, --cut_max]): a local layer reads its own side of a cut
+                 only, the reading layer the whole document. The long phase's rate (10 % of the peak → 1 %), 0.2B
+                 tokens at m100. Arms without a notebook only (dense, lsa, e37a, e37b).
 
 Usage (on a node, from the repo root):
   uv run python scripts/run_e33n.py cmd --arm e33n --size s30 --phase trunk --data /opt/dlami/nvme/data --out OUT
@@ -54,13 +59,13 @@ EOT = 50256
 SIZES = {
     #        hidden  e    pre  stack  target   trunk tok  decay tok  long tok  trunk rows/step (×4k)  lr peak
     "s30":  dict(hidden=576,  e=256, pre=2, stack=5, target=30e6,  trunk=1.5e9, decay=0.2e9, long=0.1e9, rows=64,
-                 lr=1.0e-3),
+                 lr=1.0e-3, split=0.1e9),
     "m100": dict(hidden=896,  e=384, pre=3, stack=7, target=100e6, trunk=3.0e9, decay=0.4e9, long=0.2e9, rows=128,
-                 lr=6.4e-4),
+                 lr=6.4e-4, split=0.2e9),
     "l300": dict(hidden=1280, e=512, pre=4, stack=9, target=300e6, trunk=5.0e9, decay=0.6e9, long=0.3e9, rows=256,
-                 lr=4.5e-4),
+                 lr=4.5e-4, split=0.3e9),
     "tiny": dict(hidden=128,  e=64,  pre=1, stack=2, target=8e6,   trunk=2e6,   decay=1e6,   long=0.5e6, rows=4,
-                 lr=1.0e-3),
+                 lr=1.0e-3, split=0.5e6),
 }
 
 _LOOP = {"message_loop_rounds": 4, "message_loop_exit_aux": 0.0}  # loop span 1 is the default
@@ -194,7 +199,7 @@ def decay_len(size: str) -> int:
 
 
 def manifests(data: Path, out: Path, size: str) -> dict:
-    """Write the three token-shard manifests (trunk / decay / long) for a run under `out`, return their paths."""
+    """Write the token-shard manifests (trunk / decay / long / split) for a run under `out`, return their paths."""
     out.mkdir(parents=True, exist_ok=True)
     fw, ld = data / "fineweb_edu_gpt2", data / "longdocs_lite_gpt2"
     tiny = size == "tiny"
@@ -207,8 +212,9 @@ def manifests(data: Path, out: Path, size: str) -> dict:
              "eval": [{"name": s, "files": [str(ld / f"{s}_val_*.bin")], "rows": 16} for s in srcs]}
     long = {**decay, "seq_len": 2048 if tiny else 65536, "seed": 2042,
             "eval": [{**e, "rows": 4} for e in decay["eval"]]}
-    p = {k: out / f"manifest_{k}.json" for k in ("trunk", "decay", "long")}
-    for k, m in (("trunk", trunk), ("decay", decay), ("long", long)):
+    split = {**decay, "seed": 3042}  # E37c: the decay's rows, another order
+    p = {k: out / f"manifest_{k}.json" for k in ("trunk", "decay", "long", "split")}
+    for k, m in (("trunk", trunk), ("decay", decay), ("long", long), ("split", split)):
         p[k].write_text(json.dumps(m, indent=2))
     return p
 
@@ -216,9 +222,12 @@ def manifests(data: Path, out: Path, size: str) -> dict:
 def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: str | None = None,
               lr: float | None = None, tokens: float | None = None, micro: int | None = None, seed: int = 42,
               wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
-              flow: bool = False, gpus: int = 1, grad_ckpt: bool = False) -> list[str]:
+              flow: bool = False, gpus: int = 1, grad_ckpt: bool = False,
+              cut: tuple[int, int] = (32, 4096)) -> list[str]:
     z = SIZES[size]
     args, n = fit(arm, size)
+    if phase == "split":  # E37c: cut rows (the model refuses arms with a notebook or a message boundary)
+        args = {**args, "par_cut_gap_min": int(cut[0]), "par_cut_gap_max": int(cut[1])}
     man = manifests(data, out, size)
     seq = json.loads(man[phase].read_text())["seq_len"]
     tokens = tokens or z[phase]
@@ -236,7 +245,7 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         print(f"note: {micro}×{accum}×{gpus} = {micro * accum * gpus} rows per step instead of {rows_per_step}",
               file=sys.stderr)
     steps = max(1, int(round(tokens / (micro * accum * gpus * seq))))
-    lr = lr or (0.1 * z["lr"] if phase == "long" else z["lr"])  # long: the rate the decay ended on
+    lr = lr or (0.1 * z["lr"] if phase in ("long", "split") else z["lr"])  # long, split: the rate the decay ended on
     launch = (["torchrun", "--standalone", f"--nproc_per_node={gpus}"] if gpus > 1 else ["python"])
     cmd = ["uv", "run", *launch, "training/train_concept_pretraining.py"]
     for k, v in args.items():
@@ -287,7 +296,7 @@ def main() -> None:
     c = sub.add_parser("cmd")
     c.add_argument("--arm", required=True, choices=sorted(ARMS))
     c.add_argument("--size", required=True, choices=sorted(SIZES))
-    c.add_argument("--phase", required=True, choices=("trunk", "decay", "long"))
+    c.add_argument("--phase", required=True, choices=("trunk", "decay", "long", "split"))
     c.add_argument("--data", required=True)
     c.add_argument("--out", required=True)
     c.add_argument("--init")
@@ -302,6 +311,8 @@ def main() -> None:
     c.add_argument("--seed", type=int, default=42, help="trainer seed: initial weights and the order rows are drawn in")
     c.add_argument("--gpus", type=int, default=1, help="GPUs for one model (data parallel via torchrun)")
     c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
+    c.add_argument("--cut_min", type=int, default=32, help="E37c split phase: shortest gap between cuts, tokens")
+    c.add_argument("--cut_max", type=int, default=4096, help="E37c split phase: longest gap between cuts, tokens")
     a = ap.parse_args()
     if a.what == "params":
         for size in ("s30", "m100", "l300"):
@@ -312,7 +323,8 @@ def main() -> None:
         return
     cmd = train_cmd(a.arm, a.size, a.phase, data=Path(a.data), out=Path(a.out), init=a.init, lr=a.lr,
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
-                    local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, grad_ckpt=a.grad_ckpt)
+                    local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, grad_ckpt=a.grad_ckpt,
+                    cut=(a.cut_min, a.cut_max))
     print(shlex.join(cmd))
 
 

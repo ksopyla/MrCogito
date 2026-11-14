@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E37c — two agents in one training row</title>
+<style>
+:root{--bg:#fbfaf7;--card:#fff;--ink:#1d1d1b;--mute:#6b6a65;--line:#dedbd2;--a:#2f6f9f;--a2:#d9e8f3;--b:#b8612a;--b2:#f6e3d3;
+  --ok:#2e7d5b;--ok2:#dcefe6;--new:#8a4fbf;--new2:#ece1f6;--bad:#b3403a;--cut:#b3403a;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#171715;--card:#20201d;--ink:#eceae3;--mute:#a09e96;--line:#3a3934;--a:#7db6de;--a2:#1f3545;
+  --b:#e39a63;--b2:#46301f;--ok:#6cc79c;--ok2:#1d3a2d;--new:#c29be8;--new2:#34264a;--bad:#e2756e;--cut:#e2756e}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:24px;margin:6px 0 4px}h2{font-size:18px;margin:34px 0 8px;padding-top:14px;border-top:1px solid var(--line)}
+h3{font-size:14px;margin:0 0 6px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+p{margin:6px 0}.lead{font-size:16px;max-width:820px}.note{color:var(--mute);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:10px 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.bar{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--ink);padding:7px 11px;font:inherit;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}.seg button.on{background:var(--ink);color:var(--bg)}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 11px;font:inherit;cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--bg)}
+.tag{display:inline-block;font-size:11px;font-weight:600;border-radius:20px;padding:1px 8px;margin-left:6px;vertical-align:1px}
+.tag.same{background:var(--ok2);color:var(--ok)}.tag.chg{background:var(--b2);color:var(--b)}.tag.new{background:var(--new2);color:var(--new)}
+.pipe{display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px}
+.node{flex:1 0 118px;border:1px solid var(--line);border-radius:9px;padding:8px;background:var(--card);cursor:pointer;font-size:13px;min-height:74px}
+.node b{display:block;font-size:13px}.node.on{outline:2px solid var(--ink)}.node.chg{border-color:var(--b);background:var(--b2)}.node.new{border-color:var(--new);background:var(--new2)}
+.shape{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap}
+.toks{display:flex;flex-wrap:wrap;gap:4px 0;align-items:flex-end;margin:6px 0}
+.tok{font-family:var(--mono);font-size:13px;padding:5px 6px 7px;border:1px solid var(--line);border-left-width:0;background:var(--card);cursor:pointer;position:relative}
+.tok{background:var(--a2)}.tok:first-child{border-left-width:1px}.tok.sideB{background:var(--b2)}.tok.q{outline:2px solid var(--ink);z-index:2}
+.tok.loc::after{content:"";position:absolute;left:3px;right:3px;bottom:2px;height:3px;background:var(--a);border-radius:2px}
+.tok.rd::before{content:"";position:absolute;left:50%;top:1px;width:5px;height:5px;margin-left:-2px;border-radius:50%;background:var(--ok)}
+.gap{width:10px;align-self:stretch;cursor:pointer;position:relative}.gap:hover{background:var(--line)}
+.gap.cut::after{content:"";position:absolute;left:4px;top:-4px;bottom:-4px;border-left:2px dashed var(--cut)}
+.legend span{display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:13px}
+.sw{display:inline-block;width:14px;height:10px;border-radius:2px}
+svg text{fill:var(--ink);font:11px -apple-system,Helvetica,Arial,sans-serif}
+table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600;font-size:12.5px}td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.chk label{margin-right:10px;white-space:nowrap}.chk input[type=text]{width:100%;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{width:100%;min-height:120px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:12.5px var(--mono);padding:8px}
+.barrow{display:grid;grid-template-columns:230px 1fr 110px;gap:8px;align-items:center;margin:5px 0;font-size:13.5px}
+.barrow .b{height:14px;border-radius:3px;background:var(--a)}.barrow .b.need{background:var(--ok)}.barrow .b.mem{background:var(--b)}
+@media(max-width:620px){.barrow{grid-template-columns:1fr}}
+</style>
+</head>
+<body><main>
+<div class="note">E37c · alignment page · written 14 Nov 2026 · spec: docs/experiments_specs/ahead/E37c_two_agent_split_training.md</div>
+<h1>Two agents in one training row</h1>
+<p class="lead">Yesterday's test showed that a trained 100M model, split into a reader (agent A) and an answerer (agent B), loses most
+of its score when B gets only A's memory: 43 % of needles found at 16k tokens against 97 % for one agent. The memory holds the answer; B
+fails because it starts <b>cold</b>, a situation the model never met in training. E37c trains on that situation: every row is cut at random
+points, and the text after a cut may use its nearby-words layers only on its own side.</p>
+
+<div class="bar">
+  <span class="seg" id="mode">
+    <button data-v="built">One agent (as built)</button>
+    <button data-v="eval">Two agents, no training (13 Nov)</button>
+    <button data-v="train" class="on">Split training (E37c)</button>
+  </span>
+  <span class="note" id="modenote"></span>
+</div>
+
+<h2>1 · The network, one step at a time</h2>
+<p class="note">Sizes are for one training row of 16,384 tokens in the 100M model (width 896). Click a step, or use the buttons.</p>
+<div class="pipe" id="pipe"></div>
+<p><button class="btn" id="prev">◀ prev</button> <button class="btn primary" id="next">next step ▶</button> <span class="note" id="stepno"></span></p>
+<div class="grid2">
+  <div class="card"><h3>What happens here</h3><div id="what"></div></div>
+  <div class="card"><h3>Shapes</h3><div class="shape" id="shape"></div><h3 style="margin-top:12px">What information survives</h3><div id="survive"></div></div>
+</div>
+
+<h2>2 · A worked toy example: who can see what</h2>
+<p>A 28-token row. Blue background = the document (agent A). Orange = the question (agent B). The toy's nearby-words window is 4 tokens
+(the real one is 128). <b>Click a token</b> to make it the reader; <b>click between two tokens</b> to add or remove a cut (split-training mode).</p>
+<div class="card">
+  <div class="toks" id="toks"></div>
+  <div class="legend"><span><i class="sw" style="background:var(--a)"></i> seen by the nearby-words (local) layers</span>
+  <span><i class="sw" style="background:var(--ok);border-radius:50%;width:8px;height:8px"></i> readable through the reading layer (memory)</span>
+  <span><i class="sw" style="border-left:2px dashed var(--cut);width:2px;height:14px"></i> cut</span></div>
+  <p id="toyline" style="margin-top:8px"></p>
+  <p class="note">Illustrative: it shows what each layer is <i>allowed</i> to look at, not learned attention weights.</p>
+</div>
+
+<h2>3 · The masks</h2>
+<p class="note">Rows = the token that looks, columns = the token looked at, for the toy row above. A filled cell means "allowed".</p>
+<div class="grid2">
+  <div class="card"><h3>A nearby-words (local) layer <span class="tag" id="tagloc"></span></h3><svg id="mloc" viewBox="0 0 300 300" width="100%"></svg></div>
+  <div class="card"><h3>The reading layer <span class="tag same">unchanged</span></h3><svg id="mrd" viewBox="0 0 300 300" width="100%"></svg></div>
+</div>
+<div class="card"><b>What crosses a cut, and what does not</b>
+<table><tr><th>Crosses</th><th>Does not cross</th></tr>
+<tr><td>The reading layer's memory of every earlier token: one key and one value per token and loop pass (512 numbers per token).
+From it the model also builds its concepts (64 per block of 512 tokens) and their summaries.</td>
+<td>The local layers' caches of the tokens before the cut (13 local-layer calls × 128 numbers per token). These are what yesterday's
+"plus A's last 16 tokens" condition added back.</td></tr>
+<tr><td>Positions keep counting through the cut. That is a number, not content.</td>
+<td>Raw text. There are no n-gram input tables in these models; the model refuses cut rows if they are on.</td></tr></table></div>
+
+<h2>4 · Information budget (16k-token document, number needle)</h2>
+<div class="card">
+  <div id="budget"></div>
+  <p class="note">Bars are on a log scale. The answer needs about 23 bits. The memory is thousands of times larger than the document's
+  information, so <b>storage is not the bottleneck</b>. The expected bottleneck is the <b>address</b>: B must form a good question to the
+  memory from its own few tokens, with empty nearby-words layers. Measured yesterday: with the same memory, B finds 43 % cold and 93 % when it
+  also gets A's last 16 tokens' local caches.</p>
+</div>
+
+<h2>5 · The run and its pass marks</h2>
+<div class="card"><table>
+<tr><th>Item</th><th>Choice</th></tr>
+<tr><td>Model</td><td>The concept-read 100M model (162.4M parameters), from its 16k-stage final weights. No new parameters.</td></tr>
+<tr><td>Data</td><td>Plain long documents (LongDocs-lite), rows of 16,384 tokens, one document per row. 0.2B tokens = 12,207 rows.</td></tr>
+<tr><td>Cuts</td><td>Every row. The gap between cuts is drawn between 32 and 4,096 tokens (short gaps as likely as long ones on a log scale):
+about 20 cuts per row, about 15 % of tokens within 128 tokens after a cut.</td></tr>
+<tr><td>Recipe</td><td>32 rows a step, 381 steps, learning rate 6.4e-5 falling to 6.4e-6 (where the 16k stage stopped). One seed.</td></tr>
+<tr><td>Machine</td><td>One L40S on AWS (spot). About 4.2 h training + 1.5 h exams, about $11. Hard limit 9 h; it powers itself off.</td></tr>
+</table></div>
+<div class="card"><table>
+<tr><th>Exam (number needle, B with memory only)</th><th>4k</th><th>16k</th><th>32k</th></tr>
+<tr><td>Untuned, B with memory only (measured 13 Nov)</td><td class="num">63 %</td><td class="num">43 %</td><td class="num">35 %</td></tr>
+<tr><td>Untuned, one agent — the ceiling (measured)</td><td class="num">100 %</td><td class="num">97 %</td><td class="num">90 %</td></tr>
+<tr><td><b>Pass mark: 80 % of that gap closed</b></td><td class="num"><b>≥ 93 %</b></td><td class="num"><b>≥ 86 %</b></td><td class="num"><b>≥ 79 %</b></td></tr>
+<tr><td>Stop mark: less than a third of the gap closed at 16k</td><td class="num"></td><td class="num">&lt; 61 %</td><td class="num"></td></tr>
+</table>
+<p class="note">Also required: with no memory, or another document's memory, B stays at ≤ 5 % (so the gain is real reading); the tuned model as
+one agent loses at most 7 points, and its loss on long documents without cuts rises by at most 0.01. If the stop mark is hit, the hand-over
+keeps A's last 32–64 tokens' local caches (0.1–0.2 MB), which already gives 95–100 % with no training.</p></div>
+
+<h2>6 · Alignment checklist</h2>
+<p class="note">Mark each decision, add a note if you want, then press the button and paste the text into the chat.</p>
+<div class="card"><table id="chk" class="chk"></table>
+<p><button class="btn primary" id="collect">Collect my answers</button></p>
+<textarea id="out" readonly placeholder="Your answers will appear here."></textarea></div>
+</main>
+<script>
+(function(){
+"use strict";
+var mode="train", step=0, q=20, cuts={18:true};
+var A=["The","magic","number","for","apple","is","7421",".","The","grass","is","green",".","The","sky","is","blue","."];
+var Bq=["What","is","the","magic","number","for","apple","?","It","is"];
+var T=A.concat(Bq), NA=A.length, N=T.length, W=4;
+var MODES={built:"No cuts. The model as it was trained: one stream of text.",
+  eval:"One cut, where the question starts. No training: yesterday's test.",
+  train:"Random cuts in every training row. The toy shows one before the question; click between tokens to add more."};
+function cutSet(){ if(mode==="built") return {}; if(mode==="eval") return {18:true}; return cuts; }
+function side(i){ var c=cutSet(), s=0; for(var k in c){ if(c[k] && +k<=i) s++; } return s; }
+function sideStart(i){ var c=cutSet(), s=0; for(var k in c){ if(c[k] && +k<=i && +k>s) s=+k; } return s; }
+function locOK(qi,k){ return k<=qi && qi-k<W && k>=sideStart(qi); }
+function rdOK(qi,k){ return k<=qi; }
+var STEPS=[
+ {t:"Tokens",s:{built:"same",eval:"same",train:"new"},
+  what:{built:"A row of text goes in as token ids. One document per row.",
+        eval:"Agent A gets the document. Agent B gets only the question. One cut between them.",
+        train:"A row of text goes in. <b>New:</b> cut points are drawn for the row: the gap to the next cut is between 32 and 4,096 tokens. About 20 cuts per row."},
+  shape:"token ids   [B, 16384]\ncut marks   [B, 16384] true / false   (training only)",
+  surv:"Everything: the text itself."},
+ {t:"Embedding",s:{built:"same",eval:"same",train:"same"},
+  what:{built:"Each token id becomes a vector.",eval:"Same.",train:"Same. A cut changes nothing here."},
+  shape:"[B, 16384] → [B, 16384, 896]\n(table of 384 numbers per token, projected to 896)",
+  surv:"Which word each token is. No word order yet."},
+ {t:"3 local layers",s:{built:"same",eval:"chg",train:"chg"},
+  what:{built:"Each token looks at the 128 tokens before it. This is where word order and local meaning are built.",
+        eval:"B's tokens look only at B's own earlier tokens. B's first token sees nothing before it. Never seen in training, so B's states are unfamiliar to the rest of the model.",
+        train:"<b>Changed:</b> a token looks at the 128 tokens before it, but not past the last cut. The first token after a cut sees only itself. The model now practises this thousands of times."},
+  shape:"per layer: 14 query heads × 64, 1 key/value head × 64\nwindow 128, clipped at the last cut",
+  surv:"Local context of the token's own side. Nothing from before the cut."},
+ {t:"Reading layer ×4",s:{built:"same",eval:"same",train:"same"},
+  what:{built:"Each token reads the whole document so far: the first 4 tokens, its own 512-block and the one before exactly, the 512 tokens of the best-matching concepts, and one summary per other concept. No position code: it finds things by content.",
+        eval:"Unchanged. For B this is a read of A's memory: A's keys and values, nothing else of A.",
+        train:"<b>Unchanged.</b> It ignores the cuts. It is the only way a token can learn about text before its cut."},
+  shape:"memory: key + value per token and pass\n4 passes × (64 + 64) = 512 numbers per token\n16,384 tokens → 8.4M numbers (16 MB)\nconcepts: 64 per closed block of 512 tokens",
+  surv:"Anything of the earlier text that a content query can find. Not: which words came last before the cut."},
+ {t:"Local layer in the loop ×4",s:{built:"same",eval:"chg",train:"chg"},
+  what:{built:"After each read, one local layer mixes what was read with the neighbours. Read and mix repeat 4 times.",
+        eval:"B's tokens mix only with B's own tokens.",
+        train:"<b>Changed:</b> clipped at the last cut, like the other local layers."},
+  shape:"window 128, clipped at the last cut\nthe same layer weights on all 4 passes",
+  surv:"What this side has read so far, shared among its own tokens."},
+ {t:"6 local layers",s:{built:"same",eval:"chg",train:"chg"},
+  what:{built:"The rest of the stack turns the state into a prediction.",eval:"B's own tokens only.",train:"<b>Changed:</b> clipped at the last cut."},
+  shape:"window 128, clipped at the last cut",
+  surv:"The prediction of the next token."},
+ {t:"Next-token loss",s:{built:"same",eval:"same",train:"same"},
+  what:{built:"The model is scored on predicting every next token.",
+        eval:"No loss: B writes its answer and we check whether the needle's number is in it.",
+        train:"<b>Unchanged:</b> every position predicts the next token. After a cut, a good prediction needs the memory, so the model is pushed to read well from a cold start."},
+  shape:"[B, 16384, 896] → 50,257 word scores per position\nloss averaged over 16,383 positions",
+  surv:"One number per position: how surprised the model was."}
+];
+var TAGS={same:["same","unchanged"],chg:["chg","changed"],new:["new","new"]};
+function el(id){return document.getElementById(id);}
+function renderPipe(){
+  var h="";
+  STEPS.forEach(function(s,i){ var st=s.s[mode];
+    h+='<div class="node '+(st==="same"?"":st)+(i===step?" on":"")+'" data-i="'+i+'"><b>'+(i+1)+". "+s.t+'</b><span class="tag '+TAGS[st][0]+'" style="margin-left:0">'+TAGS[st][1]+"</span></div>"; });
+  el("pipe").innerHTML=h;
+  var s=STEPS[step];
+  el("what").innerHTML=s.what[mode]; el("shape").textContent=s.shape; el("survive").textContent=s.surv;
+  el("stepno").textContent="step "+(step+1)+" of "+STEPS.length;
+  el("modenote").textContent=MODES[mode];
+}
+function renderToy(){
+  var h="", c=cutSet();
+  for(var i=0;i<N;i++){
+    if(i>0) h+='<span class="gap'+(c[i]?" cut":"")+'" data-g="'+i+'" title="cut here"></span>';
+    var cl="tok"+(i>=NA?" sideB":"")+(i===q?" q":"")+(locOK(q,i)?" loc":"")+(rdOK(q,i)&&i!==q?" rd":"");
+    h+='<span class="'+cl+'" data-t="'+i+'">'+T[i]+"</span>";
+  }
+  el("toks").innerHTML=h;
+  var nl=0, na=0, nr=0;
+  for(var k=0;k<=q;k++){ if(locOK(q,k)){nl++; if(k<NA&&q>=NA) na++;} if(k<q) nr++; }
+  var txt='Reader: "<b>'+T[q]+'</b>" (token '+(q+1)+"). Its local layers see <b>"+nl+"</b> token"+(nl===1?"":"s");
+  if(q>=NA) txt+=", of which <b>"+na+"</b> from the document";
+  txt+=". Through the reading layer it can read all <b>"+nr+"</b> earlier tokens.";
+  if(q>=NA && na===0 && mode!=="built") txt+=" Everything it knows about the document must come from the memory.";
+  el("toyline").innerHTML=txt;
+}
+function mask(id,fn,col){
+  var c=300/N, h="";
+  for(var r=0;r<N;r++) for(var k=0;k<N;k++){
+    var on=fn(r,k);
+    h+='<rect x="'+(k*c).toFixed(1)+'" y="'+(r*c).toFixed(1)+'" width="'+(c-1).toFixed(1)+'" height="'+(c-1).toFixed(1)+'" fill="'+(on?col:"var(--line)")+'" opacity="'+(on?1:(k<=r?0.55:0.18))+'"/>';
+  }
+  var cs=cutSet();
+  for(var x in cs){ if(cs[x]) h+='<line x1="'+(x*c-0.5)+'" y1="0" x2="'+(x*c-0.5)+'" y2="300" stroke="var(--cut)" stroke-width="1.5" stroke-dasharray="4 3"/><line x1="0" y1="'+(x*c-0.5)+'" x2="300" y2="'+(x*c-0.5)+'" stroke="var(--cut)" stroke-width="1.5" stroke-dasharray="4 3"/>'; }
+  h+='<rect x="0" y="'+(q*c-0.5)+'" width="300" height="'+c+'" fill="none" stroke="var(--ink)" stroke-width="1.2"/>';
+  el(id).innerHTML=h;
+}
+function renderMasks(){
+  mask("mloc",locOK,"var(--a)"); mask("mrd",rdOK,"var(--ok)");
+  var t=el("tagloc"); if(mode==="built"){t.className="tag same";t.textContent="unchanged";}else{t.className="tag chg";t.textContent="clipped at cuts";}
+}
+function renderBudget(){
+  var rows=[["The answer (a 7-digit number)",23,"need","23 bits"],
+    ["The document under the model (5.1 bits a token)",83600,"","84 kbit = 10 KB"],
+    ["The document as text (UTF-8)",600000,"","600 kbit = 75 KB"],
+    ["A's memory (512 numbers a token, 16 bits)",134200000,"mem","134 Mbit = 16 MB"],
+    ["A's last 16 tokens' local caches",426000,"mem","426 kbit = 53 KB"]];
+  var max=Math.log10(2e8), h="";
+  rows.forEach(function(r){ h+='<div class="barrow"><div>'+r[0]+'</div><div><div class="b '+r[2]+'" style="width:'+(100*Math.log10(r[1])/max).toFixed(1)+'%"></div></div><div class="note">'+r[3]+"</div></div>"; });
+  el("budget").innerHTML=h;
+}
+var ITEMS=["Model: the concept-read 100M model only (the bucket-read and full-attention models later).",
+ "Start from the 16k-stage weights (not the 64k stage).",
+ "A cut stops only the nearby-words (local) layers. Reading layer, positions and loss stay as they are.",
+ "Cuts on every training row; gaps between 32 and 4,096 tokens, about 20 cuts per 16k row.",
+ "Data: plain long documents. No question-shaped rows, so the needle exam stays an unseen prompt.",
+ "Budget: 0.2B tokens, learning rate 6.4e-5 falling to 6.4e-6, one seed.",
+ "Pass mark: 80 % of the gap closed (93 / 86 / 79 % at 4k / 16k / 32k), empty and wrong memory at 5 % or less.",
+ "No-harm mark: one agent loses at most 7 points; long-document loss rises at most 0.01.",
+ "Stop mark: under 61 % at 16k means we keep A's last tokens in the hand-over.",
+ "Not in this run: the same fine-tune without cuts (control), a second seed, other models.",
+ "Machine: one L40S on AWS spot, about 6 h, about $11, powers itself off."];
+function renderChk(){
+  var h="<tr><th>#</th><th>Decision</th><th>Your view</th><th>Note</th></tr>";
+  ITEMS.forEach(function(t,i){
+    h+="<tr><td>"+(i+1)+"</td><td>"+t+"</td><td>"+["agree","change","question"].map(function(v){
+      return '<label><input type="radio" name="c'+i+'" value="'+v+'"> '+v+"</label>";}).join("")+'</td><td><input type="text" id="n'+i+'" aria-label="note '+(i+1)+'"></td></tr>';
+  });
+  el("chk").innerHTML=h;
+}
+function all(){ renderPipe(); renderToy(); renderMasks(); }
+el("mode").addEventListener("click",function(e){ var b=e.target.closest("button"); if(!b) return; mode=b.dataset.v;
+  Array.prototype.forEach.call(el("mode").children,function(x){x.classList.toggle("on",x===b);}); all(); });
+el("pipe").addEventListener("click",function(e){ var n=e.target.closest(".node"); if(n){ step=+n.dataset.i; renderPipe(); } });
+el("prev").addEventListener("click",function(){ step=(step+STEPS.length-1)%STEPS.length; renderPipe(); });
+el("next").addEventListener("click",function(){ step=(step+1)%STEPS.length; renderPipe(); });
+el("toks").addEventListener("click",function(e){
+  var t=e.target.closest(".tok"), g=e.target.closest(".gap");
+  if(t){ q=+t.dataset.t; }
+  else if(g && mode==="train"){ var i=+g.dataset.g; cuts[i]=!cuts[i]; }
+  renderToy(); renderMasks(); });
+el("collect").addEventListener("click",function(){
+  var lines=["E37c alignment answers:"];
+  ITEMS.forEach(function(t,i){ var r=document.querySelector('input[name="c'+i+'"]:checked'), n=el("n"+i).value.trim();
+    lines.push((i+1)+". "+(r?r.value:"(no answer)")+" — "+t+(n?"  NOTE: "+n:"")); });
+  el("out").value=lines.join("\n"); el("out").select(); });
+renderBudget(); renderChk(); all();
+})();
+</script>
+</body>
+</html>

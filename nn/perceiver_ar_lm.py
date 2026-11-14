@@ -301,6 +301,12 @@ class PerceiverARConfig(PretrainedConfig):
         concept_reasoner_dim: int = 512,  # E37: reasoner width
         concept_reasoner_heads: int = 8,  # E37: reasoner heads
         concept_reasoner_loops: int = 2,  # E37: reasoner loops (input injection each loop)
+        # E37c two-agent split training (docs/experiments_specs/ahead/E37c_two_agent_split_training.md): rows are cut
+        # at random points in training. A local layer reads its own side of a cut only; layers with the full pattern
+        # (the reading layer) keep reading the whole document. Off by default; nothing is cut in eval unless asked.
+        par_cut_gap_min: int = 0,         # E37c: shortest gap between cuts, tokens
+        par_cut_gap_max: int = 0,         # E37c: longest gap (0 = no cuts); gaps are log-uniform in [min, max]
+        par_cut_prob: float = 1.0,        # E37c: share of training rows that are cut
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -470,6 +476,9 @@ class PerceiverARConfig(PretrainedConfig):
         self.concept_reasoner_dim = int(concept_reasoner_dim)
         self.concept_reasoner_heads = int(concept_reasoner_heads)
         self.concept_reasoner_loops = int(concept_reasoner_loops)
+        self.par_cut_gap_min = int(par_cut_gap_min or 0)
+        self.par_cut_gap_max = int(par_cut_gap_max or 0)
+        self.par_cut_prob = float(par_cut_prob)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -737,6 +746,23 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("lsa_window >= 1, lsa_sinks >= 0, lsa_top_k in [1, 32767], lsa_width >= 1")
             if self.lsa_bucket_cap > 511:
                 raise ValueError("lsa_bucket_cap must be < 512 (member rank code)")
+
+        if self.par_cut_gap_max:  # E37c
+            if not 1 <= self.par_cut_gap_min <= self.par_cut_gap_max or not 0.0 <= self.par_cut_prob <= 1.0:
+                raise ValueError("par_cut needs 1 <= par_cut_gap_min <= par_cut_gap_max and par_cut_prob in [0, 1]")
+        self.check_cuts(self.par_cut_gap_max > 0)
+
+    def check_cuts(self, on: bool = True) -> None:
+        """E37c: what a cut row needs of the model (also checked when cuts are passed to a forward)."""
+        if not on:
+            return
+        if self.message_enabled:
+            raise ValueError("cut rows (E37c) are for models without the message boundary or a notebook: "
+                             "those have their own sides and pages that straddle a cut")
+        if self.par_mode != "perceiver" or self.global_layers < 1 or self.attn_backend == "flash":
+            raise ValueError("cut rows (E37c) need perceiver mode with a reading layer, flex or sdpa")
+        if tuple(self.ngram_orders or ()) or self.swa_sink:
+            raise ValueError("cut rows (E37c): n-gram input tables and the local sink read across a cut")
 
     @property
     def message_enabled(self) -> bool:
@@ -1115,6 +1141,38 @@ def _attend_flash(q, k, v, pattern, window, causal, cu_seqlens, key_valid):
         cu_seqlens, cu_seqlens, max_len, max_len, causal=causal, window_size=win,
     )
     return out.reshape(B, S, *out.shape[1:])
+
+
+# --------------------------------------------------------------------------------------
+# E37c cut rows: two agents in one training row (local layers stop at a cut, the reading layer does not)
+# --------------------------------------------------------------------------------------
+
+
+def draw_cuts(B: int, S: int, gap_min: int, gap_max: int, prob: float = 1.0, device=None,
+              generator: Optional[torch.Generator] = None) -> torch.Tensor:
+    """[B, S] bool, True where a new side starts. Gaps between cuts are log-uniform in [gap_min, gap_max] tokens (the
+    first gap starts at the row's first token); a row is cut with probability `prob`."""
+    gap_min, gap_max = max(1, int(gap_min)), max(1, int(gap_max))
+    n = S // gap_min + 1
+    u = torch.rand(B, n, generator=generator, device=device)
+    lo, hi = math.log(gap_min), math.log(gap_max + 1)
+    gaps = torch.exp(lo + u * (hi - lo)).floor().long().clamp(gap_min, gap_max)
+    at = gaps.cumsum(1).clamp(max=S)                       # position S = past the row, dropped below
+    cuts = torch.zeros(B, S + 1, dtype=torch.bool, device=device)
+    cuts.scatter_(1, at, True)
+    cuts = cuts[:, :S]
+    if prob < 1.0:
+        cuts = cuts & (torch.rand(B, 1, generator=generator, device=device) < prob)
+    return cuts
+
+
+def cut_sides(doc: torch.Tensor, cuts: torch.Tensor) -> torch.Tensor:
+    """[B, S] ids for the local layers of a cut row: a new id at every document start and at every cut, so a local
+    layer's same-document rule stops at both. Padding (doc < 0) keeps its id."""
+    start = torch.ones_like(cuts)
+    start[:, 1:] = doc[:, 1:] != doc[:, :-1]
+    seg = (start | cuts.bool()).long().cumsum(1) - 1
+    return torch.where(doc < 0, doc, seg)
 
 
 # --------------------------------------------------------------------------------------
@@ -3825,7 +3883,7 @@ class PerceiverARLM(PreTrainedModel):
 
     def _run_layers(self, input_ids, attention_mask, doc_ids, cu_seqlens, capture_input_of: Optional[int] = None,
                     message_kv: Optional[tuple] = None, position_offset: int = 0,
-                    prefix_embeds: Optional[torch.Tensor] = None):
+                    prefix_embeds: Optional[torch.Tensor] = None, cut_ids: Optional[torch.Tensor] = None):
         cfg = self.config
         B, S = input_ids.shape
         key_valid = None
@@ -3835,6 +3893,11 @@ class PerceiverARLM(PreTrainedModel):
         pos = pos0 + int(position_offset) if position_offset else pos0
         msg = None
         local_doc = doc_ids
+        cut = cut_ids is not None and bool(cut_ids.any())
+        if cut:  # E37c: the local layers stop at every cut; layers with the full pattern keep the document ids
+            cfg.check_cuts()
+            base = doc_ids if doc_ids is not None else torch.zeros_like(input_ids)
+            local_doc = cut_sides(base, cut_ids.to(input_ids.device))
         if cfg.message_enabled:
             msg = self._message_context(input_ids, doc_ids, key_valid, pos, external=message_kv)
             if msg is not None:
@@ -3910,7 +3973,7 @@ class PerceiverARLM(PreTrainedModel):
                 layer.attn.compressor is not None or self.memory_writer is not None
             )
             kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid,
-                          doc_ids=(doc_ids if is_global else local_doc),
+                          doc_ids=(doc_ids if (is_global or (cut and layer.attn.pattern == "full")) else local_doc),
                           cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos,
                           message=(msg if is_global else None), rope_theta=cfg.rope_theta)
             if self.gradient_checkpointing and self.training:
@@ -4029,8 +4092,9 @@ class PerceiverARLM(PreTrainedModel):
         input_ids: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
         doc_ids: Optional[torch.Tensor] = None,
+        cut_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
-        """Final-norm hidden states [B, S, d] without materialising logits.
+        """Final-norm hidden states [B, S, d] without materialising logits. `cut_ids` [B, S] bool: E37c cut row.
 
         Probes that only need argmax at a few positions (passkey, copy) project
         `hidden_states(...)[:, positions]` with `lm_head.weight` themselves: full logits at
@@ -4039,8 +4103,15 @@ class PerceiverARLM(PreTrainedModel):
         input_ids, attention_mask, _, doc_ids, S_orig = self._pad_inputs(
             input_ids, attention_mask, None, doc_ids
         )
-        x = self._run_layers(input_ids, attention_mask, doc_ids, None)
+        x = self._run_layers(input_ids, attention_mask, doc_ids, None, cut_ids=self._pad_cuts(cut_ids, input_ids))
         return self.final_norm(x)[:, :S_orig]
+
+    @staticmethod
+    def _pad_cuts(cut_ids: Optional[torch.Tensor], input_ids: torch.Tensor) -> Optional[torch.Tensor]:
+        """The cuts of a row after `_pad_inputs` padded it on the right (no cut in the padding)."""
+        if cut_ids is None or cut_ids.shape[1] == input_ids.shape[1]:
+            return cut_ids
+        return F.pad(cut_ids.bool(), (0, input_ids.shape[1] - cut_ids.shape[1]), value=False)
 
     def forward(
         self,
@@ -4055,7 +4126,10 @@ class PerceiverARLM(PreTrainedModel):
         position_offset: int = 0,
         prefix_embeds: Optional[torch.Tensor] = None,
         read_targets: Optional[torch.Tensor] = None,
+        cut_ids: Optional[torch.Tensor] = None,
     ):
+        # `cut_ids` [B, S] bool (E37c): True where a new side starts. Given: that row is cut (tests, exams). None in
+        # training with `par_cut_gap_max > 0`: cuts are drawn here, per row. None otherwise: no cuts.
         # NOTE: no **kwargs here on purpose. HF Trainer treats any VAR_KEYWORD forward as a
         # model that normalizes its own loss by num_items_in_batch and then skips the division
         # by gradient_accumulation_steps (loss and grad-clip off by accum×). This forward
@@ -4104,15 +4178,22 @@ class PerceiverARLM(PreTrainedModel):
                 labels = torch.cat([labels.new_full((B0, P), -100), labels], 1)
             if doc_ids is not None:
                 doc_ids = torch.cat([doc_ids[:, :1].expand(B0, P), doc_ids], 1)
+        if cut_ids is None and self.training and cfg.par_cut_gap_max > 0:
+            cut_ids = draw_cuts(input_ids.shape[0], input_ids.shape[1], cfg.par_cut_gap_min, cfg.par_cut_gap_max,
+                                cfg.par_cut_prob, input_ids.device)
+        if cut_ids is not None and prefix_embeds is not None:
+            raise RuntimeError("cut rows (E37c) are not combined with prefix_embeds")
+        self._last_cuts = cut_ids
         input_ids, attention_mask, labels, doc_ids, S_orig = self._pad_inputs(
             input_ids, attention_mask, labels, doc_ids
         )
+        cut_ids = self._pad_cuts(cut_ids, input_ids)
         rec = self.flow_recorder if (self.flow_recorder is not None and self.flow_recorder.armed) else None
         if rec is not None:  # E33p: one instrumented forward
             rec.begin(input_ids)
             self._set_flow(rec)
         try:
-            x = self._run_layers(input_ids, attention_mask, doc_ids, cu_seqlens,
+            x = self._run_layers(input_ids, attention_mask, doc_ids, cu_seqlens, cut_ids=cut_ids,
                                  message_kv=message_kv, position_offset=position_offset, prefix_embeds=prefix_embeds)
         finally:
             if rec is not None:

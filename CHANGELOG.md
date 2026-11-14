@@ -15,6 +15,41 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-14] - E37c: cut rows, so a model can be trained as two agents (spec, code, job)
+
+**Why:**
+- The eval-only two-agent test of 13 Nov: agent B with only agent A's memory finds 43 % of the needles at 16k against
+  97 % for one agent, while the same memory plus A's last 16 tokens' local caches gives 93 %. The memory holds the
+  answer; B fails on its cold start, a state training never showed the model (an empty local window with a full
+  memory). The author approved a short fine-tune that trains on that state (14 Nov, "Yes, spec it").
+
+**Impact:**
+- Any arm without a notebook or message boundary (dense, LSA port, concept read) can now be trained with rows cut at
+  random points. A training row with a cut is the two-agent setting of `nn/agent_split.py` (unit-tested equal).
+- Off by default: no change to any existing run, checkpoint or eval.
+
+**What changed:**
+- [added] `nn/perceiver_ar_lm.py` - `par_cut_gap_min` / `par_cut_gap_max` / `par_cut_prob` (config), `draw_cuts`,
+  `cut_sides`, the `cut_ids` argument of `forward` and `hidden_states`. In a cut row the local (sliding-window) layers
+  get a side id per stretch between cuts; layers with the full pattern keep the document id. Cuts are drawn in
+  training mode only; refused with a notebook, a message boundary, n-gram input tables or the local sink.
+- [added] `training/concept_pretraining_args.py`, `training/concept_pretraining_factories.py` - the three switches.
+- [added] `scripts/run_e33n.py` - phase `split` (the decay's 16k rows in another order, the long phase's rate,
+  0.2B tokens at m100, `--cut_min` / `--cut_max`).
+- [added] `scripts/a2a_cut_loss.py` - the loss of the positions 0-7 / 8-31 / 32-127 / 128+ after a cut against the
+  same positions without cuts, and the loss on rows cut as training cuts them.
+- [added] `infra/aws/jobs/e37c_split_ft.sh` - pre-flight, training with checkpoints to S3, then the two-agent probe
+  with the settings of 13 Nov; writes only to its own folder `runs/e37c/`.
+- [added] `tests/test_cut_rows.py` - 17 tests (no cut = the plain forward; a cut row = the two-agent decoder for
+  dense, LSA and concept reads; local layers stop at a cut; chained cuts; the draw; refusals).
+- [added] `docs/experiments_specs/ahead/E37c_two_agent_split_training.md`,
+  `docs/3_Evaluations_and_Baselines/e37c_architecture.html` (alignment page).
+
+**Checked:** 17 new tests and 278 existing model / trainer tests pass. Laptop pipeline checks only (no conclusions):
+12 training steps of the tiny size with cuts; the cut-loss script on the 100M checkpoint at 2,048 tokens.
+
+**Related:** `docs/experiments_specs/ahead/E37c_two_agent_split_training.md`
+
 ## [2026-11-13] - Two agents from one trained 100M model, eval only: the hand-over works with A's last tokens, not with the memory alone
 
 **Why:** can the 100M models already show agent-to-agent work through latents, with no training, and what does it

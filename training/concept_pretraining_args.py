@@ -481,6 +481,11 @@ class ModelArguments:
     concept_reasoner_dim: int = field(default=512, metadata={"help": "E37: concept reasoner width."})
     concept_reasoner_heads: int = field(default=8, metadata={"help": "E37: concept reasoner heads."})
     concept_reasoner_loops: int = field(default=2, metadata={"help": "E37: concept reasoner loops."})
+    par_cut_gap_min: int = field(default=0, metadata={"help": "E37c: shortest gap between training cuts, tokens."})
+    par_cut_gap_max: int = field(default=0, metadata={
+        "help": "E37c two-agent split training: longest gap between cuts (0 = no cuts). Gaps are log-uniform in "
+                "[min, max]; a local layer reads its own side of a cut only, the reading layer the whole document."})
+    par_cut_prob: float = field(default=1.0, metadata={"help": "E37c: share of training rows that are cut."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(
