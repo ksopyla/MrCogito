@@ -167,7 +167,7 @@ ev_orig() {  # CK TAG [base]
       --extra_lengths 2048,4096,8192,16384 --out "$R/${t}_extra.json.part" > "$R/${t}_extra.log" 2>&1 \
       && mv "$R/${t}_extra.json.part" "$R/${t}_extra.json" || log "$t extra FAILED"; }
   [ -n "$base" ] && return 0
-  heat_break; [ -f "$R/${t}_core.json" ] || { log "$t core"; E core --checkpoint "$ck" --data "$D" --limit 0 \
+  heat_break; [ -f "$R/${t}_core.json" ] || { log "$t core"; E core --checkpoint "$ck" --data "$D" --limit 0 --batch 8 \
       --out "$R/${t}_core.json.part" > "$R/${t}_core.log" 2>&1 && mv "$R/${t}_core.json.part" "$R/${t}_core.json" \
       || log "$t core FAILED"; }
   heat_break; [ -f "$R/${t}_ruler.json" ] || { log "$t RULER 4k + 16k"; E ruler --checkpoint "$ck" --data "$D" --lengths 4096,16384 \
