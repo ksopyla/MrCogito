@@ -34,6 +34,12 @@ The reading layer reads through the list read (`attend_list`, `ChoiceList`), whi
 or, for the concept and notes reads, one query's row of the table (the same `choose`) and one fp32 softmax.
 The tokens equal the uncached decoding's and the logits agree to float rounding (tests/test_incremental_decode.py).
 
+Read once, answer many (2026-11-14). `snapshot()` after a prefill is the cache of that row; `ask(snap, question,
+new)` restores it, writes the question's tokens as steps (one position each, like answer tokens) and decodes greedily.
+A document is then read once and every question costs only its own tokens and its answer's, with the tokens a fresh
+prefill over document + question would write (tests/test_incremental_decode.py::test_read_once_answer_many). For the
+catalogue and notes reads the question and the answer together stay under `max_new_tokens()`.
+
 Supported; anything else raises NotImplementedError before any work, so callers keep the uncached path: perceiver
 par_mode, causal, no message boundary, one global layer, the tied loop over [global read + span layers] with loop
 markers (and the prelude gate), sliding-window local layers without sinks; the reading layer is full attention,
@@ -44,6 +50,7 @@ heads, write-back hooks, loop control, loop feedback.
 """
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -55,6 +62,42 @@ import torch.nn.functional as F
 from nn.exact_read import ORD_MOD, ChoiceList, choose, doc_starts, note_open_table, tied_note_keys
 from nn.lsa_buckets import lsa_groups, lsa_open_table
 from nn.perceiver_ar_lm import PerceiverARLM, apply_rope, attend_list, rope_cos_sin
+
+
+def _clone_state(x, memo: Optional[dict] = None):
+    """A copy of a decoder state: every tensor cloned once (two names of one tensor stay one tensor), containers and
+    plain objects rebuilt, modules and functions shared."""
+    memo = {} if memo is None else memo
+    if id(x) in memo:
+        return memo[id(x)]
+    if x is None or isinstance(x, (bool, int, float, str, bytes, torch.nn.Module, type)) or callable(x):
+        return x
+    if torch.is_tensor(x):
+        y = x.detach().clone()
+    elif isinstance(x, dict):
+        y = {}
+        memo[id(x)] = y
+        for k, v in x.items():
+            y[k] = _clone_state(v, memo)
+        return y
+    elif isinstance(x, list):
+        y = []
+        memo[id(x)] = y
+        y.extend(_clone_state(v, memo) for v in x)
+        return y
+    elif isinstance(x, tuple):
+        vals = [_clone_state(v, memo) for v in x]
+        y = type(x)(*vals) if hasattr(x, "_fields") else tuple(vals)
+    elif hasattr(x, "__dict__"):
+        y = copy.copy(x)
+        memo[id(x)] = y
+        for k, v in vars(x).items():
+            object.__setattr__(y, k, _clone_state(v, memo))
+        return y
+    else:
+        y = copy.deepcopy(x)
+    memo[id(x)] = y
+    return y
 
 
 def _refuse(why: str):
@@ -619,22 +662,16 @@ class IncrementalDecoder:
                            extra_v=st.ev, q_offset=t)
 
     # ------------------------------------------------------------------ greedy decoding
-    @torch.no_grad()
-    def greedy(self, buf: torch.Tensor, doc: torch.Tensor, L0: int, new: int, *, eos: int,
-               check: Optional[Callable[[torch.Tensor, int, torch.Tensor], torch.Tensor]] = None) -> torch.Tensor:
-        """The uncached harness loop with a cache: buf / doc [B, Lb] as `_model_generate` builds them (prompt in
-        [0, L0), eos and document −1 after). `check(buf, t, done)` → done, after each written token (stop strings).
-        Returns buf[:, :t] with the answer written, eos after a row's first eos."""
-        limit = self.max_new_tokens()
-        if limit is not None and new > limit:
-            _refuse(f"answers longer than {limit} tokens for this read")
+    def _decode(self, h: torch.Tensor, new: int, eos: int,
+                check: Optional[Callable[[torch.Tensor, int, torch.Tensor], torch.Tensor]] = None) -> int:
+        """Greedy steps from the current position (`h`: the hidden state of the position before it). Writes the
+        answer into the row and returns the position after its last token."""
         cfg = self.cfg
         W = self.m.lm_head.weight
-        h = self.prefill(buf, doc, L0)
         out = self.buf
         B = out.shape[0]
         done = torch.zeros(B, dtype=torch.bool, device=out.device)
-        t = int(L0)
+        t = int(self.t)
         for it in range(int(new)):
             if it:
                 h = self.step(out[:, t - 1])
@@ -650,7 +687,66 @@ class IncrementalDecoder:
                 done = check(out, t, done)
             if bool(done.all()):
                 break
-        return out[:, :t]
+        return t
+
+    @torch.no_grad()
+    def greedy(self, buf: torch.Tensor, doc: torch.Tensor, L0: int, new: int, *, eos: int,
+               check: Optional[Callable[[torch.Tensor, int, torch.Tensor], torch.Tensor]] = None) -> torch.Tensor:
+        """The uncached harness loop with a cache: buf / doc [B, Lb] as `_model_generate` builds them (prompt in
+        [0, L0), eos and document −1 after). `check(buf, t, done)` → done, after each written token (stop strings).
+        Returns buf[:, :t] with the answer written, eos after a row's first eos."""
+        limit = self.max_new_tokens()
+        if limit is not None and new > limit:
+            _refuse(f"answers longer than {limit} tokens for this read")
+        h = self.prefill(buf, doc, L0)
+        t = self._decode(h, new, eos, check)
+        return self.buf[:, :t]
+
+    # ------------------------------------------------------------------ read once, answer many
+    _SHARED = ("m", "cfg", "kind", "gi")
+
+    def snapshot(self) -> dict:
+        """A copy of everything a step changes: the cached keys and values, the row, the reading layer's indexes.
+        Taken after `prefill` over a document it is that document's cache; `restore` (or `ask`) starts from it."""
+        return _clone_state({k: v for k, v in self.__dict__.items() if k not in self._SHARED})
+
+    def restore(self, snap: dict) -> None:
+        """Back to a snapshot (copied again, so the snapshot can be restored any number of times)."""
+        for k in [k for k in self.__dict__ if k not in self._SHARED]:
+            del self.__dict__[k]
+        self.__dict__.update(_clone_state(snap))
+
+    @torch.no_grad()
+    def feed(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Write `tokens` [B, n] (or [n], the same for every row) at the next positions, one step each, and return
+        the final-norm hidden state of the last one [B, d]: the question after a cached document."""
+        if tokens.dim() == 1:
+            tokens = tokens[None].expand(self.B, -1)
+        if tokens.shape[1] == 0:
+            raise ValueError("feed needs at least one token")
+        tokens = tokens.to(self.buf.device)
+        h = None
+        for j in range(tokens.shape[1]):
+            h = self.step(tokens[:, j])
+        return h
+
+    @torch.no_grad()
+    def ask(self, snap: dict, question: torch.Tensor, new: int, *, eos: int,
+            check: Optional[Callable[[torch.Tensor, int, torch.Tensor], torch.Tensor]] = None) -> torch.Tensor:
+        """One question from a document's cache: restore `snap` (taken after `prefill`), write the question, decode
+        up to `new` tokens. Returns the answer tokens [B, ≤ new]. The prefilled row needs free slots for both:
+        L0 + len(question) + new ≤ its length."""
+        n = int(question.shape[-1])
+        limit = self.max_new_tokens()
+        if limit is not None and n + int(new) > limit:
+            _refuse(f"question + answer longer than {limit} tokens for this read")
+        self.restore(snap)
+        if self.t + n + int(new) > self.S:
+            raise ValueError(f"the row has {self.S - self.t} free slots; the question and answer need {n + int(new)}")
+        h = self.feed(question)
+        t0 = int(self.t)
+        t = self._decode(h, new, eos, check)
+        return self.buf[:, t0:t].clone()
 
 
 __all__ = ["IncrementalDecoder", "decode_kind"]

@@ -72,6 +72,9 @@ def main() -> None:
     ap.add_argument("--skip_uncached_above", type=int, default=0, help="time only the cached path past this length")
     ap.add_argument("--out", default="")
     ap.add_argument("--warmup", type=int, default=1, help="1: one short untimed run of each path per length first")
+    ap.add_argument("--questions", type=int, default=0,
+                    help="also time read-once / answer-many (evaluation/doc_session.py): the document is read once, "
+                         "then the question is asked this many times from its cache")
     a = ap.parse_args()
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     from transformers import AutoTokenizer
@@ -130,6 +133,26 @@ def main() -> None:
                        speedup=round(res[False][1] / max(res[True][1], 1e-9), 1))
             if not row["same"]:
                 row["diverge"] = _divergence(m, tok, ids, res[True][0], res[False][0], fake.GEN_PAD, a.new)
+        if a.questions and True in res:
+            # read once, answer many: the same document and question; each ask must write the fresh cached answer
+            from evaluation.doc_session import DocumentSession
+
+            try:
+                nq = len(q)
+                sess = DocumentSession(m, tok, room=nq + a.new, pad=P)
+                sess.read(ids[0, : L0 - nq])                      # warm-up (first-call set-up), then the timed read
+                sess.ask(ids[0, L0 - nq:], min(a.new, 3))
+                r = sess.read(ids[0, : L0 - nq])
+                asks = [sess.ask(ids[0, L0 - nq:], a.new) for _ in range(a.questions)]
+                fresh = res[True][0]
+                while fresh and fresh[-1] == tok.eos_token_id:
+                    fresh.pop()
+                row.update(read_s=round(r["seconds"], 2), ask_s=round(sum(x[1] for x in asks) / len(asks), 3),
+                           ask_same=all(x[2] == fresh for x in asks), questions=a.questions)
+                if a.device.startswith("cuda"):
+                    row["session_peak_gb"] = round(torch.cuda.max_memory_allocated() / 2**30, 1)
+            except (NotImplementedError, torch.cuda.OutOfMemoryError) as e:
+                row["session_error"] = str(e)[:120]
         rows.append(row)
         print(json.dumps(row), flush=True)
         if a.out:  # after every length, so a crash at a long one keeps the shorter ones
