@@ -39,6 +39,12 @@ new)` restores it, writes the question's tokens as steps (one position each, lik
 A document is then read once and every question costs only its own tokens and its answer's, with the tokens a fresh
 prefill over document + question would write (tests/test_incremental_decode.py::test_read_once_answer_many). For the
 catalogue and notes reads the question and the answer together stay under `max_new_tokens()`.
+The snapshot is a full copy of the state (about 0.3 GB at 64k for a 100M model, ~1 ms on the GPU). Follow-ups if many
+snapshots are ever held at once (review by the cache's author, 2026-11-14): let the snapshot and the live state share
+K / V / X up to t0 − 2 and clone only the tails, restoring with copy_ — the tail must start at t0 − 1, because the
+notes read redoes position t0 − 1 on its first step and rewrites the pages holding t0 − 1 and t0, whose page tensors
+need full copies; and add a test that no two state tensors share storage (`_clone_state` keeps aliasing by object
+identity, so a view stored next to its base and written in place would be split; nothing does that today).
 
 Supported; anything else raises NotImplementedError before any work, so callers keep the uncached path: perceiver
 par_mode, causal, no message boundary, one global layer, the tied loop over [global read + span layers] with loop
