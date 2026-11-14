@@ -1,8 +1,8 @@
 {
   "schema": "nn-builder/graph",
   "version": 1,
-  "name": "e33n m100",
-  "description": "MrCogito E33n m100 as trained (scripts/run_e33n.py --arm e33n --size m100; plan docs/experiments_specs/done_failed/E33n_plan.md). Width 896, 3 pre layers + the reading layer + 7 stack layers, FFN 2624, 14 query heads × 64 with one KV head, local windows 128. GPT-2 vocabulary (50,257), factorised input table e = 384 with the input MLP, untied output layer. Notebook: the page writer reads the token table over 256-token pages (stride 192); 32 notes per page; closed read (a note is readable once its page is complete). Reading layer (L3): last 512 raw tokens + notes, no RoPE; it and the next layer loop 4 rounds with shared weights (round embedding, no feedback). TOP-K READ (not a builder field): each query and head reads only its 64 best-scoring visible notes (lm_read_topk 64); the cut is chosen without gradient. It changes no parameters. The trained kernel still visits every note block, so compute and memory equal the full read's, as shown here; the extra no-gradient pass that finds each query's 64th score (fp32, query chunks of 1,024) is not counted. Trainer count (evaluation/text_checks.count_params): 166,375,003 total, 100,554,203 without the input layer and the output layer.",
+  "name": "E33n · top-64 note read · 166.4M (100.6M core)",
+  "description": "E33n arm e33n — top-64 note read, 100M testbed. New against e33n_s30: the 30M arm at 100M (width 896, 3 pre layers, 7 stack layers, FFN 2624). Built 2026-11-05; status parked (as of 2026-11-08). Never trained: E33n closed at stage 1 (30M). Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md. Source: origin/e33n-lsa-testbed @ 27577bc. Not a builder field: The top-k cut (lm_read_topk 64) is chosen without gradient and has no builder field; compute is drawn as the full read's, which the trained kernel also spends. Parameters: 166,375,003 in total, 100,554,203 without the word tables (input embedding 20,790,528 + output layer 45,030,272); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm e33n --size m100 (FFN 2624 from fit())).",
   "stacks": [
     {
       "id": "main",
@@ -953,7 +953,7 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-05T20:29:12.411Z",
+    "exported_at": "2026-11-08T12:50:54.809Z",
     "hash": "nnb1-0976b403a15a6000fa101e226672",
     "row_length": 4096,
     "params_total": 166375003,

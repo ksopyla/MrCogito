@@ -323,12 +323,20 @@ def main():
         finally:
             del query, key
 
-    if model_args.torch_compile_dynamic and torch.cuda.is_available():
+    if getattr(model_args, "concept_compile", False):
+        os.environ["CONCEPT_COMPILE"] = "1"
+    compile_mode = str(getattr(model_args, "model_compile", "off") or "off").lower()
+    if model_args.torch_compile_dynamic and compile_mode == "off":
+        compile_mode = "dynamic"
+    if compile_mode not in ("off", "static", "dynamic"):
+        raise ValueError(f"--model_compile must be off, static or dynamic, got {compile_mode!r}")
+    if compile_mode != "off" and torch.cuda.is_available():
         backend = getattr(training_args, "torch_compile_backend", None) or "inductor"
-        logger.info(f"torch.compile(dynamic=True, backend='{backend}')")
+        dynamic = compile_mode == "dynamic"
+        logger.info(f"torch.compile(dynamic={dynamic}, backend='{backend}')")
         model = torch.compile(
             model,
-            dynamic=True,
+            dynamic=dynamic,
             fullgraph=False,
             backend=backend,
         )

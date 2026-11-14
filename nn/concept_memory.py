@@ -42,6 +42,7 @@ k, v [B, S, 1, 64]; z [B, C, 896].
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -104,6 +105,28 @@ def sinkhorn_labels(keys: torch.Tensor, valid: torch.Tensor, n_concepts: int, *,
     return torch.where(valid, labels, torch.full_like(labels, -1))
 
 
+_SINKHORN_COMPILED = None
+
+
+def concept_labels(keys: torch.Tensor, valid: torch.Tensor, n_concepts: int, *, iters: int = 3,
+                   tau: float = 0.05) -> torch.Tensor:
+    """`sinkhorn_labels`, through torch.compile when CONCEPT_COMPILE=1 and the keys are on CUDA (2026-11-14).
+
+    The grouping is ~400 small kernels per call (63 farthest-point picks, then the Sinkhorn rounds), four calls per
+    forward: a fixed ~50 ms per training step at 100M whatever the batch. Compiled it gives the same labels (checked
+    on an RTX 3090 for 12, 60 and 126 blocks: 0 labels differ; tests/test_concept_memory_cuda.py) in 4.5 ms instead
+    of 12 ms a call; the first call of each shape compiles for ~12 s. Off by default."""
+    global _SINKHORN_COMPILED
+    if keys.is_cuda and os.environ.get("CONCEPT_COMPILE", "0") == "1":
+        if _SINKHORN_COMPILED is None:
+            import torch._dynamo.config as dyn_cfg
+
+            dyn_cfg.cache_size_limit = max(int(getattr(dyn_cfg, "cache_size_limit", 8)), 128)
+            _SINKHORN_COMPILED = torch.compile(sinkhorn_labels, dynamic=False)
+        return _SINKHORN_COMPILED(keys, valid, n_concepts, iters=iters, tau=tau)
+    return sinkhorn_labels(keys, valid, n_concepts, iters=iters, tau=tau)
+
+
 @dataclass
 class ConceptIndex:
     """One reading-layer call's concepts. C = n_blocks · per_block, concept c = block · per_block + slot."""
@@ -143,7 +166,7 @@ def build_concepts(k: torch.Tensor, v: torch.Tensor, x: Optional[torch.Tensor], 
     vv = v[:, :L, 0].float()
     valid = ((doc >= 0) & ~sink)[:, :L]
     unit = F.normalize(kk.detach(), dim=-1).reshape(B * nb, block, d)
-    labels = sinkhorn_labels(unit, valid.reshape(B * nb, block), per_block, iters=iters, tau=tau)
+    labels = concept_labels(unit, valid.reshape(B * nb, block), per_block, iters=iters, tau=tau)
     labels = labels.view(B, nb, block)
     onehot = (labels[..., None] == torch.arange(per_block, device=k.device)).float()  # [B, nb, block, K]
     n = onehot.sum(2)                                                                  # [B, nb, K]

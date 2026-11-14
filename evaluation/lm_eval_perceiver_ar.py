@@ -167,7 +167,12 @@ class PerceiverARLMEval(HFLM):
         content (tests/test_note_open.py::test_no_future_leak), so full attention and LSA's read write exactly the
         tokens the growing row wrote (tests/test_long_eval_fixes.py). Note models move by ~3 % with the row's
         length (the page grid's last page is placed at [S − W, S)); here every answer position sits inside a longer
-        row, as in training."""
+        row, as in training.
+
+        Cached (2026-11-12, nn/incremental.py): the same row is read once and each step runs only the new position,
+        with the same tokens; full attention, LSA's read, the catalogue read and (2026-11-13) E37's concept read and
+        E33p's notes read. Models the cache does not cover yet (and `PERCEIVER_AR_GEN_CACHE=0`) keep the loop
+        below."""
         ids = context
         attn = generation_kwargs.get("attention_mask")
         cfg = self.model.config
@@ -180,8 +185,25 @@ class PerceiverARLMEval(HFLM):
         buf[:, :L0] = ids
         doc = torch.full((B, Lb), -1, dtype=torch.long, device=ids.device)
         doc[:, :L0] = 0 if attn is None else torch.where(attn.bool(), 0, -1)
-        done = torch.zeros(B, dtype=torch.bool, device=ids.device)
         stops = [s for s in (stop or []) if s]
+
+        def check(out, t, done):
+            if stops:
+                for b in range(B):
+                    if not done[b]:
+                        text = self.tokenizer.decode(out[b, L0:t].tolist())
+                        done[b] = any(s in text for s in stops)
+            return done
+
+        if new and os.environ.get("PERCEIVER_AR_GEN_CACHE", "1") != "0":
+            from nn.incremental import IncrementalDecoder
+
+            try:
+                dec = IncrementalDecoder(self.model)
+                return dec.greedy(buf.clone(), doc.clone(), L0, new, eos=eos, check=check)
+            except NotImplementedError:
+                pass
+        done = torch.zeros(B, dtype=torch.bool, device=ids.device)
         t = L0
         with torch.no_grad():
             for _ in range(new):
@@ -195,11 +217,7 @@ class PerceiverARLMEval(HFLM):
                 doc[:, t] = 0
                 t += 1
                 done |= nxt == eos
-                if stops:
-                    for b in range(B):
-                        if not done[b]:
-                            text = self.tokenizer.decode(buf[b, L0:t].tolist())
-                            done[b] = any(s in text for s in stops)
+                done = check(buf, t, done)
                 if bool(done.all()):
                     break
         return buf[:, :t]

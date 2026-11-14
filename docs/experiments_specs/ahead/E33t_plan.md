@@ -171,7 +171,7 @@ def index_loss(q, k, sink_k, kappa, opened, *, doc, raw_window, rows, negatives,
 def _attend_catalogue(q, k, v, sink_k, sink_v, *, ctx, key_valid, backend, opened): ...  # KV = raw ‖ slots
 ```
 
-## 10. Stage C — long documents (design 2026-11-08, awaiting the author's approval)
+## 10. Stage C — long documents (design 2026-11-08, approved 2026-11-11, run the same day; results in the spec)
 **Why new code.** The read stores each query's choice as the table T [B, S, G] int16 with G ∝ S, so T grows with
 S²: 4.3 GB at 128k (G = 16,384), 17 GB at 256k, 275 GB at 1M (G = 131,072). Everything else in the forward is
 linear in S at eval (chunked choice, chunked CE, block masks of (S/128)² bits, writer per page), so T is the one wall.

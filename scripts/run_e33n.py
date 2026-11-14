@@ -4,6 +4,7 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
 
   arms   window  — reading layer sees only its last 512 raw tokens (E31c writer built, notes switched off)
          dense   — reading layer: full causal attention over every earlier raw token (E18-style raw global read)
+         dense_rope — dense with RoPE on the reading layer (every other arm's read has no position code)
          e33     — E33: last 512 raw tokens + every note of every closed 256-token page (full note read)
          e33n    — E33n: last 512 raw tokens + the 64 best notes per query and head (top-k note read)
          notes_open / pages_open — E33p: tied note keys; each query opens the raw tokens of its 64 best notes'
@@ -27,6 +28,11 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
                  warmup then constant learning rate (the WSD "stable" part; LSA branches its decays from it);
          decay — from the trunk's final weights, fresh optimizer, LongDocs-lite rows of 16,384 (one document per
                  row), warmup 3 % then 1−sqrt decay over 97 % to 10 % of the peak (LSA's 32k decay shape).
+         long  — E33t stage C (plan §10.6): from the decay's final weights, fresh optimizer, LongDocs-lite rows of
+                 65,536 (one document per row), 0.1B tokens at s30, the same tokens per step as the decay, picking up
+                 at the rate the decay ended on (10 % of the peak) with a 3 % warmup, then 1−sqrt to 1 % of the peak.
+                 Its own row order (manifest seed 2042) and, by default, trainer seed 1 for every arm, so all arms
+                 see the same rows. --grad_ckpt recomputes each layer in the backward (24 GB cards at 64k).
          sft   — E37 instruction tuning (docs/experiments_specs/ahead/E37_sft_sensitivity.md): from a decay's final
                  weights, fresh optimizer, the mix of scripts/build_sft_mix.py (--sft_manifest: smol-smoltalk chats
                  packed into 16,384-token rows, loss on the answers, plus 10 % LongDocs-lite replay), 16 rows per step,
@@ -54,11 +60,15 @@ VOCAB = 50257
 EOT = 50256
 
 SIZES = {
-    #        hidden  e    pre  stack  target   trunk tok  decay tok  trunk rows/step (×4k)  lr peak
-    "s30":  dict(hidden=576,  e=256, pre=2, stack=5, target=30e6,  trunk=1.5e9, decay=0.2e9, rows=64,  lr=1.0e-3),
-    "m100": dict(hidden=896,  e=384, pre=3, stack=7, target=100e6, trunk=3.0e9, decay=0.4e9, rows=128, lr=6.4e-4),
-    "l300": dict(hidden=1280, e=512, pre=4, stack=9, target=300e6, trunk=5.0e9, decay=0.6e9, rows=256, lr=4.5e-4),
-    "tiny": dict(hidden=128,  e=64,  pre=1, stack=2, target=8e6,   trunk=2e6,   decay=1e6,   rows=4,   lr=1.0e-3),
+    #        hidden  e    pre  stack  target   trunk tok  decay tok  long tok  trunk rows/step (×4k)  lr peak
+    "s30":  dict(hidden=576,  e=256, pre=2, stack=5, target=30e6,  trunk=1.5e9, decay=0.2e9, long=0.1e9, rows=64,
+                 lr=1.0e-3),
+    "m100": dict(hidden=896,  e=384, pre=3, stack=7, target=100e6, trunk=3.0e9, decay=0.4e9, long=0.2e9, rows=128,
+                 lr=6.4e-4),
+    "l300": dict(hidden=1280, e=512, pre=4, stack=9, target=300e6, trunk=5.0e9, decay=0.6e9, long=0.3e9, rows=256,
+                 lr=4.5e-4),
+    "tiny": dict(hidden=128,  e=64,  pre=1, stack=2, target=8e6,   trunk=2e6,   decay=1e6,   long=0.5e6, rows=4,
+                 lr=1.0e-3),
 }
 
 _LOOP = {"message_loop_rounds": 4, "message_loop_exit_aux": 0.0}  # loop span 1 is the default
@@ -71,7 +81,11 @@ _WRITER = {
 ARMS = {
     "window": {**_WRITER, **_LOOP, "message_override": "none"},
     "dense": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP},
-    "e33": {**_WRITER, **_LOOP},
+    # E37 fair full-attention control (author 2026-11-13: "Yes, start checks"): the dense arm with RoPE on the reading
+    # layer too (rope_theta 500k, as the local layers); "dense" reads without a position code (par_global_nope, as
+    # every read here), which spreads thin past twice its 16k training length
+    "dense_rope": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_nope": "false"},
+    "e33":{**_WRITER, **_LOOP},
     "e33n": {**_WRITER, **_LOOP, "lm_read_topk": 64},
     # E33p (docs/experiments_specs/ahead/E33p_note_indexed_exact_read.md): the notes as an index, per-query choice
     "notes_open": {**_WRITER, **_LOOP, "lm_note_key": "tied", "lm_open": "notes", "lm_open_k": 64, "lm_open_cap": 512},
@@ -195,7 +209,7 @@ def decay_len(size: str) -> int:
 
 
 def manifests(data: Path, out: Path, size: str) -> dict:
-    """Write the two token-shard manifests (trunk / decay) for a run under `out`, return their paths."""
+    """Write the three token-shard manifests (trunk / decay / long) for a run under `out`, return their paths."""
     out.mkdir(parents=True, exist_ok=True)
     fw, ld = data / "fineweb_edu_gpt2", data / "longdocs_lite_gpt2"
     tiny = size == "tiny"
@@ -206,10 +220,90 @@ def manifests(data: Path, out: Path, size: str) -> dict:
     decay = {"seq_len": decay_len(size), "rule": "doc", "eot": EOT, "seed": 1042,
              "train": [{"name": s, "files": [str(ld / f"{s}_train_*.bin")], "weight": 1.0} for s in srcs],
              "eval": [{"name": s, "files": [str(ld / f"{s}_val_*.bin")], "rows": 16} for s in srcs]}
-    p = {"trunk": out / "manifest_trunk.json", "decay": out / "manifest_decay.json"}
-    p["trunk"].write_text(json.dumps(trunk, indent=2))
-    p["decay"].write_text(json.dumps(decay, indent=2))
+    long = {**decay, "seq_len": 2048 if tiny else 65536, "seed": 2042,
+            "eval": [{**e, "rows": 4} for e in decay["eval"]]}
+    p = {k: out / f"manifest_{k}.json" for k in ("trunk", "decay", "long")}
+    for k, m in (("trunk", trunk), ("decay", decay), ("long", long)):
+        p[k].write_text(json.dumps(m, indent=2))
     return p
+
+
+def mix_manifests(mix_dir: Path, out: Path) -> tuple[dict, dict]:
+    """Phase manifests of a built data mix (scripts/build_m21_mix.py: DIR/mix.json, DIR/tokenizer/,
+    DIR/<source>_train_*.bin and <source>_val_*.bin). Returns (manifest paths per phase, the mix).
+
+    A "stream" source that several phases read (web text in the trunk and again, as replay, in the long phases) is
+    split by shards: the last phase takes shards from the end until it has its share of that phase's tokens (+3 %),
+    the one before takes the next ones, the trunk keeps the rest — no token is read in two phases. "doc" sources
+    (long documents) are shared: the 64k phase reads the documents long enough for it, as E37's 64k stage did."""
+    import glob
+    import os
+
+    mix_dir = Path(mix_dir)
+    mix = json.loads((mix_dir / "mix.json").read_text())
+    phases, eot = mix["phases"], int(mix["eot"])
+    out.mkdir(parents=True, exist_ok=True)
+    shards = {}
+    for ph in phases.values():
+        for s in ph["train"]:
+            shards.setdefault(s["name"], sorted(glob.glob(str(mix_dir / f"{s['name']}_train_*.bin"))))
+
+    def rule_of(ph: dict, s: dict) -> str:
+        return s.get("rule", ph.get("rule", "stream"))
+
+    def n_tok(f: str) -> int:
+        return (os.path.getsize(f) - 256 * 4) // 2
+
+    stream_users = {}
+    for name_ph, ph in phases.items():
+        for s in ph["train"]:
+            if rule_of(ph, s) == "stream":
+                stream_users.setdefault(s["name"], []).append(name_ph)
+    order = [k for k in ("long", "decay", "trunk") if k in phases] + [k for k in phases if k not in ("long", "decay", "trunk")]
+    taken = {name: 0 for name in shards}  # shards already given away, from the end
+    paths = {}
+    for name_ph in order:
+        ph = phases[name_ph]
+        seq = int(ph["seq_len"])
+        train = []
+        for s in ph["train"]:
+            name, rule = s["name"], rule_of(ph, s)
+            files = shards[name]
+            if not files:
+                raise FileNotFoundError(f"mix {mix_dir}: no shard of source {name} (phase {name_ph})")
+            if rule == "stream" and len(stream_users.get(name, [])) > 1:
+                avail = files[: len(files) - taken[name]]
+                first_user = [k for k in ("trunk", "decay", "long") if k in stream_users[name]][0]
+                if name_ph == first_user:
+                    use = avail
+                else:
+                    need, got, use = float(s["weight"]) * float(ph["tokens"]) * 1.03, 0, []
+                    for f in reversed(avail):
+                        if got >= need:
+                            break
+                        use.insert(0, f)
+                        got += n_tok(f)
+                    taken[name] += len(use)
+                if not use:
+                    raise ValueError(f"mix {mix_dir}: source {name} has no shard left for phase {name_ph}")
+                files = use
+            e = {"name": name, "files": files, "weight": float(s["weight"])}
+            if rule != ph.get("rule", "stream"):
+                e["rule"] = rule
+            train.append(e)
+        rules = {s["name"]: rule_of(ph, s) for s in ph["train"]}
+        ev = []
+        for s in ph.get("eval", []):
+            e = {"name": s["name"], "files": [str(mix_dir / f"{s['name']}_val_*.bin")], "rows": int(s["rows"])}
+            r = s.get("rule", rules.get(s["name"], ph.get("rule", "stream")))
+            if r != ph.get("rule", "stream"):
+                e["rule"] = r
+            ev.append(e)
+        m = {"seq_len": seq, "rule": ph.get("rule", "stream"), "eot": eot, "seed": int(ph.get("seed", 42)),
+             "train": train, "eval": ev}
+        paths[name_ph] = out / f"manifest_{name_ph}.json"
+        paths[name_ph].write_text(json.dumps(m, indent=2))
+    return paths, mix
 
 
 def _final_eval_every(steps: int) -> int:
@@ -222,9 +316,13 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               lr: float | None = None, tokens: float | None = None, micro: int | None = None, seed: int = 42,
               wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
               flow: bool = False, gpus: int = 1, sft_manifest: str | None = None,
-              grad_ckpt: bool = False) -> list[str]:
+              grad_ckpt: bool = False, compile: str = "off", liger: bool = False, rows: int | None = None,
+              workers: int = 6, fast: bool = False, mix: str | None = None,
+              save_every: int | None = None) -> list[str]:
+    liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
+    tokenizer = str(data / "tokenizer_gpt2")
     if phase == "sft":
         if not (sft_manifest and init and lr):
             raise ValueError("phase sft needs --sft_manifest, --init (a decay's final folder) and --lr")
@@ -237,13 +335,23 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         # one row per pass at 16k beyond s30 (24 GB home cards); gradient accumulation makes up the 16 rows
         micro = micro or max(1, min(rows_per_step, 2 if size == "s30" else 1))
     else:
-        man = manifests(data, out, size)
+        if mix:  # a built data mix: its tokenizer, sources, row lengths and tokens per phase
+            man, mx = mix_manifests(Path(mix), out)
+            if phase not in man:
+                raise ValueError(f"mix {mix} has no phase {phase!r}")
+            tokenizer = str(Path(mix) / mx.get("tokenizer", "tokenizer"))
+            tokens = tokens or float(mx["phases"][phase]["tokens"])
+        else:
+            man = manifests(data, out, size)
         seq = json.loads(man[phase].read_text())["seq_len"]
-        tokens = tokens or (z["trunk"] if phase == "trunk" else z["decay"])
-        rows_per_step = z["rows"] * 4096 // seq  # the same tokens per step in both phases
+        tokens = tokens or z[phase]
+        rows_per_step = z["rows"] * 4096 // seq  # the same tokens per step in every phase
         rows_per_step = max(1, rows_per_step)
-        micro = micro or max(1, min(rows_per_step, (16 if phase == "trunk" else 4) if size == "s30" else
-                                    (8 if phase == "trunk" else 2)))
+        micro = micro or (1 if phase == "long" else max(1, min(rows_per_step, (16 if phase == "trunk" else 4)
+                                                                 if size == "s30" else (8 if phase == "trunk" else 2))))
+    if rows:  # speed checks only: fewer rows per optimizer step, so a short run logs enough steps
+        rows_per_step = max(1, int(rows))
+        micro = min(micro, rows_per_step)
     # gpus > 1: one model on several GPUs (data parallel, torchrun); each optimizer step still sees rows_per_step
     # rows: micro × accum × gpus. When gpus does not divide the step (64 rows on 3 GPUs) the step is rounded down
     # and the step count rises to keep the same total tokens.
@@ -254,23 +362,23 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         print(f"note: {micro}×{accum}×{gpus} = {micro * accum * gpus} rows per step instead of {rows_per_step}",
               file=sys.stderr)
     steps = max(1, int(round(tokens / (micro * accum * gpus * seq))))
-    lr = lr or z["lr"]
+    lr = lr or (0.1 * z["lr"] if phase == "long" else z["lr"])  # long: the rate the decay ended on
     launch = (["torchrun", "--standalone", f"--nproc_per_node={gpus}"] if gpus > 1 else ["python"])
     cmd = ["uv", "run", *launch, "training/train_concept_pretraining.py"]
     for k, v in args.items():
         cmd += [f"--{k}", str(v)]
     if phase == "trunk":
         sched = ["--lr_scheduler_type", "constant_with_warmup", "--warmup_steps", str(max(1, int(0.01 * steps)))]
-    else:
+    else:  # decay: peak → 10 % of it; long: 10 % → 1 % of the peak (min_lr_ratio is relative to its own start)
         sched = ["--lr_scheduler_type", "warmup_stable_decay", "--warmup_steps", str(max(1, int(0.03 * steps))),
                  "--lr_scheduler_kwargs", json.dumps({"num_decay_steps": int(0.97 * steps), "decay_type": "1-sqrt",
                                                       "min_lr_ratio": 0.1})]
-    save_every = max(50, steps // 10)
+    save_every = int(save_every) if save_every else max(50, steps // 10)
     if phase == "sft" and not eval_every:
         eval_every = _final_eval_every(steps)
     cmd += [
-        "--attn_backend", backend, "--attn_pad_multiple", "1", "--use_liger", "False",
-        "--bin_manifest", str(man[phase]), "--tokenizer_name", str(data / "tokenizer_gpt2"),
+        "--attn_backend", backend, "--attn_pad_multiple", "1", "--use_liger", "True" if liger else "False",
+        "--bin_manifest", str(man[phase]), "--tokenizer_name", tokenizer,
         "--max_seq_length", str(seq), "--batch_packing_mode", "none",
         "--per_device_train_batch_size", str(micro), "--per_device_eval_batch_size", str(max(1, micro // 2)),
         "--gradient_accumulation_steps", str(accum), "--learning_rate", str(lr), "--max_steps", str(steps),
@@ -279,16 +387,23 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         "--eval_strategy", "steps" if eval_every else "no", "--eval_steps", str(eval_every or save_every),
         "--save_strategy", "steps", "--save_steps", str(save_every), "--save_total_limit", "2",
         "--output_dir", str(out / phase), "--seed", str(seed), "--report_to", "wandb" if wandb else "none",
-        "--overwrite_output_dir", "True", "--disable_tqdm", "True", "--dataloader_num_workers", "6",
+        "--overwrite_output_dir", "True", "--disable_tqdm", "True", "--dataloader_num_workers", str(workers),
         "--prediction_loss_only", "True", "--chunked_ce_block_size", "2048",
     ]
+    if compile != "off":  # the whole model through torch.compile (the attention kernel is compiled either way)
+        cmd += ["--model_compile", compile]
+    if fast:  # the 2026-11-14 speed settings: Liger's fused loss (above) and the compiled concept grouping
+        if args.get("par_global_read") == "concept":
+            cmd += ["--concept_compile", "True"]
     if init:
         cmd += ["--model_name_or_path", init]
     if phase == "sft":
         # the base weights' held-out answer loss (the "before"); the CE as the token mean over each optimizer step
         # (answer counts differ by row), as the original LSA's torchtitan trainer computes it
         cmd += ["--eval_on_start", "True", "--loss_step_token_mean", "True"]
-    if grad_ckpt:  # activations recomputed in backward (16k rows on a 24 GB card), never shorter rows
+    if grad_ckpt:  # activations recomputed in backward (16k rows on a 24 GB card, 64k rows), never shorter rows
+        if flow:  # the recomputed layers would record their instrumentation a second time
+            raise ValueError("--flow and --grad_ckpt are not combined")
         cmd += ["--gradient_checkpointing", "True"]
     if flow:  # E33p instrumentation: dynamics every 200 steps (decay: 50 of ~763) and weight snapshots
         cmd += ["--flow_every", "200" if phase == "trunk" else "50",
@@ -309,7 +424,7 @@ def main() -> None:
     c = sub.add_parser("cmd")
     c.add_argument("--arm", required=True, choices=sorted(ARMS))
     c.add_argument("--size", required=True, choices=sorted(SIZES))
-    c.add_argument("--phase", required=True, choices=("trunk", "decay", "sft"))
+    c.add_argument("--phase", required=True, choices=("trunk", "decay", "long", "sft"))
     c.add_argument("--data", required=True)
     c.add_argument("--out", required=True)
     c.add_argument("--init")
@@ -324,7 +439,19 @@ def main() -> None:
     c.add_argument("--seed", type=int, default=42, help="trainer seed: initial weights and the order rows are drawn in")
     c.add_argument("--gpus", type=int, default=1, help="GPUs for one model (data parallel via torchrun)")
     c.add_argument("--sft_manifest", help="sft: manifest_sft.json of scripts/build_sft_mix.py")
-    c.add_argument("--grad_ckpt", action="store_true", help="gradient checkpointing (when a 16k row does not fit)")
+    c.add_argument("--compile", default="off", choices=("off", "static", "dynamic"),
+                   help="torch.compile the whole model (static: fixed row shapes)")
+    c.add_argument("--liger", action="store_true", help="Liger's fused linear + cross-entropy for the loss")
+    c.add_argument("--save_every", type=int, help="checkpoint every N optimizer steps (default: a tenth of the "
+                                                  "phase; long spot runs lose less with a shorter interval)")
+    c.add_argument("--mix", help="a built data mix (scripts/build_m21_mix.py output dir): its tokenizer, sources, "
+                                 "row lengths and tokens per phase replace the GPT-2 FineWeb-Edu / LongDocs-lite data")
+    c.add_argument("--fast", action="store_true",
+                   help="the speed settings measured 2026-11-14: --liger plus the compiled concept grouping (E37 "
+                        "arms); same loss function and same concepts, pair it with a larger --micro")
+    c.add_argument("--rows", type=int, help="speed checks only: rows per optimizer step instead of the size's")
+    c.add_argument("--workers", type=int, default=6, help="dataloader worker processes per GPU")
+    c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
     a = ap.parse_args()
     if a.what == "cmd" and a.phase == "sft" and not (a.lr and a.init and a.sft_manifest):
         ap.error("--phase sft needs --lr (the pre-flight's pick), --init (a decay's final folder) and --sft_manifest")
@@ -338,7 +465,8 @@ def main() -> None:
     cmd = train_cmd(a.arm, a.size, a.phase, data=Path(a.data), out=Path(a.out), init=a.init, lr=a.lr,
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
                     local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
-                    grad_ckpt=a.grad_ckpt)
+                    grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
+                    fast=a.fast, mix=a.mix, save_every=a.save_every)
     print(shlex.join(cmd))
 
 

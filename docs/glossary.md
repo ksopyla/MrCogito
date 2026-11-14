@@ -44,6 +44,11 @@ never bother to use the notebook.**
 | **free-run / generation** | the model writes from its own output. Hard mode; where weak models fall apart. |
 | **warm start** | continuing from an existing checkpoint instead of from scratch. |
 | **pilot / main run** | small cheap version to decide; the full-budget version afterwards. |
+| **data mix `m21mix_v1`** (E38) | the training text for the long 100M runs, built on an AWS machine from public sources only and cut into the SmolLM2 tokenizer's tokens: web pages picked for teaching value, code, math, rewritten encyclopedia text, long documents (books, papers, PDFs, whole code repositories) and a few percent of constructed rows. Three stages by row length: 4k, 16k, 64k tokens. |
+| **multi-hop library** (E38) | a constructed training row: the source paragraphs of many two-step questions shuffled together like shelves of a library, with all the questions and answers at the end, so each answer needs paragraphs thousands of tokens back. Built from 2WikiMultihopQA's training split. |
+| **planted-fact lookup** (E38) | a constructed training row: a stretch of a real book with a handful of invented facts slipped in, asked for at the end. Some questions ask for a fact that was never stated (the right answer says so); some facts are corrected later (the right answer is the latest). The password test's cousin, used for training. |
+| **fast settings (`--fast`)** | the 2026-11-14 training speed switches: the loss computed by one fused routine instead of in chunks (the same number, a third less memory) and the notebook's grouping step compiled (the same groups), with more rows per card. 39–50 % more tokens per second on a home card. |
+| **read once, answer many** | the model reads a long document one time and keeps its working state; each question then costs only the question's and the answer's tokens, not the document again. Same answers as reading document + question from scratch. |
 | **frontier-shaped dense control** | a dense model laid out like current frontier models (MAI-Thinking-1, Gemma): five sliding-window layers (window 512, with position code) for every one full-attention layer (no position code). Proposed 2026-10-30 as the fair competitor: its global layers are exactly what our notebook replaces. |
 
 ---

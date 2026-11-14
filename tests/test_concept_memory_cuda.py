@@ -78,3 +78,27 @@ def test_bf16_autocast_trains(name):
         out.loss.backward()
         opt.step()
         opt.zero_grad()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_compiled_grouping_gives_the_same_labels(monkeypatch):
+    """CONCEPT_COMPILE=1: nn.concept_memory.concept_labels runs sinkhorn_labels through torch.compile; the labels
+    must be the eager ones (clustered keys, a block with a sink prefix and one with a padded tail)."""
+    import torch.nn.functional as F
+
+    from nn.concept_memory import concept_labels, sinkhorn_labels
+
+    torch.manual_seed(0)
+    N = 12
+    topics = F.normalize(torch.randn(N, 20, 64, device="cuda"), dim=-1)
+    pick = torch.randint(0, 20, (N, 512), device="cuda")
+    keys = F.normalize(torch.randn(N, 512, 64, device="cuda") + 2.0 * topics[torch.arange(N, device="cuda")[:, None], pick], dim=-1)
+    valid = torch.ones(N, 512, dtype=torch.bool, device="cuda")
+    valid[0, :4] = False
+    valid[-1, 300:] = False
+    want = sinkhorn_labels(keys, valid, 64)
+    monkeypatch.setenv("CONCEPT_COMPILE", "1")
+    got = concept_labels(keys, valid, 64)
+    assert torch.equal(got, want)
+    monkeypatch.setenv("CONCEPT_COMPILE", "0")
+    assert torch.equal(concept_labels(keys, valid, 64), want)

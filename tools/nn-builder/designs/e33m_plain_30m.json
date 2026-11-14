@@ -1,8 +1,8 @@
 {
   "schema": "nn-builder/graph",
   "version": 1,
-  "name": "e33m_plain 30M",
-  "description": "MrCogito E33 notebook text model: a page writer makes 32 notes per page; one read layer (+ the next) loops 4 rounds with shared weights. Width 576, 8 layers, FFN 1152.",
+  "name": "E33 · notebook (text checks) · 29.9M (25.9M core)",
+  "description": "MrCogito E33 notebook text model: a page writer makes 32 notes per page; one read layer (+ the next) loops 4 rounds with shared weights. Width 576, 8 layers, FFN 1152. Parameters: 29,946,402 in total, 25,911,266 without the word tables (input embedding 1,675,840 + output layer 2,359,296). A saved copy of the built-in preset e33m_plain_30m (trainer-exact, tests/params.test.ts).",
   "stacks": [
     {
       "id": "main",
@@ -775,7 +775,8 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-10-24T09:48:59.368Z",
+    "exported_at": "2026-11-08T12:50:54.816Z",
+    "hash": "nnb1-039eea21ba3d7b130cce6edcb2f3",
     "row_length": 4096,
     "params_total": 29946402,
     "params_by_stack": {

@@ -1,8 +1,8 @@
 {
   "schema": "nn-builder/graph",
   "version": 1,
-  "name": "e37a_c32",
-  "description": "MrCogito E37 e37a_c32 (compression ladder, 32 keys per concept) at 30M (scripts/run_e33n.py --arm e37a_c32 --size s30; spec docs/experiments_specs/ahead/E37_concept_memory.md). Same trunk as E33n s30 (scripts/run_e33n.py --size s30, FFN 1472): width 576, GPT-2 vocabulary with a 256-wide factorised input, 2 local pre layers (window 128), the reading layer (no RoPE), 5 local stack layers, 9 query heads x 64 with one key/value head; the reading layer and the next layer loop 4 rounds. Protocol: E33p stage 1 (1.5B FineWeb-Edu tokens at 4k, then 0.2B LongDocs-lite at 16k, 64 rows per step). Concept memory on the reading layer: each closed 512-key block is grouped by content into 16 balanced concepts of 32 keys (Sinkhorn soft k-means, no gradient, no weights), each with links to its member tokens and summed statistics (count, mean key, key variance, mean value, mean state). Each query reads one softmax over sinks, its block window, the opened member tokens and one summary per other concept (logit log n + q.mu_k/sqrt(d) + |q|^2 sigma^2/(2d), value mu_v). Trainable parameters match the trainer: 68,701,396, the same as the dense arm. Approximations in the builder: the block window and opened tokens are counted as a 1,280-key window; the concepts are drawn from the input of the reading layer's first round.",
+  "name": "E37 · concept memory, 32 keys per concept · 68.7M (26.3M core)",
+  "description": "E37 arm e37a_c32 — concept memory, 32 keys per concept, 30M testbed. New against e37a_s30: compression ladder: 16 concepts of 32 keys per block (same 512 opened tokens; only the summaries get coarser). Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status training (as of 2026-11-08). Training on Polonez GPUs 0+1; main phase due about 13:10 UTC 8 Nov; its evals were not written yet at arch-10m 7c7158c (13:40 UTC). Spec: docs/experiments_specs/ahead/E37_concept_memory.md. Source: origin/arch-10m @ 6e49738. Not a builder field: Grouping, statistics and the choice have no weights (0-parameter custom cells); the summaries are the concepts' mean key and value (a notes cell with no projections); the block window and opened tokens are drawn as a 1,280-key window. The summaries' length scale (concept_sum_len: past that length their total weight is held at its level) has no weights and no builder field. The 30M runs trained without it and use it as an eval switch (arch-10m e9b37d2); from stage A the concept arms train with it set to the decay's row length, 16,384, where it is inert (arch-10m 7c7158c, 8 Nov). Parameters: 68,701,396 in total, 26,260,308 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm e37a_c32 --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
   "stacks": [
     {
       "id": "main",
@@ -26,7 +26,7 @@
               "proj": "gated_mlp",
               "out_norm": "rmsnorm",
               "id": "main.input.emb",
-              "label": "GPT-2 token table 50,257 \u00d7 256 + input MLP"
+              "label": "GPT-2 token table 50,257 × 256 + input MLP"
             },
             {
               "type": "positional",
@@ -34,7 +34,7 @@
               "theta": 500000,
               "max_len": 4096,
               "id": "main.input.pos",
-              "label": "RoPE \u03b8 500k (every layer but the reading layer)"
+              "label": "RoPE θ 500k (every layer but the reading layer)"
             }
           ],
           "label": "input"
@@ -84,7 +84,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "pre 0 \u00b7 local 128"
+          "label": "pre 0 · local 128"
         },
         {
           "id": "main.L1",
@@ -131,7 +131,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "pre 1 \u00b7 local 128"
+          "label": "pre 1 · local 128"
         },
         {
           "id": "main.L2",
@@ -161,8 +161,8 @@
                 "pos_prior": false,
                 "logit_scale": false
               },
-              "label": "concept read: 4 sinks + the raw tokens of its own and the previous 512-block + the members of the concepts with the largest estimated mass (512 tokens, exact) + one summary entry per other concept; modelled as a 1,280-key window plus the summaries; no RoPE",
-              "id": "main.L2.attn"
+              "id": "main.L2.attn",
+              "label": "concept read: 4 sinks + the raw tokens of its own and the previous 512-block + the members of the concepts with the largest estimated mass (512 tokens, exact) + one summary entry per other concept; modelled as a 1,280-key window plus the summaries; no RoPE"
             },
             {
               "type": "ffn",
@@ -178,7 +178,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "reading layer \u00b7 concept read (16 concepts per block)"
+          "label": "reading layer · concept read (16 concepts per block)"
         },
         {
           "id": "main.L3",
@@ -225,7 +225,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 0 (in the loop) \u00b7 local 128"
+          "label": "stack 0 (in the loop) · local 128"
         },
         {
           "id": "main.L4",
@@ -272,7 +272,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 1 \u00b7 local 128"
+          "label": "stack 1 · local 128"
         },
         {
           "id": "main.L5",
@@ -319,7 +319,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 2 \u00b7 local 128"
+          "label": "stack 2 · local 128"
         },
         {
           "id": "main.L6",
@@ -366,7 +366,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 3 \u00b7 local 128"
+          "label": "stack 3 · local 128"
         },
         {
           "id": "main.L7",
@@ -413,7 +413,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 4 \u00b7 local 128"
+          "label": "stack 4 · local 128"
         },
         {
           "id": "main.head",
@@ -454,14 +454,14 @@
           "label": "group each closed block into 16 concepts",
           "cells": [
             {
-              "id": "blocks.group.kmeans",
               "type": "custom",
+              "id": "blocks.group.kmeans",
+              "label": "balanced soft k-means on the reading layer's own keys: 16 concepts × 32 keys, farthest-point seeds, Sinkhorn, no gradient, no weights (rebuilt every loop round)",
               "params": 0,
-              "flops_per_position": 8192,
+              "flops_per_position": 32768,
               "act_bytes_per_position": 0,
               "out": 0,
-              "note": "balanced soft k-means on the unit keys",
-              "label": "balanced soft k-means on the reading layer's own keys: 16 concepts x 32 keys, farthest-point seeds, Sinkhorn, no gradient, no weights (rebuilt every loop round)"
+              "note": "balanced soft k-means on the unit keys"
             }
           ]
         }
@@ -484,14 +484,14 @@
           "label": "statistics + member links",
           "cells": [
             {
-              "id": "concepts.stats.sum",
               "type": "custom",
+              "id": "concepts.stats.sum",
+              "label": "per concept: count n, mean key, key variance, mean value, mean state z, links to its member tokens (sums, no weights); the summary is (mean key, mean value)",
               "params": 0,
               "flops_per_position": 0,
               "act_bytes_per_position": 0,
               "out": 64,
-              "note": "concept statistics",
-              "label": "per concept: count n, mean key, key variance, mean value, mean state z, links to its member tokens (sums, no weights); the summary is (mean key, mean value)"
+              "note": "concept statistics"
             }
           ]
         },
@@ -501,16 +501,15 @@
           "label": "summary entries",
           "cells": [
             {
-              "id": "concepts.out.kv",
               "type": "kv_out",
               "entries": 1,
               "kv_heads": 1,
               "head_dim": 64,
-              "projections": 2,
+              "projections": 0,
               "in_norms": 0,
               "key_norm": false,
-              "frozen": true,
-              "label": "one summary key + value per concept (1 KV head x 64). The trainer has no weights here: the builder needs a notes cell, so it is drawn as a frozen 64 -> 64 pair (8,192 frozen, not trained)"
+              "id": "concepts.out.kv",
+              "label": "one summary key + value per concept (1 KV head × 64): the mean key and mean value as they are, no weights"
             }
           ]
         }
@@ -620,31 +619,31 @@
   "run": {
     "row_length": 4096,
     "rows_per_step": 64,
-    "micro_batch": 0,
+    "micro_batch": 4,
     "precision": "amp_bf16",
     "optimizer": "adamw",
     "weight_decay": 0.1,
     "zero_stage": 0,
     "checkpointing": false,
     "gpu": "rtx3090",
-    "gpu_count": 2,
-    "token_budget": 1700000000,
+    "gpu_count": 1,
+    "token_budget": 1500000000,
     "deadline_hours": 0,
     "mfu": 0,
     "irregular_ratio": 0,
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-05T20:29:12.409Z",
-    "hash": "nnb1-108bd156eed1b019e5f7682d22e2",
+    "exported_at": "2026-11-08T15:28:14.793Z",
+    "hash": "nnb1-0bfba2a91eb578086d50286a5a00",
     "row_length": 4096,
-    "params_total": 72687252,
+    "params_total": 68701396,
     "params_by_stack": {
       "main": 68701396,
-      "pages": 1377792,
-      "notes": 2608064
+      "blocks": 0,
+      "concepts": 0
     },
-    "train_flops_per_token": 516570732,
+    "train_flops_per_token": 493265400,
     "cells": {
       "main.input.emb": {
         "params": 13493056,
@@ -760,64 +759,22 @@
         "width_out": 576,
         "runs_per_row": 1
       },
-      "pages.in.proj": {
-        "params": 65792,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "pages.in.pos": {
+      "blocks.group.kmeans": {
         "params": 0,
-        "width_in": 256,
-        "width_out": 256,
+        "width_in": 576,
+        "width_out": 576,
         "runs_per_row": 1
       },
-      "pages.enc0.attn": {
-        "params": 262528,
-        "width_in": 256,
-        "width_out": 256,
+      "concepts.stats.sum": {
+        "params": 0,
+        "width_in": 576,
+        "width_out": 64,
         "runs_per_row": 1
       },
-      "pages.enc0.ffn": {
-        "params": 393472,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "pages.enc1.attn": {
-        "params": 262528,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "pages.enc1.ffn": {
-        "params": 393472,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "notes.init.q": {
-        "params": 49664,
-        "width_in": 0,
-        "width_out": 512,
-        "runs_per_row": 1
-      },
-      "notes.read.attn": {
-        "params": 852864,
-        "width_in": 512,
-        "width_out": 512,
-        "runs_per_row": 2
-      },
-      "notes.ffn.ffn": {
-        "params": 1573376,
-        "width_in": 512,
-        "width_out": 512,
-        "runs_per_row": 2
-      },
-      "notes.out.kv": {
-        "params": 132160,
-        "width_in": 512,
-        "width_out": 512,
+      "concepts.out.kv": {
+        "params": 0,
+        "width_in": 64,
+        "width_out": 64,
         "runs_per_row": 1
       }
     }
