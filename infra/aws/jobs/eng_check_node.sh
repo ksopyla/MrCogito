@@ -14,6 +14,9 @@ set -uo pipefail
 source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# cached decoding compiles one attention graph per prompt length per call; past dynamo's limit it falls back to
+# the eager kernel, which ran out of memory at 128k (e37-needles 806b655, 2026-11-14)
+export MC_DYNAMO_CACHE_LIMIT=${MC_DYNAMO_CACHE_LIMIT:-2048}
 D="$MC_DISK/data"; W="$MC_DISK/eng_check"; OUT="s3://$MC_BUCKET/runs/eng_check/$MC_NAME"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ARMS=(${ENG_ARMS:-e37a lsa})

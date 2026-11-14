@@ -21,6 +21,9 @@ CK="${1:?checkpoint}"; O="${2:?out dir}"; D="${3:?data dir}"; S3D="${4:-}"
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1 \
   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 cd "$(dirname "$0")/../../.." || exit 1
+# cached decoding compiles one attention graph per prompt length per call; past dynamo's limit it falls back to
+# the eager kernel, which ran out of memory at 128k (e37-needles 806b655, 2026-11-14)
+export MC_DYNAMO_CACHE_LIMIT=${MC_DYNAMO_CACHE_LIMIT:-2048}
 P="$O/long_evals"; mkdir -p "$P"
 # E38 (a built data mix): E33N_TOKENIZER = its tokenizer dir, E33N_LONGDOCS = the dir with <source>_val_*.bin,
 # E33N_LONGDOC_ARGS = extra long_doc_loss.py arguments (--sources, --eot, --tokenizer). Defaults: the GPT-2 data.
