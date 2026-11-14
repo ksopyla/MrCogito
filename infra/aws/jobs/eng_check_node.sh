@@ -39,6 +39,7 @@ one() {
 if [ -z "${ENG_SKIP_SPEED:-}" ]; then
   for arm in "${ARMS[@]}"; do
     one "$arm" trunk 4 8 old_m4 ""
+    one "$arm" trunk 4 8 old_m4_flow "--flow"       # as the E37 runs were launched (E33p instrumentation on)
     one "$arm" trunk 4 8 fast_m4 "--fast"
     one "$arm" trunk 6 12 fast_m6 "--fast"
     one "$arm" trunk 8 16 fast_m8 "--fast"
