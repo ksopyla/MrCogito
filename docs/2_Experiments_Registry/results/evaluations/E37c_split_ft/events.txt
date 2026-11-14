@@ -1,0 +1,11 @@
+[e37c 2026-11-14T06:32:02Z] start e37c_m100_e37a_seed1 on e37c-split i-0b28a1250f3a5f112 (1 x NVIDIA L40S, 46068 MiB); code 6379932 arch: E37c cut rows — two agents in one training row (spec, 
+[e37c 2026-11-14T06:32:18Z] base: runs/e37/e33n_m100_e37a_tok3.0e9_seed42/decay/perceiver_ar_perceiver_H896L3g1s7N128_20261110_090042_e37a_m100_decay/final (624M); data: 15 LongDocs-lite shards
+[e37c 2026-11-14T06:37:20Z] cut loss (base): exit 0 {"loss": {"plain": 2.1873043000461605, "every": 2.2423024068870934, "train": 2.257511694250996}, "extra_after_a_cut": {"0-7": 1.3342, "8-31": 0.3546, "32-127": 0.0806, "128+": 0.037}}
+[e37c 2026-11-14T06:41:36Z] long-document loss (base): exit 0
+[e37c 2026-11-14T06:41:45Z] training start
+[e37c 2026-11-14T10:37:57Z] training done: /opt/dlami/nvme/runs/e37c_m100_e37a_seed1/split/perceiver_ar_perceiver_H896L3g1s7N128_20261114_064152_e37a_m100_split/final
+[e37c 2026-11-14T10:39:14Z] cut loss (tuned): exit 0 {"loss": {"plain": 2.1760559652035454, "every": 2.1881296229203864, "train": 2.192656198438835}, "extra_after_a_cut": {"0-7": 0.9084, "8-31": 0.1703, "32-127": 0.0207, "128+": -0.0002}}
+[e37c 2026-11-14T11:27:15Z] two-agent probe (tuned): exit 0, 6 cells
+[e37c 2026-11-14T11:30:59Z] long-document loss (tuned): exit 0
+[e37c 2026-11-14T11:43:12Z] two-agent probe (tuned_64k): exit 0, 1 cells
+[e37c 2026-11-14T11:43:13Z] done

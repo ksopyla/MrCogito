@@ -301,7 +301,7 @@ class PerceiverARConfig(PretrainedConfig):
         concept_reasoner_dim: int = 512,  # E37: reasoner width
         concept_reasoner_heads: int = 8,  # E37: reasoner heads
         concept_reasoner_loops: int = 2,  # E37: reasoner loops (input injection each loop)
-        # E37c two-agent split training (docs/experiments_specs/ahead/E37c_two_agent_split_training.md): rows are cut
+        # E37c two-agent split training (docs/experiments_specs/done_failed/E37c_two_agent_split_training.md): rows are cut
         # at random points in training. A local layer reads its own side of a cut only; layers with the full pattern
         # (the reading layer) keep reading the whole document. Off by default; nothing is cut in eval unless asked.
         par_cut_gap_min: int = 0,         # E37c: shortest gap between cuts, tokens

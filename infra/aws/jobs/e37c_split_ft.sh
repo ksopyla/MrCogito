@@ -1,5 +1,5 @@
 #!/bin/bash
-# E37c — two-agent split training (docs/experiments_specs/ahead/E37c_two_agent_split_training.md; approved by the
+# E37c — two-agent split training (docs/experiments_specs/done_failed/E37c_two_agent_split_training.md; approved by the
 # author on 2026-11-14: "Yes, spec it", to "spec and run the short split fine-tune (about $15)").
 # One 100M model's 16k-stage final weights are fine-tuned on LongDocs-lite rows of 16,384 that are cut at random
 # points (a local layer reads its own side of a cut only, the reading layer the whole document), then examined as two

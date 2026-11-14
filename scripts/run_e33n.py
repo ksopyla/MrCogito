@@ -32,7 +32,7 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
                  at the rate the decay ended on (10 % of the peak) with a 3 % warmup, then 1−sqrt to 1 % of the peak.
                  Its own row order (manifest seed 2042) and, by default, trainer seed 1 for every arm, so all arms
                  see the same rows. --grad_ckpt recomputes each layer in the backward (24 GB cards at 64k).
-         split — E37c (docs/experiments_specs/ahead/E37c_two_agent_split_training.md): from the decay's final weights,
+         split — E37c (docs/experiments_specs/done_failed/E37c_two_agent_split_training.md): from the decay's final weights,
                  fresh optimizer, the decay's rows of 16,384 in another order (manifest seed 3042), every row cut at
                  random points (gaps log-uniform in [--cut_min, --cut_max]): a local layer reads its own side of a cut
                  only, the reading layer the whole document. The long phase's rate (10 % of the peak → 1 %), 0.2B

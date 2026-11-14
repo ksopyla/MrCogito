@@ -137,6 +137,10 @@ def main() -> None:
     ap.add_argument("--tails", default="16", help="A's last tokens B's local layers still read (tailN conditions)")
     ap.add_argument("--new", type=int, default=12, help="answer tokens (a 7-digit number takes 5; UUIDs need 32)")
     ap.add_argument("--nll_docs", type=int, default=3, help="documents per cell sized in bits under the model")
+    ap.add_argument("--seed", type=int, default=-1,
+                    help="documents of a cell from this seed, so two checkpoints are examined on the same documents "
+                         "(lm-eval's generator draws needles, keys and depths from the global random state; "
+                         "-1 = unseeded, as the runs of 2026-11-13 and E37c's of 2026-11-14 were)")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--dtype", default="bfloat16")
@@ -161,6 +165,7 @@ def main() -> None:
     res = {"checkpoint": a.checkpoint, "kind": probe.kind, "vocab": int(m.config.vocab_size),
            "hidden": int(m.config.hidden_size), "query_heads": int(att.h), "head_dim": int(att.dh),
            "new": a.new, "bits": bits, "tails": tails, "warm_tokens": int(warm.shape[0]), "dtype": a.dtype,
+           "seed": a.seed,
            "local_window": int(m.config.pre_window), "cells": []}
     print(f"{a.checkpoint}: {probe.kind} read, {att.h} query heads of {att.dh}", flush=True)
     # shortest documents first, every task at a length before the next length: a run cut short keeps whole lengths
@@ -168,6 +173,13 @@ def main() -> None:
         for task in a.tasks.split(","):
             n_docs = a.limit_long if (a.limit_long and L > 16384) else a.limit
             t_gen = time.time()
+            if a.seed >= 0:
+                import random
+
+                import numpy as np
+
+                random.seed(f"{a.seed}:{task}:{L}")
+                np.random.seed((a.seed * 1_000_003 + L) % (2 ** 31))
             docs = ruler_docs(task, L, n_docs, tok)
             conds = (["joint", "relay", "split"] + [f"tail{w}" for w in tails] + ["warm"]
                      + [f"bits{b}" for b in bits] + ["alone", "swap"])

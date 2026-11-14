@@ -15,6 +15,19 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-14] - Two-agent probe: documents from a seed
+
+**Why:**
+- E37c's exam was meant to use the documents of 2026-11-13 and did not: lm-eval's needle generator draws needles,
+  keys and depths from the global random state, and the probe never seeded it. Two checkpoints were therefore
+  compared on different documents (found when the references of the two runs did not match).
+
+**What changed:**
+- [added] `scripts/a2a_split_probe.py` - `--seed N`: the documents of every (task, length) cell come from that seed
+  (checked: the same seed gives the same documents); -1 = unseeded, as the earlier runs were. Recorded in the output.
+
+**Related:** `docs/2_Experiments_Registry/run_reports/e37c_two_agent_split_training_20261114.md` (the run's result)
+
 ## [2026-11-14] - E37c: cut rows, so a model can be trained as two agents (spec, code, job)
 
 **Why:**
@@ -42,13 +55,13 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
   with the settings of 13 Nov; writes only to its own folder `runs/e37c/`.
 - [added] `tests/test_cut_rows.py` - 17 tests (no cut = the plain forward; a cut row = the two-agent decoder for
   dense, LSA and concept reads; local layers stop at a cut; chained cuts; the draw; refusals).
-- [added] `docs/experiments_specs/ahead/E37c_two_agent_split_training.md`,
+- [added] `docs/experiments_specs/done_failed/E37c_two_agent_split_training.md`,
   `docs/3_Evaluations_and_Baselines/e37c_architecture.html` (alignment page).
 
 **Checked:** 17 new tests and 278 existing model / trainer tests pass. Laptop pipeline checks only (no conclusions):
 12 training steps of the tiny size with cuts; the cut-loss script on the 100M checkpoint at 2,048 tokens.
 
-**Related:** `docs/experiments_specs/ahead/E37c_two_agent_split_training.md`
+**Related:** `docs/experiments_specs/done_failed/E37c_two_agent_split_training.md`
 
 ## [2026-11-13] - Two agents from one trained 100M model, eval only: the hand-over works with A's last tokens, not with the memory alone
 

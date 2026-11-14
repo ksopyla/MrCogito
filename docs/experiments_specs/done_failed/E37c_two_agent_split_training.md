@@ -1,7 +1,8 @@
 # E37c — Two-agent split training: the answering side starts cold and reads the document only through the memory
 
-- **Status:** approved to spec and run (the author, 2026-11-14 06:10 UTC: "Yes, spec it", answering "Shall I spec and
-  run the short split fine-tune (about $15)?"). Spec written 2026-11-14 06:30 UTC by the agent-to-agent session.
+- **Status:** done 2026-11-14 — main pass mark missed (run 06:30–11:45 UTC, one L40S, $9.06). Approved to spec and
+  run by the author on 2026-11-14 06:10 UTC ("Yes, spec it", answering "Shall I spec and run the short split
+  fine-tune (about $15)?"). Spec written 2026-11-14 06:30 UTC by the agent-to-agent session.
 - **Serves:** the Vision's last step (agents exchange latent memory instead of text) and E35's goal, on the E37
   100M models. A flavour of E37: one mask added in training, same model, same parameters. ID checked on every remote
   branch, local branch and worktree on 2026-11-14 (E37, E37a, e37b used; the SFT stage is a run of E37, not an ID).
@@ -132,4 +133,14 @@ and 64k, 12 answer tokens), on the tuned checkpoint. Number haystack (`niah_sing
 - Question-shaped rows, a 64k split stage, coarser memory on the wire, remote read as a service.
 
 ## Result
-<Filled in AFTER, by experiment-track.>
+- Run id: `perceiver_ar_perceiver_H896L3g1s7N128_20261114_064152_e37a_m100_split` (AWS node `e37c-split`, one L40S,
+  training 2026-11-14 06:41 → 10:37 UTC, exams until 11:43 UTC, $9.06)
+- WandB: offline run in `s3://BUCKET/runs/e37c/e37c_m100_e37a_seed1/wandb/` (not synced)
+- Run report: `docs/2_Experiments_Registry/run_reports/e37c_two_agent_split_training_20261114.md`
+- Result files: `docs/2_Experiments_Registry/results/evaluations/E37c_split_ft/`
+- Verdict: **mixed, main pass mark missed** — B with memory only 63 / 70 / 60 % at 4k / 16k / 32k (marks 93 / 86 / 79;
+  untuned 63 / 43 / 35 on other documents); K1 not hit; controls 0 %; the cut loss fell by about three quarters at
+  32–127 tokens; loss on plain long text unchanged or better; but the tuned model as one agent finds 84 of 100
+  needles against 97 of 100 (a new habit: a blank line after the colon), which fails S3 and trips K3.
+- Protocol flaw found afterwards: the two exams drew different documents (the generator was not seeded; `--seed`
+  added to `scripts/a2a_split_probe.py` on 2026-11-14), so untuned and tuned are two independent samples.

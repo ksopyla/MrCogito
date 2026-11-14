@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""E37c: what a cut costs, by distance after it (docs/experiments_specs/ahead/E37c_two_agent_split_training.md).
+"""E37c: what a cut costs, by distance after it (docs/experiments_specs/done_failed/E37c_two_agent_split_training.md).
 
 Held-out LongDocs-lite rows, each scored by the plain forward three ways:
   plain      no cut (one agent)
