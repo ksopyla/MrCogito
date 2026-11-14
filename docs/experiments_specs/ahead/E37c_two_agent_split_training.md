@@ -92,8 +92,11 @@ and 64k, 12 answer tokens), on the tuned checkpoint. Number haystack (`niah_sing
 ## Kill criteria (set BEFORE running)
 - **K1:** memory only at 16k < 61 % after 0.2B tokens → a short fine-tune does not teach the cold start at this
   rate; the hand-over keeps A's last 32–64 tokens' local caches (0.1–0.2 MB, already 95–100 % with no training).
-- **K2 (in-run, a bug not a result):** mean training loss of steps 40–60 above the untuned model's loss on cut rows
-  + 0.05 (pre-flight, `scripts/a2a_cut_loss.py` on the untuned checkpoint) → stop the node.
+- **K2 (in-run, a bug not a result):** mean training loss of steps 40–60 above **2.39** → stop the node.
+  Reference corrected on 2026-11-14 06:41 UTC, after the pre-flight and before any training loss was logged: the rule
+  first compared training rows with the pre-flight's held-out rows, which differ in level (plain loss 2.19 on the
+  40 held-out rows, 2.26–2.28 over the 16k stage's last 50–100 training steps). It is now the 16k stage's last
+  training loss (2.27) + the measured cost of training-style cuts on the untuned model (+0.07: 2.187 → 2.258) + 0.05.
 - **K3:** S3 fails by more than twice its margin → the result is not usable as a demo model whatever S1 says.
 
 ## Measures
