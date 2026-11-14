@@ -37,8 +37,12 @@ echo "[m21r] $(now) building ${SETS[*]} at scale $SCALE into $D (S3 ${S3:-none})
 rc=${PIPESTATUS[0]}
 if [ "$rc" = 0 ] && [ -n "$S3" ]; then
   for n in "${SETS[@]}"; do
-    aws s3 sync --only-show-errors "$D/" "$S3/" --exclude "*" --include "${n}_train_*.bin" --include "${n}_val_*.bin" \
-      && aws s3 cp --only-show-errors "$D/$n.done.json" "$S3/$n.done.json" || { echo "[m21r] $(now) !! copy of $n FAILED"; rc=3; }
+    ok=1   # file by file (no folder walk, see m21_data_build.sh)
+    for f in "$D/${n}"_train_*.bin "$D/${n}"_val_*.bin; do
+      [ -f "$f" ] || continue
+      aws s3 cp --only-show-errors "$f" "$S3/$(basename "$f")" || ok=0
+    done
+    [ "$ok" = 1 ] && aws s3 cp --only-show-errors "$D/$n.done.json" "$S3/$n.done.json" || { echo "[m21r] $(now) !! copy of $n FAILED"; rc=3; }
   done
   aws s3 cp --only-show-errors "$D/_logs/reasoning.log" "$S3/_logs/reasoning.log" || true
 fi

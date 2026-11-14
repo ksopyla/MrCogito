@@ -66,8 +66,15 @@ one_source() {   # build one source; on success copy it to S3 (shards, then done
   "${BUILD[@]}" --only "$n" --no-mix --workers "$WORKERS" 2>&1 | tee -a "$D/_logs/$n.log"
   rc=${PIPESTATUS[0]}
   if [ "$rc" = 0 ] && [ -n "$S3" ]; then
-    if aws s3 sync --only-show-errors "$D/" "$S3/" --exclude "*" --include "${n}_train_*.bin" --include "${n}_val_*.bin" \
-       && aws s3 cp --only-show-errors "$D/$n.done.json" "$S3/$n.done.json"; then
+    # file by file, never `aws s3 sync` over the folder: sync walks _raw/ too, and a download file that another
+    # source deletes meanwhile makes it exit 2 after copying everything (five sources lost their done.json that
+    # way on 2026-11-14 and were repaired by hand)
+    local f ok=1
+    for f in "$D/${n}"_train_*.bin "$D/${n}"_val_*.bin; do
+      [ -f "$f" ] || continue
+      aws s3 cp --only-show-errors "$f" "$S3/$(basename "$f")" || ok=0
+    done
+    if [ "$ok" = 1 ] && aws s3 cp --only-show-errors "$D/$n.done.json" "$S3/$n.done.json"; then
       echo "[m21] $(now) $n: copied to $S3"
     else
       echo "[m21] $(now) $n: !! built, but the copy to $S3 FAILED"; rc=3
