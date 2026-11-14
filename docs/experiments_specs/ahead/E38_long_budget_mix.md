@@ -1,9 +1,19 @@
 # E38 — Two 100M models on a modern data mix: longer budget, SmolLM2 tokenizer, far-context data
 
-- **Status:** approved; data built, runs waiting for the 4-GPU slot (author, 2026-11-14: "Train two best models 100M
-  with a longer data budget, with a better tokenizer and data mix; try to find some multi-hop or reasoning data in
-  Hugging Face"; budget raised the same day: "Increase our budget to $4000"). `m21mix_v1` is in S3 since 07:58 UTC
-  Nov 14; the pipeline check and the L40S speed check ran the same morning.
+- **Status:** leaderboard runs queued (2026-11-14, 21:40 UTC). On the author's "Yes, stop it" (21:35 UTC, to "Stop the
+  old long run now and launch the leaderboard runs after the Muon result?") the v1 concept-memory long run
+  (`e33n_m100_e37a_tok8.0e9_seed42`, 162M total, over the board's 150M cap) was stopped at about step 4,300 of 15,259
+  in stage 1, at 21:36 UTC; its checkpoint-4000 (held-out loss 2.168) stays in S3. The v1 LSA keeper was stopped
+  before it launched. The four 150M runs (`m120t` on `m21mix_v2`, seed 42) are queued by a launcher on the laptop
+  (`Cache/keepers/e38-board-chain.sh`, not in git): it waits for the Muon test, applies its pass mark
+  (`Cache/keepers/e38_pick_opt.py`: Muon only if its held-out loss is at least 0.03 lower than AdamW's at the same
+  step), then starts four keepers that train concept memory, LSA port, catalogue and the fair full-attention control
+  one after another on one g6e.12xlarge spot slot (the us-east-1 G-family spot quota is 64 vCPU; us-west-2 and
+  us-east-2 allow 8). Estimate per model about 32 h and $250: stage 1 at 121k tokens/s (measured on the v1 run),
+  stage 2 about 81k (one-card speed check), stage 3 about 68k (estimate), tests about 1.5 h. Muon test at step 500:
+  held-out loss 2.742 against AdamW's 2.905; the decision uses step 2,000. Earlier: `m21mix_v1` in S3 since
+  07:58 UTC Nov 14, `m21mix_v2` since 19:53 UTC (author, 2026-11-14: "Train two best models 100M with a longer data
+  budget, with a better tokenizer and data mix"; "Increase our budget to $4000"; "SmolLM2, bigger body").
 - **Serves:** the meridian21 goal of 2026-11-13 (first models and a demo for investors: show that the memory
   architecture uses far context on real long documents) and Vision priority 2 (long context). Not a new
   architecture: the two best 100M reads of E37 stage B, unchanged, on better data. A data and protocol experiment,
