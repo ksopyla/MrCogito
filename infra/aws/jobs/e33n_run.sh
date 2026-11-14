@@ -90,6 +90,11 @@ phase() {
   [ -n "$ck" ] && log "$name restarts from ${ck##*/}"
   while true; do
     ( export RUN_ID_SUFFIX="${ARM}_${SIZE}_${name}"   # arms launched in the same second get distinct W&B runs
+      # E33N_PLAIN (e.g. "150M concept memory, Muon"): the W&B display name in plain words, plus the stage
+      if [ -n "${E33N_PLAIN:-}" ]; then
+        case "$name" in trunk) st="stage 1 of 3";; decay) st="stage 2 of 3";; long) st="stage 3 of 3";; *) st="$name";; esac
+        export MC_WANDB_NAME="$E33N_PLAIN, $st"
+      fi
       eval "$cmd${E33N_BURST_H:+ --max_train_hours $E33N_BURST_H}${ck:+ --resume_from_checkpoint $ck}" ) \
       >> "$R/$name.log" 2>&1
     rc=$?
