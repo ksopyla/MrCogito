@@ -66,30 +66,33 @@ ISSUES: tuple[Issue, ...] = (
           "A median over 3 seeds hides a 1-in-3 failure; headline claims need more seeds and the per-seed scores.",
           "Author's decision: make the no-exit loop the registered E33 variant on recipe A (and run its seeds 3–4).",
           ("v4_fix_c",)),
-    Issue("catalogue-startup", "2026-11-13", "The catalogue read either learns a task or never starts",
+    Issue("catalogue-startup", "2026-11-13", "The catalogue read nearly always learns a task fully or never starts",
           "high", "open", "caution",
           ("C0.copy-1k", "C1.edge-1k", "C1.keyed4-1k", "C1.lookup-1k", "C1.lookup-2k", "C2.lookalike-1k",
            "C3.recall8-1k", "C4.chain4-1k", "C5.pchain2-1k", "C0.copy-512",
            "C1.lookup-512"),
           ("e33t_catalogue_n4",),
-          "Every catalogue-read job so far either learns to 97–100 % or stays at chance for its whole budget with "
-          "nothing reaching the answer (flow 0.000), never in between. From random init 19 of 49 first stages "
-          "started: C5.path2-1k and C5.path3-1k stage 1 on all three seeds (some only after 15–19k of their 19.2k "
-          "steps), C1.edge-1k and C5.pchain2-1k on one seed of three (edge seed 1: 99 % at 1k, seeds 0 and 2 at "
-          "chance), and C0.copy-512 on one seed of two so far (seed 1: 100 % first letter, stopped early at step "
-          "3,500, ended 16:59 UTC; seed 0: 26.2 %, flow 0.000 after the full 4,800 steps, ended 17:19 UTC), and "
-          "C0.copy-256, C1.lookup-256, C0.copy-128, C1.lookup-128 and C2.lookalike-128 on both seeds run so far, 0 "
-          "and 1 (98–100 % first letter, each stopped early within 300–600 steps, flow 0.98–1.00, ended 18:14–18:45 "
-          "UTC); C0.copy-1k (seeds 0–2, ended 2026-11-13 08:01, 08:01 and 14:24 UTC: 25.8 / 20.7 / 19.9 % first "
-          "letter), C1.lookup-1k (seeds 0–2, ended 09:56, 09:56 and 17:53 UTC; seed 2: 21.9 %), C1.keyed4-1k (seeds "
-          "0–2, ended 12:17, 12:17 and 20:53 UTC: picked candidate 26 / 30 / 26.5 %, a guess gets 25 %), "
-          "C2.lookalike-1k (seeds 0–2, ended 14:12, 14:12 and 22:03 UTC: 25.8 / 27.0 / 29.3 % first letter, flow "
-          "0.000), C1.lookup-2k (seeds 0–2 at both 1e-4 and 5e-5), C3.recall8-1k (seeds 0–2), C1.lookup-512 (seeds "
-          "0–1, ended 18:31 and 18:11 UTC: 27.7 / 20.3 %, flow 0.000) and C4.chain4-1k (seeds 0–2, ended 16:07, 16:07 "
-          "and 23:57 UTC: 23.4 / 23.4 / 25.0 % first letter, flow 0.000; the champion scores 68 % and does not pass, "
-          "so no cell is lost) never started. Both start more often the shorter the text, which fits the cause below: "
-          "copy 0 of 3 seeds at 1k, 1 of 2 at 512, 2 of 2 at 256 and at 128; lookup 0 of 3 at 1k and at 2k, 0 of 2 at "
-          "512, 2 of 2 at 256 and at 128; the one-decoy lookup 0 of 3 at 1k, 2 of 2 at 128. So the read can learn a "
+          "Every catalogue-read job so far but one either learns to 97–100 % or stays at chance for its whole budget "
+          "with nothing reaching the answer (flow 0.000). The one in between, C1.lookup-512 seed 2 (ended 2026-11-14 "
+          "02:17 UTC), sat at chance to step 2,000, rose to about 50 % first letter by step 2,800 and stayed at 42–51 "
+          "% to the end of its 4,800 steps (final 51.2 %, flow 0.40): a late, partial start. From random init 19 of "
+          "51 first stages started fully and that one partly: C5.path2-1k and C5.path3-1k stage 1 on all three seeds "
+          "(some only after 15–19k of their 19.2k steps), C1.edge-1k and C5.pchain2-1k on one seed of three (edge "
+          "seed 1: 99 % at 1k, seeds 0 and 2 at chance), and C0.copy-512 on one seed of three (seed 1: 100 % first "
+          "letter, stopped early at step 3,500, ended 16:59 UTC; seeds 0 and 2: 26.2 and 25.0 %, flow 0.000 after the "
+          "full 4,800 steps, ended 17:19 and 11-14 01:07 UTC), and C0.copy-256, C1.lookup-256, C0.copy-128, "
+          "C1.lookup-128 and C2.lookalike-128 on both seeds run so far, 0 and 1 (98–100 % first letter, each stopped "
+          "early within 300–600 steps, flow 0.98–1.00, ended 18:14–18:45 UTC); C0.copy-1k (seeds 0–2, ended "
+          "2026-11-13 08:01, 08:01 and 14:24 UTC: 25.8 / 20.7 / 19.9 % first letter), C1.lookup-1k (seeds 0–2, ended "
+          "09:56, 09:56 and 17:53 UTC; seed 2: 21.9 %), C1.keyed4-1k (seeds 0–2, ended 12:17, 12:17 and 20:53 UTC: "
+          "picked candidate 26 / 30 / 26.5 %, a guess gets 25 %), C2.lookalike-1k (seeds 0–2, ended 14:12, 14:12 and "
+          "22:03 UTC: 25.8 / 27.0 / 29.3 % first letter, flow 0.000), C1.lookup-2k (seeds 0–2 at both 1e-4 and 5e-5), "
+          "C3.recall8-1k (seeds 0–2), C1.lookup-512 seeds 0–1 (ended 18:31 and 18:11 UTC: 27.7 / 20.3 %, flow 0.000; "
+          "seed 2 is the partial start above) and C4.chain4-1k (seeds 0–2, ended 16:07, 16:07 and 23:57 UTC: 23.4 / "
+          "23.4 / 25.0 % first letter, flow 0.000; the champion scores 68 % and does not pass, so no cell is lost) "
+          "never started. Both start more often the shorter the text, which fits the cause below: copy 0 of 3 seeds "
+          "at 1k, 1 of 3 at 512, 2 of 2 at 256 and at 128; lookup 0 of 3 at 1k and at 2k, 0 of 3 at 512 (one partly), "
+          "2 of 2 at 256 and at 128; the one-decoy lookup 0 of 3 at 1k, 2 of 2 at 128. So the read can learn a "
           "content lookup from scratch, and its losses at the training length are failures to start that depend on "
           "the seed, not a ceiling: they count as lost under the protocol, never as 'cannot'. A plausible cause, not "
           "tested: the note scores learn only where the read's attention already lands, and the read learns only "
@@ -98,9 +101,8 @@ ISSUES: tuple[Issue, ...] = (
           "A read that must be found before it can be learned can fail by never starting; report how many seeds "
           "started, not only the median, and try a longer budget or a written warm-up before a 'cannot'.",
           "Not queued. More seeds or a longer budget on the missed tasks would settle it; a written warm-up stage "
-          "would be a protocol change for every model. Seed 2 of C0.copy-512 (running since 11-13 23:57 UTC), "
-          "C1.lookup-512 and the 256 and 128-token tasks is still to come (Odra card 1, until about 11-14 02:00–03:00 "
-          "UTC)."),
+          "would be a protocol change for every model. Seed 2 of the 256 and 128-token tasks is still to come (Odra "
+          "card 1, from 11-14 02:17 UTC, until about 02:35–03:30 UTC)."),
     Issue("dense-lr-lookup", "2026-10-13", "Dense fails the 2k lookup only at our standard step size",
           "high", "open", "caution", ("C1.lookup-2k", "C1.lookup-16k"), ("dense", "e33t_catalogue_n4"),
           "Dense scores 24–29 % at step 1e-4 but passes at 5e-5 (the step E31's 2k runs use). 'Dense cannot do long "
@@ -256,13 +258,15 @@ RUNS: tuple[Run, ...] = (  # finished runs stay listed until the next launch rep
         "cards 0–1 finished 2026-11-13 18:45:33 and 18:27:38 UTC (QUEUE-END). On the author's yes (11-13 20:05 UTC) "
         "card 2's last nine seed-2 jobs (C2.lookalike-1k, C4.chain4-1k, copy and lookup at 512, 256 and 128, "
         "C2.lookalike-128) moved to card 1, the same commands from card 2's script, started 20:08:27 UTC (seed 2 of "
-        "C2.lookalike-1k ended 22:03:32 UTC and of C4.chain4-1k 23:57:09 UTC, both at chance; C0.copy-512 seed 2 "
-        "runs since then); card 0 runs the E37 fine-tuning since 19:08 UTC. Card 2 ended 20:53:48 UTC after its "
+        "C2.lookalike-1k ended 22:03:32 UTC, of C4.chain4-1k 23:57:09 UTC and of C0.copy-512 11-14 01:07:08 UTC, "
+        "all at chance; C1.lookup-512 seed 2 ended 02:17:16 UTC at 51.2 % first letter; the five 256 and 128-token "
+        "runs follow); card 0 runs the E37 fine-tuning since 19:08 UTC. Card 2 ended 20:53:48 UTC after its "
         "C1.keyed4-1k seed 2: a holder process kept its queue from starting another job, and a helper stopped that "
         "queue by PID once keyed4's DONE landed and wrote its QUEUE-END line; the heat guard ended with it (its "
         "last full window, 20:39–20:49 UTC with three cards busy: paused 66 % of the time, peak 78 °C). Card 1 ends "
-        "about 11-14 02:00–03:00 UTC (cool-card times: a 512 run 0.9–1.2 h, the 256 and 128 runs minutes; its two "
-        "1k runs took 1 h 55 min and 1 h 54 min). Earlier estimates: 11-14 02:30–03:30 UTC at the move; 11-16 / "
+        "about 11-14 02:35–03:30 UTC: a 256 or 128-token run that learns stops within minutes, one that never "
+        "starts runs its full budget (its 1k runs took 1 h 55 min and 1 h 54 min, its 512 runs 1 h 10 min each). "
+        "Earlier estimates: 11-14 02:00–03:00 UTC (11-13 22:07 UTC pull), 02:30–03:30 UTC at the move; 11-16 / "
         "11-17 priced every ladder at its full length (a run at chance stops after two rungs at the floor); 11-14 "
         "09:00–16:00 UTC with card 2 alone. The lookup curriculum's 8k and 16k stages, never counted here, were "
         "dropped by the author on 11-13 (marked 10:44 UTC). Card 2 runs under a heat guard that pauses its job at "
