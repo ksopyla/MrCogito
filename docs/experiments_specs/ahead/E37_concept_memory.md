@@ -616,10 +616,39 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
       0.160 / 0.113 / 0.100 (single-1 0.97 / 0.97 / 0.99, multi-key-1 0.18 / 0.12 / 0.01, HotpotQA 0.11 / 0.06 /
       0.05). 4k single-1 (same documents) 0.97 vs stage B 0.97; 64k on 100 agrees with the old-loop 25 (0.101). The
       64k-stage catalogue model (not re-run here) found more essay needles at 32k (0.19 / 0.21).
-    - **Reading so far:** full attention whose reading layer has no position code finds no essay needle at 64k or
-      128k, and the stage-B catalogue read almost none (3–4 in 100); the LSA port's top-k read still finds about one
-      essay number in five at 64k and one in six at 128k. All three find the filler-text needle at every length.
-      e37a, the original LSA and dense_rope to follow.
+    - **e37a (node `e37-needles-e37a` 21:38 Nov 13 – 09:04 UTC Nov 14, ≈ 11.5 h ≈ $20; frequent words at 128k OOM'd
+      at document 88 when dynamo passed its 128-graph limit and fell back to eager flex; rerun from e37-needles
+      806b655, MC_DYNAMO_CACHE_LIMIT 2048, on `e37-needles-e37a-fix`, us-west-2 after a spot loss in us-east-1, done
+      10:32 UTC, all 100 documents, ≈ $2):** mean 0.196 / 0.083 / 0.081. Essay number 0.70 / **0.03 / 0.01**, essay
+      UUID 0.26 / 0.00 / 0.00; the other 11 0.144 / 0.095 / 0.095 (single-1 0.96 / 0.89 / 0.92, HotpotQA 0.06 /
+      0.06 / 0.08). 4k single-1 0.96 vs stage B 0.96.
+    - **The original LSA, its own uncached path (node `e37-needles-orig-64k`, done 09:12 UTC Nov 14, ≈ 9.3 h ≈ $16):**
+      64k mean 0.022; essay number 0.06, UUID 0.00, single-1 0.01, multi-key-1 0.11 (its stage-B 4k: 0.139, single-1
+      0.10, essay number 0.63). 128k on `e37-needles-orig-128k`, 9 of 13 tasks at 16:08 UTC, ~01:00 Nov 15.
+    - **dense_rope (node `e37-needles-dense-rope`, launched 10:21 UTC Nov 14, ≈ 2.9 h ≈ $5):** mean 0.216 / **0.019 /
+      0.013**. Essay number 0.85 / 0.00 / 0.00, UUID 0.31 / 0.00 / 0.00; single-1 0.94 / **0.14 / 0.07** (stage B 4k
+      0.95, same documents).
+    - **Reading:** past 32k only the LSA port's top-k read keeps finding essay needles (about one number in five at
+      64k, one in six at 128k); e37a, the catalogue read and dense find 0–4 in 100, the original LSA 6. The filler-text
+      needle separates the reads with a position code from the rest: e37a, lsa, catalogue and dense find it at
+      0.87–0.99 to 128k, dense_rope at 0.14 / 0.07 and the original LSA at 0.01 at 64k.
+  - **dense_rope, the fair full-attention control (stage B; node `e37-b-l40s-dense-rope-s42` i-0f800024fdee8fb2c,
+    trunk 23:46 Nov 13 – 07:55, decay 07:55–09:12 UTC Nov 14; RULER 16k failed on that node, so its evals were
+    redone on relaunch i-0f1d6f00ca512c0d8, 09:50–10:18; ≈ 10.4 h ≈ $79):** loss on positions ≥ 2k (5 sources, 4
+    at 128k), 4k / 16k / 32k / 64k / 128k: dense_rope 2.332 / 2.181 / 2.275 / 2.261 / **1.996**; dense 2.319 / 2.163
+    / 2.256 / 2.332 / 2.194; e37a 2.320 / 2.166 / 2.254 / 2.250 / 1.990; lsa 2.322 / 2.169 / 2.254 / 2.245 / 1.994;
+    window 2.461 / 2.351 / 2.449 / 2.397 / 2.086. RoPE on the reading layer costs 0.013–0.019 to 32k (it closes 91 /
+    91 / 90 % of the window → dense gap) and keeps a gain over the window model past it (0.136 / 0.090, where dense
+    has 0.065 / −0.108). With dense_rope as the ceiling, e37a closes 109 / 109 / 112 % to 32k, lsa 107 / 107 / 112,
+    catalogue 92 / 96 / 100, the original LSA 137 / 127 / 135. Positions < 512 at 16k 2.388 (dense 2.394, e37a
+    2.388, window 2.367). **NTK-style eval-time base on every layer (4.28e6, labelled; not how it was trained):**
+    worse at every length, 2.388 / 2.252 / 2.338 / 2.307 / 2.041: the local layers were trained at 500k, and
+    moving their base costs more than the reading layer gains. Core 0.407 (dense 0.422, e37a and lsa 0.416, window
+    0.422; SciQ 0.592 vs dense 0.655 the most). RULER 4k / 16k 0.223 / **0.084** (dense 0.210 / 0.175, e37a 0.185 /
+    0.136, lsa 0.255 / 0.209); at 16k, its training length, the essay number falls to 0.02 (dense 0.61, lsa 0.84).
+    **Reading:** a position code on the full-attention read buys long-text loss past 32k and loses retrieval at 16k
+    and beyond and 1.5 core points. Against either full-attention control, e37a and the LSA port match or beat it on
+    long-text loss at every length to 128k (e37a vs dense_rope at 128k 1.990 vs 1.996, a tie).
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
