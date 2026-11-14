@@ -33,7 +33,9 @@ else
 fi
 [ -f /etc/mrcogito.env ] && source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH" HF_HUB_DISABLE_IMPLICIT_TOKEN=1
-unset HF_TOKEN HUGGING_FACE_HUB_TOKEN   # every source is public: nothing is sent with a token
+# public sources send no token; a recipe with "gated" sources is built with M21_GATED_OK=1 and HF_TOKEN set (the
+# builder passes the token only to those sources; infra/aws/jobs/hf_env.sh reads it from AWS Secrets Manager)
+[ -n "${M21_GATED_OK:-}" ] || unset HF_TOKEN HUGGING_FACE_HUB_TOKEN
 
 RECIPE="${M21_RECIPE:-data/mix_recipes/m21_mix_v1.json}"
 SCALE="$M21_SCALE"; ONLY="$M21_ONLY"
@@ -86,6 +88,10 @@ one_source() {   # build one source; on success copy it to S3 (shards, then done
 
 mkdir -p "$D/_logs"
 if [ -n "$ONE" ]; then one_source "$ONE"; exit $?; fi
+if [ -n "$S3" ] && [ -n "${M21_PULL:-}" ]; then   # sources already in S3 (copied from another version): pull them,
+  echo "[m21] $(now) pulling the sources already in $S3"   # so mix.json counts their rows from the shards
+  aws s3 sync --only-show-errors "$S3/" "$D/" --exclude "_logs/*" --exclude "_raw*" || true
+fi
 
 NPROC=$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 RAM_GB=$(awk '/MemTotal/ {printf "%d", $2 / 1048576}' /proc/meminfo 2>/dev/null)

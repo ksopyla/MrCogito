@@ -524,3 +524,30 @@ def test_only_and_mix_only(tmp_path):
     rc, out, _ = build(tmp_path, [a, b], argv=("--only", "a", "--no-mix"))
     rc, out, _ = build(tmp_path, [a, b], argv=("--mix-only",))
     assert rc == 0 and set(json.loads((out / "mix.json").read_text())["sources"]) == {"a", "b"}
+
+
+def test_hub_token_only_for_gated_sources(monkeypatch):
+    """Public sources never send a token; a gated source sends HF_TOKEN, and fails loudly without one."""
+    import pytest
+
+    from scripts.build_m21_mix import hub_token
+
+    monkeypatch.setenv("HF_TOKEN", "hf_example")
+    assert hub_token({"repo": "a/b"}) is False
+    assert hub_token({"repo": "nvidia/x", "gated": True}) == "hf_example"
+    monkeypatch.delenv("HF_TOKEN")
+    monkeypatch.delenv("HUGGING_FACE_HUB_TOKEN", raising=False)
+    with pytest.raises(PermissionError):
+        hub_token({"repo": "nvidia/x", "gated": True})
+
+
+def test_v2_recipe_is_consistent():
+    import json
+    from pathlib import Path
+
+    r = json.loads(Path("data/mix_recipes/m21_mix_v2.json").read_text())
+    names = {s["name"] for s in r["sources"]}
+    for ph in r["phases"].values():
+        assert abs(sum(t["weight"] for t in ph["train"]) - 1) < 1e-9
+        assert all(t["name"] in names for t in ph["train"]) and all(e["name"] in names for e in ph["eval"])
+    assert {s["name"] for s in r["sources"] if s.get("gated")} == {"nemotron_cc_hq", "nemotron_cc_dqa", "nemotron_cc_math"}

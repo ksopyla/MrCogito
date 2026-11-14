@@ -119,6 +119,17 @@ def retry(fn, what: str, tries: int = RETRIES):
             _sleep(wait)
 
 
+def hub_token(spec: dict):
+    """False (send no token) for public sources; for a source marked "gated": true, the token in HF_TOKEN (the node
+    job reads it from AWS Secrets Manager). A gated source without a token fails loudly in its own build."""
+    if not spec.get("gated"):
+        return False
+    tok = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    if not tok:
+        raise PermissionError(f"{spec.get('repo')} is gated: set HF_TOKEN (the node job reads mrcogito/hf-token)")
+    return tok
+
+
 class Raw:
     """Raw files of a source: a public Hub dataset repo read anonymously, or a local directory ("local").
 
@@ -142,10 +153,12 @@ class Raw:
         if repo not in self._lists:
             from huggingface_hub import HfApi
 
+            tok = hub_token(spec)
+
             def go():
-                info = HfApi(token=False).dataset_info(repo, files_metadata=True, token=False)
-                if getattr(info, "gated", False) or getattr(info, "private", False):
-                    raise PermissionError(f"{repo} is gated or private: not readable without a token")
+                info = HfApi(token=tok).dataset_info(repo, files_metadata=True, token=tok)
+                if (getattr(info, "gated", False) or getattr(info, "private", False)) and tok is False:
+                    raise PermissionError(f"{repo} is gated or private: mark the source \"gated\": true and set HF_TOKEN")
                 return {s.rfilename: int(s.size or 0) for s in info.siblings}
 
             self._lists[repo] = retry(go, f"list {repo}")
@@ -158,14 +171,21 @@ class Raw:
             with open(Path(spec["local"]) / path, "rb") as f:
                 yield f
         elif self.mode == "stream":
-            if self._fs is None:
+            tok = hub_token(spec)
+            if tok is not False:   # a gated source: its own filesystem object, with the token
                 from huggingface_hub import HfFileSystem
 
-                self._fs = HfFileSystem(token=False)
+                fs = HfFileSystem(token=tok)
+            else:
+                if self._fs is None:
+                    from huggingface_hub import HfFileSystem
+
+                    self._fs = HfFileSystem(token=False)
+                fs = self._fs
             # parquet: the reader asks for the byte ranges it needs (pyarrow buffers them); else: read ahead
             kw = ({"block_size": 1 << 20, "cache_type": "none"} if path.endswith(".parquet")
                   else {"block_size": 8 << 20, "cache_type": "readahead"})
-            f = retry(lambda: self._fs.open(f"datasets/{spec['repo']}/{path}", "rb", **kw), f"open {path}")
+            f = retry(lambda: fs.open(f"datasets/{spec['repo']}/{path}", "rb", **kw), f"open {path}")
             try:
                 yield f
             finally:
@@ -174,7 +194,7 @@ class Raw:
             from huggingface_hub import hf_hub_download
 
             local_dir = self.raw_dir / spec["name"]
-            local = retry(lambda: hf_hub_download(spec["repo"], path, repo_type="dataset", token=False,
+            local = retry(lambda: hf_hub_download(spec["repo"], path, repo_type="dataset", token=hub_token(spec),
                                                   local_dir=str(local_dir)), f"download {spec['repo']}/{path}")
             try:
                 with open(local, "rb") as f:
@@ -1031,15 +1051,15 @@ def list_sources(specs: list[dict], raw: Raw, tokenizer: str | None = None) -> b
             where = s.get("repo") or s.get("local")
             try:
                 parts = resolve_parts(s, raw.listing(s))
-                if not s.get("local"):  # the first file answers a request without a token
+                if not s.get("local"):  # the first file answers a request (with the token only if "gated")
                     from huggingface_hub import get_hf_file_metadata, hf_hub_url
 
                     first = parts[0]["files"][0][0]
-                    retry(lambda: get_hf_file_metadata(hf_hub_url(s["repo"], first, repo_type="dataset"), token=False),
-                          f"head {where}/{first}")
+                    retry(lambda: get_hf_file_metadata(hf_hub_url(s["repo"], first, repo_type="dataset"),
+                                                       token=hub_token(s)), f"head {where}/{first}")
                 n = sum(len(p["files"]) for p in parts)
                 gb = sum(b for p in parts for _, b in p["files"]) / 1e9
-                print(f"{s['name']}{tag}: {where}: reachable without a token; {n} file(s), {gb:.2f} GB listed, "
+                print(f"{s['name']}{tag}: {where}: reachable{' with the token' if s.get('gated') else ' without a token'}; {n} file(s), {gb:.2f} GB listed, "
                       f"target {float(s['target_tokens']):.3g} tokens")
                 for p in parts:
                     names = [f for f, _ in p["files"]]
