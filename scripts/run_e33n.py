@@ -377,7 +377,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               grad_ckpt: bool = False, compile: str = "off", liger: bool = False, rows: int | None = None,
               workers: int = 6, fast: bool = False, mix: str | None = None,
               save_every: int | None = None, mix_lenient: bool = False, optimizer: str = "adam",
-              muon_adamw_lr: float | None = None, warmup: int | None = None) -> list[str]:
+              muon_adamw_lr: float | None = None, warmup: int | None = None,
+              muon_peak: float | None = None) -> list[str]:
     liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
@@ -427,6 +428,13 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         print(f"note: {micro}×{accum}×{gpus} = {micro * accum * gpus} rows per step instead of {rows_per_step}",
               file=sys.stderr)
     steps = max(1, int(round(tokens / (micro * accum * gpus * seq))))
+    if muon_peak and optimizer == "muon" and phase != "sft":
+        # a whole Muon run from one peak, each phase as the AdamW recipe: trunk and decay start at the peak (the decay
+        # ends at 10 % of it), the 64k phase starts where the decay ended; the AdamW fallback scales the same way
+        if lr is not None:
+            raise ValueError("give --muon_peak or --lr, not both")
+        lr = 0.1 * muon_peak if phase == "long" else muon_peak
+        muon_adamw_lr = muon_adamw_lr or (0.1 * z["lr"] if phase == "long" else z["lr"])
     lr = lr or (0.1 * z["lr"] if phase == "long" else z["lr"])  # long: the rate the decay ended on
     launch = (["torchrun", "--standalone", f"--nproc_per_node={gpus}"] if gpus > 1 else ["python"])
     cmd = ["uv", "run", *launch, "training/train_concept_pretraining.py"]
@@ -462,8 +470,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         # Muon on the matrices at --lr (no default: the size's AdamW rate is not a Muon rate); the AdamW fallback
         # (word tables, output layer, norms) at muon_adamw_lr, default the size's AdamW peak, following the schedule;
         # no weight decay on 1-D params, as HF AdamW groups them
-        if lr is None or lr == z["lr"]:
-            raise ValueError("--optimizer muon needs its own --lr (e.g. 0.01-0.02)")
+        if not muon_peak and (lr is None or lr == z["lr"]):  # (a peak's 64k rate may equal the size's AdamW rate)
+            raise ValueError("--optimizer muon needs its own --lr or --muon_peak (e.g. 0.01-0.02)")
         cmd += ["--optimizer", "muon", "--muon_adamw_lr", str(muon_adamw_lr or z["lr"]),
                 "--muon_follow_schedule", "True", "--muon_decay_1d", "False"]
     if compile != "off":  # the whole model through torch.compile (the attention kernel is compiled either way)
@@ -524,6 +532,8 @@ def main() -> None:
     c.add_argument("--optimizer", default="adam", choices=("adam", "muon"),
                    help="muon: nn.muon.Muon on the matrices at --lr, AdamW on the rest at --muon_adamw_lr")
     c.add_argument("--muon_adamw_lr", type=float, help="Muon's AdamW fallback LR (default: the size's AdamW peak)")
+    c.add_argument("--muon_peak", type=float, help="with --optimizer muon, a whole run from one Muon peak: trunk and "
+                   "decay at it, the 64k phase at 10 %% of it (the AdamW fallback likewise); instead of --lr")
     c.add_argument("--warmup", type=int, help="warm-up steps instead of 1 %% (trunk) / 3 %% (later phases) of the phase")
     c.add_argument("--mix_lenient", action="store_true",
                    help="small check builds: leave out a source with no row at a phase's length and share a stream "
@@ -580,7 +590,7 @@ def main() -> None:
                     local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
                     grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
                     fast=a.fast, mix=a.mix, save_every=a.save_every, mix_lenient=a.mix_lenient,
-                    optimizer=a.optimizer, muon_adamw_lr=a.muon_adamw_lr, warmup=a.warmup)
+                    optimizer=a.optimizer, muon_adamw_lr=a.muon_adamw_lr, warmup=a.warmup, muon_peak=a.muon_peak)
     print(shlex.join(cmd))
 
 

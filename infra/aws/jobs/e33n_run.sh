@@ -46,7 +46,8 @@ if [ -f /etc/mrcogito.env ]; then
 else
   D="${E33N_DATA:?set E33N_DATA}"; RUNS="${E33N_RUNS:?set E33N_RUNS}"; MC_BUCKET=""
 fi
-RUN="e33n_${SIZE}_${ARM}${LR:+_lr$LR}${TT:+_tok$TT}${E33N_SEED:+_seed$E33N_SEED}"
+# E33N_TAG: an extra word in the run name (e.g. muon0.01), so two recipes of one arm and size keep apart
+RUN="e33n_${SIZE}_${ARM}${E33N_TAG:+_$E33N_TAG}${LR:+_lr$LR}${TT:+_tok$TT}${E33N_SEED:+_seed$E33N_SEED}"
 EXP=$(echo "$EXPERIMENT_ID" | tr "[:upper:]" "[:lower:]")
 R="$RUNS/$RUN"; S3R="${MC_BUCKET:+s3://$MC_BUCKET/runs/$EXP/$RUN}"
 export WANDB_DIR="$R/wandb"

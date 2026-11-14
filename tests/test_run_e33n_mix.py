@@ -127,3 +127,17 @@ def test_leaderboard_size_shares_the_table_and_stays_under_150m(tmp_path):
     (d / "mix.json").write_text(json.dumps(mix))
     with pytest.raises(ValueError, match="vocabulary"):
         train_cmd("e37a", "m120t", "trunk", data=tmp_path, out=tmp_path / "run", mix=str(d))
+
+
+def test_muon_peak_sets_each_phase(tmp_path):
+    """--muon_peak: trunk and decay at the peak, the 64k phase at a tenth; the AdamW fallback scales with it."""
+    d = _mix(tmp_path)
+    v = lambda cmd, flag: float(cmd[cmd.index(flag) + 1])
+    kw = dict(data=tmp_path, out=tmp_path / "run", mix=str(d), optimizer="muon", muon_peak=0.01)
+    lr0 = SIZES["tiny"]["lr"]
+    for phase, f in (("trunk", 1.0), ("decay", 1.0), ("long", 0.1)):
+        cmd = train_cmd("e37a", "tiny", phase, init=None if phase == "trunk" else "X", **kw)
+        assert abs(v(cmd, "--learning_rate") - 0.01 * f) < 1e-12 and abs(v(cmd, "--muon_adamw_lr") - lr0 * f) < 1e-12
+        assert cmd[cmd.index("--optimizer") + 1] == "muon"
+    with pytest.raises(ValueError, match="not both"):
+        train_cmd("e37a", "tiny", "trunk", lr=0.02, **kw)

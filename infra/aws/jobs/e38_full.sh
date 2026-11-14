@@ -16,24 +16,32 @@ G=$(nvidia-smi -L | wc -l)
 MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
 source /etc/mrcogito.env
 MIX="${E38_MIX:-m21mix_v1}"; TT="${E38_TRUNK_TOKENS:-8.0e9}"; D="$MC_DISK/data"
+SIZE="${E38_SIZE:-m100}"   # e38_board.sh: m120t, the Tiny-ML leaderboard size (shared input/output table)
+# E38_OPT: adam (default) or muon:PEAK (Muon on the matrices; trunk and decay at PEAK, the 64k phase at a tenth)
+OPT="${E38_OPT:-adam}"; OPT_FLAGS=""; TAG=""
+case "$OPT" in
+  adam) ;;
+  muon:*) OPT_FLAGS="--optimizer muon --muon_peak ${OPT#muon:}"; TAG="muon${OPT#muon:}" ;;
+  *) echo "[e38_full] unknown E38_OPT=$OPT"; exit 2 ;;
+esac
 # rows per pass and card: the E37 runs' own (4 at 4k, 1 at 16k on a 48 GB card; twice that on 80 GB). On one L40S
 # with --fast, 4 / 6 / 8 / 10 rows at 4k all give 29-30.5k tokens/s (old settings: 20.3k) and 1 / 2 rows at 16k
 # both ~20.3k (old: 15.2k), so larger passes only cost memory (eng_check_node.sh, us-west-2, 2026-11-14)
 if [ "${MEM:-0}" -ge 70000 ]; then MT=8; MD=2; else MT=4; MD=1; fi
 export E33N_EXPERIMENT=E38 E33N_SEED="$SEED" E33N_GPUS="$G" E33N_CKPT_S3=1 E33N_SKIP_EVAL=1 E33N_MIX="$MIX" \
   E33N_LONG=1 E33N_GRAD_CKPT=1 E33N_MICRO_TRUNK="${E38_MICRO_TRUNK:-$MT}" E33N_MICRO_DECAY="${E38_MICRO_DECAY:-$MD}" \
-  E33N_MICRO_LONG=1 E33N_CMD_EXTRA="--fast --save_every ${E38_SAVE_EVERY:-800}"
+  E33N_MICRO_LONG=1 E33N_CMD_EXTRA="--fast --save_every ${E38_SAVE_EVERY:-800} $OPT_FLAGS" E33N_TAG="$TAG"
 unset E33N_FLOW
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 for ARM in "$@"; do
-  RUN="e33n_m100_${ARM}_tok${TT}_seed${SEED}"
+  RUN="e33n_${SIZE}_${ARM}${TAG:+_$TAG}_tok${TT}_seed${SEED}"
   R="$MC_DISK/runs/$RUN"; S3R="s3://$MC_BUCKET/runs/e38/$RUN"
   if aws s3 ls "$S3R/eval_core_long.json" >/dev/null 2>&1; then
     echo "[e38_full] $ARM seed $SEED already has its tests in S3, skipped"; continue
   fi
-  echo "[e38_full] $(ts) $ARM seed $SEED on $G GPUs, mix $MIX, trunk $TT"
-  bash "$HERE/e33n_run.sh" "$ARM" m100 "" "$TT" || { echo "[e38_full] $(ts) $ARM training ended with code $?"; continue; }
+  echo "[e38_full] $(ts) $ARM seed $SEED on $G GPUs, size $SIZE, mix $MIX, optimizer $OPT, trunk $TT"
+  bash "$HERE/e33n_run.sh" "$ARM" "$SIZE" "" "$TT" || { echo "[e38_full] $(ts) $ARM training ended with code $?"; continue; }
   DECAY=$(ls -d "$R"/decay/*/final 2>/dev/null | tail -1)
   LONG=$(ls -d "$R"/long/*/final 2>/dev/null | tail -1)
   [ -n "$LONG" ] || { echo "[e38_full] $ARM has no 64k model"; continue; }
