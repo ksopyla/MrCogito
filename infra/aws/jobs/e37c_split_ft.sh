@@ -11,13 +11,19 @@
 #   MC_SPOT=1 bash infra/aws/launch.sh e37c-split 9 "infra/aws/jobs/e37c_split_ft.sh e37a" BRANCH g6e.xlarge
 # Arguments: ARM (e37a | lsa | dense: the m100 full-budget runs). Environment: E37C_SEED (1), E37C_TOKENS, E37C_LR,
 #   E37C_MICRO (1: an L40S holds one 16k row), E37C_CUT ("32 4096"), E37C_TAG (a suffix of the run name).
+# Optional arguments 2 and 3 (a node job gets words, not environment): MODE (cut | nocut — the control, approved
+#   2026-11-14 "Yes, run it": the same rows, rate and seed without a cut, run name suffix _nocut; its cut-loss exam
+#   still cuts at E37C_CUT) and PROBE_SEED (-1 unseeded; >= 0: the probe's documents from this seed, so the untuned,
+#   cut-tuned and plain-tuned models meet the same documents; infra/aws/jobs/e37c_reexam.sh examines the other two).
+#   The control:  ... "infra/aws/jobs/e37c_split_ft.sh e37a nocut 2026" BRANCH g6e.xlarge
 # Results: s3://BUCKET/runs/e37c/<run>/ — its own folder; the shared E37 run folder is only read. A relaunched spot
 # node pulls the folder back first: finished steps are skipped and training resumes from its newest checkpoint.
 set -uo pipefail
 source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_PROJECT=MrCogito WANDB_MODE=offline EXPERIMENT_ID=E37c
-ARM="${1:?arm}"; SIZE=m100; SEED="${E37C_SEED:-1}"
+ARM="${1:?arm}"; MODE="${2:-cut}"; PROBE_SEED="${3:--1}"; SIZE=m100; SEED="${E37C_SEED:-1}"
+case "$MODE" in cut) ;; nocut) E37C_TAG="${E37C_TAG:-nocut}" ;; *) echo "MODE: cut | nocut"; exit 2 ;; esac
 read -r CUT_MIN CUT_MAX <<< "${E37C_CUT:-32 4096}"
 RUN="e37c_${SIZE}_${ARM}_seed${SEED}${E37C_TAG:+_$E37C_TAG}"
 BASE="s3://$MC_BUCKET/runs/e37/e33n_m100_${ARM}_tok3.0e9_seed42"
@@ -56,7 +62,7 @@ probe() {      # NAME CHECKPOINT TASKS LENGTHS LIMIT TAILS
   [ -f "$R/split_$1.done" ] && return 0
   uv run --with wonderwords python scripts/a2a_split_probe.py --checkpoint "$2" --tokenizer "$D/tokenizer_gpt2" \
     --tasks "$3" --lengths "$4" --limit "$5" --limit_long 20 --bits 8,4 --bits_docs 15 --tails "$6" --new 12 \
-    --out "$R/split_$1.json" > "$R/split_$1.log" 2>&1
+    --seed "$PROBE_SEED" --out "$R/split_$1.json" > "$R/split_$1.log" 2>&1
   rc=$?
   [ "$rc" = 0 ] && touch "$R/split_$1.done"
   log "two-agent probe ($1): exit $rc, $(grep -c '^{"task"' "$R/split_$1.log") cells"
@@ -73,7 +79,7 @@ FT=$(ls -d "$R"/split/*/final 2>/dev/null | tail -1)
 if [ -z "$FT" ]; then
   CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase split --data "$D" --out "$R" \
         --init "$CK0" --micro "${E37C_MICRO:-1}" --eval_every 100 --wandb --seed "$SEED" --gpus "$G" \
-        --cut_min "$CUT_MIN" --cut_max "$CUT_MAX" ${E37C_TOKENS:+--tokens $E37C_TOKENS} ${E37C_LR:+--lr $E37C_LR})
+        --cut_min "$CUT_MIN" --cut_max "$([ "$MODE" = nocut ] && echo 0 || echo "$CUT_MAX")" ${E37C_TOKENS:+--tokens $E37C_TOKENS} ${E37C_LR:+--lr $E37C_LR})
   echo "$CMD" > "$R/split.cmd"
   ck=""
   for d in $(ls -d "$R"/split/*/checkpoint-* 2>/dev/null | awk -F'checkpoint-' '{print $NF" "$0}' | sort -rn | cut -d' ' -f2); do

@@ -144,3 +144,18 @@ and 64k, 12 answer tokens), on the tuned checkpoint. Number haystack (`niah_sing
   needles against 97 of 100 (a new habit: a blank line after the colon), which fails S3 and trips K3.
 - Protocol flaw found afterwards: the two exams drew different documents (the generator was not seeded; `--seed`
   added to `scripts/a2a_split_probe.py` on 2026-11-14), so untuned and tuned are two independent samples.
+
+## Follow-up: no-cut control and same-document re-exam (approved 2026-11-14 "Yes, run it"; rules set before launch)
+- **Control model:** the same fine-tune without a cut (`infra/aws/jobs/e37c_split_ft.sh e37a nocut 2026`: same base,
+  rows, row order, rate, 0.2B tokens, trainer seed 1; `--cut_max 0`), run `e37c_m100_e37a_seed1_nocut`.
+- **Same documents:** all three models (untuned, cut-tuned, no-cut-tuned) take the E37c probe cells with
+  `--seed 2026` (`infra/aws/jobs/e37c_reexam.sh e37a 2026` for the first two), so every comparison is paired.
+- **Reading rules** (paired counts on the same documents; McNemar exact test, two-sided):
+  - R1 *the cuts cause the memory-only gain* if cut-tuned − no-cut-tuned ≥ +10 points on memory only, pooled over
+    16k / 32k / 64k (70 documents), with p < 0.05. If no-cut-tuned is within 5 points of cut-tuned, the gain came
+    from more long-document training, not from the cuts.
+  - R2 *the cuts cause the one-agent loss* if no-cut-tuned − cut-tuned ≥ +7 points as one agent, pooled over 4k /
+    16k / 32k / 64k number haystack (100 documents), p < 0.05; if both tuned models lose ≥ 7 points against untuned
+    on the same documents, the long-document training itself caused it.
+  - R3 the 2026-11-13 / 2026-11-14 unseeded comparisons are replaced by these paired ones wherever they disagree.
+- Budget: two L40S spot nodes, about 5.5 h and 1.5 h, about $12; one seed.

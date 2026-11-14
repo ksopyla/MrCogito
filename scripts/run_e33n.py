@@ -226,7 +226,7 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               cut: tuple[int, int] = (32, 4096)) -> list[str]:
     z = SIZES[size]
     args, n = fit(arm, size)
-    if phase == "split":  # E37c: cut rows (the model refuses arms with a notebook or a message boundary)
+    if phase == "split" and cut[1] > 0:  # E37c: cut rows (the model refuses arms with a notebook or a message boundary)
         args = {**args, "par_cut_gap_min": int(cut[0]), "par_cut_gap_max": int(cut[1])}
     man = manifests(data, out, size)
     seq = json.loads(man[phase].read_text())["seq_len"]
@@ -312,7 +312,8 @@ def main() -> None:
     c.add_argument("--gpus", type=int, default=1, help="GPUs for one model (data parallel via torchrun)")
     c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
     c.add_argument("--cut_min", type=int, default=32, help="E37c split phase: shortest gap between cuts, tokens")
-    c.add_argument("--cut_max", type=int, default=4096, help="E37c split phase: longest gap between cuts, tokens")
+    c.add_argument("--cut_max", type=int, default=4096, help="E37c split phase: longest gap between cuts, tokens (0 = no cuts: the "
+                   "control, the same rows, rate and seed without a cut)")
     a = ap.parse_args()
     if a.what == "params":
         for size in ("s30", "m100", "l300"):
