@@ -544,6 +544,7 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
 
     config = PerceiverARConfig(
         vocab_size=len(tokenizer),
+        lm_head_tied=bool(getattr(model_args, "lm_head_tied", False)),
         hidden_size=model_args.hidden_size,
         intermediate_size=model_args.intermediate_size,
         token_embedding_dim=model_args.token_embedding_dim,

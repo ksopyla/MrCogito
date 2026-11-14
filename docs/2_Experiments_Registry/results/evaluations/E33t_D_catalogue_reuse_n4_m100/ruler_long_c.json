@@ -1,0 +1,46 @@
+{
+  "checkpoint": "/opt/dlami/nvme/runs/e33n_m100_catalogue_reuse_n4_tok3.0e9_seed42/decay/perceiver_ar_perceiver_H896L3g1s7N128_20261112_024754_catalogue_reuse_n4_m100_decay/final",
+  "suite": "ruler",
+  "lengths": [
+    16384
+  ],
+  "limit": 100,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "results": {
+    "16384": {
+      "niah_multikey_1": {
+        "alias": "niah_multikey_1",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.18,
+        "16384_stderr,none": "N/A"
+      },
+      "niah_single_3": {
+        "alias": "niah_single_3",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.41,
+        "16384_stderr,none": "N/A"
+      },
+      "ruler_qa_squad": {
+        "alias": "ruler_qa_squad",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.04,
+        "16384_stderr,none": "N/A"
+      },
+      "ruler_vt": {
+        "alias": "ruler_vt",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.0,
+        "16384_stderr,none": "N/A"
+      }
+    }
+  },
+  "mean": {
+    "16384": 0.1575
+  },
+  "seconds": 4439.7
+}

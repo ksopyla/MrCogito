@@ -1,0 +1,9 @@
+[e33n 2026-11-11T16:20:00Z] start e33n_m100_catalogue_reuse_n4_tok3.0e9_seed42 on i-09f3edf49946aa5f6 GPU all (4 per model)
+[e33n 2026-11-11T16:20:58Z] data: 32 FineWeb shards, 15 LongDocs-lite shards
+[e33n 2026-11-11T16:21:12Z] trunk start
+[e33n 2026-11-12T02:47:29Z] trunk done: /opt/dlami/nvme/runs/e33n_m100_catalogue_reuse_n4_tok3.0e9_seed42/trunk/perceiver_ar_perceiver_H896L3g1s7N128_20261111_162127_catalogue_reuse_n4_m100_trunk/final
+[e33n 2026-11-12T02:47:44Z] decay start
+[e33n 2026-11-12T04:50:26Z] decay done: /opt/dlami/nvme/runs/e33n_m100_catalogue_reuse_n4_tok3.0e9_seed42/decay/perceiver_ar_perceiver_H896L3g1s7N128_20261112_024754_catalogue_reuse_n4_m100_decay/final
+[e33n 2026-11-12T04:50:34Z] evals skipped
+[e37_evals 2026-11-12T04:50:35Z] evals of /opt/dlami/nvme/runs/e33n_m100_catalogue_reuse_n4_tok3.0e9_seed42/decay/perceiver_ar_perceiver_H896L3g1s7N128_20261112_024754_catalogue_reuse_n4_m100_decay/final on GPUs 0 1 2 3 (concept read: 0)
+[e37_evals 2026-11-12T06:19:10Z] evals done

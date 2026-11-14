@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-10-01 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-11-14 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,29 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-14 — E38, two 100M models on a modern data mix (approved by the author, in build).** The two best
+  reads of E37 (concept memory `e37a`, the LSA port), unchanged, on `m21mix_v1`: the SmolLM2 tokenizer, 11.5B tokens
+  in three length stages (8.0B at 4k web-heavy with code, math and rewritten text; 3.0B at 16k with 60 % long
+  documents; 0.5B at 64k), and 9–15 % rows whose answer sits thousands of tokens back (multi-hop libraries from
+  2WikiMultihopQA, planted-fact lookups in real books). Every source is public and built on an AWS node, no laptop
+  step. Pass marks in bits per byte against the E37 models on the same documents. Engineering pass the same day
+  (branch `eng-100m`, CHANGELOG 2026-11-14): cache, tuning and architecture branches merged; `--fast` trains the
+  100M models 39–50 % faster on a home card; a document is read once and questions are answered from its cache.
+  Spec [E38](../experiments_specs/ahead/E38_long_budget_mix.md).
+- **2026-11-12 — E33t, the catalogue read: stages A–D done.** The notes only
+  index the text (never read), balanced filing, an index loss, the budget filled by tokens. Stage A: letting loop
+  passes revisit notes (`catalogue_reuse`) lifts 71 → **91 %** of the window→dense gap at 16k (LSA port 95 %), level
+  with LSA at 64k, best 128k loss. Stage B: 64 notes per page (`catalogue_reuse_n4`) wins narrowly over 32; 16 is too
+  few. Stage C (home, $0 AWS): a 0.1B-token 64k stage lifts the gain over the window control past 128k; after it n4
+  gains **0.178** nats at 256k (LSA port 0.157; four documents), level with LSA up to 128k; passwords stay rare (≤ 2/20
+  at 128k, LSA 1/20 at 1M); the two-level search loses as a test switch (trained two-level arm deferred). Stage D
+  (n4 at 100M on the E37 full protocol, AWS, done 2026-11-12 06:19 UTC, about $100): with the standard 16k recipe and
+  no 64k stage it trails the LSA port by 0.02 nats up to 64k and 0.065 at 128k, where its notebook's value drops to
+  0.065 nats (0.15–0.21 up to 64k); RULER 0.231 / 0.183 at 4k / 16k (LSA port 0.255 / 0.209, e37a 0.185 / 0.136);
+  core a tie (41.6). Open: the 64k stage at 100M for the catalogue and the LSA port, the fair test of the 30M lead
+  past 128k. Capability checks for the variant run on the home servers until about Nov 14. Spec
+  [E33t](../experiments_specs/ahead/E33t_catalogue_read.md) ·
+  [results page](../3_Evaluations_and_Baselines/e33t_results.html).
 - **2026-11-07 — E37, concept memory: an encoder, a reasoner and a decoder read for 10M-token context
   (exploration program, draft spec; code + unit tests done, GPU check and 100M runs pending compute).** Encoder:
   each closed 512-key block of the reading layer grouped into 64 balanced content concepts with links to their tokens
@@ -28,16 +51,6 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   other concept (log n + q·μ + |q|²σ²/2), every past token counted once. Stage A at 100M against dense, window, LSA's
   read (our port), notes-open and the e37 arms; pass mark ≥ 90 % of the window→dense gap at 16k with no fade to 64k.
   Branch `arch-10m`; spec [E37](../experiments_specs/ahead/E37_concept_memory.md).
-- **2026-11-07 — E33t, the catalogue read (draft spec, awaiting alignment).** Answers E33p stage 1's measured limits:
-  the notes leave the read and only choose what to open (4 learned empty slots instead), balanced filing (Sinkhorn,
-  none empty, ≤ 16 per note), an index loss that teaches note scores where the read's attention lands, the budget
-  filled by tokens, each loop pass opens notes the query has not opened before, pages without overlap, and a
-  two-level page→note search arm. Pass mark ≥ 80 % of the gap at 16k with no fade to 64k (LSA-native: 99 %), kill
-  < 50 %. Stage A on the AWS 4 × L40S node after the seed-1 controls (~$60), then note sizes, long documents and
-  100M if 30M matches. Spec [E33t](../experiments_specs/ahead/E33t_catalogue_read.md). (Drafted as "E33s"; renamed
-  2026-11-07: dev owns E33s.) Approved and built 2026-11-07 (`47339bf`); stage 0 passed 08:35 UTC (GPU tests, pipeline,
-  K4: ≈ 1.12 × LSA's run time). Stage A chained on the AWS node (`infra/aws/chain_job.sh`): after the dense seed-1
-  control (≈ 12:20 UTC) the two catalogue arms (≈ 18:00 and 23:30 UTC), then window and LSA-native seed 1.
 - **2026-11-06 — E33p, a note-indexed exact read on the LSA testbed: stage 1 training (six arms, 30M, home
   servers).** E33n closed at 30M (see below): the far-context value of natural long text is exact copying, which notes
   cannot return. E33p uses the notes as the index (address keys tied to the reading layer's own raw keys) and lets each

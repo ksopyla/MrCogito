@@ -205,6 +205,88 @@ class OpenTable:
         return torch.where(need, ids, torch.full_like(ids, -1))
 
 
+class ChoiceList:
+    """E33t stage C (plan §10.1–2): each query's choice kept as a list instead of the table T [B, S, G], whose size
+    grows with S² (4.3 GB at 128k, 275 GB at 1M): the chosen groups `ids` [B, S, m] int32, best first, and the places
+    used before each, `off` [B, S, m] int16 (`cap` = not a real choice, or the cap already full) — 0.8 GB at 1M with
+    m = 128. Same `add` as OpenTable, so `note_open_table` / `lsa_open_table` fill either. Evaluation only.
+
+    `opened` gives each query's opened raw positions, the same tokens T opens when every token is in at most one
+    group per forward (one code layer: the catalogue's notes on non-overlapping pages, LSA's closed blocks; more
+    layers are refused): chosen group g with off_g < cap opens its members in [doc_start(i), i − raw_window], oldest
+    first, at most cap − off_g of them, i.e. members[g, r0_g + r] for r < min(cnt_g, cap − off_g), with r0_g its
+    members before doc_start(i) and cnt_g its members in the range (the count `choose` used).
+
+    `row0` (cached decoding, nn/incremental.py): the list holds the queries [row0, row0 + S) only (positions stay
+    absolute in `add` / `opened`); `members` reuses a members table built once for this index."""
+
+    def __init__(self, index: GroupIndex, B: int, S: int, *, cap: int, m: int, row0: int = 0,
+                 members: Optional[torch.Tensor] = None):
+        if int(index.codes.shape[0]) != 1:
+            raise NotImplementedError("the choice list needs one code layer (spans that do not overlap)")
+        dev = index.codes.device
+        self.index, self.S, self.cap = index, S, int(cap)
+        self.row0 = int(row0)
+        self.m = max(1, int(m))
+        self.ids = torch.zeros(B, S, self.m, dtype=torch.int32, device=dev)
+        self.off = torch.full((B, S, self.m), self.cap, dtype=torch.int16, device=dev)
+        self._members: Optional[torch.Tensor] = members
+
+    def add(self, s0: int, ids: torch.Tensor, off: torch.Tensor) -> None:
+        ch, mm = ids.shape[1], ids.shape[2]
+        if mm == 0:
+            return
+        r = s0 - self.row0
+        self.ids[:, r:r + ch, :mm] = ids.to(torch.int32)
+        self.off[:, r:r + ch, :mm] = off.to(torch.int16)
+
+    def members(self) -> torch.Tensor:
+        """[B, G, F] long: each group's member positions, oldest first (−1 = none); F = the largest group (≥ 1)."""
+        if self._members is None:
+            gi = self.index
+            B, S = gi.codes.shape[1], gi.codes.shape[2]
+            K, L, G = gi.per_span, gi.span_len, gi.n_groups
+            c = gi.codes[0].long()                                                       # [B, S]
+            is_m = c >= 0
+            gid = torch.where(is_m, torch.div(c, ORD_MOD, rounding_mode="floor"), torch.zeros_like(c))
+            s = torch.div(gid, K, rounding_mode="floor")
+            l = gid - s * K
+            j = torch.arange(S, device=c.device)[None].expand(B, S)
+            o = (j - gi.span_start[s]).clamp(0, L)
+            rank = gi.prefix.reshape(B, -1).gather(1, (s * (L + 1) + o) * K + l)          # members of g before j
+            Fm = max(1, int(gi.prefix[:, :, L].max())) if gi.prefix.numel() else 1
+            mem = torch.full((B, G * Fm + 1), -1, dtype=torch.long, device=c.device)
+            dest = torch.where(is_m & (rank < Fm), gid * Fm + rank, torch.full_like(gid, G * Fm))
+            mem.scatter_(1, dest, j)
+            self._members = mem[:, :G * Fm].view(B, G, Fm)
+        return self._members
+
+    def opened(self, s0: int, s1: int, raw_window: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Opened raw positions of queries [s0, s1): pos [B, ch, m·F] long (0 where not opened) and ok [B, ch, m·F]
+        bool. At most `cap` entries of a query are ok, each a distinct earlier token of its document."""
+        gi = self.index
+        mem = self.members()
+        B, G, Fm = mem.shape
+        ids = self.ids[:, s0 - self.row0:s1 - self.row0].long()
+        off = self.off[:, s0 - self.row0:s1 - self.row0].to(torch.int32)
+        ch, m = ids.shape[1], ids.shape[2]
+        qp = torch.arange(s0, s1, device=ids.device)
+        live = off < self.cap
+        ds = gi.doc_start[:, s0:s1][..., None].expand(B, ch, m)
+        hi = (qp - int(raw_window))[None, :, None].expand(B, ch, m)
+        cnt = torch.where(live, counts(gi, ids, ds, hi), torch.zeros_like(off))
+        n = torch.minimum(cnt, self.cap - off).clamp(min=0)
+        r0 = counts(gi, ids, torch.zeros_like(ds), ds - 1)                                # members before the document
+        r = torch.arange(Fm, device=ids.device)
+        take = r0[..., None] + r                                                          # [B, ch, m, F]
+        ok = (r < n[..., None]) & (take < Fm)
+        flat = ids[..., None] * Fm + take.clamp(max=Fm - 1)
+        pos = mem.reshape(B, -1).gather(1, flat.reshape(B, -1)).view(B, ch, m, Fm)
+        ok = ok & (pos >= 0)
+        pos = torch.where(ok, pos, torch.zeros_like(pos))
+        return pos.reshape(B, ch, m * Fm), ok.reshape(B, ch, m * Fm)
+
+
 # Flex attention addresses the buffers a mask_mod captures with 32-bit offsets: a buffer of 2³¹ elements or more is
 # read out of bounds (illegal memory access; E33p notes at 128k: T is 131,072 × ~21,800 ≈ 2.9e9, 2026-11-07).
 _FLEX_MAX_NUMEL = 2**31 - 1
@@ -390,7 +472,8 @@ def note_groups(assign: torch.Tensor, pick: torch.Tensor, page_starts: list[int]
 @torch.no_grad()
 def note_open_table(q: torch.Tensor, kappa: torch.Tensor, no: NoteOpen, *, doc: torch.Tensor, slot_close: torch.Tensor,
                     slot_doc: torch.Tensor, raw_window: int, chunk: int = 0, exclude: Optional[torch.Tensor] = None,
-                    page_key: Optional[torch.Tensor] = None) -> OpenTable:
+                    page_key: Optional[torch.Tensor] = None, impl: str = "table", q_offset: int = 0,
+                    members: Optional[torch.Tensor] = None):
     """E33p choice for every query: s_i(n) = Σ_h softmax_n(q_{i,h}·κ_n / √dh) over the notes visible to i (closed rule),
     eligible = visible ∧ a member older than i's window; notes: top-k notes; pages: the page score is the sum of its
     notes' scores, top-k eligible pages. q [B, S, h, dh], κ [B, C, 1, dh].
@@ -398,8 +481,15 @@ def note_open_table(q: torch.Tensor, kappa: torch.Tensor, no: NoteOpen, *, doc: 
     E33t: `no.score = "max_cos"` scores s_i(n) = max_h cos(q_{i,h}, κ_n); `exclude` [B, S, G] bool removes the groups a
     query opened in earlier passes; `page_key` [B, n_w, dh] with `no.levels = 2` keeps, per query, the
     `no.keep_pages` best visible pages holding an eligible note (same score rule on the page keys) and lets only their
-    notes compete."""
-    B, S, h, dh = q.shape
+    notes compete. `impl = "list"` (E33t stage C, evaluation): the choice as a ChoiceList instead of the table.
+
+    `q_offset` (cached decoding, nn/incremental.py; list only): q holds the queries [q_offset, q_offset + Sq) of a row
+    of doc.shape[1] tokens; `members` passes the index's members table along (built once per index)."""
+    B, Sq, h, dh = q.shape
+    q0 = int(q_offset)
+    if (q0 or Sq != doc.shape[1]) and (impl != "list" or exclude is not None):
+        raise ValueError("a query range is for the list read without pass exclusion")
+    S = q0 + Sq
     C = kappa.shape[1]
     K = no.per_page
     gi = no.groups
@@ -414,15 +504,16 @@ def note_open_table(q: torch.Tensor, kappa: torch.Tensor, no: NoteOpen, *, doc: 
         kb = F.normalize(kb, dim=-1)
     two = no.levels == 2 and page_key is not None and no.mode == "notes"
     pk = F.normalize(page_key.float(), dim=-1) if two else None
-    tab = OpenTable(gi, B, S, cap=no.cap)
+    tab = (ChoiceList(gi, B, Sq, cap=no.cap, m=min(int(no.k), G), row0=q0, members=members) if impl == "list"
+           else OpenTable(gi, B, S, cap=no.cap))
     n_vis_ok = (slot_doc >= 0) & (slot_close >= 0)
-    for s0 in range(0, S, chunk):
+    for s0 in range(q0, S, chunk):
         s1 = min(S, s0 + chunk)
         qp = torch.arange(s0, s1, device=dev)
         dq = doc[:, s0:s1]
         vis = (n_vis_ok[:, None, :] & (slot_doc[:, None, :] == dq[..., None]) & (dq[..., None] >= 0)
                & (slot_close[:, None, :] <= qp[None, :, None]))                          # [B, ch, C]
-        qc = q[:, s0:s1].float()
+        qc = q[:, s0 - q0:s1 - q0].float()
         if cos:
             qc = F.normalize(qc, dim=-1)
             s_note = torch.einsum("bshd,bcd->bshc", qc, kb).amax(2)                       # [B, ch, C]

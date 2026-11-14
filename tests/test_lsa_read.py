@@ -298,3 +298,32 @@ def test_lsa_trains_two_steps():
         out.loss.backward()
         opt.step()
         opt.zero_grad()
+
+
+def test_lsa_gradient_checkpointing_matches():
+    """E33t stage C: the LSA port trains at 64k with each layer recomputed in the backward; same loss and gradients."""
+    from tests.test_catalogue_read import _grads_with_and_without_recompute
+
+    ids = row(256, B=2)
+    (l0, g0), (l1, g1) = _grads_with_and_without_recompute(make, ids, **LSA)
+    assert l0 == pytest.approx(l1, rel=1e-6)
+    assert g0.keys() == g1.keys() and len(g0) > 10
+    for n in g0:
+        torch.testing.assert_close(g1[n], g0[n], rtol=1e-4, atol=1e-6, msg=n)
+
+
+@pytest.mark.parametrize("packed", [False, True])
+def test_lsa_list_read_matches_table(packed):
+    """E33t stage C (plan §10.4): the LSA port's list read (no [B, S, G] table) gives the table read's outputs, fp32,
+    with its sinks, one document per row and two documents packed in a row."""
+    from tests.test_catalogue_read import _logits_table_and_list
+
+    m = make(seed=1, **LSA)
+    S = 320
+    ids = row(S, B=2)
+    doc = torch.zeros(2, S, dtype=torch.long)
+    if packed:
+        doc[0, 130:] = 1
+        doc[1, 200:] = 1
+    a, b = _logits_table_and_list(m, ids, doc)
+    torch.testing.assert_close(b, a, rtol=1e-5, atol=1e-5)

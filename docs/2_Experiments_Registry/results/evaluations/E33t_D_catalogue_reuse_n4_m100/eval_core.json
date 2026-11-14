@@ -1,0 +1,67 @@
+{
+  "checkpoint": "/opt/dlami/nvme/runs/e33n_m100_catalogue_reuse_n4_tok3.0e9_seed42/decay/perceiver_ar_perceiver_H896L3g1s7N128_20261112_024754_catalogue_reuse_n4_m100_decay/final",
+  "suite": "core",
+  "lengths": null,
+  "limit": 0,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "results": {
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.21843003412969283,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.25597269624573377,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.4823232323232323,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.43308080808080807,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "hellaswag": {
+      "alias": "hellaswag",
+      "acc,none": 0.2860983867755427,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.30561641107349136,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "lambada_openai": {
+      "alias": "lambada_openai",
+      "perplexity,none": 183.86726427979852,
+      "perplexity_stderr,none": "N/A",
+      "acc,none": 0.20978071026586453,
+      "acc_stderr,none": "N/A"
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.6126224156692056,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.5946681175190425,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "sciq": {
+      "alias": "sciq",
+      "acc,none": 0.732,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.623,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "wikitext": {
+      "alias": "wikitext",
+      "word_perplexity,none": 46.372804006145984,
+      "word_perplexity_stderr,none": "N/A",
+      "byte_perplexity,none": 2.049271862238876,
+      "byte_perplexity_stderr,none": "N/A",
+      "bits_per_byte,none": 1.0351113890766108,
+      "bits_per_byte_stderr,none": "N/A"
+    },
+    "winogrande": {
+      "alias": "winogrande",
+      "acc,none": 0.4909234411996843,
+      "acc_stderr,none": "N/A"
+    }
+  },
+  "seconds": 177.4
+}

@@ -2,7 +2,7 @@
   "schema": "nn-builder/graph",
   "version": 1,
   "name": "E33t · catalogue read · 72.7M (30.2M core)",
-  "description": "E33t arm catalogue — catalogue read, 30M testbed. New against e33p_notes_open_30m: pages without overlap; each token filed under one note (≤ 16 per note); the notes are only an index (their values are not read); up to 128 notes' tokens (≤ 512) open per query; a new place each loop pass; 4 learned empty slots; an index loss. Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status done (as of 2026-11-08). Trained 7 Nov 11:24–16:05 UTC (AWS, seed 1). Preliminary result: 75 % of the gap at 16k, 99 % at 64k. Probe: opens a planted password on pass 1 (94 % at 4k) but rarely returns to it on passes 2–4. Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md. Source: origin/e33n-lsa-testbed @ 47339bf. Not a builder field: Balanced filing, the per-pass exclusion and the index loss have no weights (0-parameter custom cells); the read is drawn as a 1,028-key window. Parameters: 72,687,765 in total, 30,246,677 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm catalogue --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
+  "description": "E33t arm catalogue — catalogue read, 30M testbed. New against e33p_notes_open_30m: pages without overlap; each token filed under one note (≤ 16 per note); the notes are only an index (their values are not read); up to 128 notes' tokens (≤ 512) open per query; a new place each loop pass; 4 learned empty slots; an index loss. Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status done (as of 2026-11-08). Trained 7 Nov 11:24–16:05 UTC (AWS, seed 1). Scored 8 Nov against the seed-1 controls (e33n-lsa-testbed a372da3): 71 % of the window-to-dense gap at 16k (S1, 80 %, missed), 115 % at 64k; LSA port 95 / 153 %. Probe: opens a planted password on pass 1 (94 % at 4k) but rarely returns to it on passes 2–4. Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md. Source: origin/e33n-lsa-testbed @ 47339bf. Not a builder field: Balanced filing, the per-pass exclusion and the index loss have no weights (0-parameter custom cells); the read is drawn as a 1,028-key window. Parameters: 72,687,765 in total, 30,246,677 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm catalogue --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
   "stacks": [
     {
       "id": "main",
@@ -819,7 +819,7 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-08T12:50:54.804Z",
+    "exported_at": "2026-11-08T19:28:25.723Z",
     "hash": "nnb1-11b8df787bd67b1ada98782e2639",
     "row_length": 4096,
     "params_total": 72687765,

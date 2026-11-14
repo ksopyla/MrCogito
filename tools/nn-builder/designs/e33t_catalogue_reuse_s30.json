@@ -2,7 +2,7 @@
   "schema": "nn-builder/graph",
   "version": 1,
   "name": "E33t · catalogue, re-opening allowed · 72.7M (30.2M core)",
-  "description": "E33t arm catalogue_reuse — catalogue, re-opening allowed, 30M testbed. New against e33t_catalogue_30m: the pass exclusion off in training (lm_open_new_per_pass False): a later loop pass may re-open notes an earlier pass opened. Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status training (as of 2026-11-08). Approved 7 Nov ~21:00 UTC after the planted-password probe; chained on the AWS node after the seed-1 window and LSA controls (infra/aws/jobs/e33t_reuse.sh). Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md. Source: origin/e33n-lsa-testbed @ 26d18f4. Not a builder field: Same weights and drawing as the catalogue; the difference is a training switch with no builder field (named in the read's label). Parameters: 72,687,765 in total, 30,246,677 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm catalogue_reuse --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
+  "description": "E33t arm catalogue_reuse — catalogue, re-opening allowed, 30M testbed. New against e33t_catalogue_30m: the pass exclusion off in training (lm_open_new_per_pass False): a later loop pass may re-open notes an earlier pass opened. Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status done (as of 2026-11-08). Stage-A winner. Trained 8 Nov 07:22–12:03 UTC (AWS, seed 1). Scored (a372da3): 91 % of the gap at 16k (S1 met), 152 % at 64k, the lowest 128k loss of all models (2.1395; LSA port 2.1441); RULER 4k 14.1 (single needle 94 %), LSA port 15.2; trains about 10 % slower than the LSA port. Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md. Source: origin/e33n-lsa-testbed @ 26d18f4. Not a builder field: Same weights and drawing as the catalogue; the difference is a training switch with no builder field (named in the read's label). Parameters: 72,687,765 in total, 30,246,677 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm catalogue_reuse --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
   "stacks": [
     {
       "id": "main",
@@ -819,7 +819,7 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-08T12:50:54.806Z",
+    "exported_at": "2026-11-08T19:28:25.724Z",
     "hash": "nnb1-083728f988e46a0c28e182eb0782",
     "row_length": 4096,
     "params_total": 72687765,

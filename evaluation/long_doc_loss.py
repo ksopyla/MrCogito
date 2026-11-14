@@ -4,11 +4,14 @@ LSA (arXiv 2610.42147) compares long-context mechanisms by validation loss on he
 value of a mechanism is where it differs from a window-only model, i.e. at positions beyond the local reach. Here a row
 is one contiguous span of ONE held-out document (LongDocs-lite val shards, `rule="doc"`), and the per-token loss is
 averaged in position buckets: 0–512 (inside every arm's raw window), 512–2k, 2k–8k, 8k–16k, 16k–32k, 32k–64k,
-64k–128k. Lengths past the 16k training length are the length-transfer test. For notebook models `--notes_off` adds
+64k–128k, then 128k–256k, 256k–512k, 512k–1M (E33t stage C). Lengths past the training length are the
+length-transfer test. For notebook models `--notes_off` adds
 the same rows with the notebook switched off (message_override "none"): the notebook's value inside one model.
 
 Usage: uv run python evaluation/long_doc_loss.py --checkpoint RUN/final --data DATA/longdocs_lite_gpt2 \
          --lengths 4096,16384,65536 --rows 16 --notes_off --out results.json
+E33t stage C, 256k–1M: add `--open_impl list` (each query's choice kept as a list, memory linear in the length; the
+[B, S, G] table is 17 GB at 256k and 275 GB at 1M).
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-BUCKETS = (0, 512, 2048, 8192, 16384, 32768, 65536, 131072)
+BUCKETS = (0, 512, 2048, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576)
 
 
 def bucket_names(S: int) -> list[str]:
@@ -122,11 +125,25 @@ def main() -> None:
                     help="E33t: also score with the pass exclusion off (a pass may re-open earlier passes' notes)")
     ap.add_argument("--per_row", action="store_true",
                     help="also save every row's bucket sums with its document key (for a bootstrap over documents)")
+    ap.add_argument("--two_level", type=int, default=0,
+                    help="E33t stage C eval switch: a catalogue model keeps this many pages first, then chooses "
+                         "among their notes (lm_open_levels=2; the page key is the mean of its tokens' keys)")
+    ap.add_argument("--open_impl", default="table", choices=("table", "list"),
+                    help="E33t stage C: 'list' reads without the [B, S, G] table (128k–1M)")
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--concept_sum_len", type=int, default=-1,
                     help="E37 concept read: length scale of the summaries' weight past this row length (the training "
                          "length; 0 = off; default: the checkpoint's own setting)")
+    ap.add_argument("--rope_theta", type=float, default=0.0,
+                    help="eval-time RoPE base for every layer (0 = the checkpoint's own); E37's dense_rope control at "
+                         "an NTK-style base past its 16k training length")
+    ap.add_argument("--sources", default="", help="comma-separated <source> names (default: DATA/manifest.json's)")
+    ap.add_argument("--eot", type=int, default=-1,
+                    help="the token that starts every document (default: DATA/mix.json's eot, else GPT-2's 50256)")
+    ap.add_argument("--tokenizer", default="",
+                    help="also report UTF-8 bytes per token of the scored rows and bits per byte per bucket-free row "
+                         "mean (to compare models trained with different tokenizers on the same documents)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -137,33 +154,69 @@ def main() -> None:
     from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval
 
     model = load_perceiver_ar_for_eval(a.checkpoint, device=a.device, attn_backend=a.backend)
+    if a.two_level:
+        if str(getattr(model.config, "lm_note_read", "gist")) != "index":
+            raise SystemExit("--two_level is for catalogue models")
+        model.config.lm_open_levels, model.config.lm_open_pages = 2, int(a.two_level)
     has_notes = getattr(model, "memory_writer", None) is not None and \
         str(getattr(model.config, "message_override", "real")) == "real"
-    srcs = sorted(json.loads((Path(a.data) / "manifest.json").read_text())["sources"])
-    res = {"checkpoint": a.checkpoint, "has_notebook": has_notes, "lengths": {}}
+    if a.sources:
+        srcs = [x for x in a.sources.split(",") if x]
+    else:
+        srcs = sorted(json.loads((Path(a.data) / "manifest.json").read_text())["sources"])
+    eot = a.eot
+    if eot < 0:
+        mixf = Path(a.data) / "mix.json"
+        eot = int(json.loads(mixf.read_text())["eot"]) if mixf.exists() else 50256
+    tok = None
+    if a.tokenizer:
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(a.tokenizer)
+    res = {"checkpoint": a.checkpoint, "has_notebook": has_notes, "open_impl": a.open_impl, "two_level": a.two_level, "lengths": {}}
     if a.concept_sum_len >= 0:
         from nn.concept_memory import set_concept_sum_len
 
         if not set_concept_sum_len(model, a.concept_sum_len):
             raise SystemExit("--concept_sum_len: the checkpoint has no concept read")
         res["concept_sum_len"] = a.concept_sum_len
+    if a.rope_theta > 0:  # read at every forward (rope_cos_sin(pos, head_dim, config.rope_theta, ...))
+        res["rope_theta_trained"] = float(model.config.rope_theta)
+        model.config.rope_theta = float(a.rope_theta)
+        res["rope_theta"] = float(a.rope_theta)
     for S in (int(x) for x in a.lengths.split(",")):
         per_len = {}
         for src in srcs:
             try:
                 ds = BinRowDataset([{"name": src, "files": [str(Path(a.data) / f"{src}_val_*.bin")]}], S, "doc",
-                                   seed=7)
+                                   eot=eot, seed=7)
             except ValueError:
                 per_len[src] = {"rows": 0}
                 continue
             try:
-                per_len[src] = score_source(model, ds, S, a.rows, a.device, a.notes_off and has_notes, a.per_row,
-                                            open_off=a.open_off and opens(model),
-                                            gist_off=a.gist_off and opens(model) and has_notes and not catalogue(model),
-                                            open_reuse=a.open_reuse and new_per_pass(model))
+                with model.open_impl(a.open_impl):
+                    # notebook off / opened tokens off do not use the search: a two-level pass would repeat them
+                    per_len[src] = score_source(
+                        model, ds, S, a.rows, a.device, a.notes_off and has_notes and not a.two_level, a.per_row,
+                        open_off=a.open_off and opens(model) and not a.two_level,
+                        gist_off=a.gist_off and opens(model) and has_notes and not catalogue(model),
+                        open_reuse=a.open_reuse and new_per_pass(model))
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:  # a length past what fits: record it, go on
                 per_len[src] = {"error": f"{type(e).__name__}: {str(e)[:300]}"}
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            if tok is not None and isinstance(per_len[src].get("notes_on"), dict):
+                # bytes of text per token over the scored rows; nats per token ÷ (ln 2 × bytes per token) = bits per
+                # byte, comparable between tokenizers on the same documents ("all": every scored position)
+                nb = nt = 0
+                for i in range(min(a.rows, len(ds))):
+                    ids = ds[i]["input_ids"].tolist()
+                    nb += len(tok.decode(ids).encode("utf-8"))
+                    nt += len(ids)
+                bpt = nb / max(nt, 1)
+                per_len[src]["bytes_per_token"] = round(bpt, 4)
+                for k, v in per_len[src].items():
+                    if isinstance(v, dict) and isinstance(v.get("all"), float):
+                        v["bits_per_byte"] = round(v["all"] / (math.log(2) * bpt), 5)
             print(S, src, json.dumps({k: v.get("loss") if isinstance(v, dict) else v
                                       for k, v in per_len[src].items()}), flush=True)
         res["lengths"][S] = per_len

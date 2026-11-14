@@ -1,0 +1,902 @@
+[
+ {
+  "name": "Slayer139 1.02",
+  "org": "Fabryka AI",
+  "params": "139.3M",
+  "blimp": 79.22,
+  "arc": 65.91,
+  "wiki": 1.862,
+  "tokens": "24.0B"
+ },
+ {
+  "name": "Tiny Chick 10M V3",
+  "org": "kurcontko.dev",
+  "params": "9.591684M",
+  "blimp": 77.76,
+  "arc": 59.6,
+  "wiki": 2.335,
+  "tokens": "24.6B"
+ },
+ {
+  "name": "Tiny Chick 10M V2.1",
+  "org": "kurcontko.dev",
+  "params": "9.591684M",
+  "blimp": 76.79,
+  "arc": 53.79,
+  "wiki": 2.342,
+  "tokens": "16.3B"
+ },
+ {
+  "name": "Tiny Chick 10M V2",
+  "org": "kurcontko.dev",
+  "params": "9.591684M",
+  "blimp": 76.99,
+  "arc": 50.21,
+  "wiki": 2.3644,
+  "tokens": "16.3B"
+ },
+ {
+  "name": "Tiny Chick 10M",
+  "org": "kurcontko.dev",
+  "params": "9.591684M",
+  "blimp": 75.12,
+  "arc": 48.53,
+  "wiki": 2.2869,
+  "tokens": "8.3B"
+ },
+ {
+  "name": "Slayer149 Balanced ARC-E fine-tune",
+  "org": "Fabryka AI",
+  "params": "149.3M",
+  "blimp": 79.98,
+  "arc": 59.34,
+  "wiki": 1.8973,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "Slayer149-ARC",
+  "org": "Fabryka AI",
+  "params": "149.3M",
+  "blimp": 78.38,
+  "arc": 66.58,
+  "wiki": 1.9069,
+  "tokens": "31B"
+ },
+ {
+  "name": "Slayer139 1.01",
+  "org": "Fabryka AI",
+  "params": "139.3M",
+  "blimp": 79.13,
+  "arc": 63.09,
+  "wiki": 1.8782,
+  "tokens": "23.7B"
+ },
+ {
+  "name": "Slayer139 base",
+  "org": "Fabryka AI",
+  "params": "139.3M",
+  "blimp": 79.41,
+  "arc": 57.58,
+  "wiki": 1.8748,
+  "tokens": "23.7B"
+ },
+ {
+  "name": "Qielbas Tiny 6M",
+  "org": "labqoat",
+  "params": "6.112272M",
+  "blimp": 73.24925373134329,
+  "arc": 36.23737373737374,
+  "wiki": 3.0686214480936953,
+  "tokens": "3B"
+ },
+ {
+  "name": "Glint-2.3",
+  "org": "glintresearch",
+  "params": "1.71M",
+  "blimp": 67.3,
+  "arc": 36.0,
+  "wiki": 3.051,
+  "tokens": "10B"
+ },
+ {
+  "name": "Glint-2.3-Mini",
+  "org": "glintresearch",
+  "params": "1.06M",
+  "blimp": 62.27,
+  "arc": 36.2,
+  "wiki": 3.1216,
+  "tokens": "10B"
+ },
+ {
+  "name": "Hummingbird-V2",
+  "org": "juinron",
+  "params": "9.59M",
+  "blimp": 72.9,
+  "arc": 38.85,
+  "wiki": 2.9551,
+  "tokens": "10B"
+ },
+ {
+  "name": "GoLLeM-v5 128M",
+  "org": "Fabryka AI",
+  "params": "122.8M",
+  "blimp": 79.09,
+  "arc": 53.24,
+  "wiki": 2.2538,
+  "tokens": "24.9B"
+ },
+ {
+  "name": "GoLLeM-v5 64M",
+  "org": "Fabryka AI",
+  "params": "62.9M",
+  "blimp": 76.16,
+  "arc": 48.19,
+  "wiki": 2.3474,
+  "tokens": "24.9B"
+ },
+ {
+  "name": "GoLLeM-v5 32M",
+  "org": "Fabryka AI",
+  "params": "31.6M",
+  "blimp": 73.48,
+  "arc": 44.44,
+  "wiki": 2.5386,
+  "tokens": "16B"
+ },
+ {
+  "name": "GoLLeM-v5 16M",
+  "org": "Fabryka AI",
+  "params": "17.4M",
+  "blimp": 70.08,
+  "arc": 40.91,
+  "wiki": 2.6746,
+  "tokens": "16B"
+ },
+ {
+  "name": "GoLLeM-v5 64M (v1 recipe)",
+  "org": "Fabryka AI",
+  "params": "62.9M",
+  "blimp": 75.83,
+  "arc": 47.94,
+  "wiki": 2.3718,
+  "tokens": "13.1B"
+ },
+ {
+  "name": "Pollock 1.5 Mini LM 128M",
+  "org": "Fabryka AI",
+  "params": "127.43M",
+  "blimp": 78.497,
+  "arc": 47.7273,
+  "wiki": 1.9435,
+  "tokens": "21.50B"
+ },
+ {
+  "name": "JugnuLM-53M",
+  "org": "altslate",
+  "params": "53M",
+  "blimp": 78.14,
+  "arc": 51.43,
+  "wiki": 2.04,
+  "tokens": "12B"
+ },
+ {
+  "name": "JugnuLM-110M-R2+",
+  "org": "altslate",
+  "params": "110M",
+  "blimp": 82.52,
+  "arc": 55.13,
+  "wiki": 1.8735,
+  "tokens": "25B"
+ },
+ {
+  "name": "peacebell-v1-148M",
+  "org": "wayneworkman",
+  "params": "148.55M",
+  "blimp": 56.26,
+  "arc": 27.36,
+  "wiki": 6.8841,
+  "tokens": "~35B"
+ },
+ {
+  "name": "Ivme-Conversate-N-v1-Base",
+  "org": "ivmelabs",
+  "params": "9.55M",
+  "blimp": 59.24,
+  "arc": 26.81,
+  "wiki": 4.95,
+  "tokens": "~836M"
+ },
+ {
+  "name": "Glint-2",
+  "org": "glintresearch",
+  "params": "1.06M",
+  "blimp": 74.54,
+  "arc": 36.2,
+  "wiki": 3.127,
+  "tokens": "~300B"
+ },
+ {
+  "name": "MicroSupra-1k",
+  "org": "supralabs",
+  "params": "1K",
+  "blimp": 58.61,
+  "arc": 26.39,
+  "wiki": 11.27,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "Glint-0.1",
+  "org": "glintresearch",
+  "params": "1M",
+  "blimp": 46.7,
+  "arc": 21.0,
+  "wiki": 4106963.13,
+  "tokens": "~100M"
+ },
+ {
+  "name": "Supra-Mini-v2",
+  "org": "supralabs",
+  "params": "168K",
+  "blimp": 53.5,
+  "arc": 26.8,
+  "wiki": 7.79,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "Glint-0.2",
+  "org": "glintresearch",
+  "params": "1M",
+  "blimp": 49.8,
+  "arc": 27.0,
+  "wiki": 636.4,
+  "tokens": "~100M"
+ },
+ {
+  "name": "Glint-0.3",
+  "org": "glintresearch",
+  "params": "1M",
+  "blimp": 47.3,
+  "arc": 25.5,
+  "wiki": 7.87,
+  "tokens": "~100M"
+ },
+ {
+  "name": "CinnabarLM 1.4M",
+  "org": "mihaipopa",
+  "params": "1.51M",
+  "blimp": 60.7,
+  "arc": 24.58,
+  "wiki": 4.09,
+  "tokens": "~30M"
+ },
+ {
+  "name": "Glint-0.4",
+  "org": "glintresearch",
+  "params": "1M",
+  "blimp": 58.5,
+  "arc": 31.0,
+  "wiki": 5.01,
+  "tokens": "10B"
+ },
+ {
+  "name": "CinnabarLM 1.5M",
+  "org": "mihaipopa",
+  "params": "1.71M",
+  "blimp": 60.51,
+  "arc": 26.68,
+  "wiki": 4.23,
+  "tokens": "~50M"
+ },
+ {
+  "name": "PotentSulfurLM 500K",
+  "org": "mihaipopa",
+  "params": "587K",
+  "blimp": 59.01,
+  "arc": 27.06,
+  "wiki": 4.52,
+  "tokens": "~200M"
+ },
+ {
+  "name": "MicroLM2-1M",
+  "org": "cromia",
+  "params": "1.71M",
+  "blimp": 54.2,
+  "arc": 27.4,
+  "wiki": 4.82,
+  "tokens": "~4.5B"
+ },
+ {
+  "name": "NanoMythos-1K",
+  "org": "harpia",
+  "params": "960",
+  "blimp": 50.17,
+  "arc": 25.51,
+  "wiki": null,
+  "tokens": "~1.5M"
+ },
+ {
+  "name": "NanoMythos-100K",
+  "org": "harpia",
+  "params": "~100K",
+  "blimp": 51.92,
+  "arc": 28.45,
+  "wiki": null,
+  "tokens": "~250M"
+ },
+ {
+  "name": "NanoMythos-1M",
+  "org": "harpia",
+  "params": "~1M",
+  "blimp": 53.93,
+  "arc": 26.73,
+  "wiki": null,
+  "tokens": "~2B"
+ },
+ {
+  "name": "Glint-1",
+  "org": "glintresearch",
+  "params": "1M",
+  "blimp": 61.2,
+  "arc": 32.0,
+  "wiki": 4.45,
+  "tokens": "100B"
+ },
+ {
+  "name": "Supra-Mini-v3",
+  "org": "supralabs",
+  "params": "468K",
+  "blimp": 55.3,
+  "arc": 27.3,
+  "wiki": 4.49,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "Cosmos-T-80M",
+  "org": "wop",
+  "params": "79.7M",
+  "blimp": 50.47,
+  "arc": 27.82,
+  "wiki": 12.42,
+  "tokens": "~21M"
+ },
+ {
+  "name": "Cosmos-T2-80M-Test",
+  "org": "wop",
+  "params": "87.60M",
+  "blimp": 57.61,
+  "arc": 25.0,
+  "wiki": 11.24,
+  "tokens": "~18M"
+ },
+ {
+  "name": "Supra-Mini-v4",
+  "org": "supralabs",
+  "params": "2.62M",
+  "blimp": 60.7,
+  "arc": 31.5,
+  "wiki": 3.17,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "CinnabarLM 4M",
+  "org": "mihaipopa",
+  "params": "4.23M",
+  "blimp": 62.87,
+  "arc": 27.36,
+  "wiki": 3.77,
+  "tokens": "~80M"
+ },
+ {
+  "name": "Cosmos-T2-Accelerate-beta",
+  "org": "wop",
+  "params": "5.03M",
+  "blimp": 54.3,
+  "arc": 26.3,
+  "wiki": 6.26,
+  "tokens": "~22M"
+ },
+ {
+  "name": "Cosmos-T2A-low",
+  "org": "wop",
+  "params": "9.96M",
+  "blimp": 47.8,
+  "arc": 31.0,
+  "wiki": 5.31,
+  "tokens": "~46.7M"
+ },
+ {
+  "name": "Cosmos-T2-Accelerate-Beta2",
+  "org": "wop",
+  "params": "9.96M",
+  "blimp": 69.0,
+  "arc": 28.0,
+  "wiki": 6.72,
+  "tokens": "~10M"
+ },
+ {
+  "name": "StorySupra-10M",
+  "org": "supralabs",
+  "params": "12.6M",
+  "blimp": 61.47,
+  "arc": 28.45,
+  "wiki": 8.76,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "Supra-Mini-v5",
+  "org": "supralabs",
+  "params": "7.87M",
+  "blimp": 63.5,
+  "arc": 34.4,
+  "wiki": 2.73,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "Cosmos-T2-Accelerate-Preview",
+  "org": "wop",
+  "params": "9.96M",
+  "blimp": 56.95,
+  "arc": 26.8,
+  "wiki": 6.73,
+  "tokens": "462M"
+ },
+ {
+  "name": "Glint-1.3 (merged)",
+  "org": "glintresearch",
+  "params": "982K",
+  "blimp": 68.7,
+  "arc": 32.5,
+  "wiki": 3.08,
+  "tokens": "100B"
+ },
+ {
+  "name": "Supra-Mini-v6",
+  "org": "supralabs",
+  "params": "1.41M",
+  "blimp": 61.86,
+  "arc": 30.26,
+  "wiki": 3.0,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "GPT-S-5M",
+  "org": "axiomiclabs",
+  "params": "5.16M",
+  "blimp": 72.27,
+  "arc": 35.69,
+  "wiki": 2.57,
+  "tokens": "25B"
+ },
+ {
+  "name": "Archaea-74M",
+  "org": "GODELEV",
+  "params": "74M",
+  "blimp": 74.91,
+  "arc": 39.06,
+  "wiki": 2.2,
+  "tokens": "~1.2B"
+ },
+ {
+  "name": "Supra-50M-Instruct",
+  "org": "supralabs",
+  "params": "51.8M",
+  "blimp": 76.3,
+  "arc": 52.2,
+  "wiki": 2.56,
+  "tokens": "20B"
+ },
+ {
+  "name": "Michel-Tiny",
+  "org": "finnianx",
+  "params": "55.7M",
+  "blimp": 74.08,
+  "arc": 37.33,
+  "wiki": 2.29,
+  "tokens": "1.3B"
+ },
+ {
+  "name": "Gros-Michel-90m-Base",
+  "org": "finnianx",
+  "params": "91.1M",
+  "blimp": 78.35,
+  "arc": 41.5,
+  "wiki": 2.07,
+  "tokens": "6.5B"
+ },
+ {
+  "name": "Michel-Nano-v2",
+  "org": "finnianx",
+  "params": "9.94M",
+  "blimp": 72.52,
+  "arc": 35.9,
+  "wiki": 2.46,
+  "tokens": "6.5B"
+ },
+ {
+  "name": "Michel-Nano",
+  "org": "finnianx",
+  "params": "5.96M",
+  "blimp": 65.23,
+  "arc": 33.38,
+  "wiki": 3.25,
+  "tokens": "1.1B"
+ },
+ {
+  "name": "Gros-Michel-90m-Base-v2",
+  "org": "finnianx",
+  "params": "95M",
+  "blimp": 80.2,
+  "arc": 43.18,
+  "wiki": 2.08,
+  "tokens": "9B"
+ },
+ {
+  "name": "Michel-Micro",
+  "org": "finnianx",
+  "params": "28.4M",
+  "blimp": 69.75,
+  "arc": 38.59,
+  "wiki": 2.3,
+  "tokens": "2.6B"
+ },
+ {
+  "name": "Ivme-Conversate-v1-Base",
+  "org": "ivmelabs",
+  "params": "22.03M",
+  "blimp": 61.4,
+  "arc": 30.85,
+  "wiki": 3.14,
+  "tokens": "~1.57B"
+ },
+ {
+  "name": "kirk-tung",
+  "org": "rtc",
+  "params": "53.1M",
+  "blimp": 72.81,
+  "arc": 30.3,
+  "wiki": 2.38,
+  "tokens": "1.1B"
+ },
+ {
+  "name": "Supra-Mini-0.1M",
+  "org": "supralabs",
+  "params": "117K",
+  "blimp": 51.77,
+  "arc": 26.39,
+  "wiki": 25.17,
+  "tokens": "500M"
+ },
+ {
+  "name": "Supra-50M-Base",
+  "org": "supralabs",
+  "params": "51.8M",
+  "blimp": 76.3,
+  "arc": 46.0,
+  "wiki": 2.04,
+  "tokens": "20B"
+ },
+ {
+  "name": "Supra-50M-Reasoning",
+  "org": "supralabs",
+  "params": "51.8M",
+  "blimp": 64.14,
+  "arc": 45.16,
+  "wiki": 2.6,
+  "tokens": "20B"
+ },
+ {
+  "name": "Escarda-86M-Base",
+  "org": "quazim0t0",
+  "params": "85.7M",
+  "blimp": 71.44,
+  "arc": 38.01,
+  "wiki": 2.2228,
+  "tokens": "~20B"
+ },
+ {
+  "name": "KeyLM-75M",
+  "org": "minimalabs",
+  "params": "75M",
+  "blimp": 76.1,
+  "arc": 35.65,
+  "wiki": 2.08,
+  "tokens": "~18B"
+ },
+ {
+  "name": "KeyLM-75M-Instruct",
+  "org": "minimalabs",
+  "params": "75M",
+  "blimp": 76.02,
+  "arc": 39.1,
+  "wiki": 2.17,
+  "tokens": "~18B"
+ },
+ {
+  "name": "Glimmer 1",
+  "org": "glintresearch",
+  "params": "11.9K",
+  "blimp": 52.43,
+  "arc": 25.46,
+  "wiki": 14.73,
+  "tokens": "500K"
+ },
+ {
+  "name": "Echo88-150M-Instruct",
+  "org": "exnivo",
+  "params": "150M",
+  "blimp": 72.67,
+  "arc": 31.4,
+  "wiki": 2.45,
+  "tokens": "~1.47B"
+ },
+ {
+  "name": "Byrne-86M-Base",
+  "org": "quazim0t0",
+  "params": "86M",
+  "blimp": 73.56,
+  "arc": 39.31,
+  "wiki": 2.3753,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "Byrne-86M",
+  "org": "quazim0t0",
+  "params": "86M",
+  "blimp": 70.33,
+  "arc": 34.68,
+  "wiki": 2.6839,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "Blink-1-Base",
+  "org": "glintresearch",
+  "params": "1.09K",
+  "blimp": 52.84,
+  "arc": 26.6,
+  "wiki": 71.35,
+  "tokens": "100B"
+ },
+ {
+  "name": "Blink-1-Instruct",
+  "org": "glintresearch",
+  "params": "1.09K",
+  "blimp": 52.46,
+  "arc": 26.8,
+  "wiki": 70.44,
+  "tokens": "100B"
+ },
+ {
+  "name": "Dumb-1.2-Preview-0625",
+  "org": "56m",
+  "params": "34.6M",
+  "blimp": 64.05,
+  "arc": 32.79,
+  "wiki": 2.875,
+  "tokens": "~115-165M"
+ },
+ {
+  "name": "Dumb-1.2-RC1",
+  "org": "56m",
+  "params": "34.6M",
+  "blimp": 64.87,
+  "arc": 34.13,
+  "wiki": 2.838,
+  "tokens": "210M"
+ },
+ {
+  "name": "GPT-X2-125M",
+  "org": "axiomiclabs",
+  "params": "125M",
+  "blimp": 81.28,
+  "arc": 57.07,
+  "wiki": 1.86,
+  "tokens": "75B"
+ },
+ {
+  "name": "Dumb 1.2",
+  "org": "56m",
+  "params": "34.6M",
+  "blimp": 70.51,
+  "arc": 34.97,
+  "wiki": 2.7195,
+  "tokens": "1.1B"
+ },
+ {
+  "name": "TinyMoE-100m-2x8",
+  "org": "flamef0x",
+  "params": "99.8M",
+  "blimp": 61.13,
+  "arc": 25.88,
+  "wiki": 3.878,
+  "tokens": "~625M"
+ },
+ {
+  "name": "TinyMoE-100m-2x8-retrained",
+  "org": "flamef0x",
+  "params": "99.8M",
+  "blimp": 66.01,
+  "arc": 33.88,
+  "wiki": 2.879,
+  "tokens": "\u2014"
+ },
+ {
+  "name": "SRLM-1M",
+  "org": "martico2432",
+  "params": "904k",
+  "blimp": 53.1,
+  "arc": 28.66,
+  "wiki": 4.455,
+  "tokens": "~16M"
+ },
+ {
+  "name": "CreekwardGoat-500K",
+  "org": "wonderfulmonkey",
+  "params": "500k",
+  "blimp": 60.61,
+  "arc": 30.35,
+  "wiki": 4.1228,
+  "tokens": "300M"
+ },
+ {
+  "name": "Ivme-Conversate-v2-Base",
+  "org": "ivmelabs",
+  "params": "23.85M",
+  "blimp": 75.09,
+  "arc": 39.98,
+  "wiki": 2.225,
+  "tokens": "~12.85B"
+ },
+ {
+  "name": "Ivme-Conversate-v3-Base",
+  "org": "ivmelabs",
+  "params": "24.79M",
+  "blimp": 78.49,
+  "arc": 39.02,
+  "wiki": 2.1362,
+  "tokens": "~15B"
+ },
+ {
+  "name": "Supra-1.5-Instruct-exp",
+  "org": "supralabs",
+  "params": "51.8M",
+  "blimp": 67.4,
+  "arc": 45.9,
+  "wiki": 2.7,
+  "tokens": "23B"
+ },
+ {
+  "name": "DistillSupra-0.2M",
+  "org": "supralabs",
+  "params": "0.2M",
+  "blimp": 51.84,
+  "arc": 26.77,
+  "wiki": 8.0696,
+  "tokens": "1.5M"
+ },
+ {
+  "name": "Hydrion-v1-Base",
+  "org": "opengcm",
+  "params": "114.1M",
+  "blimp": 80.08,
+  "arc": 47.26,
+  "wiki": 2.04,
+  "tokens": "~2.5B"
+ },
+ {
+  "name": "TextModel-v1",
+  "org": "benchlabs",
+  "params": "122.7M",
+  "blimp": 80.31,
+  "arc": 49.71,
+  "wiki": 2.628,
+  "tokens": "1.64B"
+ },
+ {
+  "name": "ObsidianSmall-Base",
+  "org": "dreamw",
+  "params": "8.7M",
+  "blimp": 71.891,
+  "arc": 33.291,
+  "wiki": 2.467,
+  "tokens": "4B"
+ },
+ {
+  "name": "min-spark",
+  "org": "minimalabs",
+  "params": "5.76M",
+  "blimp": 69.19,
+  "arc": 37.08,
+  "wiki": 2.7747,
+  "tokens": "10B"
+ },
+ {
+  "name": "Haidass-143M-v1",
+  "org": "DALab",
+  "params": "143M",
+  "blimp": 79.05,
+  "arc": 60.23,
+  "wiki": 1.8892,
+  "tokens": "100B"
+ },
+ {
+  "name": "Byrne-100M-Ultra-MC-base",
+  "org": "quazim0t0",
+  "params": "113.9M",
+  "blimp": 81.1,
+  "arc": 20.5,
+  "wiki": 2.308,
+  "tokens": "~2B"
+ },
+ {
+  "name": "Byrne-100M-Ultra-MC-sft",
+  "org": "quazim0t0",
+  "params": "113.9M",
+  "blimp": 78.0,
+  "arc": 26.5,
+  "wiki": 2.383,
+  "tokens": "~2B"
+ },
+ {
+  "name": "Byrne-100M-Ultra-MC-dpo",
+  "org": "quazim0t0",
+  "params": "113.9M",
+  "blimp": 77.9,
+  "arc": 25.5,
+  "wiki": 2.385,
+  "tokens": "~2B"
+ },
+ {
+  "name": "Aurora-80K",
+  "org": "auroraairesearch",
+  "params": "80K",
+  "blimp": 52.31,
+  "arc": 26.05,
+  "wiki": 9.78,
+  "tokens": "80M"
+ },
+ {
+  "name": "Cagliari-114M",
+  "org": "meridianmrm",
+  "params": "114M",
+  "blimp": 80.22,
+  "arc": 38.3,
+  "wiki": 1.96,
+  "tokens": "5.24B"
+ },
+ {
+  "name": "Zedev-134M-Fudas",
+  "org": "meridianmrm",
+  "params": "134M",
+  "blimp": 81.69,
+  "arc": 46.38,
+  "wiki": 1.88,
+  "tokens": "20.7b"
+ },
+ {
+  "name": "Supra2.1-Ultra-Preview-001",
+  "org": "supralabs",
+  "params": "230M",
+  "blimp": 82.24,
+  "arc": 57.11,
+  "wiki": 1.93,
+  "tokens": "40.4B"
+ },
+ {
+  "name": "Boris-2",
+  "org": "opencerebral",
+  "params": "143.72M",
+  "blimp": 81.13,
+  "arc": 59.76,
+  "wiki": 1.895,
+  "tokens": "200B"
+ },
+ {
+  "name": "Boris-2-Think",
+  "org": "opencerebral",
+  "params": "143.72M",
+  "blimp": 82.09,
+  "arc": 63.93,
+  "wiki": 1.967,
+  "tokens": "200B"
+ }
+]

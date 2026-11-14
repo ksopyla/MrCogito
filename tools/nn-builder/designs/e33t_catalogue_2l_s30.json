@@ -2,7 +2,7 @@
   "schema": "nn-builder/graph",
   "version": 1,
   "name": "E33t · two-level catalogue · 72.7M (30.2M core)",
-  "description": "E33t arm catalogue_2l — two-level catalogue, 30M testbed. New against e33t_catalogue_30m: the catalogue searched in two levels: a query keeps its 16 best pages first, then scores only their 512 notes. Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status training (as of 2026-11-08). Queued after the catalogue on the AWS node (stage A); not scored yet. Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md. Source: origin/e33n-lsa-testbed @ 47339bf. Not a builder field: The page-first search has no weights and no builder field (a 0-parameter custom cell, FLOPs not counted). Parameters: 72,687,765 in total, 30,246,677 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm catalogue_2l --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
+  "description": "E33t arm catalogue_2l — two-level catalogue, 30M testbed. New against e33t_catalogue_30m: the catalogue searched in two levels: a query keeps its 16 best pages first, then scores only their 512 notes. Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status done (as of 2026-11-08). Trained 7 Nov 15:51–20:49 UTC (AWS, seed 1). Scored 8 Nov (a372da3): 68 % of the gap at 16k, 3 points behind the flat catalogue (holds), 99.5 % at 64k, 16 points behind (S4 fails). Stage C proposes the two levels as an eval switch first. Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md. Source: origin/e33n-lsa-testbed @ 47339bf. Not a builder field: The page-first search has no weights and no builder field (a 0-parameter custom cell, FLOPs not counted). Parameters: 72,687,765 in total, 30,246,677 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm catalogue_2l --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
   "stacks": [
     {
       "id": "main",
@@ -829,7 +829,7 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-08T12:50:54.805Z",
+    "exported_at": "2026-11-08T19:28:25.723Z",
     "hash": "nnb1-037b0a8d114ee1112418423954d0",
     "row_length": 4096,
     "params_total": 72687765,

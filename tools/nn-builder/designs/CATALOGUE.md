@@ -54,8 +54,11 @@ block, and this table between the markers. Edit the table through the script, no
 | `e33p_lsa_port_30m` | **E33p** · LSA port (`lsa`) | LSA's released read ported to the dense trunk: buckets of ~8 similar keys per closed 512-key block, a query opens the best buckets (512 keys) + 4 sinks + its last 512 tokens ⚑ | done | e33n-lsa-testbed @ `7f64a09` · E33p_note_indexed_exact_read.md | 68,701,396 | 26,260,308 | 2026-11-06 |
 | `e33p_lsa_s30` | **E33p** · LSA port (alias) (`lsa`) | the same arm as e33p_lsa_port_30m, drawn first by the 10M-context session; kept so that branch merges cleanly ⚑ | done | arch-10m @ `3cae268` · E33p_note_indexed_exact_read.md | 68,701,396 | 26,260,308 | 2026-11-07 |
 | `e33t_catalogue_30m` | **E33t** · catalogue read (`catalogue`) | pages without overlap; each token filed under one note (≤ 16 per note); the notes are only an index (their values are not read); up to 128 notes' tokens (≤ 512) open per query; a new place each loop pass; 4 learned empty slots; an index loss ⚑ | done | e33n-lsa-testbed @ `47339bf` · E33t_catalogue_read.md | 72,687,765 | 30,246,677 | 2026-11-07 |
-| `e33t_catalogue_2l_s30` | **E33t** · two-level catalogue (`catalogue_2l`) | the catalogue searched in two levels: a query keeps its 16 best pages first, then scores only their 512 notes ⚑ | training | e33n-lsa-testbed @ `47339bf` · E33t_catalogue_read.md | 72,687,765 | 30,246,677 | 2026-11-07 |
-| `e33t_catalogue_reuse_s30` | **E33t** · catalogue, re-opening allowed (`catalogue_reuse`) | the pass exclusion off in training (lm_open_new_per_pass False): a later loop pass may re-open notes an earlier pass opened ⚑ | training | e33n-lsa-testbed @ `26d18f4` · E33t_catalogue_read.md | 72,687,765 | 30,246,677 | 2026-11-07 |
+| `e33t_catalogue_2l_s30` | **E33t** · two-level catalogue (`catalogue_2l`) | the catalogue searched in two levels: a query keeps its 16 best pages first, then scores only their 512 notes ⚑ | done | e33n-lsa-testbed @ `47339bf` · E33t_catalogue_read.md | 72,687,765 | 30,246,677 | 2026-11-07 |
+| `e33t_catalogue_reuse_s30` | **E33t** · catalogue, re-opening allowed (`catalogue_reuse`) | the pass exclusion off in training (lm_open_new_per_pass False): a later loop pass may re-open notes an earlier pass opened ⚑ | done | e33n-lsa-testbed @ `26d18f4` · E33t_catalogue_read.md | 72,687,765 | 30,246,677 | 2026-11-07 |
+| `e33t_catalogue_reuse_n4_s30` | **E33t** · catalogue, 4 tokens per note (`catalogue_reuse_n4`) | 64 notes per 256-token page (4 tokens per note on average) instead of 32; the read's budget stays 512 tokens (up to 128 notes) ⚑ | queued | e33n-lsa-testbed @ `34eff60` · E33t_catalogue_read.md | 72,769,685 | 30,328,597 | 2026-11-08 |
+| `e33t_catalogue_reuse_n16_s30` | **E33t** · catalogue, 16 tokens per note (`catalogue_reuse_n16`) | 16 notes per 256-token page (16 tokens per note, exactly the filing cap) instead of 32 ⚑ | queued | e33n-lsa-testbed @ `34eff60` · E33t_catalogue_read.md | 72,646,805 | 30,205,717 | 2026-11-08 |
+| `e33t_catalogue_reuse_p512_s30` | **E33t** · catalogue, 512-token pages (`catalogue_reuse_p512`) | 512-token pages with 64 notes (still 8 tokens per note); the writer reads twice as long a page ⚑ | queued | e33n-lsa-testbed @ `34eff60` · E33t_catalogue_read.md | 72,900,757 | 30,459,669 | 2026-11-08 |
 | `e37a_s30` | **E37** · concept memory (`e37a`) | each closed 512-key block of the reading layer's own keys is grouped by content into 64 balanced concepts of 8 keys; a query reads exactly the tokens of its strongest concepts (512) and one summary entry for every other concept ⚑ | done | arch-10m @ `95ee75d` · E37_concept_memory.md | 68,701,396 | 26,260,308 | 2026-11-07 |
 | `e37a_c32_s30` | **E37** · concept memory, 32 keys per concept (`e37a_c32`) | compression ladder: 16 concepts of 32 keys per block (same 512 opened tokens; only the summaries get coarser) ⚑ | training | arch-10m @ `6e49738` · E37_concept_memory.md | 68,701,396 | 26,260,308 | 2026-11-07 |
 | `e37a_c128_s30` | **E37** · concept memory, 128 keys per concept (`e37a_c128`) | compression ladder: 4 concepts of 128 keys per block (same 512 opened tokens) ⚑ | done | arch-10m @ `6e49738` · E37_concept_memory.md | 68,701,396 | 26,260,308 | 2026-11-07 |
@@ -131,6 +134,14 @@ or the older capability-probe arches). The first pass did not draw them; any one
   say so, and the six 100M arms are now `queued` (stage A has the author's go-ahead, one 4-GPU AWS spot node, in
   the order e37a, lsa, dense, window, notes_open, e37b). `e37b_m100` moves from `parked` to `queued`: the 30M
   screen shelved the reasoner, but the launch list still includes it, last.
+- **2026-11-08 · e33n-lsa-testbed `34eff60` (read at `0227838`):** E33t stage B, three new designs around the
+  stage-A winner (the catalogue with re-opening): `e33t_catalogue_reuse_n4_s30` (64 notes per 256-token page,
+  72,769,685 / 30,328,597 core), `_n16_s30` (16 notes, 72,646,805 / 30,205,717) and `_p512_s30` (512-token pages,
+  64 notes, 72,900,757 / 30,459,669). Counted with the trainer on `0227838`; the builder matches all three exactly
+  (only the writer's learned slots and its position prior change). `ARM.catalogue` gains `notes` and `page`; the
+  three stage-A catalogue designs are unchanged (same hashes). Stage A's scores (`a372da3`) go into their notes:
+  catalogue 71 % of the gap at 16k, two-level 68 %, re-opening 91 % (now `done`, the winner). Stage C (`0227838`)
+  is a proposal awaiting approval with no new arm yet. arch-10m `3833ca1`/`07ca3a5` change only eval scripts.
 
 ## Branches last seen
 
@@ -138,11 +149,11 @@ The next check reads only commits after these.
 
 | branch | last commit seen | its time | read at |
 |---|---|---|---|
-| `origin/dev` | `a1b128f` (this catalogue) | 2026-11-08 13:51 +01:00 | 2026-11-08 16:27 +01:00 |
-| `origin/e33n-lsa-testbed` | `1769cf9` | 2026-11-08 13:32 +01:00 | 2026-11-08 16:27 +01:00 |
-| `origin/arch-10m` | `7c7158c` | 2026-11-08 14:40 +01:00 | 2026-11-08 16:27 +01:00 |
-| `origin/e33-multihop` | `070c56f` (fully merged into dev) | 2026-10-22 20:52 +02:00 | 2026-11-08 16:27 +01:00 |
-| `origin/process/capability-eval-tracking` | `7422a11` (fully merged into dev) | 2026-10-19 10:04 +02:00 | 2026-11-08 16:27 +01:00 |
+| `origin/dev` | `644b770` (this catalogue) | 2026-11-08 16:28 +01:00 | 2026-11-08 20:26 +01:00 |
+| `origin/e33n-lsa-testbed` | `0227838` | 2026-11-08 19:13 +01:00 | 2026-11-08 20:26 +01:00 |
+| `origin/arch-10m` | `07ca3a5` | 2026-11-08 18:32 +01:00 | 2026-11-08 20:26 +01:00 |
+| `origin/e33-multihop` | `070c56f` (fully merged into dev) | 2026-10-22 20:52 +02:00 | 2026-11-08 20:26 +01:00 |
+| `origin/process/capability-eval-tracking` | `7422a11` (fully merged into dev) | 2026-10-19 10:04 +02:00 | 2026-11-08 20:26 +01:00 |
 
 The check:
 

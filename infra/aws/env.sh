@@ -4,14 +4,14 @@
 # AWS_REGION=us-east-2 (after `AWS_REGION=us-east-2 bash infra/aws/setup.sh` once); the bucket stays in us-east-1.
 export AWS_PROFILE="${AWS_PROFILE:-m21-research}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
-export MC_REGIONS="${MC_REGIONS:-us-east-1 us-east-2}"    # status.sh / terminate.sh look in all of these
+export MC_REGIONS="${MC_REGIONS:-us-east-1 us-east-2 us-west-2}"    # status.sh / terminate.sh look in all of these
 export MC_BUCKET_REGION="us-east-1"
 export AWS_PAGER=""
 
 export MC_PROJECT_TAG="mrcogito"
 export MC_INSTANCE_TYPE="${MC_INSTANCE_TYPE:-p5.4xlarge}"
 export MC_PRICE_PER_HOUR="${MC_PRICE_PER_HOUR:-6.88}"     # on-demand Linux us-east-1, checked 2026-11-04
-export MC_BUDGET_USD="${MC_BUDGET_USD:-2000}"             # author's cap for the E33n goal (2026-11-04)
+export MC_BUDGET_USD="${MC_BUDGET_USD:-4000}"             # author's cap: $2,000 for the E33n goal (2026-11-04), raised to $4,000 on 2026-11-14 ("Increase our budget to $4000")
 export MC_ROLE="mrcogito-train-node"
 export MC_SG="mrcogito-train-ssh"
 export MC_KEY="mrcogito-train"
