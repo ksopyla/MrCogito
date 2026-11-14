@@ -36,7 +36,7 @@ cost in bytes and time against sending the text.
   seconds and sizes (text as UTF-8, zstd-19, bits under the model itself; memory; remote read; what the concept
   read opened). `scripts/cramming_probe.py`: `--bin` (documents from a token shard).
   `infra/aws/jobs/a2a_probe_node.sh` (new).
-- Run: 100M models (3.4B tokens), two spot g6e.xlarge in us-east-1, 13 Nov 21:34 UTC - 14 Nov ~00:20 UTC, about $8.
+- Run: 100M models (3.4B tokens), two spot g6e.xlarge in us-east-1, 13 Nov 21:34 UTC - 14 Nov 00:18 UTC, $8.15.
   Node `a2a-e37a-short` ran four jobs on one card (12 answer tokens); node `a2a-dense` came up from a launch retry
   and ran the first, heavier configuration (50 documents, 32 answer tokens, bits on every document) — it was noticed
   only at 23:37 UTC. % of needles found; `number` = RULER niah_single_1 (repeated filler), `essays` = niah_single_2:
@@ -81,7 +81,7 @@ cost in bytes and time against sending the text.
   |---|---|
   | 1 (two runs) | 16 → 85, 96 (75 %, 100 %) · 32 → 165, 165 (62 %, 50 %) · 64 → 265, 237 (0 %, 25 %) · 128 → 266, 301 (0 %) |
   | 4 (two runs) | 64 → 288, 280 (12 %, 25 %) · 128 → 501, 524 · 256 → 585, 574 · 512 → 677, 720 (0 %) |
-  | 16 (two runs to 512) | 256 → 1,054, 1,087 (12 %, 38 %; 96-97 % of tokens) · 512 → 1,538, 1,440 · 1,024 → 1,932 (0 %) |
+  | 16 (two runs) | 256 → 1,054, 1,087 (12 %, 38 %; 96-97 % of tokens) · 512 → 1,538, 1,440 · 1,024 → 1,932, 1,899 (0 %) |
 
   The two runs use the same texts and differ in the vectors' random start and in the card (shared / alone).
 
