@@ -29,6 +29,14 @@ launches=0
 # AWS login on this machine (SSO tokens expire): while it is gone, wait and say so hourly — never launch, never stop
 creds_ok() { aws sts get-caller-identity >/dev/null 2>&1; }
 cred_said=0
+# env.sh names the bucket after the account; sourced while the login was gone it exports "mrcogito-train-" with no
+# account (2026-11-14: every keeper then read spend 'nan'). Recompute the names once the login works again.
+fix_names() {
+  case "${MC_BUCKET:-}" in mrcogito-train-[0-9]*) return 0 ;; esac
+  unset MC_ACCOUNT MC_BUCKET
+  source "$HERE/env.sh"
+  case "${MC_BUCKET:-}" in mrcogito-train-[0-9]*) say "bucket name recomputed after the login came back" ;; esac
+}
 wait_creds() {
   while ! creds_ok; do
     now=$(date +%s)
@@ -38,6 +46,7 @@ wait_creds() {
     fi
     sleep "$INTERVAL"
   done
+  fix_names
 }
 alive() {
   for r in $MC_REGIONS; do
@@ -73,6 +82,8 @@ while true; do
   # try_type TYPE SPOT HOURS: budget check, then one launch attempt; 0 = launched, 1 = no capacity, exits on budget
   try_type() {
     local type=$1 spot=$2 hours=$3 price spent ok
+    case "${MC_BUCKET:-}" in mrcogito-train-[0-9]*) ;; *)
+      say "bucket name '${MC_BUCKET:-}' is not the account's; not launching"; return 1 ;; esac
     spent=$(committed)
     if [ "$spot" = 1 ]; then
       price=$(aws ec2 describe-spot-price-history --instance-types "$type" --product-descriptions Linux/UNIX \
