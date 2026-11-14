@@ -159,3 +159,10 @@ and 64k, 12 answer tokens), on the tuned checkpoint. Number haystack (`niah_sing
     on the same documents, the long-document training itself caused it.
   - R3 the 2026-11-13 / 2026-11-14 unseeded comparisons are replaced by these paired ones wherever they disagree.
 - Budget: two L40S spot nodes, about 5.5 h and 1.5 h, about $12; one seed.
+- **Follow-up result (2026-11-14, 21:21 UTC; $11.34 for both nodes):** R1 yes — cut-tuned 37 / 70 against no-cut-tuned
+  17 / 70 with memory only at 16k–64k (+29 points, p = 0.0002); without cuts the same training makes memory only
+  worse than untuned (28 / 70). R2 no — as one agent no-cut-tuned 82 / 100, cut-tuned 77 / 100 (p = 0.23); both
+  below untuned 92 / 100, so the long-document training itself drives the one-agent loss and the blank-line habit.
+  R3: on the same documents the cut-tuned model's memory-only gain is +17 of 100 (4k–64k, p = 0.003), largest at 4k
+  (essay 1 → 18 of 30) and 64k (5 → 12 of 20), none at 16k (16 → 16 of 30). Verdict unchanged: done_failed for the
+  demo; the cut rows are the working ingredient for a later two-agent recipe.

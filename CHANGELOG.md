@@ -15,6 +15,23 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-14] - E37c follow-up: no-cut control mode, same-document re-exam
+
+**Why:**
+- E37c could not say whether its memory-only gain and its one-agent loss came from the cuts or from more long-document
+  training, and its two exams had drawn different documents. The author approved the control ("Yes, run it").
+
+**What changed:**
+- [changed] `scripts/run_e33n.py` - `--cut_max 0` drops the cut settings of the split phase (same rows, rate, seed).
+- [changed] `infra/aws/jobs/e37c_split_ft.sh` - words MODE (cut | nocut) and PROBE_SEED (a node job gets words, not
+  environment).
+- [added] `infra/aws/jobs/e37c_reexam.sh` - the untuned and cut-tuned models on probe documents from one seed.
+- [added] `scripts/a2a_paired_compare.py` - the three-model table on paired documents with McNemar tests.
+
+**Related:** `docs/2_Experiments_Registry/run_reports/e37c_two_agent_split_training_20261114.md` (follow-up section)
+
+---
+
 ## [2026-11-14] - Two-agent probe: documents from a seed
 
 **Why:**

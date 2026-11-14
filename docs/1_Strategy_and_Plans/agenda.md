@@ -260,11 +260,12 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
 
 ## What we've explored so far
 - **2026-11-14 — E37c, two-agent split training (the concept-read 100M model fine-tuned on rows cut at random points; 0.2B tokens, one L40S, $9.06).**
-  - Main pass mark missed: B with memory only finds 63 / 70 / 60 % at 4k / 16k / 32k (marks 93 / 86 / 79). Against the untuned 63 / 43 / 35 % (other documents): 28 of 70 → 45 of 70 at 16k–64k, no change at 4k.
-  - What was trained did move: the extra loss 32–127 tokens after a cut fell from 0.081 to 0.021, past 128 tokens to zero; loss on plain long text unchanged or better.
-  - Side effect: as one agent the tuned model finds 84 of 100 needles against 97 of 100. Every miss starts with a blank line after the colon. Not known whether the cuts or 0.2B more long-document tokens cause it (no control run).
-  - Exam flaw found: the two runs drew different documents (unseeded generator); `--seed` added to the probe.
-  - Open: the same fine-tune without cuts, and all checkpoints on the same seeded documents. Spec
+  - Main pass mark missed: B with memory only finds 20 / 16 / 9 / 12 of 30 / 30 / 20 / 20 needles at 4k / 16k / 32k / 64k (marks 93 / 86 / 79 % at 4k–32k).
+  - Same-document control (cuts off, everything else equal): the cuts are what teaches B to answer from A's memory — 37 against 17 of 70 at 16k–64k (p = 0.0002); untuned 28. The same training without cuts makes memory only worse.
+  - The drop as one agent (92 → 77 of 100) comes mostly from the long-document training itself (no cuts: 82, p = 0.23 against cuts), as a growing habit of opening the answer with a blank line.
+  - What was trained did move: the extra loss 32–127 tokens after a cut fell from 0.081 to 0.021; the no-cut model stays at 0.078. Cuts cost 0.019 of long-text loss at 64k.
+  - Exam lesson: two unseeded runs drew different documents and moved a cell by 27 points; `--seed` added to the probe, all comparisons now paired.
+  - Next, if two agents stay a goal: cut rows plus a guard on the answer format (for example question-shaped rows), not more 16k text alone. Spec
     [E37c](../experiments_specs/done_failed/E37c_two_agent_split_training.md) ·
     [run report](../2_Experiments_Registry/run_reports/e37c_two_agent_split_training_20261114.md).
 - **2026-11-13 — Two agents from one trained 100M model, no training (eval only).** Agent A reads the document and
