@@ -611,9 +611,15 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
       0.128. Essay number 0.93 / **0.21 / 0.17**, essay UUID 0.62 / 0.03 / 0.06; the other 11 0.151 / 0.142 / 0.131
       (single-1 0.96 / 0.97 / 0.98, multi-key-1 0.20 / 0.31 / 0.19, multi-value 0.14 / 0.15 / 0.17). 64k on 100
       documents agrees with the old-loop later pass on 25 (mean 0.150; essay number 0.28, UUID 0.04).
+    - **catalogue_reuse_n4, stage B (node `e37-needles-cat` in us-west-2, done 06:41 UTC Nov 14, ≈ 9.3 h ≈ $17):**
+      mean 0.228 / 0.099 / 0.087. Essay number 0.75 / **0.03 / 0.04**, essay UUID 0.45 / 0.01 / 0.00; the other 11
+      0.160 / 0.113 / 0.100 (single-1 0.97 / 0.97 / 0.99, multi-key-1 0.18 / 0.12 / 0.01, HotpotQA 0.11 / 0.06 /
+      0.05). 4k single-1 (same documents) 0.97 vs stage B 0.97; 64k on 100 agrees with the old-loop 25 (0.101). The
+      64k-stage catalogue model (not re-run here) found more essay needles at 32k (0.19 / 0.21).
     - **Reading so far:** full attention whose reading layer has no position code finds no essay needle at 64k or
-      128k; the LSA port's top-k read still finds about one essay number in five at 64k and one in six at 128k. Both
-      find the filler-text needle at every length. e37a, catalogue, the original LSA and dense_rope to follow.
+      128k, and the stage-B catalogue read almost none (3–4 in 100); the LSA port's top-k read still finds about one
+      essay number in five at 64k and one in six at 128k. All three find the filler-text needle at every length.
+      e37a, the original LSA and dense_rope to follow.
 - **Stage C:** long pages — concepts of concepts (additive statistics) over pages of 4k–16k tokens, two-level
   choice; train at 16k, read at 128k–1M.
 - **Stage D:** data and protocol (synthetic retrieval / multi-hop share, length curriculum).
