@@ -8,6 +8,8 @@ report, so our numbers are directly comparable at equal harness version:
     core : hellaswag arc_easy arc_challenge piqa winogrande openbookqa boolq social_iqa
            commonsense_qa lambada_openai wikitext          (~10 min for a 125M model on one 3090)
     full : core + mmlu (0-shot) + sciq + copa                (+ ~30 min)
+    leaderboard : blimp arc_easy wikitext, scored as the Tiny-ML Leaderboard does (BLiMP acc over 67 sets,
+           ARC-Easy acc, WikiText-2 byte perplexity; evaluation/tiny_ml_board.py turns them into its score)
 
 Usage (GPU server, from the repo root):
     uv run python evaluation/run_lm_eval_suite.py --checkpoint Cache/Training/<run>/final --tag e18_stageA
@@ -35,6 +37,9 @@ CORE_TASKS = [
     "social_iqa", "commonsense_qa", "lambada_openai", "wikitext",
 ]
 FULL_EXTRA = ["mmlu", "sciq", "copa"]
+LEADERBOARD_TASKS = ["blimp", "arc_easy", "wikitext"]
+# The Tiny-ML Leaderboard's metrics (acc on ARC-Easy, not the model cards' acc_norm; byte perplexity on WikiText-2)
+LEADERBOARD_METRIC = {"blimp": "acc", "arc_easy": "acc", "wikitext": "byte_perplexity"}
 
 # Task yamls that override built-in harness tasks of the same name (later include paths win in
 # `TaskManager`). Currently: `social_iqa` read from the Hub's parquet branch because datasets>=4
@@ -55,6 +60,8 @@ ACC_TASKS = [t for t in CORE_TASKS + FULL_EXTRA if MAIN_METRIC[t] != "word_perpl
 def _tasks_for(tier: str, override: str | None) -> list[str]:
     if override:
         return [t.strip() for t in override.split(",") if t.strip()]
+    if tier == "leaderboard":
+        return list(LEADERBOARD_TASKS)
     return CORE_TASKS + (FULL_EXTRA if tier == "full" else [])
 
 
@@ -74,17 +81,17 @@ def _stderr(results: dict, task: str, name: str):
     return None
 
 
-def summarize(results: dict, tasks: list[str]) -> dict:
+def summarize(results: dict, tasks: list[str], metrics: dict | None = None) -> dict:
     row: dict = {}
     accs = []
     for t in tasks:
-        m = MAIN_METRIC.get(t, "acc")
+        m = (metrics or MAIN_METRIC).get(t, "acc")
         v = _metric(results, t, m)
         row[f"{t}/{m}"] = v
         se = _stderr(results, t, m)
         if se is not None:
             row[f"{t}/{m}_stderr"] = se
-        if v is not None and t in ACC_TASKS:
+        if v is not None and t in ACC_TASKS and not m.endswith("perplexity"):
             accs.append(v)
     row["avg_acc"] = sum(accs) / len(accs) if accs else None
     row["n_acc_tasks"] = len(accs)
@@ -124,7 +131,7 @@ def main(argv=None):
     src.add_argument("--checkpoint", help="Perceiver AR checkpoint dir (config.json + weights)")
     src.add_argument("--hf_model", help="Hugging Face causal LM id/path for a reference row")
     p.add_argument("--tag", required=True, help="row label / output stem, e.g. e18_stageA_ck9030")
-    p.add_argument("--tier", choices=["core", "full"], default="core")
+    p.add_argument("--tier", choices=["core", "full", "leaderboard"], default="core")
     p.add_argument("--tasks", default=None, help="comma list overriding the tier")
     p.add_argument("--num_fewshot", type=int, default=0)
     p.add_argument("--limit", type=int, default=None, help="examples per task (smoke tests)")
@@ -180,8 +187,20 @@ def main(argv=None):
     }
     (out_dir / f"{args.tag}.json").write_text(json.dumps(payload, indent=2, default=str))
 
+    metrics = LEADERBOARD_METRIC if args.tier == "leaderboard" else MAIN_METRIC
     row = {"tag": args.tag, "model": model_ref, "num_fewshot": args.num_fewshot,
-           "limit": args.limit if args.limit else "", **summarize(res["results"], tasks)}
+           "limit": args.limit if args.limit else "", **summarize(res["results"], tasks, metrics)}
+    if args.tier == "leaderboard":
+        from evaluation.tiny_ml_board import from_lm_eval, load_board, score
+        n_params = sum(p.numel() for p in lm.model.parameters()) if hasattr(lm, "model") else None
+        cand = {**from_lm_eval(str(out_dir / f"{args.tag}.json")), "name": args.tag,
+                "params": n_params if n_params else float("nan")}
+        me = next(r for r in score(load_board(), cand) if r.get("candidate"))
+        board = {k: me.get(k) for k in ("blimp", "arc", "wiki", "params", "wiki_score", "overall", "efficiency",
+                                        "rank")}
+        payload["tiny_ml_board"] = board
+        (out_dir / f"{args.tag}.json").write_text(json.dumps(payload, indent=2, default=str))
+        row.update({f"board/{k}": v for k, v in board.items()})
     csv_path = out_dir / "summary.csv"
     existing: list[dict] = []
     if csv_path.exists():
@@ -201,17 +220,21 @@ def main(argv=None):
 
     print(f"\n=== lm-eval suite: {args.tag} ({model_ref}) — {elapsed/60:.1f} min ===")
     for t in tasks:
-        m = MAIN_METRIC.get(t, "acc")
+        m = metrics.get(t, "acc")
         v = row.get(f"{t}/{m}")
         se = row.get(f"{t}/{m}_stderr")
         if v is None:
             print(f"  {t:18s} {m:16s}   n/a")
-        elif m == "word_perplexity":
+        elif m.endswith("perplexity"):
             print(f"  {t:18s} {m:16s} {v:8.2f}")
         else:
             print(f"  {t:18s} {m:16s} {100*v:6.2f}" + (f" ± {100*se:.2f}" if se else ""))
     if row["avg_acc"] is not None:
         print(f"  {'avg_acc':18s} ({row['n_acc_tasks']} tasks)      {100*row['avg_acc']:6.2f}")
+    if "tiny_ml_board" in payload:
+        b = payload["tiny_ml_board"]
+        print(f"  Tiny-ML board: overall {b['overall']:.2f}, efficiency {b['efficiency']:.2f}, would rank {b['rank']}"
+              f" (board snapshot 2026-11-14, {b['params']} parameters)")
     print(f"  json: {out_dir / (args.tag + '.json')}\n  csv : {csv_path}")
     return 0
 
