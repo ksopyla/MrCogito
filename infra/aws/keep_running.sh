@@ -26,6 +26,19 @@ NAME="$1"; MAX_HOURS="$2"; JOB="$3"; BRANCH="$4"; TYPE="$5"; DONE_KEY="$6"; INTE
 LOG="${KEEP_LOG:-$HERE/keep_$NAME.log}"
 say() { echo "[keep $NAME $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$LOG"; }
 launches=0
+# AWS login on this machine (SSO tokens expire): while it is gone, wait and say so hourly — never launch, never stop
+creds_ok() { aws sts get-caller-identity >/dev/null 2>&1; }
+cred_said=0
+wait_creds() {
+  while ! creds_ok; do
+    now=$(date +%s)
+    if [ $(( now - cred_said )) -ge 3600 ]; then
+      say "AWS login expired on this machine; waiting (run: aws sso login --profile ${AWS_PROFILE:-m21-research})"
+      cred_said=$now
+    fi
+    sleep "$INTERVAL"
+  done
+}
 alive() {
   for r in $MC_REGIONS; do
     aws ec2 describe-instances --region "$r" --filters "Name=tag:Name,Values=$NAME" \
@@ -43,6 +56,7 @@ if [ -n "${KEEP_WAIT_KEYS:-}" ]; then
   say "waiting for: $KEEP_WAIT_KEYS${KEEP_WAIT_UNTIL:+ (until $KEEP_WAIT_UNTIL UTC)}"
   while true; do
     missing=""
+    wait_creds
     for k in $KEEP_WAIT_KEYS; do aws s3 ls "s3://$MC_BUCKET/$k" >/dev/null 2>&1 || missing="$missing $k"; done
     [ -z "$missing" ] && { say "all wait keys are in S3"; break; }
     if [ -n "${KEEP_WAIT_UNTIL:-}" ] && [ "$(date -u +%Y-%m-%dT%H:%M)" \> "$KEEP_WAIT_UNTIL" ]; then
@@ -52,6 +66,7 @@ if [ -n "${KEEP_WAIT_KEYS:-}" ]; then
   done
 fi
 while true; do
+  wait_creds
   if aws s3 ls "s3://$MC_BUCKET/$DONE_KEY" >/dev/null 2>&1; then say "done: $DONE_KEY is in S3"; exit 0; fi
   if alive; then sleep "$INTERVAL"; continue; fi
   if [ "$launches" -ge "${KEEP_MAX_LAUNCHES:-12}" ]; then say "STOP: $launches launches and still not done"; exit 3; fi
@@ -67,8 +82,15 @@ while true; do
         g6e.2xlarge) price=2.242 ;; *) price=$MC_PRICE_PER_HOUR ;; esac
     fi
     ok=$(python3 -c "
-spent, price, hours, cap = float('$spent'), float('$price'), float('$hours'), float('$MC_BUDGET_USD')
-print(int(spent == spent and spent + price * hours <= cap))")
+try:
+    spent, price, hours, cap = float('$spent'), float('$price'), float('$hours'), float('$MC_BUDGET_USD')
+except ValueError:
+    print('unknown')
+else:
+    print('unknown' if spent != spent or price != price else int(spent + price * hours <= cap))")
+    if [ "$ok" = unknown ]; then   # spend or price unreadable (login lost mid-loop): try again later, never launch
+      say "spend or price unreadable (spent '$spent', price '$price'); not launching, next try in $INTERVAL s"; return 1
+    fi
     if [ "$ok" != 1 ]; then
       say "STOP (budget): spent \$$spent + up to \$$price/h x $hours h would pass the \$$MC_BUDGET_USD cap"; exit 4
     fi
