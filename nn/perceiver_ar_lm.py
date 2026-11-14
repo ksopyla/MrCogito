@@ -885,12 +885,19 @@ def _get_flex():
             # dynamo graph. The default cache_size_limit (8) is exceeded as soon as eval runs
             # next to training, and dynamo then silently falls back to EAGER flex_attention,
             # whose dense-math kernel materialises the S×S scores (48 GB at 32k) → OOM.
+            # Cached decoding compiles one graph per prompt length and flex call (dynamic=False): e37a's two
+            # calls a layer over 100 RULER documents at 128k passed 128 graphs at the 88th document (E37
+            # needles, 2026-11-14: frequent words OOM'd on the eager fallback). MC_DYNAMO_CACHE_LIMIT raises
+            # the limit for such eval runs; the default (128) keeps training as it was.
+            import os
+
             import torch._dynamo.config as dyn_cfg
 
-            dyn_cfg.cache_size_limit = max(int(getattr(dyn_cfg, "cache_size_limit", 8)), 128)
+            lim = int(os.environ.get("MC_DYNAMO_CACHE_LIMIT", "128"))
+            dyn_cfg.cache_size_limit = max(int(getattr(dyn_cfg, "cache_size_limit", 8)), lim)
             if hasattr(dyn_cfg, "accumulated_cache_size_limit"):
                 dyn_cfg.accumulated_cache_size_limit = max(
-                    int(dyn_cfg.accumulated_cache_size_limit), 1024
+                    int(dyn_cfg.accumulated_cache_size_limit), 1024, 8 * lim
                 )
             _flex_attention_fn = torch.compile(flex_attention, dynamic=False)
         else:

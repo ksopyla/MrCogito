@@ -26,6 +26,9 @@
 set -uo pipefail
 source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1
+# Cached decoding compiles one flex graph per prompt length; 100 documents at 128k passed the default 128 (e37a,
+# 2026-11-14), and the eager fallback OOMs. nn/perceiver_ar_lm.py _get_flex reads this.
+export MC_DYNAMO_CACHE_LIMIT=${MC_DYNAMO_CACHE_LIMIT:-2048}
 CUDA_DIR=$(ls -d /usr/local/cuda-12.* 2>/dev/null | sort -V | tail -1)
 [ -n "$CUDA_DIR" ] && export CUDA_HOME="$CUDA_DIR" PATH="$CUDA_DIR/bin:$PATH"   # their inline kernels build with nvcc
 REPO="$(pwd)"
