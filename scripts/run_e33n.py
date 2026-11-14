@@ -317,7 +317,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
               flow: bool = False, gpus: int = 1, sft_manifest: str | None = None,
               grad_ckpt: bool = False, compile: str = "off", liger: bool = False, rows: int | None = None,
-              workers: int = 6, fast: bool = False, mix: str | None = None) -> list[str]:
+              workers: int = 6, fast: bool = False, mix: str | None = None,
+              save_every: int | None = None) -> list[str]:
     liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
@@ -372,7 +373,7 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         sched = ["--lr_scheduler_type", "warmup_stable_decay", "--warmup_steps", str(max(1, int(0.03 * steps))),
                  "--lr_scheduler_kwargs", json.dumps({"num_decay_steps": int(0.97 * steps), "decay_type": "1-sqrt",
                                                       "min_lr_ratio": 0.1})]
-    save_every = max(50, steps // 10)
+    save_every = int(save_every) if save_every else max(50, steps // 10)
     if phase == "sft" and not eval_every:
         eval_every = _final_eval_every(steps)
     cmd += [
@@ -441,6 +442,8 @@ def main() -> None:
     c.add_argument("--compile", default="off", choices=("off", "static", "dynamic"),
                    help="torch.compile the whole model (static: fixed row shapes)")
     c.add_argument("--liger", action="store_true", help="Liger's fused linear + cross-entropy for the loss")
+    c.add_argument("--save_every", type=int, help="checkpoint every N optimizer steps (default: a tenth of the "
+                                                  "phase; long spot runs lose less with a shorter interval)")
     c.add_argument("--mix", help="a built data mix (scripts/build_m21_mix.py output dir): its tokenizer, sources, "
                                  "row lengths and tokens per phase replace the GPT-2 FineWeb-Edu / LongDocs-lite data")
     c.add_argument("--fast", action="store_true",
@@ -463,7 +466,7 @@ def main() -> None:
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
                     local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
                     grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
-                    fast=a.fast, mix=a.mix)
+                    fast=a.fast, mix=a.mix, save_every=a.save_every)
     print(shlex.join(cmd))
 
 
