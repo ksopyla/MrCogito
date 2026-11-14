@@ -1,0 +1,790 @@
+{
+ "name": "m21mix_v1",
+ "description": "E38 pretraining mix, SmolLM2 tokenizer. Built by scripts/build_m21_mix.py (on a node: infra/aws/jobs/m21_data_build.sh). target_tokens = TRAIN tokens to build per source; a phase's weights are shares of that phase's tokens. fineweb_edu and dclm_edu serve the trunk and the later phases: their targets cover the sum, and the manifest writer gives later phases the last shards (shard token counts are in each done.json). Every Hub source was checked public and ungated without a token on 2026-11-14.",
+ "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+ "vocab_size": 49152,
+ "eot": 0,
+ "shard_tokens": 100000000,
+ "defaults": {
+  "val_fraction": 0.005,
+  "val_tokens": 2000000,
+  "val_min_docs": 40,
+  "min_chars_per_token": 2.0
+ },
+ "sources": [
+  {
+   "name": "fineweb_edu",
+   "kind": "docs",
+   "repo": "HuggingFaceFW/fineweb-edu",
+   "files": "sample/10BT/*.parquet",
+   "text_column": "text",
+   "id_column": "id",
+   "filter": {
+    "column": "int_score",
+    "min": 3
+   },
+   "target_tokens": 4000000000.0
+  },
+  {
+   "name": "dclm_edu",
+   "kind": "docs",
+   "repo": "HuggingFaceTB/dclm-edu",
+   "files": "data/*.parquet",
+   "text_column": "text",
+   "id_column": "id",
+   "filter": {
+    "column": "edu_int_score",
+    "min": 3
+   },
+   "target_tokens": 2300000000.0
+  },
+  {
+   "name": "wiki_rewrite",
+   "kind": "docs",
+   "repo": "nvidia/Nemotron-Pretraining-Specialized-v1",
+   "files": "Nemotron-Pretraining-Wiki-Rewrite/*.parquet",
+   "text_column": "text",
+   "id_column": "uuid",
+   "target_tokens": 700000000.0
+  },
+  {
+   "name": "math_textbooks",
+   "kind": "docs",
+   "repo": "nvidia/Nemotron-Pretraining-Specialized-v1",
+   "files": "Nemotron-Pretraining-Math-Textbooks/*.parquet",
+   "text_column": "text",
+   "id_column": "uuid",
+   "target_tokens": 350000000.0
+  },
+  {
+   "name": "rqa",
+   "kind": "docs",
+   "repo": "nvidia/Nemotron-Pretraining-Specialized-v1",
+   "files": "Nemotron-Pretraining-RQA/*.parquet",
+   "text_column": "text",
+   "id_column": "uuid",
+   "target_tokens": 520000000.0
+  },
+  {
+   "name": "infinibyte",
+   "kind": "docs",
+   "repo": "nvidia/Nemotron-Pretraining-Specialized-v1",
+   "files": "Nemotron-Pretraining-InfiniByte-Reasoning/*.parquet",
+   "text_column": "text",
+   "id_column": "uuid",
+   "target_tokens": 250000000.0
+  },
+  {
+   "name": "finemath",
+   "kind": "docs",
+   "repo": "HuggingFaceTB/finemath",
+   "files": "finemath-4plus/*.parquet",
+   "text_column": "text",
+   "id_column": "url",
+   "target_tokens": 520000000.0
+  },
+  {
+   "name": "code_files",
+   "kind": "docs",
+   "repo": "common-pile/stackv2_edu_filtered",
+   "text_column": "text",
+   "id_column": "id",
+   "note": "One row = one source file. The raw files are grouped by language (stack-edu-0000..0017 Markdown, 0018-0019 C, 0020-0027 C++, 0028-0033 C#, 0034-0037 Go, 0038-0049 Java, 0050-0064 JavaScript, 0065-0072 PHP, 0073-0084 Python, 0085 Ruby, 0086 Rust, 0087-0088 Shell, 0089-0090 Swift, 0091-0094 TypeScript; first row of each file, 2026-11-14), so each part reads one language. Files above 32,768 tokens are dropped (mostly generated or data files; 9.6 % of the characters in a Python sample sat in files of 16k tokens or more).",
+   "parts": [
+    {
+     "label": "Python",
+     "share": 0.3,
+     "files": [
+      "stack-edu-0073.json.gz",
+      "stack-edu-0074.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "Python"
+      ]
+     }
+    },
+    {
+     "label": "JavaScript",
+     "share": 0.12,
+     "files": [
+      "stack-edu-0050.json.gz",
+      "stack-edu-0051.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "JavaScript"
+      ]
+     }
+    },
+    {
+     "label": "TypeScript",
+     "share": 0.1,
+     "files": [
+      "stack-edu-0091.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "TypeScript"
+      ]
+     }
+    },
+    {
+     "label": "Java",
+     "share": 0.12,
+     "files": [
+      "stack-edu-0038.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "Java"
+      ]
+     }
+    },
+    {
+     "label": "C++",
+     "share": 0.1,
+     "files": [
+      "stack-edu-0020.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "C++"
+      ]
+     }
+    },
+    {
+     "label": "C",
+     "share": 0.08,
+     "files": [
+      "stack-edu-0018.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "C"
+      ]
+     }
+    },
+    {
+     "label": "Go",
+     "share": 0.06,
+     "files": [
+      "stack-edu-0034.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "Go"
+      ]
+     }
+    },
+    {
+     "label": "Rust",
+     "share": 0.06,
+     "files": [
+      "stack-edu-0086.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "Rust"
+      ]
+     }
+    },
+    {
+     "label": "Markdown",
+     "share": 0.06,
+     "files": [
+      "stack-edu-0000.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "Markdown"
+      ]
+     }
+    }
+   ],
+   "target_tokens": 850000000.0,
+   "max_tokens": 32768
+  },
+  {
+   "name": "code_repos",
+   "kind": "repo_pack",
+   "repo": "common-pile/stackv2_edu_filtered",
+   "text_column": "text",
+   "repo_column": "metadata.repo_name",
+   "path_column": "metadata.path",
+   "min_tokens": 16384,
+   "max_tokens": 131072,
+   "round_chars": 12000000000.0,
+   "val_min_rows": {
+    "16384": 32,
+    "65536": 8
+   },
+   "note": "Raw files that code_files does not read. The rows of a repository are scattered over a language's raw files, so each part gathers repositories within rounds of round_chars characters (about four raw files; a larger round gathers more of each repository and needs as much temporary disk). Rust has one raw file only (read by code_files), so there are no Rust packs.",
+   "parts": [
+    {
+     "label": "Python",
+     "share": 0.3,
+     "files": [
+      "stack-edu-0076.json.gz",
+      "stack-edu-0077.json.gz",
+      "stack-edu-0078.json.gz",
+      "stack-edu-0079.json.gz",
+      "stack-edu-0080.json.gz",
+      "stack-edu-0081.json.gz",
+      "stack-edu-0082.json.gz",
+      "stack-edu-0083.json.gz",
+      "stack-edu-0084.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "Python"
+      ]
+     }
+    },
+    {
+     "label": "JavaScript",
+     "share": 0.15,
+     "files": [
+      "stack-edu-0052.json.gz",
+      "stack-edu-0053.json.gz",
+      "stack-edu-0054.json.gz",
+      "stack-edu-0055.json.gz",
+      "stack-edu-0056.json.gz",
+      "stack-edu-0057.json.gz",
+      "stack-edu-0058.json.gz",
+      "stack-edu-0059.json.gz",
+      "stack-edu-0060.json.gz",
+      "stack-edu-0061.json.gz",
+      "stack-edu-0062.json.gz",
+      "stack-edu-0063.json.gz",
+      "stack-edu-0064.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "JavaScript"
+      ]
+     }
+    },
+    {
+     "label": "TypeScript",
+     "share": 0.12,
+     "files": [
+      "stack-edu-0092.json.gz",
+      "stack-edu-0093.json.gz",
+      "stack-edu-0094.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "TypeScript"
+      ]
+     }
+    },
+    {
+     "label": "Java",
+     "share": 0.15,
+     "files": [
+      "stack-edu-0039.json.gz",
+      "stack-edu-0040.json.gz",
+      "stack-edu-0041.json.gz",
+      "stack-edu-0042.json.gz",
+      "stack-edu-0043.json.gz",
+      "stack-edu-0044.json.gz",
+      "stack-edu-0045.json.gz",
+      "stack-edu-0046.json.gz",
+      "stack-edu-0047.json.gz",
+      "stack-edu-0048.json.gz",
+      "stack-edu-0049.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "Java"
+      ]
+     }
+    },
+    {
+     "label": "C++",
+     "share": 0.12,
+     "files": [
+      "stack-edu-0021.json.gz",
+      "stack-edu-0022.json.gz",
+      "stack-edu-0023.json.gz",
+      "stack-edu-0024.json.gz",
+      "stack-edu-0025.json.gz",
+      "stack-edu-0026.json.gz",
+      "stack-edu-0027.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "C++"
+      ]
+     }
+    },
+    {
+     "label": "C",
+     "share": 0.06,
+     "files": [
+      "stack-edu-0019.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "C"
+      ]
+     }
+    },
+    {
+     "label": "Go",
+     "share": 0.1,
+     "files": [
+      "stack-edu-0035.json.gz",
+      "stack-edu-0036.json.gz",
+      "stack-edu-0037.json.gz"
+     ],
+     "filter": {
+      "column": "metadata.language",
+      "in": [
+       "Go"
+      ]
+     }
+    }
+   ],
+   "target_tokens": 600000000.0
+  },
+  {
+   "name": "books",
+   "kind": "docs",
+   "repo": "common-pile/project_gutenberg_filtered",
+   "files": "*.json.gz",
+   "text_column": "text",
+   "id_column": "id",
+   "min_tokens": 16384,
+   "heldout": "longdocs_lite",
+   "val_min_rows": {
+    "16384": 32,
+    "65536": 8
+   },
+   "target_tokens": 750000000.0
+  },
+  {
+   "name": "arxiv",
+   "kind": "docs",
+   "repo": "common-pile/arxiv_papers_filtered",
+   "files": "*.json.gz",
+   "text_column": "text",
+   "id_column": "id",
+   "min_tokens": 16384,
+   "heldout": "longdocs_lite",
+   "val_min_rows": {
+    "16384": 32,
+    "65536": 8
+   },
+   "target_tokens": 300000000.0
+  },
+  {
+   "name": "doab",
+   "kind": "docs",
+   "repo": "common-pile/doab_filtered",
+   "files": "*.json.gz",
+   "text_column": "text",
+   "id_column": "id",
+   "min_tokens": 16384,
+   "heldout": "longdocs_lite",
+   "val_min_rows": {
+    "16384": 32,
+    "65536": 8
+   },
+   "target_tokens": 300000000.0
+  },
+  {
+   "name": "usgpo",
+   "kind": "docs",
+   "repo": "common-pile/usgpo_filtered",
+   "files": "*.json.gz",
+   "text_column": "text",
+   "id_column": "id",
+   "min_tokens": 16384,
+   "heldout": "longdocs_lite",
+   "val_min_rows": {
+    "16384": 32,
+    "65536": 8
+   },
+   "target_tokens": 300000000.0
+  },
+  {
+   "name": "hansard",
+   "kind": "docs",
+   "repo": "common-pile/uk_hansard_filtered",
+   "files": "*.json.gz",
+   "text_column": "text",
+   "id_column": "id",
+   "min_tokens": 16384,
+   "heldout": "longdocs_lite",
+   "val_min_rows": {
+    "16384": 32,
+    "65536": 8
+   },
+   "target_tokens": 300000000.0
+  },
+  {
+   "name": "pdfs",
+   "kind": "docs",
+   "repo": "allenai/dolma3_longmino_pool",
+   "text_column": "text",
+   "id_column": "id",
+   "min_tokens": 16384,
+   "val_min_rows": {
+    "16384": 32,
+    "65536": 8
+   },
+   "note": "Dolma 3 Longmino pool: one folder per topic and length bucket, data/olmocr_science_pdfs-<topic>-2e<k>/ with k = 13 (8-16k tokens of their tokenizer), 14 (16-32k), 15 (32-64k), 16 (64-128k), 17 (128-256k), 18 (256-512k), 19, 20. Two topics; half of the tokens from the 16-64k buckets, half from the 64-512k buckets; the folders of a part are read one file each in turn.",
+   "parts": [
+    {
+     "label": "16-64k",
+     "share": 0.5,
+     "files": [
+      "data/olmocr_science_pdfs-science_math_and_technology-2e14/*.jsonl.zst",
+      "data/olmocr_science_pdfs-education_and_jobs-2e14/*.jsonl.zst",
+      "data/olmocr_science_pdfs-science_math_and_technology-2e15/*.jsonl.zst",
+      "data/olmocr_science_pdfs-education_and_jobs-2e15/*.jsonl.zst"
+     ]
+    },
+    {
+     "label": "64k+",
+     "share": 0.5,
+     "files": [
+      "data/olmocr_science_pdfs-science_math_and_technology-2e16/*.jsonl.zst",
+      "data/olmocr_science_pdfs-education_and_jobs-2e16/*.jsonl.zst",
+      "data/olmocr_science_pdfs-science_math_and_technology-2e17/*.jsonl.zst",
+      "data/olmocr_science_pdfs-education_and_jobs-2e17/*.jsonl.zst",
+      "data/olmocr_science_pdfs-science_math_and_technology-2e18/*.jsonl.zst",
+      "data/olmocr_science_pdfs-education_and_jobs-2e18/*.jsonl.zst"
+     ]
+    }
+   ],
+   "fallback": {
+    "repo": "HuggingFaceFW/finepdfs",
+    "text_column": "text",
+    "id_column": "id",
+    "parts": [
+     {
+      "label": "16-64k",
+      "share": 0.5,
+      "files": "data/eng_Latn/train/000_*.parquet",
+      "filter": {
+       "column": "token_count",
+       "min": 15000,
+       "max": 70000
+      }
+     },
+     {
+      "label": "64k+",
+      "share": 0.5,
+      "files": "data/eng_Latn/train/001_*.parquet",
+      "filter": {
+       "column": "token_count",
+       "min": 60000
+      }
+     }
+    ]
+   },
+   "target_tokens": 1200000000.0
+  },
+  {
+   "name": "chat",
+   "kind": "chat",
+   "repo": "HuggingFaceTB/smol-smoltalk",
+   "files": "data/train-*.parquet",
+   "messages_column": "messages",
+   "target_tokens": 130000000.0,
+   "note": "The dataset's test file is not read. SmolLM2-135M's tokenizer has no chat template; the builder renders ChatML (<|im_start|>role\\ncontent<|im_end|>\\n, ids 1 and 2) and saves it with the tokenizer."
+  },
+  {
+   "name": "multihop_16k",
+   "kind": "external",
+   "note": "built by another script; listed in mix.json when its done.json is in the mix folder"
+  },
+  {
+   "name": "multihop_64k",
+   "kind": "external",
+   "note": "built by another script; listed in mix.json when its done.json is in the mix folder"
+  },
+  {
+   "name": "lookup_16k",
+   "kind": "external",
+   "note": "built by another script; listed in mix.json when its done.json is in the mix folder"
+  },
+  {
+   "name": "lookup_64k",
+   "kind": "external",
+   "note": "built by another script; listed in mix.json when its done.json is in the mix folder"
+  }
+ ],
+ "phases": {
+  "trunk": {
+   "seq_len": 4096,
+   "rule": "stream",
+   "seed": 42,
+   "tokens": 8000000000.0,
+   "train": [
+    {
+     "name": "fineweb_edu",
+     "weight": 0.42
+    },
+    {
+     "name": "dclm_edu",
+     "weight": 0.24
+    },
+    {
+     "name": "code_files",
+     "weight": 0.1
+    },
+    {
+     "name": "wiki_rewrite",
+     "weight": 0.08
+    },
+    {
+     "name": "finemath",
+     "weight": 0.06
+    },
+    {
+     "name": "rqa",
+     "weight": 0.06
+    },
+    {
+     "name": "math_textbooks",
+     "weight": 0.04
+    }
+   ],
+   "eval": [
+    {
+     "name": "fineweb_edu",
+     "rows": 64
+    },
+    {
+     "name": "dclm_edu",
+     "rows": 64
+    },
+    {
+     "name": "code_files",
+     "rows": 64
+    },
+    {
+     "name": "wiki_rewrite",
+     "rows": 64
+    },
+    {
+     "name": "finemath",
+     "rows": 64
+    },
+    {
+     "name": "rqa",
+     "rows": 64
+    },
+    {
+     "name": "math_textbooks",
+     "rows": 64
+    }
+   ]
+  },
+  "decay": {
+   "seq_len": 16384,
+   "rule": "doc",
+   "seed": 1042,
+   "tokens": 3000000000.0,
+   "train": [
+    {
+     "name": "pdfs",
+     "weight": 0.22,
+     "rule": "doc"
+    },
+    {
+     "name": "books",
+     "weight": 0.12,
+     "rule": "doc"
+    },
+    {
+     "name": "arxiv",
+     "weight": 0.05,
+     "rule": "doc"
+    },
+    {
+     "name": "doab",
+     "weight": 0.03,
+     "rule": "doc"
+    },
+    {
+     "name": "usgpo",
+     "weight": 0.03,
+     "rule": "doc"
+    },
+    {
+     "name": "hansard",
+     "weight": 0.03,
+     "rule": "doc"
+    },
+    {
+     "name": "code_repos",
+     "weight": 0.12,
+     "rule": "doc"
+    },
+    {
+     "name": "fineweb_edu",
+     "weight": 0.14,
+     "rule": "stream"
+    },
+    {
+     "name": "dclm_edu",
+     "weight": 0.06,
+     "rule": "stream"
+    },
+    {
+     "name": "infinibyte",
+     "weight": 0.07,
+     "rule": "stream"
+    },
+    {
+     "name": "multihop_16k",
+     "weight": 0.06,
+     "rule": "stream"
+    },
+    {
+     "name": "lookup_16k",
+     "weight": 0.03,
+     "rule": "stream"
+    },
+    {
+     "name": "chat",
+     "weight": 0.04,
+     "rule": "stream"
+    }
+   ],
+   "eval": [
+    {
+     "name": "books",
+     "rows": 16
+    },
+    {
+     "name": "arxiv",
+     "rows": 16
+    },
+    {
+     "name": "doab",
+     "rows": 16
+    },
+    {
+     "name": "usgpo",
+     "rows": 16
+    },
+    {
+     "name": "hansard",
+     "rows": 16
+    },
+    {
+     "name": "pdfs",
+     "rows": 16
+    },
+    {
+     "name": "code_repos",
+     "rows": 16
+    }
+   ]
+  },
+  "long": {
+   "seq_len": 65536,
+   "rule": "doc",
+   "seed": 2042,
+   "tokens": 500000000.0,
+   "train": [
+    {
+     "name": "pdfs",
+     "weight": 0.3,
+     "rule": "doc"
+    },
+    {
+     "name": "books",
+     "weight": 0.25,
+     "rule": "doc"
+    },
+    {
+     "name": "arxiv",
+     "weight": 0.04,
+     "rule": "doc"
+    },
+    {
+     "name": "doab",
+     "weight": 0.03,
+     "rule": "doc"
+    },
+    {
+     "name": "usgpo",
+     "weight": 0.03,
+     "rule": "doc"
+    },
+    {
+     "name": "code_repos",
+     "weight": 0.15,
+     "rule": "doc"
+    },
+    {
+     "name": "multihop_64k",
+     "weight": 0.1,
+     "rule": "stream"
+    },
+    {
+     "name": "lookup_64k",
+     "weight": 0.05,
+     "rule": "stream"
+    },
+    {
+     "name": "fineweb_edu",
+     "weight": 0.05,
+     "rule": "stream"
+    }
+   ],
+   "eval": [
+    {
+     "name": "books",
+     "rows": 4
+    },
+    {
+     "name": "arxiv",
+     "rows": 4
+    },
+    {
+     "name": "doab",
+     "rows": 4
+    },
+    {
+     "name": "usgpo",
+     "rows": 4
+    },
+    {
+     "name": "hansard",
+     "rows": 4
+    },
+    {
+     "name": "pdfs",
+     "rows": 4
+    },
+    {
+     "name": "code_repos",
+     "rows": 4
+    }
+   ]
+  }
+ }
+}
