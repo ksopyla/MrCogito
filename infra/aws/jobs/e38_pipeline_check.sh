@@ -4,11 +4,12 @@
 # infra/aws/jobs/e33n_run.sh with E33N_MIX (trunk 4k -> decay 16k -> long 64k, --fast, evaluation inside each
 # phase), then the tests of the 64k model in their quick form (long-document loss with bits per byte, RULER and
 # core with the SmolLM2 tokenizer).
-# Usage: CUDA_VISIBLE_DEVICES=2 bash infra/aws/jobs/e38_pipeline_check.sh [SCALE] [ARM]     (default 0.01, e37a)
+# Usage: CUDA_VISIBLE_DEVICES=2 bash infra/aws/jobs/e38_pipeline_check.sh [SCALE] [ARM] [SIZE]  (default 0.01, e37a, s30)
+# SIZE m120t checks the Tiny-ML leaderboard recipe (shared input/output table, the bigger body) on the same data.
 # Everything lands in Cache/e38_check/; the last line says PASS or names what failed.
 set -uo pipefail
 cd "$(dirname "$0")/../../.." || exit 1
-SCALE="${1:-0.01}"; ARM="${2:-e37a}"
+SCALE="${1:-0.01}"; ARM="${2:-e37a}"; SIZE="${3:-s30}"
 export PATH="$HOME/.local/bin:$PATH" HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1 TOKENIZERS_PARALLELISM=false
 C="$PWD/Cache/e38_check"; MIX="m21_check"; D="$C/$MIX"
 mkdir -p "$C"
@@ -36,12 +37,12 @@ for ph, p in paths.items():
     print(f"{ph}: {len(tr)} train rows of {m['seq_len']} {tr.rows_per_source}; {len(ev)} eval rows")
 PY
 
-say "2/4 training, $ARM at 30M: trunk -> decay -> long"
+say "2/4 training, $ARM at $SIZE: trunk -> decay -> long"
 export E33N_DATA="$C" E33N_RUNS="$C/runs" E33N_MIX="$MIX" E33N_EXPERIMENT=E38check E33N_SKIP_EVAL=1 E33N_LONG=1 \
   E33N_GRAD_CKPT=1 E33N_MICRO_TRUNK=2 E33N_MICRO_DECAY=1 E33N_MICRO_LONG=1 E33N_DECAY_TOKENS=8e5 E33N_LONG_TOKENS=2.8e6 \
   E33N_CMD_EXTRA="--fast --rows 2 --eval_every 20 --save_every 20 --mix_lenient" WANDB_MODE=offline
-bash infra/aws/jobs/e33n_run.sh "$ARM" s30 "" 4e5 > "$C/train.log" 2>&1 || fail "e33n_run.sh (see $C/train.log and $C/runs/*/*.log)"
-R=$(ls -d "$C"/runs/e33n_s30_"$ARM"_tok4e5* | tail -1)
+bash infra/aws/jobs/e33n_run.sh "$ARM" "$SIZE" "" 4e5 > "$C/train.log" 2>&1 || fail "e33n_run.sh (see $C/train.log and $C/runs/*/*.log)"
+R=$(ls -d "$C"/runs/e33n_"$SIZE"_"$ARM"_tok4e5* | tail -1)
 LONG=$(ls -d "$R"/long/*/final 2>/dev/null | tail -1)
 [ -n "$LONG" ] || fail "no 64k model under $R"
 for ph in trunk decay long; do
@@ -51,7 +52,7 @@ for ph in trunk decay long; do
 done
 
 say "3/4 resume: the trunk again from its newest checkpoint must do nothing new"
-bash infra/aws/jobs/e33n_run.sh "$ARM" s30 "" 4e5 > "$C/train_again.log" 2>&1 || fail "the second e33n_run.sh call"
+bash infra/aws/jobs/e33n_run.sh "$ARM" "$SIZE" "" 4e5 > "$C/train_again.log" 2>&1 || fail "the second e33n_run.sh call"
 grep -q "trunk done" "$R/events.log" || fail "events.log has no 'trunk done'"
 
 say "4/4 tests of the 64k model, quick form"
