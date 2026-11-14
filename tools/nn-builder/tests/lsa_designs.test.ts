@@ -16,6 +16,8 @@ const EXPECTED: Record<string, { total: number; nonEmbedding: number }> = {
   e33p_lsa_port_30m: { total: 68_701_396, nonEmbedding: 26_260_308 },
   e33p_notes_open_30m: { total: 72_687_252, nonEmbedding: 30_246_164 },
   e33t_catalogue_30m: { total: 72_687_765, nonEmbedding: 30_246_677 },
+  // the E33t winner (64 notes per page, every pass may reopen notes): model_args("catalogue_reuse_n4", "s30", 1472)
+  e33t_catalogue_reuse_n4_30m: { total: 72_769_685, nonEmbedding: 30_328_597 },
   lsa_paper_native_0p8b: { total: 752_393_024, nonEmbedding: 498_113_344 },
 };
 
