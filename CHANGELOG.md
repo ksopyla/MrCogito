@@ -15,6 +15,80 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-13] - Two agents from one trained 100M model, eval only: the hand-over works with A's last tokens, not with the memory alone
+
+**Why:** can the 100M models already show agent-to-agent work through latents, with no training, and what does it
+cost in bytes and time against sending the text.
+
+- `nn/agent_split.py` (new, `SplitDecoder` on the cached decoding). Agent A = the prefill of the document; its memory
+  = the reading layer's key and value per token and loop pass. Agent B = the steps over its own text and its answer.
+  With the split on, B's local layers read B's own tokens only; the reading layer is unchanged, so A's memory is all
+  that crosses. Options: `tail` (B's local layers still read A's last N tokens), `bits` (A's memory on a coarse
+  grid, the read's index rebuilt from it), `blank` (no memory: the floor). Counts the traffic of handing the memory
+  over and of a remote read (B sends its queries, A returns the read vector and the log of its softmax mass).
+  Full attention, LSA's read and the concept read; the note reads and n-gram input tables are refused.
+  `nn/incremental.py`: an optional `trace` hook in the concept read (the keys and summaries a read opens).
+  `tests/test_agent_split.py` (14): split off = the tokens and hidden states of one row; split on = scrambling
+  every local layer's cache of A's tokens changes nothing for B; blank memory = B decoding alone.
+- `scripts/a2a_split_probe.py` (new): RULER needle documents cut at the question into A's document and B's text.
+  Conditions: one agent; full state (split off); memory only; memory + A's last N tokens; memory + a 148-token
+  preamble of B's own; 8 / 4-bit memory (on the preamble start); no memory; the previous document's memory. Records
+  seconds and sizes (text as UTF-8, zstd-19, bits under the model itself; memory; remote read; what the concept
+  read opened). `scripts/cramming_probe.py`: `--bin` (documents from a token shard).
+  `infra/aws/jobs/a2a_probe_node.sh` (new).
+- Run: 100M models (3.4B tokens), two spot g6e.xlarge in us-east-1, 13 Nov 21:34 UTC - 14 Nov ~00:20 UTC, about $8.
+  Node `a2a-e37a-short` ran four jobs on one card (12 answer tokens); node `a2a-dense` came up from a launch retry
+  and ran the first, heavier configuration (50 documents, 32 answer tokens, bits on every document) — it was noticed
+  only at 23:37 UTC. % of needles found; `number` = RULER niah_single_1 (repeated filler), `essays` = niah_single_2:
+
+  | model, task, length (n) | one agent | full state | memory only | + A's last 16 | + B's preamble | 8-bit | 4-bit | none / other doc |
+  |---|---|---|---|---|---|---|---|---|
+  | concept read, number, 4k (30) | 100 | 100 | 63 | 100 | 90 | 93 | 80 | 0 / 0 |
+  | concept read, number, 16k (30) | 97 | 97 | 43 | 93 | 40 | 33 | 33 | 0 / 0 |
+  | concept read, number, 32k (20) | 90 | 90 | 35 | 60 | 20 | 20 | 0 | 0 / 0 |
+  | concept read, number, 64k (12) | 83 | 83 | 17 | 58 | 8 | 17 | 17 | 0 / 0 |
+  | concept read, number, 64k (20, second run) | 100 | 100 | 40 | 95 (last 32), 100 (last 64) | 15 | – | – | 0 / 0 |
+  | concept read, essays, 4k / 16k / 32k (30 / 30 / 20) | 63 / 10 / 10 | 63 / 10 / 10 | 10 / 10 / 20 | 43 / 23 / 15 | 27 / 7 / 10 | 13 / 13 / 27 | 7 / 27 / 13 | 0 / 0 |
+  | LSA port, number, 4k / 16k / 32k (20 / 20 / 14) | 100 / 100 / 100 | 100 / 100 / 100 | 40 / 25 / 7 | 80 / 80 / 79 | 50 / 30 / 14 | 40 / 30 / 10 | 30 / 10 / 0 | 0 / 0 |
+  | LSA port, essays, 4k / 16k / 32k (20 / 20 / 14) | 95 / 50 / 57 | 95 / 50 / 57 | 80 / 45 / 43 | 90 / 45 / 57 | 85 / 70 / 57 | 80 / 60 / 50 | 80 / 70 / 40 | 0 / 0 |
+  | dense, number, 4k / 16k (30) | 77 / 70 | 77 / 70 | 17 / 43 | 60 / 57 | 53 / 57 | 40 / 47 | 27 / 27 | 0 / 0 |
+  | dense, essays, 4k / 16k (30) | 97 / 57 | 97 / 57 | 7 / 33 | 73 / 47 | 73 / 40 | 80 / 40 | 67 / 47 | 0 / 0 |
+  | dense, number, 4k / 16k (50, first configuration) | 70 / 72 | 70 / 74 | 20 / 52 | 44 / 38 (last 64: 62 / 60) | 40 / 54 | 40 / 56 | 28 / 40 | 0 / 0 |
+  | dense, essays, 4k / 16k (50, first configuration) | 88 / 54 | 88 / 54 | 12 / 38 | 70 / 54 (last 64: 86 / 48) | 74 / 38 | 72 / 38 | 56 / 36 | 0 / 0 |
+
+  The 8 / 4-bit columns of the 12-token runs cover the first 15 documents of a cell (10 for the LSA port, 6 at 64k).
+  In the 50-document run they cover all: 6 bits 36 / 52 / 72 / 36 and 3 bits 12 / 22 / 40 / 30 in the row order
+  above, so 8 and 6 bits equal 16 and 4 bits loses. UUID needles (niah_single_3, dense, 50): one agent 10 / 12 %.
+  - Full state = one agent: the same score in 23 of 24 cells and the same answer text in 680 of 720 documents. Most
+    of the 40 share a beginning and then differ (bf16; the one agent runs the question inside the prefill, the
+    hand-over steps through it). In float32 the tests are exact and the 100M concept model gave the same text in 33
+    of 33 documents of 2k (laptop pipeline check).
+  - With the previous document's memory B never reports its own needle; it reports the other document's, at a rate
+    within 20 points of its preamble score in every cell.
+  - Seconds, median, concept read, A reads / B answers / one agent: 0.56 / 1.95 / 1.01 at 4k, 1.45 / 1.98 / 1.76 at
+    16k, 4.9 / 2.0 / 5.1 at 32k, 8.6 / 1.8 / 9.1 at 64k (shared card). B's ~45 single-position steps cost ~2 s at
+    any length.
+  - Sizes: the memory is 512 numbers per document token (4 passes × (64 key + 64 value)) = 1 KB at 16 bits: 3.9 /
+    16 / 33 / 67 MB at 4k / 16k / 32k / 64k, against 17 / 75 / 152 KB of essay text as UTF-8 (zstd-19: 6.9 / 26 /
+    51 KB; 5.0-5.2 bits per token under the model itself: 2.4 / 10 / 20 KB). A remote read is 14.4 KB per token of
+    B's (3,584 numbers up, 3,640 down) at any length. The concept read opened 3.1 / 6.0 / 7.5 / 9.7 MB of keys,
+    values and summaries at 4k / 16k / 32k / 64k. A's local caches are 3.3 KB per token (13 local layer calls × 128
+    numbers): 53 / 106 / 213 KB for the last 16 / 32 / 64 tokens.
+- Capacity of input vectors for the dense 100M model as the receiver (`cramming_probe.py`, 8 FineWeb-Edu validation
+  texts, 2,000 steps; bits gained on the text, share of texts reproduced exactly):
+
+  | vectors | tokens → bits (exact) |
+  |---|---|
+  | 1 (two runs) | 16 → 85, 96 (75 %, 100 %) · 32 → 165, 165 (62 %, 50 %) · 64 → 265, 237 (0 %, 25 %) · 128 → 266, 301 (0 %) |
+  | 4 (two runs) | 64 → 288, 280 (12 %, 25 %) · 128 → 501, 524 · 256 → 585, 574 · 512 → 677, 720 (0 %) |
+  | 16 (two runs to 512) | 256 → 1,054, 1,087 (12 %, 38 %; 96-97 % of tokens) · 512 → 1,538, 1,440 · 1,024 → 1,932 (0 %) |
+
+  The two runs use the same texts and differ in the vectors' random start and in the card (shared / alone).
+
+- Results: `s3://mrcogito-train-<account>/runs/a2a_probe/a2a-e37a-short/` and `.../a2a-dense/`.
+- Not done: training with the split. The concept and LSA reads require the message boundary off in the config, so a
+  split fine-tune needs separate side ids for the local layers.
+
 ## [2026-11-13] - Cached decoding timed on one L40S: 25-28x at 64k, same answers
 
 - `infra/aws/jobs/bench_cache_node.sh` (new) on one spot g6e.xlarge (us-west-2c, 08:15-08:45 UTC, ~$1): the five

@@ -259,6 +259,24 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-11-13 — Two agents from one trained 100M model, no training (eval only).** Agent A reads the document and
+  keeps the reading layer's memory; agent B holds only its question and reads A's memory. Number needles in
+  documents of 4k–64k tokens, 12–50 documents per cell, one seed.
+  - With A's whole state B answers as one agent does (the same score in 23 of 24 cells).
+  - With the memory alone B fails more as the document grows: 63 / 43 / 35 / 17–40 % at 4k / 16k / 32k / 64k for the
+    concept read, where one agent finds 100 / 97 / 90 / 83–100 %. The models were never trained to start cold.
+  - The memory plus A's caches for its last tokens recovers it: 93 % with 16 tokens at 16k, 95–100 % with 32–64
+    tokens at 64k (106–213 KB on top of the memory). A preamble of B's own helps at 4k only.
+  - No memory, or another document's: 0 %.
+  - It saves B's reading time from about 32k tokens up (2 s against 9 s at 64k), not bytes: the memory is 1 KB per
+    document token, about 220 times the text; 6–8 bits per number do as well as 16.
+  - One input vector of the 100M model holds about 270–300 bits (exact text up to about 32 tokens); 16 vectors
+    about 1,900 bits.
+  - On essays the concept read itself finds 10 % past 4k, so there is nothing to hand over there; the LSA port keeps
+    43–80 % with the memory alone against 50–95 % as one agent.
+  - Open: a short fine-tune with the split in training (the E33f route, 0.3B tokens there), which needs separate
+    side ids for the local layers because the concept and LSA reads require the message boundary off.
+  - Code `nn/agent_split.py`, `scripts/a2a_split_probe.py`; numbers in `CHANGELOG.md` (13 Nov).
 - **2026-11-05 — E33n, E33 notebook on natural long text at 30M (LSA testbed: FineWeb-Edu 4k trunk, LongDocs-lite 16k
   decay; home servers, ~66 RTX 3090 hours, AWS $0.17).** At 16k on positions ≥ 2k the dense ceiling beats the window
   control by 0.134 nats; the full note read recovers 5.5 % of that gap and the top-64 read 6.1 % (95 % ≤ 7.8 %) — the
