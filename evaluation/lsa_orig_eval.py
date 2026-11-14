@@ -10,6 +10,8 @@ and wrapped so OUR scoring code runs on it unchanged:
            our GPT-2 tokenizer files, string-match grading, greedy answers of at most 32 tokens, one lm-eval call per
            length, max_length = longest length + 64; through lm-eval's HFLM request path as our PerceiverARLMEval.
   core     the same 8 lm-eval tasks (log-likelihood; HFLM's batching), max_length 2048, batch 32.
+  extra    run_lsa_suite.py's `extra` (BLiMP, SWDE, BABILong tasks 1-3 at --extra_lengths), the harness's own generation
+           settings, BABILong batched by length as RULER.
   val      held-out loss: the trunk manifest's FineWeb-Edu val rows at 4k (256 rows, the m100 trainer's eval set,
            document-start labels ignored as our collator does) and the decay manifest's LongDocs-lite val rows at 16k.
 
@@ -26,6 +28,7 @@ Usage (node; their venv's python; this repo's root as the working directory):
   python evaluation/lsa_orig_eval.py longdoc --checkpoint R/decay/checkpoint/step-763 --data D --out R/eval_longdoc.json
   python evaluation/lsa_orig_eval.py ruler --checkpoint ... --data D --lengths 4096,8192 --out R/ruler_a.json
   python evaluation/lsa_orig_eval.py core --checkpoint ... --data D --out R/eval_core.json
+  python evaluation/lsa_orig_eval.py extra --checkpoint ... --data D --out R/eval_extra.json
   python evaluation/lsa_orig_eval.py val --checkpoint ... --name decay_final|trunk_final --data D --out R/eval_val.json
 """
 from __future__ import annotations
@@ -256,13 +259,53 @@ def _version(mod: str) -> str:
     return f"{getattr(m, '__version__', '?')} ({Path(m.__file__).parent})"
 
 
+def _redirect_moved_datasets() -> None:
+    """lm-eval 0.4.11's BLiMP loads the dataset `blimp`, which the Hub moved to `nyu-mll/blimp` (same data). The original
+    LSA's venv has huggingface_hub 1.x, which rejects ids without a namespace (Odra, 2026-11-13: the base extra failed
+    at once); our models' venv still follows the old redirect. Map the moved id before lm-eval asks for it."""
+    import datasets
+
+    if getattr(datasets.load_dataset, "_moved_ids", False):
+        return
+    moved, orig = {"blimp": "nyu-mll/blimp"}, datasets.load_dataset
+
+    def load_dataset(path=None, *args, **kw):
+        return orig(moved.get(path, path), *args, **kw)
+
+    load_dataset._moved_ids = True
+    datasets.load_dataset = load_dataset
+
+
 def _lm_eval_suite(a, suite: str) -> None:
     import lm_eval
     from lm_eval.tasks import TaskManager
 
+    _redirect_moved_datasets()
+
     rs = _load("mc_run_lsa_suite", ROOT / "evaluation" / "run_lsa_suite.py")
     tok = str(Path(a.data) / "tokenizer_gpt2")
     bb, exp, _ = load_backbone(a.checkpoint, Path(a.out).parent / "eval_work")
+    if suite == "extra":  # run_lsa_suite.py's `extra` (BLiMP, SWDE, BABILong 1-3), same row lengths as our models'
+        lengths = [int(x) for x in a.extra_lengths.split(",")]
+        max_len = max(lengths) + max(lengths) // 8 + 512
+        out = {"checkpoint": a.checkpoint, "suite": "extra", "lengths": lengths, "limit": a.limit, "notes_off": False,
+               "concept_sum_len": -1, "lm_eval": _version("lm_eval"), "model": "lsa_orig (their trainer)",
+               "max_length": max_len, "extra_cap": a.extra_cap}
+        save = lambda: Path(a.out).write_text(json.dumps(out, indent=2, default=str))
+
+        def evaluate(tasks_, limit_, md):
+            L = int(md["max_seq_lengths"][:-1]) * 1024 if md else 0  # BABILong rows: batch by length, as RULER's
+            batch = a.batch or (max(1, min(8, a.batch_tokens // L)) if L else 8)
+            return lm_eval.simple_evaluate(
+                model=make_lm(bb, tok, max_len, batch), tasks=tasks_, limit=limit_ if limit_ and limit_ > 0 else None,
+                log_samples=False, task_manager=TaskManager(metadata=md) if md else None, bootstrap_iters=0)["results"]
+
+        t0 = time.time()
+        rs.run_extra(evaluate, lengths, a.limit, out, save, cap=a.extra_cap or None,
+                     parts=tuple(x for x in a.extra_parts.split(",") if x))
+        out["seconds"] = round(time.time() - t0, 1)
+        save()
+        return
     lengths = [int(x) for x in a.lengths.split(",")] if suite == "ruler" else None
     max_len = max(lengths) + 2 * a.max_gen_toks if suite == "ruler" else 2048
     tasks = [t for t in a.tasks.split(",") if t] or (rs.RULER if suite == "ruler" else rs.CORE)
@@ -310,7 +353,8 @@ def _val_loss(model: TokenLossModel, ds, batch: int) -> dict:
         items = [ds[j] for j in range(i, min(len(ds), i + batch))]
         ids = torch.stack([x["input_ids"] for x in items]).cuda()
         doc = torch.stack([x["doc_ids"] for x in items]).cuda()
-        labels = ids.clone()
+        # rows of an answer-masked manifest (E37 SFT) carry their own labels: -100 off the answers
+        labels = torch.stack([x["labels"] for x in items]).cuda() if "labels" in items[0] else ids.clone()
         labels[:, 1:] = labels[:, 1:].masked_fill(doc[:, 1:] != doc[:, :-1], -100)
         _, per, valid = model(ids, labels)
         s, c = float(per[valid].sum()), int(valid.sum())
@@ -330,11 +374,16 @@ def cmd_val(a) -> None:
         "longdocs: the decay manifest's eval rows (16 per source at 16k, seed 1043); hf_eval_loss as our trainer's"}
     bb, _, _ = load_backbone(a.checkpoint, out.parent / "eval_work")
     model = TokenLossModel(bb)
-    _, fw_val, _ = bins.load_bin_manifest(str(man["trunk"]))
-    r = {"checkpoint": a.checkpoint, "fineweb_val_4k": _val_loss(model, fw_val, 4)}
-    if a.name == "decay_final":
+    r = {"checkpoint": a.checkpoint}
+    if not a.sft_only:
+        _, fw_val, _ = bins.load_bin_manifest(str(man["trunk"]))
+        r["fineweb_val_4k"] = _val_loss(model, fw_val, 4)
+    if a.name != "trunk_final" and not a.sft_only:
         _, ld_val, _ = bins.load_bin_manifest(str(man["decay"]))
         r["longdocs_val_16k"] = _val_loss(model, ld_val, 1)
+    if a.sft_manifest:  # E37 SFT held-out instruction loss (answer tokens only)
+        _, sft_val, m = bins.load_bin_manifest(a.sft_manifest)
+        r[f"sft_test_{m['seq_len'] // 1024}k"] = _val_loss(model, sft_val, 1)
     res[a.name] = r
     print(a.name, json.dumps(r), flush=True)
     out.write_text(json.dumps(res, indent=2))
@@ -342,7 +391,7 @@ def cmd_val(a) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("what", choices=("longdoc", "ruler", "core", "val"))
+    ap.add_argument("what", choices=("longdoc", "ruler", "core", "val", "extra"))
     ap.add_argument("--checkpoint", required=True, help="torchtitan step folder of the decay (.../checkpoint/step-N)")
     ap.add_argument("--name", default="decay_final", help="val: the key the checkpoint's losses go under")
     ap.add_argument("--data", required=True, help="dir with fineweb_edu_gpt2/, longdocs_lite_gpt2/, tokenizer_gpt2/")
@@ -355,6 +404,11 @@ def main() -> None:
     ap.add_argument("--batch", type=int, default=0, help="0: by length (RULER) / 32 (core)")
     ap.add_argument("--batch_tokens", type=int, default=131072, help="RULER: rows of a batch = min(8, this / length)")
     ap.add_argument("--max_gen_toks", type=int, default=32)
+    ap.add_argument("--extra_lengths", default="2048,4096,8192,16384", help="extra: BABILong context lengths")
+    ap.add_argument("--sft_manifest", default="", help="val, E37 SFT: also score this manifest's eval rows (answers)")
+    ap.add_argument("--sft_only", action="store_true", help="val with --sft_manifest: skip the FineWeb / LongDocs sets")
+    ap.add_argument("--extra_cap", type=int, default=0, help="extra, smoke tests only: documents per BLiMP set / SWDE")
+    ap.add_argument("--extra_parts", default="blimp,swde,babilong", help="extra: which parts to run")
     a = ap.parse_args()
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
