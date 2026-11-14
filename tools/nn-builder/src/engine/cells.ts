@@ -146,8 +146,11 @@ export function cellCost(cell: Cell, ctx: CellCtx): CellCost {
       const d = ctx.width;
       const L = Math.max(1, cell.layers ?? 1);
       const out = cell.entries * cell.kv_heads * cell.head_dim * L;
+      // projections 0: the slot states are used as the keys/values as they are, so they must already have that width
+      const issues = cell.projections === 0 && d !== out ? [`with no projections the input width (${d}) must equal entries × kv_heads × head_dim × layers (${out})`] : [];
       return cost({
         widthOut: d,
+        issues,
         parts: [
           { name: "norms", params: cell.in_norms * d },
           { name: `${cell.projections} projections${L > 1 ? ` for ${L} reader layers` : ""}`, params: cell.projections * d * out },

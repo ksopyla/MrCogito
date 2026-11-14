@@ -109,6 +109,16 @@ class ModelArguments:
         default=False,
         metadata={"help": "Apply torch.compile(dynamic=True)."},
     )
+    model_compile: str = field(
+        default="off",
+        metadata={"help": "Compile the whole model: 'off' | 'static' (torch.compile(dynamic=False): fixed row "
+                          "shapes, as in the bin-manifest phases) | 'dynamic' (same as --torch_compile_dynamic)."},
+    )
+    concept_compile: bool = field(
+        default=False,
+        metadata={"help": "E37 concept read: compile the grouping of keys into concepts (same labels, a fixed "
+                          "~50 ms less per step at 100M). Sets CONCEPT_COMPILE=1 for nn/concept_memory.py."},
+    )
     objective_variant: str = field(
         default=OBJECTIVE_RECONSTRUCTION,
         metadata={"help": "One of: reconstruction, reconstruction+contrastive, prefix_suffix."},
@@ -396,6 +406,9 @@ class ModelArguments:
     fr_entry_positions: str = field(default="span_mid", metadata={"help": "E36: span_mid (entry at its span's middle position) | compact."})
     fr_proj_hidden: int = field(default=2048, metadata={"help": "E36: hidden width of the input-way projector."})
     fr_writer_pool: str = field(default="mean", metadata={"help": "E36: mean | attn (one learned query per head, starts as the mean)."})
+    fr_objective: str = field(default="continuation", metadata={"help": "E36: continuation (S1 rows) | distill (S2 teacher matching on memory+target rows with mem_len)."})
+    fr_passage_span: int = field(default=0, metadata={"help": "E36 S2: tokens per entry for passage rows (memory shorter than mem_spans*span); 0 = fr_span."})
+    fr_init_checkpoint: str = field(default="", metadata={"help": "E36: warm start the writer and adapter from this E36 checkpoint (e.g. the curriculum writer)."})
     fr_curriculum: str = field(default="", metadata={"help": "E36: reconstruction-only phases before the main training, 'tokens:steps,...' e.g. 64:750,128:750,256:750,512:750."})
     lm_note_rank_sharp: float = field(default=2.0, metadata={"help": "E33e: steepness of the match gate."})
     lm_note_age_init: str = field(default="", metadata={"help": "E33g: per-head starting strengths of the note-order "
@@ -453,7 +466,8 @@ class ModelArguments:
     lm_index_queries: int = field(default=256, metadata={"help": "E33t: sampled queries per row and pass."})
     lm_index_negatives: int = field(default=32, metadata={"help": "E33t: sampled unchosen notes per query."})
     par_global_read: str = field(default="dense", metadata={"help": "E33p: dense | lsa (LSA's released flat read on "
-                                                                     "the global layer, nn/lsa_buckets.py)."})
+                                                                     "the global layer, nn/lsa_buckets.py) | concept "
+                                                                     "(E37 concept memory, nn/concept_memory.py)."})
     lsa_window: int = field(default=512, metadata={"help": "LSA read: raw window."})
     lsa_sinks: int = field(default=4, metadata={"help": "LSA read: first tokens of each document, always read."})
     lsa_block: int = field(default=512, metadata={"help": "LSA read: keys per clustered block."})
@@ -462,6 +476,21 @@ class ModelArguments:
     lsa_bucket_cap: int = field(default=16, metadata={"help": "LSA read: most keys per bucket."})
     lsa_top_k: int = field(default=512, metadata={"help": "LSA read: keys each query takes beyond sinks and window."})
     lsa_width: int = field(default=0, metadata={"help": "LSA read: buckets each query ranks (0 = 2·top_k/bucket)."})
+    concept_block: int = field(default=512, metadata={"help": "E37 concept memory: keys per clustered block."})
+    concept_per_block: int = field(default=64, metadata={"help": "E37: concepts per block (balanced k-means)."})
+    concept_iters: int = field(default=3, metadata={"help": "E37: k-means rounds."})
+    concept_tau: float = field(default=0.05, metadata={"help": "E37: assignment temperature."})
+    concept_sinks: int = field(default=4, metadata={"help": "E37: first tokens of each document, always read."})
+    concept_top_k: int = field(default=512, metadata={"help": "E37: member tokens each query opens exactly."})
+    concept_width: int = field(default=0, metadata={"help": "E37: concepts ranked for opening (0 = 2·top_k/size)."})
+    concept_summaries: bool = field(default=True, metadata={"help": "E37: unopened concepts as summary entries."})
+    concept_variance: bool = field(default=True, metadata={"help": "E37: second-order term in the summary logit."})
+    concept_sum_len: int = field(default=0, metadata={
+        "help": "E37: length scale of the summaries' weight past this row length (the training length; 0 = off)."})
+    concept_reasoner_layers: int = field(default=0, metadata={"help": "E37: concept reasoner layers (0 = none)."})
+    concept_reasoner_dim: int = field(default=512, metadata={"help": "E37: concept reasoner width."})
+    concept_reasoner_heads: int = field(default=8, metadata={"help": "E37: concept reasoner heads."})
+    concept_reasoner_loops: int = field(default=2, metadata={"help": "E37: concept reasoner loops."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(
@@ -682,6 +711,16 @@ class DataTrainingArguments:
 class OptimizerArguments:
     """Optimizer family and Muon-specific fallback parameters."""
 
+    loss_step_token_mean: bool = field(
+        default=False,
+        metadata={
+            "help": "E37 SFT: the next-token CE is the token mean over the whole optimizer step (CE summed over "
+            "the step's target tokens on every process, divided by their count), as torchtitan trains, instead "
+            "of the mean of per-micro-batch means. Matters when rows carry uneven numbers of targets (answer-"
+            "masked rows). z-loss and auxiliary losses keep their weighting. Needs a forward with ce_norm "
+            "(perceiver_ar). Default off: trunk, decay and every earlier run unchanged."
+        },
+    )
     optimizer: str = field(
         default="adam",
         metadata={

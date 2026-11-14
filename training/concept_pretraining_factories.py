@@ -1,6 +1,7 @@
 """Model, data, collator, and identity factories for concept pretraining."""
 
 import json
+import os
 import re
 from datetime import datetime
 
@@ -453,6 +454,12 @@ def _plain_loop_kwargs(model_args) -> dict:
         for k in ("par_global_read", "lsa_window", "lsa_sinks", "lsa_block", "lsa_bucket", "lsa_pool",
                   "lsa_bucket_cap", "lsa_top_k", "lsa_width"):
             out[k] = getattr(model_args, k)
+        if str(model_args.par_global_read) == "concept":  # E37
+            for k in ("concept_block", "concept_per_block", "concept_iters", "concept_tau", "concept_sinks",
+                      "concept_top_k", "concept_width", "concept_summaries", "concept_variance", "concept_sum_len",
+                      "concept_reasoner_layers", "concept_reasoner_dim", "concept_reasoner_heads",
+                      "concept_reasoner_loops"):
+                out[k] = getattr(model_args, k)
     return out
 
 
@@ -469,8 +476,18 @@ def _build_frozen_reader_model(tokenizer, model_args, data_args, training_args):
         way=model_args.fr_way, recon_frac=model_args.fr_recon_frac, entry_positions=model_args.fr_entry_positions,
         proj_hidden=model_args.fr_proj_hidden, writer_pool=model_args.fr_writer_pool,
         curriculum=model_args.fr_curriculum, grad_accum=training_args.gradient_accumulation_steps,
+        objective=model_args.fr_objective, passage_span=model_args.fr_passage_span,
     )
     model = FrozenReaderMemory(config)
+    if model_args.fr_init_checkpoint:  # warm start writer + adapter (the reader and borrowed embedding are not saved)
+        from safetensors.torch import load_file
+
+        sd = load_file(os.path.join(model_args.fr_init_checkpoint, "model.safetensors"))
+        missing, unexpected = model.load_state_dict(sd, strict=False)
+        bad = [k for k in missing if not k.startswith(FrozenReaderMemory._SKIP)]
+        if bad or unexpected:
+            raise ValueError(f"fr_init_checkpoint mismatch: missing {bad[:5]} unexpected {list(unexpected)[:5]}")
+        logger.info(f"E36 warm start from {model_args.fr_init_checkpoint} ({len(sd)} tensors)")
     if len(tokenizer) > config.vocab_size:
         raise ValueError(f"tokenizer has {len(tokenizer)} tokens, the reader {config.vocab_size}")
     parts = {k: sum(p.numel() for p in getattr(model, k).parameters() if p.requires_grad) for k in ("writer", "adapter")}
@@ -479,7 +496,7 @@ def _build_frozen_reader_model(tokenizer, model_args, data_args, training_args):
                 + " ".join(f"{k}={v/1e6:.2f}M" for k, v in parts.items())
                 + f" | way={config.way} span={config.span} mem_spans={config.mem_spans} "
                 f"recon={config.recon_frac} positions={config.entry_positions} pool={config.writer_pool} "
-                f"curriculum={config.curriculum or 'none'}")
+                f"curriculum={config.curriculum or 'none'} objective={config.objective}")
     return model, config, "frozen_reader_memory"
 
 
@@ -676,7 +693,9 @@ def build_training_wandb_identity(
         architecture_id = (f"frozen_reader_{reader}_w{model_args.fr_writer_layers}_s{model_args.fr_span}"
                            f"m{model_args.fr_mem_spans}_{model_args.fr_way}"
                            + ("_attn" if model_args.fr_writer_pool == "attn" else "")
-                           + ("_cur" if model_args.fr_curriculum else ""))
+                           + ("_cur" if model_args.fr_curriculum else "")
+                           + ("_s2" if model_args.fr_objective == "distill" else "")
+                           + (f"p{model_args.fr_passage_span}" if model_args.fr_passage_span else ""))
         return WandbRunIdentity(
             experiment_id=resolved_experiment,
             model_family="frozen_reader",
@@ -798,6 +817,14 @@ def build_pretraining_collators(
     training_args,
 ):
     """Return stochastic train and deterministic evaluation collators."""
+    if getattr(model_args, "model_family", "auto") == "frozen_reader" and model_args.fr_objective == "distill":
+        from data.data_collators import DataCollatorForMemoryRows
+
+        collator = DataCollatorForMemoryRows(tokenizer.pad_token_id, span=model_args.fr_span,
+                                             max_mem_spans=model_args.fr_mem_spans,
+                                             passage_span=model_args.fr_passage_span,
+                                             span_mid=model_args.fr_entry_positions == "span_mid")
+        return collator, collator
     if model_args.objective_variant == OBJECTIVE_CAUSAL_LM:
         vocab_owner = model.backbone if hasattr(model, "backbone") else model
         markers_spec = (getattr(data_args, "loss_span_markers", "") or "").strip()

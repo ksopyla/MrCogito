@@ -132,6 +132,18 @@ def main() -> None:
                     help="E33t stage C: 'list' reads without the [B, S, G] table (128k–1M)")
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--concept_sum_len", type=int, default=-1,
+                    help="E37 concept read: length scale of the summaries' weight past this row length (the training "
+                         "length; 0 = off; default: the checkpoint's own setting)")
+    ap.add_argument("--rope_theta", type=float, default=0.0,
+                    help="eval-time RoPE base for every layer (0 = the checkpoint's own); E37's dense_rope control at "
+                         "an NTK-style base past its 16k training length")
+    ap.add_argument("--sources", default="", help="comma-separated <source> names (default: DATA/manifest.json's)")
+    ap.add_argument("--eot", type=int, default=-1,
+                    help="the token that starts every document (default: DATA/mix.json's eot, else GPT-2's 50256)")
+    ap.add_argument("--tokenizer", default="",
+                    help="also report UTF-8 bytes per token of the scored rows and bits per byte per bucket-free row "
+                         "mean (to compare models trained with different tokenizers on the same documents)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -148,14 +160,36 @@ def main() -> None:
         model.config.lm_open_levels, model.config.lm_open_pages = 2, int(a.two_level)
     has_notes = getattr(model, "memory_writer", None) is not None and \
         str(getattr(model.config, "message_override", "real")) == "real"
-    srcs = sorted(json.loads((Path(a.data) / "manifest.json").read_text())["sources"])
+    if a.sources:
+        srcs = [x for x in a.sources.split(",") if x]
+    else:
+        srcs = sorted(json.loads((Path(a.data) / "manifest.json").read_text())["sources"])
+    eot = a.eot
+    if eot < 0:
+        mixf = Path(a.data) / "mix.json"
+        eot = int(json.loads(mixf.read_text())["eot"]) if mixf.exists() else 50256
+    tok = None
+    if a.tokenizer:
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(a.tokenizer)
     res = {"checkpoint": a.checkpoint, "has_notebook": has_notes, "open_impl": a.open_impl, "two_level": a.two_level, "lengths": {}}
+    if a.concept_sum_len >= 0:
+        from nn.concept_memory import set_concept_sum_len
+
+        if not set_concept_sum_len(model, a.concept_sum_len):
+            raise SystemExit("--concept_sum_len: the checkpoint has no concept read")
+        res["concept_sum_len"] = a.concept_sum_len
+    if a.rope_theta > 0:  # read at every forward (rope_cos_sin(pos, head_dim, config.rope_theta, ...))
+        res["rope_theta_trained"] = float(model.config.rope_theta)
+        model.config.rope_theta = float(a.rope_theta)
+        res["rope_theta"] = float(a.rope_theta)
     for S in (int(x) for x in a.lengths.split(",")):
         per_len = {}
         for src in srcs:
             try:
                 ds = BinRowDataset([{"name": src, "files": [str(Path(a.data) / f"{src}_val_*.bin")]}], S, "doc",
-                                   seed=7)
+                                   eot=eot, seed=7)
             except ValueError:
                 per_len[src] = {"rows": 0}
                 continue
@@ -170,6 +204,19 @@ def main() -> None:
             except (torch.cuda.OutOfMemoryError, RuntimeError) as e:  # a length past what fits: record it, go on
                 per_len[src] = {"error": f"{type(e).__name__}: {str(e)[:300]}"}
                 torch.cuda.empty_cache() if torch.cuda.is_available() else None
+            if tok is not None and isinstance(per_len[src].get("notes_on"), dict):
+                # bytes of text per token over the scored rows; nats per token ÷ (ln 2 × bytes per token) = bits per
+                # byte, comparable between tokenizers on the same documents ("all": every scored position)
+                nb = nt = 0
+                for i in range(min(a.rows, len(ds))):
+                    ids = ds[i]["input_ids"].tolist()
+                    nb += len(tok.decode(ids).encode("utf-8"))
+                    nt += len(ids)
+                bpt = nb / max(nt, 1)
+                per_len[src]["bytes_per_token"] = round(bpt, 4)
+                for k, v in per_len[src].items():
+                    if isinstance(v, dict) and isinstance(v.get("all"), float):
+                        v["bits_per_byte"] = round(v["all"] / (math.log(2) * bpt), 5)
             print(S, src, json.dumps({k: v.get("loss") if isinstance(v, dict) else v
                                       for k, v in per_len[src].items()}), flush=True)
         res["lengths"][S] = per_len

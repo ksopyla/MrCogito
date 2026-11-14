@@ -101,7 +101,7 @@ Presets (each opens in its own tab):
 | `schema/graph.schema.json`, `docs/schema.md` | the graph file format, machine-readable and in words |
 | `src/engine/spec.ts`, `schema/spec.schema.json`, `docs/agent-spec.md` | the spec agents read (generated from a design), its hash, the diff between versions, validation; the agent guide |
 | `mcp/server.ts`, `scripts/mcp.mjs` | the read-only MCP server for agents (`npm run mcp`; built into `mcp/dist/`) |
-| `designs/` | saved designs (an E33 30M example is there) |
+| `designs/` | saved designs: one per MrCogito architecture and arm, listed in [`designs/CATALOGUE.md`](designs/CATALOGUE.md) and rebuilt by `scripts/designs.mjs` (counts pinned in `tests/designs_catalogue.test.ts`) |
 | `tests/` | vitest suites |
 
 ## From a design to PyTorch

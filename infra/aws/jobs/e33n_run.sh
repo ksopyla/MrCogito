@@ -21,13 +21,18 @@
 # Smoke tests: E33N_CMD_EXTRA="--local" (laptop trainer settings), E33N_SKIP_EVAL=1 (stop after the decay).
 # E33p: E33N_EXPERIMENT=E33p (W&B / run id, S3 prefix runs/e33p/), E33N_FLOW=1 (instrumentation + weight
 #   snapshots, plan §8). E33N_SEED=N: trainer seed N (default 42), run folder gets _seedN.
+# E33N_DECAY_TOKENS: tokens of the long decay (default: the size's, scripts/run_e33n.py SIZES).
 # E33N_GPUS=N: one model on N GPUs (data parallel, torchrun; same rows per optimizer step), and the three evals run
 #   side by side on separate GPUs. On a home server pair it with CUDA_VISIBLE_DEVICES=0,1,2.
 # E33N_LONG=1 (E33t stage C): after the decay, a 64k phase (LongDocs-lite rows of 65,536, 0.1B tokens at s30, from the
 #   decay's final weights; trainer seed E33N_LONG_SEED, default 1 for every arm, so all arms see the same rows), then
 #   the evals of that model as eval_*_long.json (the decay's own evals are kept). A run whose decay is already done
 #   starts at the 64k phase. E33N_MICRO_LONG (default 1), E33N_GRAD_CKPT=1 (recompute layers: 24 GB cards).
+#   E33N_LONG_TOKENS: tokens of the 64k phase (default: the size's, scripts/run_e33n.py SIZES; m100 at 1e8 repeats
+#   the 30M stage's 0.1B tokens, E33t stage D+).
 # E33N_LONGDOC_LENGTHS (default 4096,16384,32768,65536,131072): lengths of the long-document loss.
+# E33N_MIX=NAME (E38): train on the built data mix s3://BUCKET/data/NAME/ (home: E33N_DATA/NAME) instead of the GPT-2
+#   FineWeb-Edu / LongDocs-lite shards: its tokenizer, sources, row lengths and tokens per phase (run_e33n.py --mix).
 # E33N_CKPT_S3=1 (AWS spot nodes): checkpoints go to S3 with the rest, and a relaunched node first pulls the run
 #   folder back, so an interrupted run resumes from its newest checkpoint instead of starting over.
 set -uo pipefail
@@ -36,7 +41,8 @@ export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_PROJECT=MrCogito EXPERIMENT_ID=${E33N_EXPERIMENT:-E33n}
 if [ -f /etc/mrcogito.env ]; then
   source /etc/mrcogito.env
-  D="$MC_DISK/data"; RUNS="$MC_DISK/runs"; export WANDB_MODE=offline
+  D="$MC_DISK/data"; RUNS="$MC_DISK/runs"
+  source "$(dirname "${BASH_SOURCE[0]}")/wandb_env.sh"   # online with the key from Secrets Manager, else offline
 else
   D="${E33N_DATA:?set E33N_DATA}"; RUNS="${E33N_RUNS:?set E33N_RUNS}"; MC_BUCKET=""
 fi
@@ -97,7 +103,11 @@ phase() {
 }
 
 log "start $RUN on ${MC_IID:-$(hostname)} GPU ${CUDA_VISIBLE_DEVICES:-all} ($G per model)"
-if [ -n "$MC_BUCKET" ]; then
+if [ -n "$MC_BUCKET" ] && [ -n "${E33N_MIX:-}" ]; then
+  # E38: a built data mix (scripts/build_m21_mix.py), copied whole; scripts/run_e33n.py --mix reads its phases
+  aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/$E33N_MIX/" "$D/$E33N_MIX/"
+  log "data: mix $E33N_MIX, $(ls "$D/$E33N_MIX"/*_train_*.bin | wc -l) train shards, $(du -sh "$D/$E33N_MIX" | cut -f1)"
+elif [ -n "$MC_BUCKET" ]; then
   mkdir -p "$D/fineweb_edu_gpt2"
   NSH=$(uv run python -c "import sys; sys.path.insert(0, '.'); from scripts.run_e33n import SIZES; print(int(float('${TT:-0}') or SIZES['$SIZE']['trunk']) // 100_000_000 + 2)")
   aws s3 cp --only-show-errors "s3://$MC_BUCKET/data/fineweb_edu_gpt2/finewebedu_val_000000.bin" "$D/fineweb_edu_gpt2/"
@@ -108,7 +118,8 @@ if [ -n "$MC_BUCKET" ]; then
   aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/tokenizer_gpt2/" "$D/tokenizer_gpt2/"
   aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/longdocs_lite_gpt2/" "$D/longdocs_lite_gpt2/"
 fi
-log "data: $(ls "$D"/fineweb_edu_gpt2/finewebedu_train_*.bin | wc -l) FineWeb shards, $(ls "$D"/longdocs_lite_gpt2/*_train_*.bin | wc -l) LongDocs-lite shards"
+[ -n "${E33N_MIX:-}" ] || log "data: $(ls "$D"/fineweb_edu_gpt2/finewebedu_train_*.bin | wc -l) FineWeb shards, $(ls "$D"/longdocs_lite_gpt2/*_train_*.bin | wc -l) LongDocs-lite shards"
+[ -n "${E33N_MIX:-}" ] && E33N_CMD_EXTRA="${E33N_CMD_EXTRA:-} --mix $D/$E33N_MIX"
 
 TRUNK=$(ls -d "$R"/trunk/*/final 2>/dev/null | tail -1)
 if [ -z "$TRUNK" ]; then
@@ -125,7 +136,7 @@ sync_up
 DECAY=$(ls -d "$R"/decay/*/final 2>/dev/null | tail -1)
 if [ -z "$DECAY" ]; then
   CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase decay --data "$D" --out "$R" \
-        ${LR:+--lr $LR} ${E33N_MICRO_DECAY:+--micro $E33N_MICRO_DECAY} --init "$TRUNK" --eval_every 200 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} --gpus "$G" ${E33N_CMD_EXTRA:-})
+        ${LR:+--lr $LR} ${E33N_DECAY_TOKENS:+--tokens $E33N_DECAY_TOKENS} ${E33N_MICRO_DECAY:+--micro $E33N_MICRO_DECAY} --init "$TRUNK" --eval_every 200 --wandb ${E33N_FLOW:+--flow} ${E33N_SEED:+--seed $E33N_SEED} --gpus "$G" ${E33N_CMD_EXTRA:-})
   echo "$CMD" > "$R/decay.cmd"
   log "decay start"
   phase decay "$CMD" || { log "decay FAILED"; tail -40 "$R/decay.log"; finish; exit 1; }
@@ -138,7 +149,7 @@ if [ -n "${E33N_LONG:-}" ]; then
   LONG=$(ls -d "$R"/long/*/final 2>/dev/null | tail -1)
   if [ -z "$LONG" ]; then
     CMD=$(uv run python scripts/run_e33n.py cmd --arm "$ARM" --size "$SIZE" --phase long --data "$D" --out "$R" \
-          ${E33N_MICRO_LONG:+--micro $E33N_MICRO_LONG} --init "$DECAY" --eval_every 100 --wandb ${E33N_FLOW:+--flow} --seed "${E33N_LONG_SEED:-1}" --gpus "$G" ${E33N_GRAD_CKPT:+--grad_ckpt} ${E33N_CMD_EXTRA:-})
+          ${E33N_LONG_TOKENS:+--tokens $E33N_LONG_TOKENS} ${E33N_MICRO_LONG:+--micro $E33N_MICRO_LONG} --init "$DECAY" --eval_every 100 --wandb ${E33N_FLOW:+--flow} --seed "${E33N_LONG_SEED:-1}" --gpus "$G" ${E33N_GRAD_CKPT:+--grad_ckpt} ${E33N_CMD_EXTRA:-})
     echo "$CMD" > "$R/long.cmd"
     log "long start"
     phase long "$CMD" || { log "long FAILED"; tail -40 "$R/long.log"; finish; exit 1; }

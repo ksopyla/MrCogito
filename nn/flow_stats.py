@@ -17,10 +17,16 @@ Keys (W&B, plan §8 A):
 from __future__ import annotations
 
 import math
+from types import SimpleNamespace
 from typing import Optional
 
 import torch
 import torch.nn.functional as F
+
+
+def _first_row(cidx) -> SimpleNamespace:
+    """The batch row 0 of an E37 ConceptIndex, enough for `summary_logit` on sampled rows."""
+    return SimpleNamespace(mu_k=cidx.mu_k[:1], n=cidx.n[:1], var=cidx.var[:1])
 
 BUCKETS = ((0, 512), (512, 2048), (2048, 8192), (8192, 16384))
 
@@ -169,6 +175,44 @@ class FlowRecorder:
         self._capture(kind="lsa", rows=rows, p=pr, S=S, opened=op, ctx=None, index=None)
         if opened is not None:
             self._selection(opened, rows, doc_start=opened.index.doc_start[0, rows], rw=window, index=None, q=None,
+                            k_bar=None, nv=None)
+
+    @torch.no_grad()
+    def reading_concept(self, attn, *, q, k, v, doc, cidx, opened, sink) -> None:
+        """E37 concept read: mass on window / sinks / opened members / concept summaries, the choice, and the
+        concepts' sizes (nn/concept_memory.py)."""
+        from nn.concept_memory import summary_logit
+        from nn.exact_read import dense_open
+
+        B, S, h, dh = q.shape
+        rows, parts = self._sample_rows(S, q.device)
+        d = doc[0]
+        blk = cidx.block if cidx is not None else 512
+        j = torch.arange(S, device=q.device)
+        causal = (j[None] <= rows[:, None]) & (d[None] == d[rows][:, None]) & (d[rows] >= 0)[:, None]
+        win = causal & (j[None] >= ((rows // blk - 1) * blk)[:, None])
+        sk = causal & sink[0][None] & ~win
+        op = (dense_open(opened.T[:1], opened.index.codes[:, :1], cap=opened.cap, raw_window=blk, q_idx=rows,
+                         doc=doc[:1])[0] & causal & ~win & ~sk) if opened is not None else torch.zeros_like(win)
+        lg = torch.einsum("qhd,kd->hqk", q[0, rows].float(), k[0, :, 0].float()) * dh ** -0.5
+        allowed, sources = win | sk | op, {"window": win, "sinks": sk, "opened": op}
+        if cidx is not None:
+            c_from = (cidx.block_of + 2) * blk
+            vis = (rows[:, None] >= c_from[None]) & (cidx.c_doc[0][None] == d[rows][:, None]) & (d[rows] >= 0)[:, None]
+            if opened is not None:
+                vis = vis & ~(opened.T[0, rows].to(torch.int32) < int(opened.cap))
+            sl = summary_logit(q[:1, rows], _first_row(cidx))[0].permute(1, 0, 2)            # [h, Q, C]
+            lg = torch.cat([lg, sl], dim=-1)
+            pad = torch.zeros(rows.numel(), cidx.n_concepts, dtype=torch.bool, device=q.device)
+            allowed = torch.cat([allowed, vis], dim=-1)
+            sources = {k_: torch.cat([m, pad], dim=-1) for k_, m in sources.items()}
+            sources["summaries"] = torch.cat([torch.zeros_like(win), vis], dim=-1)
+            n = cidx.n[0]
+            self._put("concept/empty", (n == 0).float().mean())
+            self._put("concept/max_members", n.view(-1, cidx.per_block).amax(-1).mean())
+        self._mass(lg, allowed, sources, parts)
+        if opened is not None:
+            self._selection(opened, rows, doc_start=opened.index.doc_start[0, rows], rw=blk, index=None, q=None,
                             k_bar=None, nv=None)
 
     # ------------------------------------------------------------------ choice and writer

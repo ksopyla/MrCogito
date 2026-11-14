@@ -202,13 +202,14 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
 
 <main class="wrap">
   <header>
-    <p class="eyebrow">E33t · the catalogue read · 30M-parameter models · as of 11 Nov 2026, 18:00 UTC</p>
-    <h1>Our catalogue read is within a few points of LSA up to 128k, and ahead of it at 256k</h1>
+    <p class="eyebrow">E33t · the catalogue read · 30M and 100M models · as of 12 Nov 2026, 08:00 UTC</p>
+    <h1>At 30M our catalogue read matches LSA and leads past 128k; at 100M it trails the LSA port slightly</h1>
     <p class="lede">We changed how the model looks things up in its notebook. The notes no longer get read; they only point
       to the exact words worth rereading, like cards in a library catalogue. At 30M parameters it now recovers 91&nbsp;% of
       what rereading every page gives at 16k tokens (our previous design, E33p notes-open: 39&nbsp;%), is level with the
       LSA port (the published LSA read rebuilt on our backbone) at 64k, and after a short extra stage on 64k-token documents predicts 256k-token documents better than any other
-      model we trained.</p>
+      model we trained. At 100M parameters, trained without that 64k stage, it is 0.02 nats behind the LSA port up to 64k
+      and 0.065 behind at 128k, with general knowledge tied.</p>
     <div class="stages" role="list">
       <div class="stage" data-state="done" role="listitem">
         <span class="k">Stage A <span class="pill" data-s="done">done 8 Nov</span></span>
@@ -225,16 +226,16 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <span class="t">Long documents, 64k to 1M</span>
         <span class="d">n4 ahead of LSA at 256k; passwords stay rare.</span>
       </div>
-      <div class="stage" data-state="running" role="listitem">
-        <span class="k">Stage D <span class="pill" data-s="running">running</span></span>
+      <div class="stage" data-state="done" role="listitem">
+        <span class="k">Stage D <span class="pill" data-s="done">done 12 Nov</span></span>
         <span class="t">100M full run on AWS</span>
-        <span class="d">Training since 16:19 UTC; at most 30 hours.</span>
+        <span class="d">Trails the LSA port by 0.02–0.07 nats; ties on general knowledge.</span>
       </div>
     </div>
     <nav class="toc" aria-label="On this page">
       <a href="#models">The models and their training</a><a href="#share">Share by length</a>
-      <a href="#findings">What we learned</a><a href="#long">Long documents</a><a href="#scorecard">Scorecard</a>
-      <a href="#tests">How each test is scored</a><a href="#now">Running now</a>
+      <a href="#findings">What we learned</a><a href="#long">Long documents</a><a href="#m100">At 100M</a><a href="#scorecard">Scorecard</a>
+      <a href="#tests">How each test is scored</a><a href="#now">Status and next</a>
     </nav>
   </header>
 
@@ -258,9 +259,10 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         Higher is better.</span>
     </div>
     <div class="tile">
-      <span class="label">AWS spend for stages B and C</span>
-      <span class="value">$0</span>
-      <span class="note">Both ran on the Odra and Polonez home servers.</span>
+      <span class="label">Loss on 128k documents at 100M</span>
+      <span class="value">2.058</span>
+      <span class="note">E33t n4 at 100M, trained on 16k; the LSA port 1.994, E37a concept memory 1.990. Lower is better.
+        About $100 on AWS; stages B and C cost $0.</span>
     </div>
   </section>
 
@@ -363,6 +365,14 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
           Passwords: at most <span class="num">2</span> of 20 at 128k for any model; at 1M n4 finds none and the LSA
           port's <span class="num">1</span> of 20 is the only full answer that far.</p>
       </article>
+      <article class="card">
+        <span class="tag">Stage D</span>
+        <h3>At 100M the catalogue trails the LSA port, and its read fades at 128k</h3>
+        <p>Trained the standard way (no 64k stage), n4 is <span class="num">0.02</span> nats behind the LSA port up to 64k,
+          about its gap on nearby text, and <span class="num">0.065</span> behind at 128k. Its notebook carries
+          <span class="num">0.15–0.21</span> nats up to 64k but only <span class="num">0.065</span> at 128k. Whether the
+          64k stage closes this at 100M, as it did at 30M, is untested.</p>
+      </article>
     </div>
   </section>
 
@@ -404,6 +414,55 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
         <div id="pk"></div>
       </div>
     </div>
+  </section>
+
+  <section class="section" id="m100">
+    <h2>At 100M parameters (stage D)</h2>
+    <p class="intro">Five 100M models trained the same way by the 10M-context session on AWS: 3.0B FineWeb-Edu tokens at 4k,
+      then 0.4B LongDocs-lite tokens at 16k, seed 42, one spot machine with four L40S cards each. No 64k stage. Loss is how
+      surprised the model is by the next word on positions past 2k (lower is better; five sources, four at 128k); needle
+      puzzles are the RULER mean of 13 tasks × 100 (higher is better); general knowledge is the mean of seven benchmarks in %.
+      The dense control at this budget is training (due about 13:30 UTC on 13 Nov) and the window control waits for a
+      machine, so shares of the gap are not available yet.</p>
+    <div class="tablewrap"><table class="m100">
+      <thead><tr><th>Model at 100M<br><span class="dir">parameters in total</span></th><th>4k</th><th>16k</th><th>32k</th><th>64k</th><th>128k</th><th>Needle puzzles<br><span class="dir">4k · 16k</span></th><th>General knowledge</th></tr></thead>
+      <tbody>
+        <tr><td><span class="nm">E33t n4 (64 notes)</span><span class="sub">our catalogue read · 166.4M</span></td><td>2.342</td><td>2.189</td><td>2.275</td><td>2.270</td><td>2.058</td><td>23.1 · 18.3</td><td>41.6</td></tr>
+        <tr><td><span class="nm">E33p LSA port</span><span class="sub">LSA's read on our backbone · 162.4M</span></td><td>2.322</td><td>2.169</td><td>2.254</td><td>2.245</td><td>1.994</td><td class="best">25.5 · 20.9</td><td>41.6</td></tr>
+        <tr><td><span class="nm">E37a concept memory</span><span class="sub">the 10M-context session's model · 162.6M</span></td><td>2.320</td><td>2.166</td><td>2.254</td><td>2.250</td><td>1.990</td><td>18.5 · 13.6</td><td>41.6</td></tr>
+        <tr><td><span class="nm">E33p notes-open</span><span class="sub">the earlier notebook read (64 notes opened)</span></td><td>2.379</td><td>2.282</td><td>2.393</td><td>2.367</td><td>2.104</td><td>6.6 · 1.8</td><td>41.1</td></tr>
+        <tr><td><span class="nm">Original LSA</span><span class="sub">its authors' code and backbone, our data · 162.6M</span></td><td class="best">2.284</td><td class="best">2.135</td><td class="best">2.215</td><td class="best">2.201</td><td class="best">1.925</td><td>13.9 · 8.2</td><td class="best">42.0</td></tr>
+        <tr class="ref"><td><span class="nm">E33t n4, notebook off</span><span class="sub">the same model with its notes removed</span></td><td>2.496</td><td>2.386</td><td>2.489</td><td>2.433</td><td>2.123</td><td class="na">—</td><td class="na">—</td></tr>
+      </tbody>
+    </table></div>
+    <p class="caption">What n4's notebook carries (notebook off minus on): 0.155 / 0.197 / 0.214 / 0.163 / 0.065 nats at 4k–128k.
+      On nearby text (positions under 512 at 16k) n4 is 0.016 nats behind the LSA port, so most of its gap up to 64k is the
+      model's general quality; at 128k nearby text is equal and the gap is the read's. Needle puzzles differ by kind: n4 is
+      best of the four on several-key and UUID needles, worse than the LSA port on the essay number (0.38 vs 0.84 at 16k)
+      and word counting (0 vs 0.09). Training took 10.4 h + 2.0 h (the LSA port 9.4 h + 1.7 h). E33p notes-open (finished
+      12 Nov, 21:43 UTC, about $110) is the weakest of the five on long text: 0.04–0.12 nats behind n4 (0.09–0.12 from 16k to 64k), and its notebook
+      carries only 0.016 nats at 128k, though it is the best on nearby text (2.370 under 512 at 16k). It also does worse
+      on the needle puzzles than its own short screening run (0.116 / 0.072), so the catalogue read is a clear step up from
+      the read it replaced. Bold marks the best value.</p>
+    <h3 id="m100needles">Needle puzzles at every length</h3>
+    <p class="intro">The RULER mean of 13 tasks × 100 (higher is better), 100 documents a task, except the first 25 at 64k
+      (the same for every model). The single needle is one password hidden in filler text, in % found. Finished
+      13 Nov, 02:27 UTC; notes-open was not run past 16k.</p>
+    <div class="tablewrap"><table class="m100">
+      <thead><tr><th>Model at 100M</th><th>4k</th><th>8k</th><th>16k</th><th>32k</th><th>64k</th><th>Single needle<br><span class="dir">8k · 32k · 64k</span></th></tr></thead>
+      <tbody>
+        <tr><td><span class="nm">E33t n4 (64 notes)</span><span class="sub">our catalogue read</span></td><td>23.1</td><td>19.7</td><td>18.3</td><td>12.5</td><td>10.1</td><td class="best">98 · 98 · 96</td></tr>
+        <tr><td><span class="nm">E33p LSA port</span><span class="sub">LSA's read on our backbone</span></td><td class="best">25.5</td><td class="best">24.1</td><td class="best">20.9</td><td class="best">17.4</td><td class="best">15.1</td><td>96 · 96 · 96</td></tr>
+        <tr><td><span class="nm">E37a concept memory</span><span class="sub">the 10M-context session's model</span></td><td>18.5</td><td>18.7</td><td>13.6</td><td>10.6</td><td>8.8</td><td>95 · 96 · 92</td></tr>
+        <tr><td><span class="nm">Original LSA</span><span class="sub">its authors' code and backbone</span></td><td>13.9</td><td>11.9</td><td>8.2</td><td>4.0</td><td>2.8</td><td>9 · 3 · 4</td></tr>
+      </tbody>
+    </table></div>
+    <p class="caption">n4 trails the LSA port by 2–5 points at every length; its score as a share of the LSA port's falls from
+      82–91 % at 4k–16k to 72 % and 67 % at 32k and 64k. The harder needles fade past 16k for n4 and E37a alike: a number
+      hidden in essays is found 53 % of the time at 8k, 8 % at 32k and 4 % at 64k (LSA port 92 / 55 / 28 %), a UUID
+      32 / 7 / 0 % (LSA port 53 / 20 / 4 %). Validation loss is close for the three models on our backbone (FineWeb-Edu at
+      4k after the decay: n4 3.200, LSA port 3.193, E37a 3.187; LongDocs-lite at 16k: 2.250, 2.232, 2.228; lower is
+      better). Whether a 64k training stage at 100M helps n4, as it did at 30M, is not tested yet.</p>
   </section>
 
   <section class="section" id="scorecard">
@@ -475,10 +534,51 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
   </section>
 
   <section class="section" id="now">
-    <h2>Running now</h2>
+    <h2>Status and what comes next</h2>
     <div class="panel now" id="now-list">
       <div class="now-item">
-        <span class="when">17:37 UTC</span>
+        <span class="when">12 Nov 06:19</span>
+        <div class="what"><span class="top">E33t n4 at 100M, full budget <span class="pill" data-s="done">done</span></span>
+          <p>Trained and tested on one AWS spot machine with four L40S cards, 16:20 UTC Nov 11 to 06:19 UTC Nov 12, about $100;
+            the machine is shut down. Results are in the E33t spec and <a href="#m100">above</a>.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">13 Nov 02:27</span>
+        <div class="what"><span class="top">n4 at 100M: longer needle tests <span class="pill" data-s="done">done</span></span>
+          <p>The same tests as the other 100M models (needle puzzles at 8k, 32k and 64k, plus validation loss), run by the
+            10M-context session on two one-card AWS spot machines. n4 is second of four at every length, behind the LSA port.
+            It finds a single password to 64k (96 %) but loses the harder needles past 16k, as E37a does.
+            See <a href="#m100needles">the needle table</a>.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">since 22:14</span>
+        <div class="what"><span class="top">Dense control at 100M <span class="pill" data-s="running">running</span></span>
+          <p>The model that may reread every earlier word, trained by the 10M-context session on four L40S cards (spot)
+            with the same 3.0B + 0.4B tokens. Training is due about 13:30 UTC on 13 Nov, then its tests. The window control
+            (sees only the last pages) still waits for a machine. With both, n4's own pass marks at 100M can be scored:
+            the share of the gap at 16k and no fade at 64k.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">until ~15 Nov</span>
+        <div class="what"><span class="top">Capability checks for n4 <span class="pill" data-s="running">running</span></span>
+          <p>The leveled synthetic tasks, three seeds each, on Odra and Polonez (Polonez done about the morning of Nov 14,
+            Odra about Nov 15, because its hottest card is slowed to stay under 80 °C). So far n4 has lost two abilities
+            against the champion (E31): the one-hop chain lookup at every length (one seed of three learned it, and that seed
+            falls from 86 % at 1k to 8 % at 2k; E31 scores 97–99 %), and recalling 8 facts, where all three seeds stayed at
+            chance for the whole training budget. Its first keep is two-hop reasoning at 1k: 98 % of answers right on two
+            seeds (E31 94 %), but it drops to 17–55 % from 2k to 64k. Tally at 13 Nov, 01:59 UTC: 2 results kept, 22 lost,
+            49 still to run. Since 12 Nov a length test stops once a model scores at guessing level at two lengths in a row,
+            and the lengths not read count as guessing; at 128k the slow answer-writing step is skipped for now and counts
+            as guessing too.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">open</span>
+        <div class="what"><span class="top">The 64k stage at 100M <span class="pill" data-s="waiting">your call</span></span>
+          <p>At 30M a 0.1B-token 64k stage put n4 ahead past 128k. Running it at 100M for n4 and the LSA port is the fair test
+            of whether that holds at the larger size. Not started.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">11 Nov 17:37</span>
         <div class="what"><span class="top">Stage C, long documents <span class="pill" data-s="done">done</span></span>
           <p>All three models trained on 64k-token documents and tested from 64k to 1M on Odra and Polonez, $0 on AWS.
             The 64k stages ended at 08:10 (window control), 11:07 (LSA port) and 15:45 UTC (n4); the last test at 17:37 UTC.
@@ -491,22 +591,18 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-t
             the flat search still fits at 1M (4.6 minutes and 19.7 GB per 1M-token document on one RTX 3090), so it is
             deferred until search cost matters, past 1M.</p></div>
       </div>
-      <div class="now-item">
-        <span class="when">since 16:19</span>
-        <div class="what"><span class="top">E33t n4 at 100M, full budget <span class="pill" data-s="running">training</span></span>
-          <p>Started by the 10M-context session on one AWS spot machine with four L40S cards, beside its dense, window, LSA and
-            concept-memory models at the same size. It stops itself after 30 hours at most (about $219). That session's
-            100M LSA port finished at 15:52 UTC.</p>
-        </div>
-      </div>
     </div>
-    <p class="caption">Spend: AWS usage for both sessions is $670 of the $2,000 so far (read 11 Nov, 16:35 UTC, before credits;
-      AWS's figure can lag by a day). This run adds at most $219. It is the only machine running.</p>
+    <p class="caption">Spend: AWS usage for both sessions is about $995 of the $2,000 through 12 Nov (read 12 Nov, 22:26 UTC,
+      before credits; AWS's figure lags by up to a day, so 12 Nov is not complete). The dense control's run adds about
+      $110–130. AWS machines running (checked 12 Nov, 22:26 UTC): a four-card machine training the dense control, and four
+      small machines for the longer needle tests, two for n4 and one each for E37a and the LSA port.</p>
   </section>
 
   <footer>
     <span>Sources: the E33t spec's results (stages A and B, scored against the same-seed AWS controls) and the stage C result
-      files on Odra and Polonez, read 11 Nov 2026 at 18:00 UTC (saved in the results registry as E33t_C_*). Scores use positions past 2k tokens, weighted by tokens.</span>
+      files on Odra and Polonez, read 11 Nov 2026 at 18:00 UTC (saved in the results registry as E33t_C_*); the 100M result
+      files on S3, read 12 Nov 2026 at 07:40 UTC (saved as E33t_D_catalogue_reuse_n4_m100). Scores use positions past 2k
+      tokens, weighted by tokens.</span>
     <span>One seed per model. The same model trained twice moves by up to 7.6 points of the gap when seed and machine both
       change.</span>
   </footer>

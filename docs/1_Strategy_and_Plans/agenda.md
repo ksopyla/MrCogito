@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-10-01 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-11-14 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,16 +20,37 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-11-11 — E33t, the catalogue read: stages A–C done at 30M, stage D (100M on AWS) running.** The notes only
+- **2026-11-14 — E38, two 100M models on a modern data mix (approved by the author, in build).** The two best
+  reads of E37 (concept memory `e37a`, the LSA port), unchanged, on `m21mix_v1`: the SmolLM2 tokenizer, 11.5B tokens
+  in three length stages (8.0B at 4k web-heavy with code, math and rewritten text; 3.0B at 16k with 60 % long
+  documents; 0.5B at 64k), and 9–15 % rows whose answer sits thousands of tokens back (multi-hop libraries from
+  2WikiMultihopQA, planted-fact lookups in real books). Every source is public and built on an AWS node, no laptop
+  step. Pass marks in bits per byte against the E37 models on the same documents. Engineering pass the same day
+  (branch `eng-100m`, CHANGELOG 2026-11-14): cache, tuning and architecture branches merged; `--fast` trains the
+  100M models 39–50 % faster on a home card; a document is read once and questions are answered from its cache.
+  Spec [E38](../experiments_specs/ahead/E38_long_budget_mix.md).
+- **2026-11-12 — E33t, the catalogue read: stages A–D done.** The notes only
   index the text (never read), balanced filing, an index loss, the budget filled by tokens. Stage A: letting loop
   passes revisit notes (`catalogue_reuse`) lifts 71 → **91 %** of the window→dense gap at 16k (LSA port 95 %), level
   with LSA at 64k, best 128k loss. Stage B: 64 notes per page (`catalogue_reuse_n4`) wins narrowly over 32; 16 is too
   few. Stage C (home, $0 AWS): a 0.1B-token 64k stage lifts the gain over the window control past 128k; after it n4
   gains **0.178** nats at 256k (LSA port 0.157; four documents), level with LSA up to 128k; passwords stay rare (≤ 2/20
-  at 128k, LSA 1/20 at 1M); the two-level search loses as a test switch (trained two-level arm deferred). Stage D:
-  n4 at 100M on the E37 full protocol, AWS since 2026-11-11 16:19 UTC (30 h cap). Next: its results vs E37's 100M
-  models; capability checks for the variant. Spec [E33t](../experiments_specs/ahead/E33t_catalogue_read.md) ·
+  at 128k, LSA 1/20 at 1M); the two-level search loses as a test switch (trained two-level arm deferred). Stage D
+  (n4 at 100M on the E37 full protocol, AWS, done 2026-11-12 06:19 UTC, about $100): with the standard 16k recipe and
+  no 64k stage it trails the LSA port by 0.02 nats up to 64k and 0.065 at 128k, where its notebook's value drops to
+  0.065 nats (0.15–0.21 up to 64k); RULER 0.231 / 0.183 at 4k / 16k (LSA port 0.255 / 0.209, e37a 0.185 / 0.136);
+  core a tie (41.6). Open: the 64k stage at 100M for the catalogue and the LSA port, the fair test of the 30M lead
+  past 128k. Capability checks for the variant run on the home servers until about Nov 14. Spec
+  [E33t](../experiments_specs/ahead/E33t_catalogue_read.md) ·
   [results page](../3_Evaluations_and_Baselines/e33t_results.html).
+- **2026-11-07 — E37, concept memory: an encoder, a reasoner and a decoder read for 10M-token context
+  (exploration program, draft spec; code + unit tests done, GPU check and 100M runs pending compute).** Encoder:
+  each closed 512-key block of the reading layer grouped into 64 balanced content concepts with links to their tokens
+  and additive statistics. Reasoner: a small looped transformer over the concepts. Decoder read: exact tokens for the
+  concepts with the largest estimated attention mass (512 per query), one calibrated second-order kernel summary per
+  other concept (log n + q·μ + |q|²σ²/2), every past token counted once. Stage A at 100M against dense, window, LSA's
+  read (our port), notes-open and the e37 arms; pass mark ≥ 90 % of the window→dense gap at 16k with no fade to 64k.
+  Branch `arch-10m`; spec [E37](../experiments_specs/ahead/E37_concept_memory.md).
 - **2026-11-06 — E33p, a note-indexed exact read on the LSA testbed: stage 1 training (six arms, 30M, home
   servers).** E33n closed at 30M (see below): the far-context value of natural long text is exact copying, which notes
   cannot return. E33p uses the notes as the index (address keys tied to the reading layer's own raw keys) and lets each
@@ -54,6 +75,34 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Eval fixes (561fe26): RULER 16k ran out of memory on every arm (flex recompiled per generated token, fell back to
   eager), notes-open crashed at 128k (opening table > 2³¹ elements); finished runs rerun.
   Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
+- **2026-10-23 — Where the E33 line stands before the 100M decision.**
+  - **Written reasoning also teaches latest** (19 Oct, Odra; pulled 23 Oct). From R2, with latest answers written as
+    the person's last move and the steps removed in stages: latest 78 / 92 % at 4k / 16k with no generator labels.
+    In the same model, compose is 93 / 98 % and deduce 100 / 100 %. Count stays at 17 %. One warm-started run.
+  - **Still open on the synthetic world:** count; 3-hop compose (0 %); new sentence shapes (compose 5 %); far
+    quotes (lost in the reasoning line). Nothing of the reasoning line has been trained from scratch yet.
+  - **E33s (real multi-hop QA at 100M) is on hold.** Its pre-flight showed that a pretrained SmolLM2-135M sits near
+    the floor on MuSiQue, so the run's gates cannot be resolved.
+  - **24 Oct: E33s re-scoped (draft, awaiting go-ahead).**
+    - Phase 0: code fixes and one cheap check.
+    - Phase A: 30M from scratch, written chains from step 0, 3 seeds plus dense.
+    - Phase B: 100M E33 against dense.
+    - About 225 GPU-hours on our servers. Real data deferred.
+    - Spec: [E33s](../experiments_specs/ahead/E33s_written_chains_real_data.md), re-scope section; plan section 11.
+  - Board: text capability board (status and decisions updated 23 Oct).
+- **2026-10-21 — E33s, multi-hop on real text taught by written reasoning, at 100M. Spec drafted; on hold after
+  the 22 Oct pre-flight (see above).**
+  - **The 30M pilot (R2, 19 Oct)** used no generator labels:
+    - answers wrote their chain out, and a rule read each hop's word and location off that text;
+    - the written steps were removed in three stages;
+    - compose reached 92 % and deduce 99 % at 4k, as with generator labels (94 / 98 %).
+  - **E33s** moves this to real data at 100M, against a dense 100M model trained on the same chains:
+    - data: MuSiQue, HotpotQA, 2WikiMultiHopQA and GSM8K-Aug;
+    - pretraining: 1.5B tokens of long-document text, then 3 × 0.15B written-chain stages;
+    - exams: 4k / 16k / 64k contexts padded with real distractors.
+  - Spec: [E33s_written_chains_real_data.md](../experiments_specs/ahead/E33s_written_chains_real_data.md) ·
+    alignment page: [e33s_architecture.html](../3_Evaluations_and_Baselines/e33s_architecture.html) · review:
+    [e33_multihop_review_label_free_20261018.md](../4_Research_Notes/e33_multihop_review_label_free_20261018.md).
 - **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
   ladder failed its pass mark.**
   - The frozen reader can take a whole 512-token span through one optimised key/value entry: 99.98 % of tokens,
@@ -67,7 +116,18 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   - **19 Oct — the improved writer:** reconstruction-first training at growing spans (64 → 512) makes entries
     carry 114–145 bits (from 32–48). Continuation recovered rises to 24.5 / 16.7 %. SQuAD from the own memory
     is 11 % vs 6.4 % from another document's. Attention pooling adds nothing. Still below the 50 % pass mark.
-  - Next: teacher matching (S2) on passages with questions, on top of the curriculum writer.
+  - **21 Oct — S2 teacher matching** (KL to the reader with the raw text in context; SQuAD + SYNTH +
+    book/PDF rows): SQuAD from memory 12.6 % vs 5.0 % from another document's (8.8 % with none, 51.6 % with
+    the text). Continuation is unchanged (24.7 / 15.8 %). The student plateaus at KL 0.29: one ~130-bit entry
+    per passage cannot hold what the teacher uses.
+  - **22 Oct — 128 tokens per passage entry** (up to 8 entries per passage): SQuAD from memory 13.0 % (5.0 %
+    from another passage's), KL 0.287. More entries per passage do not help.
+  - **22 Oct — oracle check: the way in is the limit.** Entries optimised so the frozen reader rebuilds a passage
+    word for word answer 9.4 % of new SQuAD questions (the trained writer 11.9 %, the passage as text 50 %).
+    Entries fitted to the teacher on the other questions reach 13 %. The reader can recite from key/value
+    entries of 128 tokens but cannot consult them.
+  - Next (author's call): an oracle at finer entries (16 / 32 / 64 tokens), or a small reader adapter trained
+    to consult entries.
   - Spec: [E36_frozen_reader_writer.md](../experiments_specs/ahead/E36_frozen_reader_writer.md) · note:
     [e36_frozen_reader_writer_20261018.md](../4_Research_Notes/e36_frozen_reader_writer_20261018.md).
 - **2026-10-17 — Agent to agent through the notebook works (E33f, E33 trained as two agents).** Agent A keeps an

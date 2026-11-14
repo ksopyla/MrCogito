@@ -1,8 +1,8 @@
 {
   "schema": "nn-builder/graph",
   "version": 1,
-  "name": "LSA port 68.7M (26.3M core)",
-  "description": "Our LSA port: the E33p 'lsa' arm (scripts/run_e33n.py --arm lsa). The testbed with NO page writer and NO notebook: only the reading layer (L2) changes, to LSA's released native read (par_global_read lsa). Each closed block of 512 keys is grouped by similarity into buckets of about 8 (max 16; keys summed in groups of 4 before grouping); a query scores one centre per bucket with its best head, opens the best buckets' keys up to 512, and also reads 4 sink keys (the row's first tokens) and the last 512 tokens. No new weights; no gradient through the choice. L2 and L3 loop 4 rounds with shared weights, as in every arm. Trained like every arm of the testbed: 1.5B tokens at 4k, then 0.2B at 16k (the decay), same data (FineWeb + LongDocs-lite), seed 1 on AWS. Result: recovers 99 % of the window-to-dense gap at 16k and beats dense at 128k. Parameters: 68,701,396 in total, 26,260,308 without the word tables (input table 13,493,056 + output layer 28,948,032); 3,985,856 fewer than the notebook arms, which carry the writer; the trainer's count and the trained checkpoint's stored weights give the same number. The testbed is called '30M' after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
+  "name": "E33p · LSA port · 68.7M (26.3M core)",
+  "description": "E33p arm lsa — LSA port, 30M testbed. New against e33p_dense_s30: LSA's released read ported to the dense trunk: buckets of ~8 similar keys per closed 512-key block, a query opens the best buckets (512 keys) + 4 sinks + its last 512 tokens. Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-06; status done (as of 2026-11-08). Result (stage 1): 99 % of the gap at 16k, beats dense at 128k. The reference every new read is judged against. Spec: docs/experiments_specs/ahead/E33p_note_indexed_exact_read.md. Source: origin/e33n-lsa-testbed @ 7f64a09. Not a builder field: The bucket index and the choice have no weights and no gradient: a 0-parameter custom cell carries their FLOPs; the read is drawn as a 1,028-key window. Parameters: 68,701,396 in total, 26,260,308 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm lsa --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
   "stacks": [
     {
       "id": "main",
@@ -531,5 +531,137 @@
     "mfu": 0,
     "irregular_ratio": 0,
     "dp_efficiency": 0.95
+  },
+  "derived": {
+    "exported_at": "2026-11-08T12:50:54.803Z",
+    "hash": "nnb1-0fd4f79ac7f84304b868de3a86f6",
+    "row_length": 4096,
+    "params_total": 68701396,
+    "params_by_stack": {
+      "main": 68701396
+    },
+    "train_flops_per_token": 490151696,
+    "cells": {
+      "main.input.emb": {
+        "params": 13493056,
+        "width_in": 0,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.input.pos": {
+        "params": 0,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L0.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L0.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L1.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L1.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L2.index": {
+        "params": 0,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L2.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L2.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L3.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L3.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L4.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L4.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L5.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L5.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L6.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L6.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L7.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L7.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.head.lm": {
+        "params": 28948608,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      }
+    }
   }
 }

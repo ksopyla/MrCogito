@@ -17,6 +17,18 @@ A manifest JSON names the sources and their weights:
 Rows of several sources are interleaved by weight in one fixed, seeded order. Items are
 {"input_ids": LongTensor[S], "doc_ids": LongTensor[S]} — the contract of data.packed_dataset.PackedDataset, read by
 data.data_collators.DataCollatorForCausalLM (which masks the label at every document start).
+
+Optional per source (E37 instruction tuning, scripts/build_sft_mix.py; a manifest without them reads exactly as before):
+  * "rule": this source's row rule instead of the manifest's (the SFT mix: packed chat rows "stream", the LongDocs-lite
+    replay "doc", as in the decay).
+  * "masks": loss-mask shards, globs expanded like "files" and paired with them one to one (same count, same length;
+    same layout, uint16 0/1, token for token). Needs the "stream" rule and shards of whole rows (the builder packs
+    whole conversations into rows of seq_len). In such a source a run of <|endoftext|> is ONE document (a packed
+    row's padding tail), not one document per token.
+When any source of a manifest (train or eval) has masks, every item of both datasets also carries
+"labels": LongTensor[S] = input_ids with -100 where the mask is 0 (sources without masks: every token) and at every
+document start t > 0 (the collator's rule, so the labels are complete for any reader: the HF collator with
+preserve_precomputed_labels, scripts/lsa_orig.py's own label builder).
 """
 from __future__ import annotations
 
@@ -66,6 +78,31 @@ class _Source:
     name: str
     shards: list[np.memmap]
     rows: np.ndarray  # [n_rows, 2] int64: (shard index, start offset)
+    masks: list[np.memmap] | None = None  # loss-mask shards, one per token shard (E37 SFT)
+
+
+def _open_masks(spec: dict, shards: list[np.memmap], rule: str, S: int) -> list[np.memmap] | None:
+    if not spec.get("masks"):
+        return None
+    files, mfiles = expand(spec["files"]), expand(spec["masks"])
+    if len(mfiles) != len(files):
+        raise ValueError(f"source {spec['name']}: {len(mfiles)} mask shards for {len(files)} token shards")
+    if rule != "stream":
+        raise ValueError(f"source {spec['name']}: masks need the 'stream' rule (rows packed by the builder)")
+    masks = [open_shard(p) for p in mfiles]
+    for f, m, sh, mk in zip(files, mfiles, shards, masks):
+        if len(mk) != len(sh):
+            raise ValueError(f"source {spec['name']}: mask {m} has {len(mk)} tokens, shard {f} has {len(sh)}")
+        if len(sh) % S:
+            raise ValueError(f"source {spec['name']}: shard {f} ({len(sh)} tokens) is not whole rows of {S}")
+        if len(mk) and int(np.max(mk)) > 1:
+            raise ValueError(f"source {spec['name']}: mask {m} holds values other than 0/1")
+    return masks
+
+
+def manifest_has_masks(manifest: dict) -> bool:
+    """True when any train or eval source carries loss masks (then items carry labels)."""
+    return any(s.get("masks") for s in list(manifest.get("train") or []) + list(manifest.get("eval") or []))
 
 
 def _stream_rows(shards: list[np.memmap], S: int) -> np.ndarray:
@@ -88,17 +125,23 @@ class BinRowDataset(Dataset):
     """Weighted, seeded interleave of fixed-length rows from one or more shard sources."""
 
     def __init__(self, sources: list[dict], seq_len: int, rule: str = "stream", eot: int = 50256, seed: int = 42,
-                 max_rows: int | None = None):
+                 max_rows: int | None = None, emit_labels: bool | None = None):
         if rule not in ("stream", "doc"):
             raise ValueError("rule must be 'stream' or 'doc'")
         self.S, self.eot, self.rule = int(seq_len), int(eot), rule
         self.sources: list[_Source] = []
         for spec in sources:
+            src_rule = spec.get("rule", rule)
+            if src_rule not in ("stream", "doc"):
+                raise ValueError(f"source {spec['name']}: rule must be 'stream' or 'doc'")
             shards = [open_shard(p) for p in expand(spec["files"])]
-            rows = _stream_rows(shards, self.S) if rule == "stream" else _doc_rows(shards, self.S, self.eot)
+            masks = _open_masks(spec, shards, src_rule, self.S)
+            rows = _stream_rows(shards, self.S) if src_rule == "stream" else _doc_rows(shards, self.S, self.eot)
             if len(rows) == 0:
                 raise ValueError(f"source {spec['name']}: no row of {self.S} tokens")
-            self.sources.append(_Source(spec["name"], shards, rows))
+            self.sources.append(_Source(spec["name"], shards, rows, masks))
+        # labels on every item when any source has masks (None: decide from these sources)
+        self.emit_labels = any(s.masks is not None for s in self.sources) if emit_labels is None else bool(emit_labels)
         rng = np.random.default_rng(seed)
         weights = np.asarray([float(s.get("weight", 1.0)) for s in sources])
         counts = np.asarray([len(s.rows) for s in self.sources])
@@ -123,17 +166,30 @@ class BinRowDataset(Dataset):
         src = self.sources[int(k)]
         si, off = src.rows[int(r)]
         ids = torch.from_numpy(np.asarray(src.shards[int(si)][int(off): int(off) + self.S], dtype=np.int64))
-        doc = torch.cumsum((ids == self.eot).long(), dim=0)
+        if src.masks is None:
+            doc = torch.cumsum((ids == self.eot).long(), dim=0)
+        else:  # packed chat rows: a run of <|endoftext|> (the row's padding tail) is one document
+            start = ids == self.eot
+            start[1:] &= ~start[:-1].clone()
+            doc = torch.cumsum(start.long(), dim=0)
         doc = doc - doc[0]  # 0-based within the row
-        return {"input_ids": ids, "doc_ids": doc}
+        if not self.emit_labels:
+            return {"input_ids": ids, "doc_ids": doc}
+        labels = ids.clone()
+        if src.masks is not None:
+            mask = torch.from_numpy(np.asarray(src.masks[int(si)][int(off): int(off) + self.S], dtype=np.int64))
+            labels[mask == 0] = -100
+        labels[1:][doc[1:] != doc[:-1]] = -100  # a document's first token is no target (the collator's rule)
+        return {"input_ids": ids, "doc_ids": doc, "labels": labels}
 
 
 def load_bin_manifest(path: str) -> tuple[BinRowDataset, BinRowDataset | None, dict]:
     m = json.loads(Path(path).read_text())
     S, rule, eot, seed = int(m["seq_len"]), m.get("rule", "stream"), int(m.get("eot", 50256)), int(m.get("seed", 42))
-    train = BinRowDataset(m["train"], S, rule, eot, seed)
+    labels = True if manifest_has_masks(m) else None  # both datasets then carry labels (None: as before)
+    train = BinRowDataset(m["train"], S, rule, eot, seed, emit_labels=labels)
     ev = None
     if m.get("eval"):
         rows = sum(int(s.get("rows", 256)) for s in m["eval"])
-        ev = BinRowDataset(m["eval"], S, rule, eot, seed + 1, max_rows=rows)
+        ev = BinRowDataset(m["eval"], S, rule, eot, seed + 1, max_rows=rows, emit_labels=labels)
     return train, ev, m

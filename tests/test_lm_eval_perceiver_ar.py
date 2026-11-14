@@ -108,13 +108,16 @@ def test_model_call_returns_logprobs_and_row_chunking_is_exact(tmp_path, monkeyp
     assert torch.allclose(chunked, ref, atol=1e-5)
 
 
-def test_generate_until_is_explicitly_unsupported(tmp_path):
+def test_generate_until_decodes_greedily(tmp_path):
+    """Generation has been supported since E33n (RULER through `generate_until`, 2026-11-04): the context is kept
+    and at most max_length − context tokens follow (cached or not, tests/test_incremental_decode.py)."""
     import evaluation.lm_eval_perceiver_ar as adapter
 
     ck, _, _ = _save_checkpoint(tmp_path)
     lm = adapter.PerceiverARLMEval(pretrained=str(ck), device="cpu", batch_size=1, max_length=16)
-    with pytest.raises(NotImplementedError):
-        lm._model_generate(torch.tensor([[4, 5]]), max_length=8, stop=[])
+    out = lm._model_generate(torch.tensor([[4, 5]]), max_length=8, stop=[])
+    assert out.shape[0] == 1 and 2 < out.shape[1] <= 8
+    assert out[0, :2].tolist() == [4, 5]
 
 
 def test_resolve_tokenizer_prefers_checkpoint_dir(tmp_path):

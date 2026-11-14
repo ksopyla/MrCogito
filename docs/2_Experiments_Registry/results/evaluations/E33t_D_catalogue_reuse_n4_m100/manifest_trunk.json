@@ -1,0 +1,24 @@
+{
+  "seq_len": 4096,
+  "rule": "stream",
+  "eot": 50256,
+  "seed": 42,
+  "train": [
+    {
+      "name": "fineweb_edu",
+      "files": [
+        "/opt/dlami/nvme/data/fineweb_edu_gpt2/finewebedu_train_*.bin"
+      ],
+      "weight": 1.0
+    }
+  ],
+  "eval": [
+    {
+      "name": "fineweb_edu",
+      "files": [
+        "/opt/dlami/nvme/data/fineweb_edu_gpt2/finewebedu_val_*.bin"
+      ],
+      "rows": 256
+    }
+  ]
+}

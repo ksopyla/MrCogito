@@ -182,11 +182,20 @@ def main():
     if getattr(data_args, "bin_manifest", None):
         # E33n: fixed rows straight from GPT-2 token shards (no HF datasets, no packing pass): each item already
         # carries input_ids [S] and doc_ids [S], the PackedDataset contract the causal-LM collator reads
-        from data.bin_token_dataset import load_bin_manifest
+        from data.bin_token_dataset import load_bin_manifest, manifest_has_masks
 
         train_ds, test_ds, bin_meta = load_bin_manifest(data_args.bin_manifest)
         if int(bin_meta["seq_len"]) != int(data_args.max_seq_length):
             raise ValueError(f"bin_manifest seq_len {bin_meta['seq_len']} != max_seq_length {data_args.max_seq_length}")
+        if manifest_has_masks(bin_meta):
+            # E37 SFT: the items carry labels (loss mask applied, document starts ignored); the collator keeps them
+            # (and still ignores document starts) instead of mirroring input_ids. doc_ids flow on to the model.
+            if (getattr(data_args, "loss_span_markers", "") or "").strip():
+                raise ValueError("a bin_manifest with loss masks excludes loss_span_markers")
+            data_args.preserve_precomputed_labels = True
+            if is_main_process():
+                logger.info("bin_manifest has loss masks: training on the items' labels "
+                            "(preserve_precomputed_labels=True)")
         if is_main_process():
             logger.info("Token-shard rows: train=%s eval=%s seq=%s rule=%s per source %s", f"{len(train_ds):,}",
                         f"{len(test_ds):,}" if test_ds is not None else "none", bin_meta["seq_len"],
@@ -314,12 +323,20 @@ def main():
         finally:
             del query, key
 
-    if model_args.torch_compile_dynamic and torch.cuda.is_available():
+    if getattr(model_args, "concept_compile", False):
+        os.environ["CONCEPT_COMPILE"] = "1"
+    compile_mode = str(getattr(model_args, "model_compile", "off") or "off").lower()
+    if model_args.torch_compile_dynamic and compile_mode == "off":
+        compile_mode = "dynamic"
+    if compile_mode not in ("off", "static", "dynamic"):
+        raise ValueError(f"--model_compile must be off, static or dynamic, got {compile_mode!r}")
+    if compile_mode != "off" and torch.cuda.is_available():
         backend = getattr(training_args, "torch_compile_backend", None) or "inductor"
-        logger.info(f"torch.compile(dynamic=True, backend='{backend}')")
+        dynamic = compile_mode == "dynamic"
+        logger.info(f"torch.compile(dynamic={dynamic}, backend='{backend}')")
         model = torch.compile(
             model,
-            dynamic=True,
+            dynamic=dynamic,
             fullgraph=False,
             backend=backend,
         )
@@ -518,6 +535,7 @@ def main():
         batch_packing_mode=data_args.batch_packing_mode,
         train_lengths=train_lengths,
         length_group_mega_batch_mult=data_args.length_group_mega_batch_mult,
+        step_token_mean=optim_args.loss_step_token_mean,
     )
 
     if is_backbone:

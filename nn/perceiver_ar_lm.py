@@ -286,6 +286,21 @@ class PerceiverARConfig(PretrainedConfig):
         lsa_bucket_cap: int = 16,         # LSA read: most keys a bucket may hold
         lsa_top_k: int = 512,             # LSA read: keys each query takes beyond its sinks and window
         lsa_width: int = 0,               # LSA read: buckets each query ranks, at most (0 = 2 · top_k / bucket)
+        # E37 concept memory (par_global_read="concept", nn/concept_memory.py): encoder → reasoner → decoder read
+        concept_block: int = 512,         # E37: keys per clustered block (the window covers the query's block + one)
+        concept_per_block: int = 64,      # E37: concepts per block (balanced soft k-means on the unit keys)
+        concept_iters: int = 3,           # E37: k-means rounds (each a Sinkhorn-balanced plan)
+        concept_tau: float = 0.05,        # E37: assignment temperature
+        concept_sinks: int = 4,           # E37: first tokens of each document, always read
+        concept_top_k: int = 512,         # E37: member tokens each query opens exactly, at most
+        concept_width: int = 0,           # E37: concepts each query ranks for opening (0 = 2 · top_k · per_block / block)
+        concept_summaries: bool = True,   # E37: every concept not opened enters the read as one summary entry
+        concept_variance: bool = True,    # E37: the summary logit's second-order term |q|² σ² / 2d
+        concept_sum_len: int = 0,         # E37: length scale of the summaries' weight past this row length (0 = off)
+        concept_reasoner_layers: int = 0,  # E37: transformer layers of the concept reasoner (0 = none)
+        concept_reasoner_dim: int = 512,  # E37: reasoner width
+        concept_reasoner_heads: int = 8,  # E37: reasoner heads
+        concept_reasoner_loops: int = 2,  # E37: reasoner loops (input injection each loop)
         init_std: float = 0.02,
         zero_init_residuals: bool = True,    # False: warm attn.wo / mlp.down (needed at 512+)
         pad_token_id: int = 0,
@@ -440,6 +455,21 @@ class PerceiverARConfig(PretrainedConfig):
         self.lsa_bucket_cap = int(lsa_bucket_cap)
         self.lsa_top_k = int(lsa_top_k)
         self.lsa_width = int(lsa_width or 0) or (2 * self.lsa_top_k // max(self.lsa_bucket, 1))
+        self.concept_block = int(concept_block)
+        self.concept_per_block = int(concept_per_block)
+        self.concept_iters = int(concept_iters)
+        self.concept_tau = float(concept_tau)
+        self.concept_sinks = int(concept_sinks)
+        self.concept_top_k = int(concept_top_k)
+        self.concept_width = int(concept_width or 0) or max(
+            1, 2 * self.concept_top_k * self.concept_per_block // max(self.concept_block, 1))
+        self.concept_summaries = bool(concept_summaries)
+        self.concept_variance = bool(concept_variance)
+        self.concept_sum_len = int(concept_sum_len or 0)
+        self.concept_reasoner_layers = int(concept_reasoner_layers or 0)
+        self.concept_reasoner_dim = int(concept_reasoner_dim)
+        self.concept_reasoner_heads = int(concept_reasoner_heads)
+        self.concept_reasoner_loops = int(concept_reasoner_loops)
         self.init_std = init_std
         self.zero_init_residuals = bool(zero_init_residuals)
         # Bookkeeping consumed by the shared entrypoint / W&B init / eval routing.
@@ -675,8 +705,23 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("lm_filing_iters >= 0 and lm_filing_cap in [1, 511]")
             if self.lm_filing_cap * int(self.lm_latents) < int(self.lm_window):
                 raise ValueError("lm_filing_cap · lm_latents must be >= lm_window (every token needs a note)")
-        if self.par_global_read not in ("dense", "lsa"):
-            raise ValueError(f"par_global_read must be dense | lsa, got {self.par_global_read!r}")
+        if self.par_global_read not in ("dense", "lsa", "concept"):
+            raise ValueError(f"par_global_read must be dense | lsa | concept, got {self.par_global_read!r}")
+        if self.par_global_read == "concept":
+            if self.message_enabled:
+                raise ValueError("par_global_read='concept' (E37) is its own memory: turn the message boundary off")
+            if not self.global_nope or self.num_kv_heads != 1:
+                raise ValueError("par_global_read='concept' needs global_nope=True and num_kv_heads=1")
+            if self.attn_backend == "flash" or self.par_mode != "perceiver" or self.global_layers < 1:
+                raise ValueError("par_global_read='concept' needs perceiver mode with a global layer, flex or sdpa")
+            if self.concept_block % self.concept_per_block or self.concept_block > 511 * self.concept_per_block:
+                raise ValueError("concept_per_block must divide concept_block")
+            if self.concept_block > 512:
+                raise ValueError("concept_block must be <= 512 (member rank code, nn.exact_read)")
+            if not 1 <= self.concept_top_k <= 32767 or self.concept_sinks < 0 or self.concept_iters < 1:
+                raise ValueError("concept_top_k in [1, 32767], concept_sinks >= 0, concept_iters >= 1")
+            if self.concept_reasoner_layers and self.concept_reasoner_dim % self.concept_reasoner_heads:
+                raise ValueError("concept_reasoner_heads must divide concept_reasoner_dim")
         if self.par_global_read == "lsa":
             if self.message_enabled:
                 raise ValueError("par_global_read='lsa' is the no-notebook LSA arm: turn the message boundary off")
@@ -2172,7 +2217,7 @@ def _attend_catalogue(q, k, v, sink_k, sink_v, *, ctx: MessageCtx, key_valid, ba
 
 def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_valid, extra_k=None, extra_v=None,
                 ds: Optional[torch.Tensor] = None, n_sinks: int = 0, valid_query: bool = False,
-                chunk: int = 256) -> torch.Tensor:
+                chunk: int = 256, q_offset: int = 0) -> torch.Tensor:
     """E33t stage C (plan §10.3), evaluation at 128k–1M: the exact read without the [B, S, G] table. Per chunk of
     queries, one softmax over the raw window ‖ the raw tokens each query opened (`opened`, nn.exact_read.ChoiceList, or
     None) ‖ the extra keys: the catalogue's learned empty slots (`extra_k` / `extra_v` [n, g, dh], readable by every
@@ -2180,8 +2225,13 @@ def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_vali
     those inside the window are read there, once). Window keys: j ≤ q, q − j < raw_window, tag[j] == tag[q]; opened
     and sink keys: tag[j] == tag[q]; with `valid_query` (LSA) a query of tag < 0 reads nothing raw; key_valid[j] (or
     j == q) as in the table's masks. Same keys and weights as `_attend_catalogue` / `attend_lsa` with the table (tests:
-    `test_list_read_matches_table`). q [B,S,h,dh], k / v [B,S,g,dh], tag [B,S] int → [B,S,h,dh]; scale 1/√dh, fp32."""
-    B, S, h, dh = q.shape
+    `test_list_read_matches_table`). q [B,S,h,dh], k / v [B,S,g,dh], tag [B,S] int → [B,S,h,dh]; scale 1/√dh, fp32.
+
+    `q_offset` (cached decoding, nn/incremental.py): q holds the queries [q_offset, q_offset + Q) of the row that
+    k / v / tag cover (S = k.shape[1]); the output has Q rows."""
+    B, Q, h, dh = q.shape
+    S = int(k.shape[1])
+    q0 = int(q_offset)
     g = k.shape[2]
     rep = h // g
     rw = int(raw_window)
@@ -2189,7 +2239,7 @@ def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_vali
     kvf = key_valid.bool() if key_valid is not None else None
     tag = tag.long()
     neg = float("-inf")
-    out = torch.empty(B, S, h, v.shape[-1], dtype=q.dtype, device=q.device)
+    out = torch.empty(B, Q, h, v.shape[-1], dtype=q.dtype, device=q.device)
 
     def take(x, pos):  # x [B, S, ...] at pos [B, ch, P] → [B, ch, P, ...]
         Bp, ch, P = pos.shape
@@ -2199,11 +2249,11 @@ def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_vali
         idx = flat.view(Bp, ch * P, *([1] * (x.dim() - 2))).expand(Bp, ch * P, *x.shape[2:])
         return x.gather(1, idx).view(Bp, ch, P, *x.shape[2:])
 
-    for s0 in range(0, S, chunk):
-        s1 = min(S, s0 + chunk)
+    for s0 in range(q0, q0 + Q, chunk):
+        s1 = min(q0 + Q, s0 + chunk)
         ch = s1 - s0
         qp = torch.arange(s0, s1, device=q.device)
-        qc = q[:, s0:s1].float().reshape(B, ch, g, rep, dh)
+        qc = q[:, s0 - q0:s1 - q0].float().reshape(B, ch, g, rep, dh)
         tq = tag[:, s0:s1]
         logits, vals = [], []
         # the raw window
@@ -2263,7 +2313,7 @@ def attend_list(q, k, v, *, opened, raw_window: int, tag: torch.Tensor, key_vali
                 o = o + torch.einsum("bqgrp,bqpgd->bqgrd", wi, val)
             else:
                 o = o + torch.einsum("bqgrn,ngd->bqgrd", wi, val)
-        out[:, s0:s1] = o.reshape(B, ch, h, -1).to(q.dtype)
+        out[:, s0 - q0:s1 - q0] = o.reshape(B, ch, h, -1).to(q.dtype)
     return out
 
 
@@ -2568,6 +2618,24 @@ class Attention(nn.Module):
             self.lsa = dict(window=int(cfg.lsa_window), sinks=int(cfg.lsa_sinks), block=int(cfg.lsa_block),
                             per_block=int(cfg.lsa_block) // int(cfg.lsa_bucket), pool=int(cfg.lsa_pool),
                             cap=int(cfg.lsa_bucket_cap), top_k=int(cfg.lsa_top_k), width=int(cfg.lsa_width))
+        # E37: the concept memory read on the global layer (nn/concept_memory.py): encoder → reasoner → decoder read
+        self.concept = None
+        self.concept_reasoner = None
+        self.concept_off = False  # eval switch: sinks + window only (no opened tokens, no summaries)
+        self.concept_stats = None  # last forward's read statistics when armed (dict), for probes
+        if pattern == "full" and str(getattr(cfg, "par_global_read", "dense") or "dense") == "concept":
+            self.concept = dict(block=int(cfg.concept_block), per_block=int(cfg.concept_per_block),
+                                iters=int(cfg.concept_iters), tau=float(cfg.concept_tau), sinks=int(cfg.concept_sinks),
+                                top_k=int(cfg.concept_top_k), width=int(cfg.concept_width),
+                                summaries=bool(cfg.concept_summaries), variance=bool(cfg.concept_variance),
+                                sum_len=int(getattr(cfg, "concept_sum_len", 0) or 0))
+            if int(getattr(cfg, "concept_reasoner_layers", 0) or 0) > 0:
+                from nn.concept_memory import ConceptReasoner
+
+                self.concept_reasoner = ConceptReasoner(
+                    cfg.hidden_size, g * dh, dim=int(cfg.concept_reasoner_dim),
+                    layers=int(cfg.concept_reasoner_layers), heads=int(cfg.concept_reasoner_heads),
+                    loops=int(cfg.concept_reasoner_loops))
         self.flow = None  # E33p instrumentation (nn/flow_stats.FlowRecorder), set on the reading layer when armed
         # E33t: the catalogue read's learned empty slots (keys through k_norm, values from zero) and the index loss's
         # temperature, on the reading layer only
@@ -2844,6 +2912,8 @@ class Attention(nn.Module):
             )
         if self.lsa is not None:
             o = self._lsa_read(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
+        elif self.concept is not None:
+            o = self._concept_read(q, k, v, x, doc_ids=doc_ids, key_valid=key_valid)
         else:
             if self.flow is not None and self.pattern == "full":
                 self.flow.reading_dense(self, q=q, k=k, v=v, doc_ids=doc_ids, key_valid=key_valid)
@@ -2888,6 +2958,49 @@ class Attention(nn.Module):
                                   window=c["window"])
         return attend_lsa(q, k, v, doc=doc, key_valid=key_valid, backend=self.backend, opened=opened,
                           window=c["window"], sink=sink, ds=ds, n_sinks=c["sinks"])
+
+    def _concept_read(self, q, k, v, x, *, doc_ids, key_valid):
+        """E37: concepts of this call's keys (encoder), the reasoner's value update, each query's exact choice, and
+        one softmax over sinks ‖ block-aligned window ‖ opened members ‖ concept summaries (nn/concept_memory.py)."""
+        from nn.concept_memory import attend_concepts, build_concepts, concept_open_table, token_update
+        from nn.exact_read import doc_starts
+
+        B, S = q.shape[:2]
+        c = self.concept
+        doc = doc_ids.long() if doc_ids is not None else torch.zeros(B, S, dtype=torch.long, device=q.device)
+        if key_valid is not None:
+            doc = doc.masked_fill(~key_valid.bool(), -1)
+        ds = doc_starts(doc)
+        pos = torch.arange(S, device=q.device)[None]
+        sink = (pos - ds < c["sinks"]) & (doc >= 0)
+        cidx, opened, dv, dv_tok = None, None, None, None
+        if not self.concept_off:
+            cidx = build_concepts(k, v, x if self.concept_reasoner is not None else None, doc, sink,
+                                  block=c["block"], per_block=c["per_block"], iters=c["iters"], tau=c["tau"])
+            if cidx is not None:
+                if self.concept_reasoner is not None:
+                    dv = self.concept_reasoner(cidx.z, cidx.block_of, cidx.c_doc)
+                    dv_tok = token_update(cidx, dv, S)
+                opened = concept_open_table(q, cidx, top_k=c["top_k"], width=c["width"], variance=c["variance"])
+        if self.concept_stats is not None and cidx is not None:
+            self.concept_stats = _concept_read_stats(q, cidx, opened, c)
+        if self.flow is not None:
+            self.flow.reading_concept(self, q=q, k=k, v=v, doc=doc, cidx=cidx, opened=opened, sink=sink)
+        return attend_concepts(q, k, v, cidx=cidx, dv=dv, doc=doc, key_valid=key_valid, backend=self.backend,
+                               opened=opened, sink=sink, ds=ds, n_sinks=c["sinks"], summaries=c["summaries"],
+                               variance=c["variance"], dv_tok=dv_tok, sum_len=c.get("sum_len", 0))
+
+
+@torch.no_grad()
+def _concept_read_stats(q, cidx, opened, c) -> dict:
+    """E37 probe scalars: concept sizes (empty share, largest), and the share of queries whose budget is full."""
+    n = cidx.n
+    out = {"concept/empty": float((n == 0).float().mean()), "concept/max_members": float(n.amax(-1).mean()),
+           "concept/size_std": float(n.std(-1).mean())}
+    if opened is not None:
+        used = (opened.T.to(torch.int32) < int(opened.cap)).sum(-1).float()           # concepts opened per query
+        out["concept/opened_concepts"] = float(used.mean())
+    return out
 
 
 class SwiGLU(nn.Module):
@@ -3286,6 +3399,8 @@ class PerceiverARLM(PreTrainedModel):
         for layer in self.layers:
             if layer.attn.compressor is not None and getattr(layer.attn.compressor, "delta", None) is not None:
                 nn.init.zeros_(layer.attn.compressor.delta.weight)   # post_init re-inits Linears
+            if getattr(layer.attn, "concept_reasoner", None) is not None:
+                nn.init.zeros_(layer.attn.concept_reasoner.out.weight)  # E37: the read starts as the summary read
         if self.memory_writer is not None:
             nn.init.zeros_(self.memory_writer.to_v_state.weight)   # E31: values start as content
             if getattr(self.memory_writer, "keyread_out", None) is not None:
@@ -3940,11 +4055,19 @@ class PerceiverARLM(PreTrainedModel):
         position_offset: int = 0,
         prefix_embeds: Optional[torch.Tensor] = None,
         read_targets: Optional[torch.Tensor] = None,
+        ce_norm: Optional[torch.Tensor] = None,
     ):
         # NOTE: no **kwargs here on purpose. HF Trainer treats any VAR_KEYWORD forward as a
         # model that normalizes its own loss by num_items_in_batch and then skips the division
         # by gradient_accumulation_steps (loss and grad-clip off by accum×). This forward
         # returns a per-microbatch mean; the Trainer must do the accumulation scaling.
+        #
+        # `ce_norm` (E37 SFT, the trainer's --loss_step_token_mean): divide the next-token CE SUM by this
+        # instead of this micro-batch's own target count. PerceiverDenoiseTrainer passes the optimizer
+        # step's target count / (accumulation steps x processes), so after the Trainer's division by
+        # the accumulation steps and DDP's mean over processes the CE is the step's token mean, as
+        # torchtitan computes it. z-loss and every auxiliary term keep their per-micro-batch weighting.
+        # None: exactly the per-micro-batch mean (trunk, decay, every earlier run).
         #
         # `message_kv=(k̄, v̄, slot_pos)` + `position_offset=P` is the E21 receiver-only forward:
         # `input_ids` are the tokens from the boundary on, and the prefix is present only as the
@@ -4026,12 +4149,16 @@ class PerceiverARLM(PreTrainedModel):
         flce = self._get_flce() if (cfg.use_liger and hid.is_cuda) else None
         if flce is not None:
             n = (tgt != -100).sum().clamp(min=1)
-            loss = flce(self.lm_head.weight, hid.reshape(-1, hid.shape[-1]), tgt.reshape(-1)) / n
+            loss = flce(self.lm_head.weight, hid.reshape(-1, hid.shape[-1]), tgt.reshape(-1)) / (
+                n if ce_norm is None else ce_norm)
         else:
             ce, z, n = chunked_softcap_ce(
                 hid, self.lm_head.weight, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap, cfg.z_loss
             )
-            loss = (ce + z) / n.clamp(min=1)
+            if ce_norm is None:
+                loss = (ce + z) / n.clamp(min=1)
+            else:  # the step's token mean for the CE; the z-loss stays this micro-batch's mean
+                loss = ce / ce_norm + z / n.clamp(min=1)
         if round_tgt is not None and looped and cfg.message_round_aux > 0:
             outs = looped[0]._round_outs
             aux, k = loss.new_zeros(()), 0
