@@ -185,8 +185,9 @@ at 16k in E33p) show the marks are reachable at this size and data.
 - **Capability checks (if S1 holds):** the core package on the home servers (C0–C5 from scratch, seeds 0–2, ladders
   to 128k), no-harm rule against the E31 champion; targets `C1.lookup-16k` ≥ 75 % first letter at 64k and
   `C4.chain4-1k` ≥ 75 % first letter (the passes-as-lookups claim).
-  **Frozen and launched 2026-11-11 20:40 UTC on the stage-B winner, as `e33t_catalogue_n4`** (branch
-  `e33t-capability`, server checkouts `~/dev/MrCogito-e33tcap`, folders `Cache/study/e33t_core`):
+  **Frozen and launched 2026-11-11 20:40 UTC on the stage-B winner, as `e33t_catalogue_n4`; finished 2026-11-14
+  02:29:43 UTC: the no-harm check fails and both targets are missed (see Result)** (branch `e33t-capability`,
+  server checkouts `~/dev/MrCogito-e33tcap`, folders `Cache/study/e33t_core`):
   - *The model:* a named variant in `evaluation/bapo_models.py` with every catalogue, writer and loop setting of the
     text arm `catalogue_reuse_n4` (pinned by `tests/test_capability_catalogue.py`), on the platform every capability
     model shares (width 960, 1 local + reading layer + 2 local layers, 128-d token embedding, a 256-token raw window
@@ -461,3 +462,60 @@ at 16k in E33p) show the marks are reachable at this size and data.
     By plan §10.7 the next step would be a two-level training run; it is deferred because the flat search fits at 1M
     and the cost only matters past it (the 10M-token aim). Open for the author.
   - **Stage D** (catalogue_reuse_n4 at 100M on AWS with the E37 full protocol) runs since 2026-11-11 16:19 UTC.
+
+- **Capability checks, core package, scored 2026-11-14 02:40 UTC** (`e33t_catalogue_n4`, C0–C5 from random init,
+  seeds 0–2, v4 scoring: each task's own score, pass = median ≥ 75 %, lost = more than 5 points below the champion
+  `e31_li_m1` where the champion passes, `same` evidence only). Runs: Odra 2026-11-11 20:40 UTC → 2026-11-14
+  02:29:43 UTC (48 jobs: C0–C4 and the lookup curriculum's 2k stage; its 8k and 16k stages, 6 jobs, dropped by the
+  author on 11-13), Polonez → 2026-11-13 08:36:27 UTC (21 jobs, the C5 stage chains); $0 on AWS. Ledger
+  `docs/2_Experiments_Registry/results/capability/study/e33t_core.{odra,polonez}.json`, raw folders on the NAS
+  (`/nas/ml_data/mrcogito/results/study/e33t_core.{odra,polonez}/`), board
+  `docs/3_Evaluations_and_Baselines/capability_board.html`.
+  - **No-harm verdict: fails.** 50 cells lost on 10 tasks, 9 kept, 14 not run. Kept: copy and lookup at 128 and
+    256 tokens, the one-decoy lookup at 128, and the 2- and 3-hop path tasks at their 1k training length. Lost:
+    copy, edge lookup, keyed lookup, one-decoy lookup and 8-fact recall at 1k (most also on the ladder), the lookup
+    at 2k on the 1k model, copy and lookup at 512, and both path tasks at 2k–16k. Not run: `C1.lookup-16k` (5 cells,
+    dropped) and C7 (9 cells, outside the core package).
+  - **Targets: both missed.** `C1.lookup-16k` ≥ 75 % at 64k: not run (its 2k stage stayed at chance, 27 / 29 / 27 %
+    at 1e-4 and 23 / 29 / 22 % at 5e-5, so the author dropped the later stages). `C4.chain4-1k` ≥ 75 % first
+    letter: 23.4 / 23.4 / 25.0 % (chance 25 %); the champion scores 68.4 % and fails it too, so no cell is lost there.
+    The passes-as-lookups claim gets no support from the capability checks.
+
+    | task (score) | seeds 0 / 1 / 2, % | median | champion | no-harm |
+    |---|---|---|---|---|
+    | C0.copy-128 (first letter) | 99.6 / 100 / 100 | 100 | 100 | kept |
+    | C0.copy-256 | 100 / 100 / 100 | 100 | 100 | kept |
+    | C0.copy-512 | 26.2 / 100 / 25.0 | 26.2 | 100 | lost |
+    | C0.copy-1k | 25.8 / 20.7 / 19.9 | 20.7 | 100 | lost, 1k–128k |
+    | C1.lookup-128 | 98.4 / 98.4 / 98.0 | 98.4 | 100 | kept |
+    | C1.lookup-256 | 99.2 / 99.2 / 99.2 | 99.2 | 100 | kept |
+    | C1.lookup-512 | 27.7 / 20.3 / 51.2 | 27.7 | 99.6 | lost |
+    | C1.lookup-1k | 25.4 / 25.0 / 21.9 | 25.0 | 71.5 | lost at 2k (champion 77) |
+    | C1.lookup-2k (step 1e-4) | 26.6 / 28.5 / 27.3 | 27.3 | 98.0 at 5e-5 | not compared (settings differ) |
+    | C1.edge-1k (picked candidate) | 7.8 / 93.9 / 10.2 | 10.2 | 97.7 | lost, 1k–128k |
+    | C1.keyed4-1k (picked candidate) | 26.2 / 30.1 / 26.5 | 26.5 | 93.2 | lost, 1k–32k |
+    | C2.lookalike-128 | 99.6 / 100 / 96.5 | 99.6 | 99.2 | kept |
+    | C2.lookalike-1k | 25.8 / 27.0 / 29.3 | 27.0 | 97.7 | lost, 1k–16k |
+    | C3.recall8-1k | 23.8 / 26.6 / 20.3 | 23.8 | 98.0 | lost, 1k–128k |
+    | C4.chain4-1k | 23.4 / 23.4 / 25.0 | 23.4 | 68.4 | both fail |
+    | C5.pchain2-1k (picked candidate) | 12.9 / 4.6 / 7.9 | 7.9 | 8.6 | both fail |
+    | C5.path2-1k (picked candidate) | 98.0 / 96.7 / 98.4 | 98.0 | 94.4 | kept at 1k, lost 2k–16k |
+    | C5.path3-1k (picked candidate) | 97.3 / 99.6 / 96.0 | 97.3 | 93.2 | kept at 1k, lost 2k–16k |
+
+  - **Why most cells are lost (open issue `catalogue-startup`, so "lost", never "cannot"):** a run nearly always
+    either learns a task fully or never starts. From random init 24 of 56 first stages started fully and one
+    partly (C1.lookup-512 seed 2: at chance to step 2,000, then 42–51 % to the end, final 51.2 %); every other run
+    stayed at chance with nothing reaching the answer (flow 0.000). Starts follow the length: at 128–256 tokens,
+    where the whole book sits inside the 256-token raw window, 15 of 15 runs learned within 300–600 steps; at 512
+    one of six (copy seed 1) plus the partial one; at 1k the first stages of the path tasks' written stage chains
+    on all six seeds (some only after 15–19k of their 19.2k steps), and the edge lookup and the 2-hop parallel
+    chain on one seed each. So the read learns what its window already holds and seldom learns to open a page from
+    random init. Settling it (more seeds or a longer budget on the missed 1k tasks; a written warm-up would be a
+    protocol change for every model) is open for the author.
+  - **No reach past the training length:** what did learn at 1k collapses at 2k. Picked candidate at 1k → 2k:
+    path2 98 → 64 / 43 / 7 % (seeds 0 / 1 / 2), path3 97–99 → 19 / 5 / 3 %, edge seed 1 86 → 8 %. The champion
+    holds path2 at 86–94 % and path3 at 79–95 % from 2k to 16k. This is not a startup failure: these runs had
+    learned.
+  - **Caveats:** the picked-candidate points at 128k are not decoded (issue `decode-cost-cap`); they count as the
+    floor and change nothing, since every capped cell is already lost or below the champion's pass mark. One
+    deliberate exam difference from the champion: no QUERY boundary (see Plan, capability checks).
