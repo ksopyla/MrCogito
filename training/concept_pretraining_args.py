@@ -404,6 +404,8 @@ class ModelArguments:
     lm_note_age_init: str = field(default="", metadata={"help": "E33g: per-head starting strengths of the note-order "
                                                                  "term, comma-separated (one value = every head)."})
     lm_note_age_learn: bool = field(default=True, metadata={"help": "E33g: False keeps the note-order strengths fixed."})
+    lm_read_topk: int = field(default=0, metadata={"help": "E33n: each query and head reads only its k best visible "
+                                                           "notes (chosen without gradient) plus the raw window; 0 = all."})
     message_loop_name_lens: float = field(default=0.0, metadata={"help": "E33q: weight of round r naming hop r's "
                                                                          "output word through the LM head (training)."})
     message_loop_feedback: str = field(default="none", metadata={"help": "E33q: none | soft (re-embed round r's "
@@ -431,6 +433,54 @@ class ModelArguments:
     lm_count_aux: float = field(default=0.0, metadata={"help": "E33k: weight of the count heads' sum matching the "
                                                                "true number of visits (count questions)."})
     lm_count_max: int = field(default=10, metadata={"help": "E33h: counts coded as a soft one-hot over 0..max."})
+    lm_note_key: str = field(default="writer", metadata={"help": "E33p: writer | tied (a note's key = the writer-"
+                                                                  "assignment-weighted mean of the reading layer's keys)."})
+    lm_open: str = field(default="none", metadata={"help": "E33p: none | notes | pages — each query opens the raw "
+                                                            "tokens of its best notes' members (or best pages)."})
+    lm_open_k: int = field(default=0, metadata={"help": "E33p: notes (or pages) each query chooses."})
+    lm_open_cap: int = field(default=512, metadata={"help": "E33p: opened raw tokens per query, at most."})
+    lm_note_read: str = field(default="gist", metadata={"help": "E33t: gist | index (the notes only choose what opens; "
+                                                                "they are not keys of the read)."})
+    lm_filing: str = field(default="argmax", metadata={"help": "E33t: argmax | balanced (Sinkhorn-balanced filing, "
+                                                               "at most lm_filing_cap tokens per note)."})
+    lm_filing_iters: int = field(default=3, metadata={"help": "E33t: Sinkhorn iterations of the balanced filing."})
+    lm_filing_cap: int = field(default=16, metadata={"help": "E33t: most tokens filed under one note."})
+    lm_open_score: str = field(default="sum_softmax", metadata={"help": "E33t: sum_softmax | max_cos (cosine of query "
+                                                                        "and note key, best query head)."})
+    lm_open_new_per_pass: bool = field(default=False, metadata={"help": "E33t: a loop pass may not open notes the "
+                                                                        "query opened in earlier passes."})
+    lm_open_levels: int = field(default=1, metadata={"help": "E33t: 1 | 2 (pages first, then their notes)."})
+    lm_open_pages: int = field(default=16, metadata={"help": "E33t: pages kept by the two-level search."})
+    lm_sinks: int = field(default=0, metadata={"help": "E33t: learned empty slots in the catalogue read."})
+    lm_index_loss: float = field(default=0.0, metadata={"help": "E33t: weight of the index loss."})
+    lm_index_queries: int = field(default=256, metadata={"help": "E33t: sampled queries per row and pass."})
+    lm_index_negatives: int = field(default=32, metadata={"help": "E33t: sampled unchosen notes per query."})
+    par_global_read: str = field(default="dense", metadata={"help": "E33p: dense | lsa (LSA's released flat read on "
+                                                                     "the global layer, nn/lsa_buckets.py) | concept "
+                                                                     "(E37 concept memory, nn/concept_memory.py)."})
+    lsa_window: int = field(default=512, metadata={"help": "LSA read: raw window."})
+    lsa_sinks: int = field(default=4, metadata={"help": "LSA read: first tokens of each document, always read."})
+    lsa_block: int = field(default=512, metadata={"help": "LSA read: keys per clustered block."})
+    lsa_bucket: int = field(default=8, metadata={"help": "LSA read: average keys per bucket."})
+    lsa_pool: int = field(default=4, metadata={"help": "LSA read: neighbouring keys per pool."})
+    lsa_bucket_cap: int = field(default=16, metadata={"help": "LSA read: most keys per bucket."})
+    lsa_top_k: int = field(default=512, metadata={"help": "LSA read: keys each query takes beyond sinks and window."})
+    lsa_width: int = field(default=0, metadata={"help": "LSA read: buckets each query ranks (0 = 2·top_k/bucket)."})
+    concept_block: int = field(default=512, metadata={"help": "E37 concept memory: keys per clustered block."})
+    concept_per_block: int = field(default=64, metadata={"help": "E37: concepts per block (balanced k-means)."})
+    concept_iters: int = field(default=3, metadata={"help": "E37: k-means rounds."})
+    concept_tau: float = field(default=0.05, metadata={"help": "E37: assignment temperature."})
+    concept_sinks: int = field(default=4, metadata={"help": "E37: first tokens of each document, always read."})
+    concept_top_k: int = field(default=512, metadata={"help": "E37: member tokens each query opens exactly."})
+    concept_width: int = field(default=0, metadata={"help": "E37: concepts ranked for opening (0 = 2·top_k/size)."})
+    concept_summaries: bool = field(default=True, metadata={"help": "E37: unopened concepts as summary entries."})
+    concept_variance: bool = field(default=True, metadata={"help": "E37: second-order term in the summary logit."})
+    concept_sum_len: int = field(default=0, metadata={
+        "help": "E37: length scale of the summaries' weight past this row length (the training length; 0 = off)."})
+    concept_reasoner_layers: int = field(default=0, metadata={"help": "E37: concept reasoner layers (0 = none)."})
+    concept_reasoner_dim: int = field(default=512, metadata={"help": "E37: concept reasoner width."})
+    concept_reasoner_heads: int = field(default=8, metadata={"help": "E37: concept reasoner heads."})
+    concept_reasoner_loops: int = field(default=2, metadata={"help": "E37: concept reasoner loops."})
     message_loop_rounds: int = field(default=1, metadata={"help": "E33a: tied [global read + local] loops (1 = off)."})
     message_loop_exit_aux: float = field(default=0.0, metadata={"help": "E33a: weight of each earlier loop exit."})
     message_loop_exit_targets: str = field(
@@ -515,6 +565,32 @@ class DataTrainingArguments:
         metadata={
             "help": "Optional JSON object that overrides source weights at runtime, "
             'e.g. \'{"finepdfs_100BT":0.6,"fineweb_edu":0.2,"finemath_3plus":0.2}\'.'
+        },
+    )
+    bin_manifest: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "E33n: JSON manifest of GPT-2 token shards (.bin, modded-nanogpt format) read by "
+            "data/bin_token_dataset.py — fixed rows of max_seq_length with per-token doc_ids ('stream' rows for the "
+            "FineWeb-Edu trunk, 'doc' rows for the LongDocs decay). Replaces every other data route when set."
+        },
+    )
+    flow_every: int = field(
+        default=0,
+        metadata={"help": "E33p instrumentation: every N optimizer steps, log training dynamics (flow/, grad/, upd/, "
+                          "read/, select/, writer/, lens/; training/flow_callback.py). 0 = off."},
+    )
+    snapshot_every: int = field(
+        default=0,
+        metadata={"help": "E33p: save model weights every N optimizer steps to output_dir/snapshots/step_N "
+                          "(for evaluation/flow_probe.py). 0 = off."},
+    )
+    max_train_hours: float = field(
+        default=0.0,
+        metadata={
+            "help": "Wall-clock budget for this invocation (0 = none). When it runs out the trainer saves a "
+            "checkpoint, skips the final save and exits with code 3; rerun with --resume_from_checkpoint to "
+            "continue (heat-limited bursts on Polonez, interruptible machines)."
         },
     )
     pretokenized_manifest: Optional[str] = field(

@@ -1,0 +1,453 @@
+<title>E33t Catalogue Read</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one column (alignment page), sticky model switch; colours as on the E33p pages:
+   blue = last 512 tokens, orange = opened tokens, green = note summaries, purple = LSA, grey = empty slots. */
+:root{
+ --bg:#f3f3ef;--card:#fbfbf9;--card2:#ecece6;--line:#d9d8d0;--fg:#121210;--fg2:#4d4c47;--muted:#7a7972;
+ --win:#2a78d6;--open:#e0632b;--note:#169e6e;--lsa:#5b45b8;--sink:#8f8e88;--bad:#c0392b;
+ --win-soft:#dce9f9;--open-soft:#fbe3d8;--note-soft:#d6f0e6;--lsa-soft:#e7e3f7;--none:#e6e5df;
+ --new:#b8501f;--new-bg:#fbe9df;--same:#1a7f37;--same-bg:#e6f4ea;--base:#4a3aa7;--base-bg:#ecebf8;--off:#8f8e88;--off-bg:#f0efea;
+ --accent:#5b45b8;--warn-bg:#fff3dc;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --bg:#121311;--card:#1a1b19;--card2:#232421;--line:#373833;--fg:#f2f2ee;--fg2:#c4c3bb;--muted:#8d8c85;
+ --win:#4a92e8;--open:#f07a45;--note:#2fbf8a;--lsa:#9b8af0;--sink:#7d7c76;--bad:#ef7a6b;
+ --win-soft:#172f4d;--open-soft:#3c2417;--note-soft:#12352a;--lsa-soft:#262043;--none:#2a2b28;
+ --new:#f08a5d;--new-bg:#3a2418;--same:#5cc47a;--same-bg:#16301f;--base:#9085e9;--base-bg:#25213f;--off:#77766f;--off-bg:#1e1e1c;
+ --accent:#9b8af0;--warn-bg:#33270f;color-scheme:dark}}
+:root[data-theme="dark"]{
+ --bg:#121311;--card:#1a1b19;--card2:#232421;--line:#373833;--fg:#f2f2ee;--fg2:#c4c3bb;--muted:#8d8c85;
+ --win:#4a92e8;--open:#f07a45;--note:#2fbf8a;--lsa:#9b8af0;--sink:#7d7c76;--bad:#ef7a6b;
+ --win-soft:#172f4d;--open-soft:#3c2417;--note-soft:#12352a;--lsa-soft:#262043;--none:#2a2b28;
+ --new:#f08a5d;--new-bg:#3a2418;--same:#5cc47a;--same-bg:#16301f;--base:#9085e9;--base-bg:#25213f;--off:#77766f;--off-bg:#1e1e1c;
+ --accent:#9b8af0;--warn-bg:#33270f;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",sans-serif}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+main{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:24px 80px}
+h1{font-size:30px;line-height:1.12;margin:4px 0 8px;text-wrap:balance}
+h2{font-size:21px;margin:44px 0 8px;padding-top:14px;border-top:1px solid var(--line);text-wrap:balance}
+h3{font-size:16px;margin:14px 0 6px}
+p{max-width:76ch;margin:8px 0}
+.kicker{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.sub{color:var(--fg2)} .small{font-size:13.5px} .muted{color:var(--muted)} .num{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0;min-width:0}
+.controls{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding:9px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card)}
+.seg button{border:0;border-right:1px solid var(--line);background:transparent;color:var(--fg2);padding:6px 11px;font:inherit;font-size:13.5px;cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.lab{font:600 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.armline{font-size:14px;color:var(--fg2);margin:8px 0 0;max-width:none}
+.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;padding:6px 14px;font:inherit;font-size:14px;cursor:pointer}
+.btn.ghost{background:var(--card);color:var(--accent)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.scroll{overflow-x:auto}
+svg{display:block;width:100%;height:auto}
+svg text{fill:var(--fg2);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--fg2);margin:6px 0}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.tag{display:inline-block;font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace;padding:1px 8px;border-radius:999px}
+.tag.new{background:var(--new-bg);color:var(--new)} .tag.same{background:var(--same-bg);color:var(--same)}
+.tag.base{background:var(--base-bg);color:var(--base)} .tag.off{background:var(--off-bg);color:var(--off)}
+.det{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:10px}
+@media (max-width:760px){.det{grid-template-columns:1fr}}
+.det div{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 12px;min-width:0}
+.det b{display:block;font:600 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:3px}
+.stepbar{display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap}
+ol.steps{margin:8px 0;padding-left:20px;font-size:14.5px} ol.steps li{margin:4px 0}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;vertical-align:top;padding:7px 9px;border-bottom:1px solid var(--line)}
+th{font:600 11.5px ui-monospace,SFMono-Regular,Menlo,monospace;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+td.n{font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;text-align:right;white-space:nowrap}
+.chk td:nth-child(3) label{display:block;font-size:13px;white-space:nowrap}
+.chk input[type=text]{width:100%;min-width:140px;font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg)}
+textarea{width:100%;min-height:150px;margin-top:10px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.note{background:var(--warn-bg);border-radius:8px;padding:9px 13px;font-size:14px;margin:10px 0}
+</style>
+
+<main>
+<div class="kicker">E33t · alignment page · draft spec 2026-11-07</div>
+<h1>E33t Catalogue Read</h1>
+<p class="sub">The notes stop being read and become a catalogue: they only decide which original tokens each query opens. Every token is filed under one balanced note, the catalogue is trained by where the read's attention actually lands, the 512-token budget is filled by tokens, and each of the four loop passes opens notes the query has not opened yet. A second arm searches pages first, then notes. Check that this page says what you mean, then return the checklist at the end.</p>
+
+<div class="controls">
+ <span class="lab">Model</span><span class="seg" id="armseg" role="group" aria-label="Model"></span>
+ <p class="armline" id="armline"></p>
+</div>
+
+<h2 id="pipeline">1 · The pipeline, step by step</h2>
+<p>Click a step or use the buttons. Shapes are for one 16,384-token row of the 30M model (width 576, 9 query heads of 64, one key/value head in the reading layer). Each step is marked <span class="tag new">new</span> <span class="tag same">unchanged</span> <span class="tag base">baseline's own</span> <span class="tag off">not in this model</span>.</p>
+<div class="card">
+ <div class="scroll"><svg id="pipe" viewBox="0 0 1040 250" role="img" aria-label="Pipeline steps"></svg></div>
+ <div id="pdet"></div>
+ <div class="stepbar"><button class="btn ghost" id="pprev" type="button">← previous</button><button class="btn ghost" id="pnext" type="button">next →</button><span class="small muted" id="pcount"></span></div>
+</div>
+
+<h2 id="toy">2 · A worked example: a two-step lookup</h2>
+<p>A 40-token row in five 8-token pages, at toy scale: a window of 8 tokens (for 512), 4 notes per page (for 32), a budget of 4 opened tokens per pass (for 512), balanced notes of 2 tokens, capped at 3. The query is the last token; the next token is “seven”. To get it, the model must find who Voss's ship is (page 1) and then that ship's code (page 3). Filing and scores are hand-built to illustrate; only the rules are real.</p>
+<div class="card">
+ <div class="row"><span class="lab">Pass</span><span class="seg" id="passseg" role="group" aria-label="Pass"></span></div>
+ <div class="scroll"><svg id="toysvg" viewBox="0 0 1040 250" role="img" aria-label="Toy row with notes and opened tokens"></svg></div>
+ <div class="legend" id="toylg"></div>
+ <ol class="steps" id="toysteps"></ol>
+</div>
+
+<h2 id="mask">3 · Who may attend to what</h2>
+<p>The reading layer's mask for the toy row: queries down, keys across. A query may read the 4 empty slots, its last 8 tokens, and the tokens it opened in this pass: only from closed pages of its own document, only tokens older than its window, never the future. Switch the pass to see the opened set move.</p>
+<div class="card">
+ <div class="row"><span class="lab">Pass</span><span class="seg" id="mpassseg" role="group" aria-label="Pass for the mask"></span></div>
+ <div class="scroll"><svg id="msvg" viewBox="0 0 760 520" role="img" aria-label="Attention mask matrix"></svg></div>
+ <div class="legend" id="mlg"></div>
+ <p class="small" id="mtext"></p>
+</div>
+
+<h2 id="budget">4 · Information budget per query</h2>
+<p>What one query can read and what the search costs, at 16k (training) and 128k (test). An opened token keeps its full key and value; a note summary is one 64-number key and value made from about 8 tokens and cannot return which of 50,257 tokens came next.</p>
+<div class="card scroll"><table id="budtab"></table></div>
+
+<h2 id="marks">5 · Pass marks and plan</h2>
+<div class="card scroll"><table id="marktab"></table></div>
+
+<h2 id="check">6 · Alignment checklist</h2>
+<p>Every design decision in the spec. Mark each one; add a note where you want a change or have a question; then collect the answers and paste them into the chat.</p>
+<div class="card chk scroll"><table id="chk"></table>
+ <div class="row" style="margin-top:12px"><button class="btn" id="collect" type="button">Collect answers</button><button class="btn ghost" id="allagree" type="button">Mark unmarked as agree</button><button class="btn ghost" id="copy" type="button">Copy</button><span class="small muted" id="copymsg"></span></div>
+ <textarea id="out" readonly placeholder="Your answers appear here as plain text to paste into the chat."></textarea>
+</div>
+<p class="small muted">Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md · evidence: docs/3_Evaluations_and_Baselines/e33p_vs_lsa.html.</p>
+</main>
+
+<script>
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, txt, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (txt != null) e.textContent = txt;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const $ = (s) => document.querySelector(s);
+
+/* ---------------- models ---------------- */
+const ARMS = [
+  {id: "cat", name: "Catalogue (main)", line: "E33t main arm: notes only choose what to open; balanced filing; index loss; budget by tokens; a new place per pass; flat search over all notes."},
+  {id: "cat2", name: "Catalogue, two-level", line: "E33t second arm: the same, but a query scores pages first, keeps its best 16, and scores only their notes."},
+  {id: "e33p", name: "E33p notes-open (as built)", line: "The baseline being replaced: summaries of every note in the read, argmax filing (30 % of notes empty), 64 notes per query, the same notes may be re-picked every pass, overlapping pages."},
+  {id: "lsa", name: "LSA-native (reference)", line: "LSA's released read in our model: the reading layer's keys clustered into boxes of ≤ 16 every pass, no writer, no training signal for the index, 4 first-of-document tokens as empty slots."},
+];
+let ARM = "cat";
+function setArm(a) {
+  ARM = a;
+  document.querySelectorAll("#armseg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.arm === a));
+  $("#armline").textContent = ARMS.find(x => x.id === a).line;
+  drawPipe(); drawToy(); drawMask(); drawBudget();
+}
+(function () {
+  const seg = $("#armseg");
+  for (const a of ARMS) {
+    const b = document.createElement("button"); b.type = "button"; b.dataset.arm = a.id; b.id = "arm-" + a.id; b.textContent = a.name;
+    b.onclick = () => setArm(a.id); seg.appendChild(b);
+  }
+})();
+
+/* ---------------- pipeline ---------------- */
+// tag per arm: n new, s same, b baseline's own, o off
+const STAGES = [
+  {k: "Tokens and local layers", tags: {cat: "s", cat2: "s", e33p: "s", lsa: "s"},
+   what: "Token ids are embedded and pass 2 local layers (each token sees its last 128 tokens). Identical in every model.",
+   shape: "ids [1, 16384] → x [1, 16384, 576]", keeps: "Every token, but each one knows only its last 128 neighbours."},
+  {k: "Pages", tags: {cat: "n", cat2: "n", e33p: "b", lsa: "o"},
+   what: {cat: "The row is cut into pages of 256 tokens with no overlap: a token is in exactly one page.", cat2: "As the main arm: 256-token pages, no overlap.", e33p: "Pages of 256 tokens, a new one every 192 (64 shared tokens; two layers of membership codes).", lsa: "No pages. LSA cuts the reading layer's keys into blocks of 512 instead."},
+   shape: {cat: "64 pages", cat2: "64 pages", e33p: "85 pages", lsa: "32 blocks of 512 keys"}, keeps: "Nothing is lost; this only decides the drawers."},
+  {k: "Writer and filing", tags: {cat: "n", cat2: "n", e33p: "b", lsa: "o"},
+   what: {cat: "The page writer (2 layers, 32 latents, 2 rounds) proposes 32 notes and a soft assignment of each token to them. Three Sinkhorn iterations balance it so every note gets about 8 tokens; each token is filed under its largest balanced entry, at most 16 per note.", cat2: "As the main arm.", e33p: "The same writer; each token is filed under the note with the largest raw assignment. 30 % of notes end up empty, the fullest holds about 14 tokens.", lsa: "No writer. Keys are summed in fours and merged by similarity into 64 boxes of at most 16 keys per block, redone every pass."},
+   shape: {cat: "A [1, 64, 32, 256] → Â, members per note 1…16", cat2: "as main", e33p: "A [1, 85, 32, 256], members 0…~14", lsa: "2,048 boxes of ≤ 16 keys"}, keeps: "Which tokens share a card. A coherent group gives a sharp key; a mixed one a blurry key."},
+  {k: "Keys of notes and pages", tags: {cat: "n", cat2: "n", e33p: "b", lsa: "b"},
+   what: {cat: "Note key κ = Â-weighted mean of the reading layer's own keys of the page's tokens, recomputed in every pass.", cat2: "Note keys as the main arm, plus a page key = the mean of the page's token keys.", e33p: "Note key = raw-assignment-weighted mean of the reading layer's keys (tied key).", lsa: "Box label = unit-length sum of its members' keys."},
+   shape: {cat: "κ [1, 2048, 64]", cat2: "κ [1, 2048, 64] + π [1, 64, 64]", e33p: "κ [1, 2720, 64]", lsa: "[1, 2048, 64]"}, keeps: "One 64-number key per note: enough to point, not to answer."},
+  {k: "Search", tags: {cat: "n", cat2: "n", e33p: "b", lsa: "b"},
+   what: {cat: "Each query scores every visible note: cosine with each of its 9 heads, best head wins. Notes opened by this query in earlier passes are not candidates.", cat2: "Each query scores the 64 page keys, keeps its best 16 pages, then scores only their 512 notes (best head, cosine). Earlier passes' notes excluded.", e33p: "Each query: sum over heads of a softmax over all visible notes. Earlier picks may repeat (37–47 %).", lsa: "Each query: cosine, best head, over all closed boxes. Picks overlap 18–25 % between passes."},
+   shape: {cat: "2,048 scores per query", cat2: "64 + 512 scores per query", e33p: "2,720 scores per query", lsa: "2,048 scores per query"}, keeps: "The ranking. A miss here can never be read."},
+  {k: "Choose", tags: {cat: "n", cat2: "n", e33p: "b", lsa: "b"},
+   what: {cat: "Notes are taken best first, their tokens oldest first, until 512 tokens are held (at most 128 notes).", cat2: "As the main arm, among the kept pages' notes.", e33p: "The best 64 notes, then their tokens up to 512: about 44 valid notes, the budget full for only 8–19 % of queries.", lsa: "Boxes best first until 512 keys (full for 66 % of queries)."},
+   shape: {cat: "≤ 512 token ids per query", cat2: "≤ 512 per query", e33p: "≤ 512, usually fewer", lsa: "512 per query"}, keeps: "Up to 512 exact tokens per query per pass."},
+  {k: "Read", tags: {cat: "n", cat2: "n", e33p: "b", lsa: "b"},
+   what: {cat: "One softmax over 4 learned empty slots, the last 512 tokens and the opened tokens. No note summaries.", cat2: "As the main arm.", e33p: "One softmax over the last 512 tokens, every note summary (2,720) and the opened tokens. Summaries took 37 % of pass-1 mass at far positions.", lsa: "One softmax over the first 4 tokens of the document, the last 512 tokens and the 512 opened keys."},
+   shape: {cat: "4 + 512 + 512 keys", cat2: "4 + 512 + 512 keys", e33p: "512 + 2,720 + ≤ 512 keys", lsa: "4 + 512 + 512 keys"}, keeps: "Exact keys and values of what was opened; nothing of what was not."},
+  {k: "Index loss", tags: {cat: "n", cat2: "n", e33p: "o", lsa: "o"},
+   what: {cat: "For 256 sampled queries per row and pass: the read's attention mass on each chosen note's tokens (plus 32 sampled unchosen notes, scored with the query) is the target; the notes' scores, through a learned temperature, are the prediction; KL, weight 0.1. Its gradient trains the writer's assignment and the keys.", cat2: "As the main arm, on the notes of the kept pages.", e33p: "None. The index learned only through the summaries in the read.", lsa: "None. LSA's index has no parameters."},
+   shape: {cat: "256 × (≤ 128 + 32) per row and pass", cat2: "same", e33p: "—", lsa: "—"}, keeps: "Teaches the catalogue where queries actually look."},
+  {k: "Loop", tags: {cat: "n", cat2: "n", e33p: "b", lsa: "b"},
+   what: {cat: "4 passes of [reading layer + 1 local layer] with tied weights. Each pass opens up to 512 new tokens: up to 2,048 distinct tokens per query over the loop.", cat2: "As the main arm.", e33p: "4 passes; each re-chooses, often the same notes.", lsa: "4 passes; each re-clusters and re-chooses."},
+   shape: {cat: "4 passes × ≤ 512 new tokens", cat2: "same", e33p: "4 × ≤ 512, overlapping", lsa: "4 × 512, ~20 % overlap"}, keeps: "A chain of lookups: what pass r found shapes pass r + 1's queries."},
+  {k: "Stack, output, loss", tags: {cat: "s", cat2: "s", e33p: "s", lsa: "s"},
+   what: "5 local layers, the output layer and the next-token loss (plus the index loss where present). Identical in every model.",
+   shape: "x [1, 16384, 576] → logits → loss", keeps: "—"},
+];
+const TAGN = {n: ["new", "new"], s: ["same", "unchanged"], b: ["base", "baseline's own"], o: ["off", "not in this model"]};
+let STEP = 0;
+const pick = (v) => (v && typeof v === "object") ? v[ARM] : v;
+function drawPipe() {
+  const svg = $("#pipe"); svg.innerHTML = "";
+  el("defs", {}, null, svg).innerHTML = '<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="' + css("--muted") + '"/></marker>';
+  const cols = 5, w = 186, h = 74, gx = 22, gy = 46, x0 = 10, y0 = 20;
+  STAGES.forEach((s, i) => {
+    const r = Math.floor(i / cols), c = r % 2 === 0 ? i % cols : cols - 1 - (i % cols);
+    const x = x0 + c * (w + gx), y = y0 + r * (h + gy);
+    const t = s.tags[ARM], col = {n: css("--new"), s: css("--same"), b: css("--base"), o: css("--off")}[t];
+    const g = el("g", {tabindex: 0, role: "button", "aria-label": (i + 1) + ". " + s.k, style: "cursor:pointer"}, null, svg);
+    el("rect", {x, y, width: w, height: h, rx: 10, fill: i === STEP ? css("--lsa-soft") : css("--card"), stroke: i === STEP ? css("--accent") : css("--line"), "stroke-width": i === STEP ? 2.5 : 1, opacity: t === "o" ? .55 : 1}, null, g);
+    el("rect", {x, y, width: 6, height: h, rx: 3, fill: col}, null, g);
+    el("text", {x: x + 16, y: y + 24, style: "font-size:13px;font-weight:600;fill:" + css("--fg") + ";font-family:inherit"}, (i + 1) + ". " + s.k, g);
+    el("text", {x: x + 16, y: y + 46, style: "fill:" + col}, TAGN[t][1], g);
+    el("text", {x: x + 16, y: y + 63}, String(pick(s.shape)).slice(0, 26), g);
+    g.onclick = () => { STEP = i; drawPipe(); };
+    g.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); STEP = i; drawPipe(); } };
+    if (i < STAGES.length - 1) {
+      const ni = i + 1, nr = Math.floor(ni / cols), nc = nr % 2 === 0 ? ni % cols : cols - 1 - (ni % cols);
+      const nx = x0 + nc * (w + gx), ny = y0 + nr * (h + gy);
+      if (nr === r) el("line", {x1: c < nc ? x + w : x, y1: y + h / 2, x2: c < nc ? nx - 2 : nx + w + 2, y2: ny + h / 2, stroke: css("--muted"), "marker-end": "url(#ah)"}, null, svg);
+      else el("line", {x1: x + w / 2, y1: y + h, x2: nx + w / 2, y2: ny - 2, stroke: css("--muted"), "marker-end": "url(#ah)"}, null, svg);
+    }
+  });
+  const s = STAGES[STEP], t = s.tags[ARM];
+  $("#pdet").innerHTML = `<h3>${STEP + 1}. ${s.k} <span class="tag ${TAGN[t][0]}">${TAGN[t][1]}</span></h3>
+   <div class="det"><div><b>What happens</b>${pick(s.what)}</div><div><b>Shape at 16k</b><span class="num">${pick(s.shape)}</span></div><div><b>What survives</b>${pick(s.keeps)}</div></div>`;
+  $("#pcount").textContent = "step " + (STEP + 1) + " of " + STAGES.length;
+}
+$("#pprev").onclick = () => { STEP = (STEP + STAGES.length - 1) % STAGES.length; drawPipe(); };
+$("#pnext").onclick = () => { STEP = (STEP + 1) % STAGES.length; drawPipe(); };
+
+/* ---------------- toy ---------------- */
+const TW = ["Captain","Mira","Voss","commanded","the","Kestrel","for","years",
+            "Rain","fell","on","the","harbour","all","night",".",
+            "The","Kestrel","launch","code","was","seven","one","four",
+            "Dockers","loaded","crates","of","salt","and","tea",".",
+            "At","dawn","Voss","typed","her","ship's","code",":"];
+const NOTE_LETTERS = "abcd";
+// filing: per arm, per closed page (0..3): 4 notes, each a list of token indices (balanced arms: 2 each)
+const FILING = {
+  bal: [[[1, 2], [0, 3], [4, 5], [6, 7]], [[8, 9], [10, 11], [12, 13], [14, 15]], [[16, 17], [18, 19], [20, 21], [22, 23]], [[24, 25], [26, 27], [28, 29], [30, 31]]],
+  arg: [[[0, 1, 2, 3], [4, 5, 6, 7], [], []], [[8, 9, 10, 11, 12], [13, 14, 15], [], []], [[16, 17, 18, 19], [20, 21, 22, 23], [], []], [[24, 25, 26, 27, 28, 29, 30, 31], [], [], []]],
+  lsa: [[[1, 2, 34], [5, 17], [18, 19, 38], [21, 22, 23]], [[0, 3, 4], [6, 7, 8, 9], [10, 11, 12], [13, 14, 15]], [[16, 20], [24, 25], [26, 27, 28], [29, 30, 31]], []],
+};
+// opened tokens per pass (hand-built illustration of each rule)
+const PASSES = {
+  cat:  [{notes: ["1a", "1c"], tok: [1, 2, 4, 5], why: "Pass 1: the query (“Voss … her ship's code”) best matches note 1a (Mira Voss) and 1c (the Kestrel): 4 tokens, budget full."},
+         {notes: ["3b", "3c"], tok: [18, 19, 20, 21], why: "Pass 2: 1a and 1c are excluded. The query now carries “Kestrel”; best new notes 3b (launch code) and 3c (was seven): the answer token is opened."},
+         {notes: ["3d", "3a"], tok: [22, 23, 16, 17], why: "Pass 3: new notes again: the rest of the code (one four) and “The Kestrel” on page 3, confirming the link."},
+         {notes: ["1b", "1d"], tok: [0, 3, 6, 7], why: "Pass 4: the remaining notes of page 1. Over four passes the query read 16 distinct tokens; the answer was in hand from pass 2."}],
+  e33p: [{notes: ["1a"], tok: [0, 1, 2, 3], why: "Pass 1: argmax filing put “Captain Mira Voss commanded” in note 1a (4 tokens): one note fills the budget. Half the notes are empty. All 16 note summaries are also in the read."},
+         {notes: ["1a"], tok: [0, 1, 2, 3], why: "Pass 2: the same note scores best again: the same 4 tokens, nothing new. The summary of note 3a (“The Kestrel launch code”) says there is a code, not which."},
+         {notes: ["1b"], tok: [4, 5, 6, 7], why: "Pass 3: note 1b (the Kestrel for years): the ship is found, but no pass is left to look up its code with that knowledge."},
+         {notes: ["1b"], tok: [4, 5, 6, 7], why: "Pass 4: repeats. The answer token “seven” was never opened; the model has to guess from the summaries."}],
+  lsa:  [{notes: ["A1", "A2"], tok: [1, 2, 5, 17], why: "Pass 1: LSA's boxes group similar keys across pages of a block: {Mira, Voss} and {Kestrel, Kestrel}. Cosine, best head: 4 keys."},
+         {notes: ["A3", "A4"], tok: [18, 19, 21, 22], why: "Pass 2: re-clustered with pass-2 keys; {launch, code} and {seven, one}: the answer is opened. Repeats are allowed but scored afresh."},
+         {notes: ["A3", "A2"], tok: [18, 19, 5, 17], why: "Pass 3: some repeats (LSA's measured overlap is 18–25 %)."},
+         {notes: ["A4", "C1"], tok: [21, 22, 16, 20], why: "Pass 4: mostly the same region again."}],
+};
+PASSES.cat2 = PASSES.cat.map((p, i) => Object.assign({}, p, {why: (i === 0 ? "Pages first: the query keeps pages 1 and 3 (toy: best 2 of 4 pages), then scores only their 8 notes. " : "Same kept pages. ") + p.why}));
+let PASS = 0;
+function filingFor(arm) { return arm === "e33p" ? FILING.arg : arm === "lsa" ? FILING.lsa : FILING.bal; }
+function drawToy() {
+  const svg = $("#toysvg"); svg.innerHTML = "";
+  const x0 = 10, tw = 25.5, y0 = 46, th = 22;
+  const opened = new Set(PASSES[ARM][PASS].tok);
+  const passTok = new Set(); for (let r = 0; r < PASS; r++) PASSES[ARM][r].tok.forEach(t => passTok.add(t));
+  for (let p = 0; p < 5; p++) {
+    const x = x0 + p * 8 * tw;
+    el("text", {x: x + 4 * tw, y: 16, "text-anchor": "middle"}, p < 4 ? "page " + (p + 1) + " (closed)" : "page 5: the window", svg);
+    el("line", {x1: x - 1, x2: x - 1, y1: 22, y2: 230, stroke: css("--line")}, null, svg);
+  }
+  TW.forEach((w, t) => {
+    const x = x0 + t * tw, isWin = t >= 32, isQ = t === 39;
+    const fill = isWin ? css("--win-soft") : opened.has(t) ? css("--open") : passTok.has(t) ? css("--open-soft") : css("--card2");
+    el("rect", {x: x + 1, y: y0, width: tw - 2, height: th, rx: 3, fill, stroke: isQ ? css("--fg") : "none", "stroke-width": 1.5}, null, svg);
+    const tx = el("text", {x: x + tw / 2, y: y0 + th + 14, "text-anchor": "middle", transform: `rotate(-50 ${x + tw / 2} ${y0 + th + 14})`, style: "font-size:10.5px;text-anchor:end" + (opened.has(t) ? ";fill:" + css("--open") + ";font-weight:700" : "")}, w, svg);
+    if (t === 21) el("text", {x: x + tw / 2, y: y0 - 6, "text-anchor": "middle", style: "fill:" + css("--bad") + ";font-weight:700"}, "answer", svg);
+  });
+  // notes under pages
+  const fil = filingFor(ARM), ny = 150;
+  if (ARM === "lsa") {
+    el("text", {x: x0, y: ny - 8}, "LSA boxes (similar keys, may span pages of a block):", svg);
+    const boxes = [["A1", [1, 2, 34]], ["A2", [5, 17]], ["A3", [18, 19, 38]], ["A4", [21, 22, 23]]];
+    boxes.forEach(([n, ts], i) => {
+      const chosen = PASSES.lsa[PASS].notes.includes(n);
+      ts.filter(t => t < 32).forEach(t => el("rect", {x: x0 + t * tw + 3, y: ny + i * 9, width: tw - 6, height: 6, rx: 2, fill: chosen ? css("--lsa") : css("--lsa-soft")}, null, svg));
+      el("text", {x: x0 + 32 * tw + 6, y: ny + i * 9 + 6, style: chosen ? "fill:" + css("--lsa") : ""}, n + (chosen ? " ← chosen" : ""), svg);
+    });
+  } else {
+    el("text", {x: x0, y: ny - 8}, ARM === "e33p" ? "notes (argmax filing; empty notes marked ∅; every summary is also read):" : "notes (balanced filing: 2 tokens each, cap 3):", svg);
+    fil.forEach((page, p) => page.forEach((mem, k) => {
+      const id = (p + 1) + NOTE_LETTERS[k], chosen = PASSES[ARM][PASS].notes.includes(id);
+      const earlier = PASSES[ARM].slice(0, PASS).some(q => q.notes.includes(id)) && ARM !== "e33p";
+      const y = ny + k * 11;
+      if (!mem.length) { el("text", {x: x0 + p * 8 * tw + 4, y: y + 8, style: "fill:" + css("--bad")}, id + " ∅", svg); return; }
+      const a = Math.min(...mem), b = Math.max(...mem);
+      el("rect", {x: x0 + a * tw + 3, y, width: (b - a + 1) * tw - 6, height: 8, rx: 3, fill: chosen ? css("--open") : earlier ? css("--off") : (ARM === "e33p" ? css("--note") : css("--note-soft"))}, null, svg);
+      el("text", {x: x0 + b * tw + tw - 1, y: y + 8, style: "font-size:9.5px"}, id, svg);
+    }));
+  }
+  el("text", {x: x0 + 32 * tw + 6, y: 232}, "query: “…ship's code :” → next token “seven”", svg);
+  $("#toylg").innerHTML = [["--open", "opened in this pass"], ["--open-soft", "opened in earlier passes"], ["--win-soft", "window"], [ARM === "lsa" ? "--lsa" : "--note", ARM === "lsa" ? "box" : "note"], ["--off", "excluded (opened earlier)"]]
+    .map(([c, t]) => `<span><i style="background:var(${c})"></i>${t}</span>`).join("");
+  const ans = PASSES[ARM].some((p, i) => i <= PASS && p.tok.includes(21));
+  $("#toysteps").innerHTML = PASSES[ARM].map((p, i) => `<li style="${i === PASS ? "font-weight:600" : i > PASS ? "color:var(--muted)" : ""}">${p.why}</li>`).join("") +
+    `<li style="list-style:none;margin-left:-20px;margin-top:8px">${ans ? "By pass " + (PASS + 1) + " the answer token has been opened." : "By pass " + (PASS + 1) + " the answer token has not been opened."}</li>`;
+}
+(function () {
+  for (const [id, fn] of [["#passseg", () => drawToy()], ["#mpassseg", () => drawMask()]]) {
+    const seg = $(id);
+    for (let r = 0; r < 4; r++) {
+      const b = document.createElement("button"); b.type = "button"; b.id = id.slice(1) + "-" + r; b.textContent = "pass " + (r + 1);
+      b.setAttribute("aria-pressed", r === 0);
+      b.onclick = () => { if (id === "#passseg") PASS = r; else MPASS = r; seg.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b)); fn(); };
+      seg.appendChild(b);
+    }
+  }
+})();
+
+/* ---------------- mask ---------------- */
+let MPASS = 0;
+function hash(a, b) { let h = (a * 374761393 + b * 668265263) >>> 0; h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0; return (h % 1000) / 1000; }
+// per query q (toy row of 40, pages of 8, window 8): which tokens it opens in pass r
+function openedFor(q, r, arm) {
+  const closedPages = Math.floor((q - 7) / 8); // pages fully older than the window start
+  if (closedPages <= 0 || arm === "none") return new Set();
+  let groups = [];
+  const fil = filingFor(arm === "cat2" ? "cat" : arm);
+  if (arm === "lsa") {
+    for (let p = 0; p < closedPages; p++) for (let k = 0; k < 4; k++) groups.push({id: p * 4 + k, mem: [p * 8 + 2 * k, p * 8 + 2 * k + 1].filter(t => q - t >= 8)});
+  } else {
+    for (let p = 0; p < closedPages; p++) fil[p].forEach((mem, k) => groups.push({id: p * 4 + k, page: p, mem: mem.filter(t => q - t >= 8)}));
+  }
+  groups = groups.filter(g => g.mem.length);
+  if (arm === "cat2") { const keep = [...new Set(groups.map(g => g.page))].sort((a, b) => hash(q, b + 50) - hash(q, a + 50)).slice(0, 2); groups = groups.filter(g => keep.includes(g.page)); }
+  const order = (rr) => groups.slice().sort((a, b) => hash(q * 7 + (arm === "lsa" || arm === "e33p" ? 0 : 0), b.id + rr * (arm === "lsa" ? 13 : 0)) - hash(q * 7, a.id + rr * (arm === "lsa" ? 13 : 0)));
+  const used = new Set(), out = new Set();
+  for (let rr = 0; rr <= r; rr++) {
+    const cand = order(rr).filter(g => (arm === "cat" || arm === "cat2") ? !used.has(g.id) : true);
+    const take = new Set(); let n = 0, notes = 0;
+    for (const g of cand) {
+      if (arm === "e33p" && notes >= 2) break;
+      for (const t of g.mem) if (n < 4) { take.add(t); n++; }
+      notes++; used.add(g.id);
+      if (n >= 4) break;
+    }
+    if (rr === r) take.forEach(t => out.add(t));
+  }
+  return out;
+}
+function drawMask() {
+  const svg = $("#msvg"); svg.innerHTML = "";
+  const N = 40, S = 4, notesCols = ARM === "e33p" ? 16 : 0, cell = 11, x0 = 70, y0 = 40;
+  const cols = S + N + notesCols;
+  if (ARM !== "e33p") el("text", {x: x0, y: y0 - 22}, "4 empty slots", svg);
+  el("text", {x: x0 + S * cell + 4, y: y0 - 22}, "tokens 0–39 (pages of 8)", svg);
+  if (notesCols) el("text", {x: x0 + (S + N) * cell + 4, y: y0 - 22, style: "fill:" + css("--note")}, "16 note summaries", svg);
+  let counts = {win: 0, open: 0, sink: 0, note: 0};
+  for (let q = 0; q < N; q++) {
+    const op = openedFor(q, MPASS, ARM);
+    if (q % 8 === 0) el("text", {x: x0 - 8, y: y0 + q * cell + 9, "text-anchor": "end"}, "q " + q, svg);
+    for (let c = 0; c < cols; c++) {
+      let fill = css("--none"), kind = "";
+      if (c < S) { if (ARM !== "e33p") { fill = ARM === "lsa" ? css("--sink") : css("--sink"); kind = "sink"; } }
+      else if (c < S + N) {
+        const k = c - S;
+        if (k <= q && q - k < 8) { fill = css("--win"); kind = "win"; }
+        else if (k < q && op.has(k)) { fill = css("--open"); kind = "open"; }
+      } else {
+        const n = c - S - N, page = Math.floor(n / 4);
+        if ((page + 1) * 8 <= q) { fill = css("--note"); kind = "note"; }
+      }
+      if (kind) counts[kind]++;
+      el("rect", {x: x0 + c * cell, y: y0 + q * cell, width: cell - 1, height: cell - 1, fill}, null, svg);
+    }
+  }
+  for (let p = 1; p < 5; p++) el("line", {x1: x0 + (S + p * 8) * cell - .5, x2: x0 + (S + p * 8) * cell - .5, y1: y0 - 4, y2: y0 + N * cell, stroke: css("--fg2"), "stroke-width": .6, "stroke-dasharray": "2 2"}, null, svg);
+  $("#mlg").innerHTML = [["--sink", "empty slots"], ["--win", "window (last 8)"], ["--open", "opened this pass"], ["--note", "note summary (E33p only)"], ["--none", "not readable (future, own open page, not opened)"]]
+    .map(([c, t]) => `<span><i style="background:var(${c})"></i>${t}</span>`).join("");
+  $("#mtext").textContent = ({
+    cat: "Main arm, pass " + (MPASS + 1) + ": each query opens at most 4 tokens of closed pages, older than its window, from notes it has not opened in earlier passes; the summaries are not in the read.",
+    cat2: "Two-level arm, pass " + (MPASS + 1) + ": the opened tokens come only from the query's 2 kept pages (toy for 16).",
+    e33p: "E33p, pass " + (MPASS + 1) + ": every summary of a closed page is readable, and the same notes tend to be opened in every pass; at most 2 notes (toy for 64).",
+    lsa: "LSA, pass " + (MPASS + 1) + ": 4 slots (the document's first tokens in LSA), the window, and up to 4 keys from its best boxes, re-chosen each pass.",
+  })[ARM] + " Opened cells this pass: " + counts.open + ".";
+}
+
+/* ---------------- budget ---------------- */
+function drawBudget() {
+  const rows = [
+    ["Keys read per query (16k)", "4 + 512 + 512", "4 + 512 + 512", "512 + 2,720 + ≤ 512", "4 + 512 + 512"],
+    ["Keys read per query (128k)", "4 + 512 + 512", "4 + 512 + 512", "512 + 21,800 + ≤ 512", "4 + 512 + 512"],
+    ["Distinct tokens opened over 4 passes", "up to 2,048", "up to 2,048", "≤ 512 each, 37–47 % repeated", "up to 2,048, 18–25 % repeated"],
+    ["Search scores per query (16k / 128k)", "2,048 / 16,384", "64 + 512 / 512 + 512", "2,720 / 21,800", "2,048 / 16,384"],
+    ["Search scores at 10M tokens", "1.25M", "39k + 512", "1.7M", "1.25M"],
+    ["Index trained by", "LM loss + index loss", "LM loss + index loss", "LM loss through summaries", "nothing (no parameters)"],
+    ["Choice storage per row (16k)", "table 67 MB (stage A), list in stage C", "same", "table 89 MB", "table 67 MB"],
+    ["Reading-layer cache per token", "256 bytes", "256 bytes", "256 bytes + notes", "256 bytes"],
+  ];
+  const col = {cat: 1, cat2: 2, e33p: 3, lsa: 4}[ARM];
+  $("#budtab").innerHTML = "<thead><tr><th></th><th>catalogue</th><th>two-level</th><th>E33p as built</th><th>LSA-native</th></tr></thead><tbody>" +
+    rows.map(r => "<tr>" + r.map((c, i) => i === 0 ? `<td>${c}</td>` : `<td class="small" style="${i === col ? "font-weight:700;background:var(--lsa-soft)" : ""}">${c}</td>`).join("") + "</tr>").join("") + "</tbody>";
+}
+
+/* ---------------- marks ---------------- */
+$("#marktab").innerHTML = "<thead><tr><th>mark</th><th>set before running</th><th>why reachable</th></tr></thead><tbody>" + [
+  ["Quality", "main arm ≥ 80 % of the window→dense gap at 16k, positions ≥ 2k (kill below 50 %)", "LSA-native reached 99 % at this size and data"],
+  ["No fade", "share at 64k ≥ share at 16k − 5 points", "LSA-native gained 28 points from 16k to 64k"],
+  ["Finds what matters", "recall of the dense top-32 in pass 4 ≥ 0.9 × LSA-native's; far-copy share ≥ 0.8 × LSA-native's", "measured on E33p's models in the pre-flight"],
+  ["Two levels hold", "two-level arm within 5 points of the main arm at 16k and 64k", "its pages are the main arm's drawers"],
+  ["Cost", "16k training speed ≥ 0.9 × LSA-native's on the same node (kill above 1.3 × its wall time)", "no summaries, no overlap: fewer keys than E33p"],
+  ["Index learns", "rank correlation of note score and read mass ≥ 0.2 by 25 % of the trunk (else stop)", "the target is the read's own attention"],
+  ["No harm", "positions < 512 within 0.01 nats of window; 4k loss ≤ window's; core mean within 1 point", "E33p's arms met it"],
+  ["Plan", "A: 2 models at 30M (~$60) · B: note sizes 4/8/16 tokens and 512-token pages (~$120) · C: two-level at 128k–1M (~$80) · D: 100M, 4 models (~$500–600)", "inside the $2,000 AWS goal"],
+].map(r => `<tr><td><b>${r[0]}</b></td><td>${r[1]}</td><td class="small muted">${r[2]}</td></tr>`).join("") + "</tbody>";
+
+/* ---------------- checklist ---------------- */
+const CHK = [
+  ["Notes leave the read: they only choose what to open (no summaries in the softmax).", "Bet §5"],
+  ["4 learned empty slots in the read (not LSA's first 4 tokens of the document).", "Bet §5"],
+  ["Pages of 256 tokens without overlap (stride 256, was 192).", "Bet §1"],
+  ["32 notes per page, balanced by 3 Sinkhorn iterations to ~8 tokens each, cap 16, overflow to the next-best note with room.", "Bet §2"],
+  ["Note key = balanced-assignment-weighted mean of the reading layer's keys, recomputed every pass.", "Bet §3"],
+  ["Score = cosine, best of the 9 query heads (was: sum over heads of a softmax).", "Bet §4"],
+  ["Fill the budget by tokens: notes best first until 512 tokens (at most 128 notes).", "Bet §4"],
+  ["A new place per pass: a pass may not open notes the same query opened in ANY earlier pass.", "Bet §4"],
+  ["Index loss: KL(read mass ‖ softmax(τ·score)) on chosen + 32 sampled unchosen notes, 256 queries per row and pass, weight 0.1, learned τ.", "Bet §6"],
+  ["Two-level arm: page key = mean of its tokens' keys; best 16 pages, then their notes.", "Bet §4"],
+  ["Stage A: the two arms on the AWS 4 × L40S node, seed 1, against the seed-1 dense, window and LSA-native controls (queue: dense, window, LSA, then pages-open).", "Plan"],
+  ["Protocol unchanged from E33p (1.5B tokens at 4k, 0.2B at 16k, 30M shape, loop 4).", "Training protocol"],
+  ["Pass marks: ≥ 80 % at 16k, no fade to 64k, recall ≥ 0.9 × LSA, two-level within 5 points, speed ≥ 0.9 × LSA, no harm.", "Success criteria"],
+  ["Kill: < 50 % at 16k; index not learning (rank correlation < 0.2 at 25 %); health; cost > 1.3 × LSA.", "Kill criteria"],
+  ["Capability checks if quality passes: C1.lookup-16k ≥ 75 % at 64k, C4.chain4-1k ≥ 75 %, no-harm vs E31.", "Plan"],
+  ["Later stages: note sizes (B), long documents with the choice stored as a list (C), 100M if 30M matches LSA (D); ≈ $800–900 in all.", "Plan"],
+];
+(function () {
+  $("#chk").innerHTML = "<thead><tr><th>#</th><th>decision</th><th>verdict</th><th>note</th></tr></thead><tbody>" + CHK.map((c, i) =>
+    `<tr><td class="n">${i + 1}</td><td>${c[0]}<div class="small muted">${c[1]}</div></td>
+     <td>${["agree", "change", "question"].map(v => `<label><input type="radio" name="c${i}" id="c${i}-${v}" value="${v}"> ${v}</label>`).join("")}</td>
+     <td><input type="text" id="n${i}" aria-label="note for decision ${i + 1}"></td></tr>`).join("") + "</tbody>";
+  $("#allagree").onclick = () => CHK.forEach((_, i) => { if (!document.querySelector(`input[name=c${i}]:checked`)) document.getElementById(`c${i}-agree`).checked = true; });
+  $("#collect").onclick = () => {
+    const lines = ["E33t alignment answers:"];
+    CHK.forEach((c, i) => {
+      const v = (document.querySelector(`input[name=c${i}]:checked`) || {}).value || "unmarked";
+      const n = document.getElementById("n" + i).value.trim();
+      lines.push(`${i + 1}. [${v}] ${c[0]}${n ? " — " + n : ""}`);
+    });
+    $("#out").value = lines.join("\n");
+  };
+  $("#copy").onclick = () => {
+    const t = $("#out"); if (!t.value) $("#collect").onclick();
+    navigator.clipboard.writeText(t.value).then(() => { $("#copymsg").textContent = "Copied."; })
+      .catch(() => { t.focus(); t.select(); $("#copymsg").textContent = "Select-all done: press copy."; });
+  };
+})();
+
+setArm("cat");
+</script>

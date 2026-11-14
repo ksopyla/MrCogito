@@ -15,6 +15,62 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-13] - Cached decoding timed on one L40S: 25-28x at 64k, same answers
+
+- `infra/aws/jobs/bench_cache_node.sh` (new) on one spot g6e.xlarge (us-west-2c, 08:15-08:45 UTC, ~$1): the five
+  100M models through `evaluation/bench_cached_decoding.py`, RULER-like needle prompt, 32 answer tokens, bf16, flex.
+  Seconds per prompt, uncached → cached (speedup):
+
+  | model | 16k | 32k | 64k | 128k (cached only) |
+  |---|---|---|---|---|
+  | dense | 2.1 → 0.43 (4.9x) | 5.2 → 0.53 (9.8x) | 13.0 → 1.0 (12.8x) | 2.2 |
+  | LSA port | 7.7 → 1.0 (7.7x) | 23.5 → 1.5 (16x) | 82.0 → 3.3 (25x) | 10.5 |
+  | catalogue n4 | 12.3 → 1.1 (11x) | 43.1 → 2.1 (21x) | 170.3 → 6.0 (28x) | 15.4 |
+  | e37a (concept read) | 12.8 → 1.1 (11x) | 42.0 → 2.0 (21x) | 134.1 → 4.9 (28x) | 16.5 |
+  | notes_open | 19.4 → 2.1 (9x) | 63.4 → 3.5 (18x) | 198.5 → 7.8 (25x) | 24.8 |
+
+  Same tokens both ways at every length timed both ways. LSA 16k differed once (first job): the cached answer was
+  identical in the rerun, where the uncached one then matched, so the uncached bf16 path itself varied. Peak GPU
+  memory is the same both ways (±0.1 GB; the one pass over the row dominates; 128k peaks: 4.9-19.9 GB). Results:
+  `s3://mrcogito-train-<account>/runs/kvcache_bench/kvcache-bench/` (dense and LSA 16k from the rerun, `*_16k_v2`).
+- `evaluation/bench_cached_decoding.py`: untimed warm-up of each path per length that runs at least 3 tokens (the
+  first job's one-token warm-up ran no cached step, so dense 16k timed 7 s of first-step set-up); peak memory per
+  path; results written after every length; on a mismatch, the first differing position and the uncached path's
+  logit gap there.
+
+## [2026-11-13] - Cached decoding covers E37's concept read and E33p's notes read
+
+- Branch `kv-cache` merges `e37-catalogue-later` (the E37 concept read from `arch-10m`, the catalogue model, the later-pass
+  files), so one branch carries every 100M reading layer.
+- `nn/incremental.py`: E37's concept read (`decode_kind` → "concept"): concepts and the reasoner's updates rebuilt from
+  the cache when the answer crosses a block end; one query's choice (`choose`, the table row of t) and one fp32
+  softmax over sinks ‖ block-aligned window ‖ opened members ‖ summaries with their bias and the length scale.
+- `nn/incremental.py`: E33p's notes read (notes_open, "notes"): the pages holding the newest position are rewritten
+  every step (the writer on that page alone, tied keys redone per pass); the previous position is redone first,
+  since the page it read closes one position later once the next token is written. Answers up to raw window − page
+  (256 tokens for notes_open), as for the catalogue.
+- `nn/incremental.py`: a catalogue scored by a softmax over the visible notes is refused (the cached notebook lacks the
+  pages holding answer tokens; the cosine score used by every E33t arm does not depend on them).
+- Tests: concept arms (plain, reasoner, length scale) and the notes arm in `tests/test_incremental_decode.py`; the
+  step test's row is long enough for the answer's block to have concepts.
+
+## [2026-11-12] - Cached greedy decoding for the Perceiver AR family
+
+- `nn/incremental.py` (new): `IncrementalDecoder` reads the row once (the model's own forward over the fixed-length
+  row the harness decoding uses, with every attention call's keys and values kept) and then runs one position per
+  step through the layers. The harness loop re-ran the whole row for every answer token (E33t stage D, 64k on one
+  L40S: 5.2 s per forward, 32 forwards, ~180 s per RULER prompt). Covered: full attention, LSA's read (buckets rebuilt
+  when the answer crosses a block end) and the catalogue read (E33t, reuse arms; exact for answers shorter than
+  raw window − page, 256 tokens for n4, longer requests refused); local sliding-window layers, the tied loop, U-net
+  skips, n-gram embeddings. Other reads (E33p's gist read, E37's concept read) raise `NotImplementedError`.
+- `evaluation/lm_eval_perceiver_ar.py`: `_model_generate` takes the cached path when the model is covered
+  (`PERCEIVER_AR_GEN_CACHE=0` keeps the old loop); same row geometry, same stop rule.
+- The list read takes a query range (`attend_list(q_offset=)`, `ChoiceList(row0=, members=)`,
+  `note_open_table(q_offset=, members=)`, `lsa_open_table(q_offset=, members=)`); defaults unchanged.
+- Tests: `tests/test_incremental_decode.py` (tokens equal the uncached loop's; each step's hidden state equals the
+  full forward's at that position, fp32; the catalogue horizon; fallback for uncovered reads).
+  `tests/test_lm_eval_perceiver_ar.py`: the stale "generation unsupported" test now checks greedy decoding.
+
 ## [2026-10-23] - Server runs from the main checkout; e31 branches archived
 
 - `e31-latent-memory` and `e31-text-memory` are merged into `dev` and archived as tags `archive/e31-latent-memory`

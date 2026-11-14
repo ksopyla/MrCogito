@@ -176,6 +176,9 @@ class PerceiverDenoiseTrainer(Trainer):
         # and ablation logs use neither key, so they must not enter a collective.
         if "loss" in logs or "train_loss" in logs:
             logs = {**logs, **self._flush_padding_metrics()}
+            for cb in self.callback_handler.callbacks:  # E33p instrumentation (training/flow_callback.py)
+                if hasattr(cb, "pop_flow"):
+                    logs = {**logs, **cb.pop_flow()}
         super().log(logs, start_time=start_time)
 
     def create_optimizer(self):

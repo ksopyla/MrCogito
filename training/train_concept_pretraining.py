@@ -49,6 +49,7 @@ from training.concept_pretraining_factories import (
     load_pretraining_datasets,
 )
 from training.concept_pretraining_trainer import PerceiverDenoiseTrainer
+from training.wallclock_callback import StopAfterHoursCallback
 from training.utils_training import (
     init_wandb,
     is_main_process,
@@ -178,14 +179,27 @@ def main():
         is_causal_ar,
         tokenizer.eos_token_id,
     )
-    train_ds, test_ds = load_pretraining_datasets(
-        tokenizer,
-        data_args,
-        training_args,
-        append_eos_token_id,
-    )
+    if getattr(data_args, "bin_manifest", None):
+        # E33n: fixed rows straight from GPT-2 token shards (no HF datasets, no packing pass): each item already
+        # carries input_ids [S] and doc_ids [S], the PackedDataset contract the causal-LM collator reads
+        from data.bin_token_dataset import load_bin_manifest
+
+        train_ds, test_ds, bin_meta = load_bin_manifest(data_args.bin_manifest)
+        if int(bin_meta["seq_len"]) != int(data_args.max_seq_length):
+            raise ValueError(f"bin_manifest seq_len {bin_meta['seq_len']} != max_seq_length {data_args.max_seq_length}")
+        if is_main_process():
+            logger.info("Token-shard rows: train=%s eval=%s seq=%s rule=%s per source %s", f"{len(train_ds):,}",
+                        f"{len(test_ds):,}" if test_ds is not None else "none", bin_meta["seq_len"],
+                        bin_meta.get("rule", "stream"), train_ds.rows_per_source)
+    else:
+        train_ds, test_ds = load_pretraining_datasets(
+            tokenizer,
+            data_args,
+            training_args,
+            append_eos_token_id,
+        )
     train_lengths = None
-    if data_args.batch_packing_mode in ("length_group", "pack"):
+    if data_args.batch_packing_mode in ("length_group", "pack") and not getattr(data_args, "bin_manifest", None):
         length_cache_num_proc = os.environ.get("LENGTH_CACHE_NUM_PROC")
         with training_args.main_process_first(desc="preparing sequence-length cache"):
             train_lengths = compute_or_load_interleaved_lengths(
@@ -217,7 +231,7 @@ def main():
     )
     freeze_all_but(model, getattr(model_args, "train_only_params", ""))
 
-    if data_args.batch_packing_mode == "pack":
+    if data_args.batch_packing_mode == "pack" and not getattr(data_args, "bin_manifest", None):
         import inspect
 
         if "doc_ids" not in inspect.signature(model.forward).parameters:
@@ -325,6 +339,10 @@ def main():
         is_backbone=is_backbone,
         concept_num=model_args.concept_num,
     )
+    # RUN_ID_SUFFIX (e.g. the arm): runs of one architecture started in the same second otherwise get the same id —
+    # E33n s30 window and e33n trunks (2026-11-05 00:33:23) wrote into one W&B run.
+    if os.environ.get("RUN_ID_SUFFIX"):
+        run_identifier = f"{run_identifier}_{os.environ['RUN_ID_SUFFIX']}"
     setup_run_dirs(training_args, run_identifier)
     training_args.use_cpu = False
 
@@ -455,6 +473,16 @@ def main():
     callbacks = []
     if loss_config.warmup_steps > 0:
         callbacks.append(ConceptLossStepCallback())
+    wallclock = StopAfterHoursCallback(data_args.max_train_hours) if data_args.max_train_hours > 0 else None
+    if wallclock is not None:
+        callbacks.append(wallclock)
+    if int(getattr(data_args, "flow_every", 0) or 0) > 0 or int(getattr(data_args, "snapshot_every", 0) or 0) > 0:
+        from training.flow_callback import FlowCallback, SnapshotCallback
+
+        if int(data_args.flow_every or 0) > 0:
+            callbacks.append(FlowCallback(int(data_args.flow_every)))
+        if int(data_args.snapshot_every or 0) > 0:
+            callbacks.append(SnapshotCallback(int(data_args.snapshot_every)))
 
     if is_backbone:
         special_token_changes = align_special_tokens_for_training(model, tokenizer)
@@ -576,6 +604,13 @@ def main():
         )
     logger.info("=" * 60)
     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+    if wallclock is not None and wallclock.stopped:
+        logger.info(f"Wall-clock budget of {data_args.max_train_hours} h used at step {trainer.state.global_step}/"
+                    f"{trainer.state.max_steps}; checkpoint saved, no final model. Resume with "
+                    "--resume_from_checkpoint.")
+        if wandb.run and is_main_process():
+            wandb.finish()
+        sys.exit(3)
 
     final_path = os.path.join(training_args.output_dir, "final")
     trainer.save_model(final_path)

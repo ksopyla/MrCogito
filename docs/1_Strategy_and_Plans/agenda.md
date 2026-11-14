@@ -20,6 +20,52 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-12 — E33t, the catalogue read: stages A–D done.** The notes only
+  index the text (never read), balanced filing, an index loss, the budget filled by tokens. Stage A: letting loop
+  passes revisit notes (`catalogue_reuse`) lifts 71 → **91 %** of the window→dense gap at 16k (LSA port 95 %), level
+  with LSA at 64k, best 128k loss. Stage B: 64 notes per page (`catalogue_reuse_n4`) wins narrowly over 32; 16 is too
+  few. Stage C (home, $0 AWS): a 0.1B-token 64k stage lifts the gain over the window control past 128k; after it n4
+  gains **0.178** nats at 256k (LSA port 0.157; four documents), level with LSA up to 128k; passwords stay rare (≤ 2/20
+  at 128k, LSA 1/20 at 1M); the two-level search loses as a test switch (trained two-level arm deferred). Stage D
+  (n4 at 100M on the E37 full protocol, AWS, done 2026-11-12 06:19 UTC, about $100): with the standard 16k recipe and
+  no 64k stage it trails the LSA port by 0.02 nats up to 64k and 0.065 at 128k, where its notebook's value drops to
+  0.065 nats (0.15–0.21 up to 64k); RULER 0.231 / 0.183 at 4k / 16k (LSA port 0.255 / 0.209, e37a 0.185 / 0.136);
+  core a tie (41.6). Open: the 64k stage at 100M for the catalogue and the LSA port, the fair test of the 30M lead
+  past 128k. Capability checks for the variant run on the home servers until about Nov 14. Spec
+  [E33t](../experiments_specs/ahead/E33t_catalogue_read.md) ·
+  [results page](../3_Evaluations_and_Baselines/e33t_results.html).
+- **2026-11-07 — E37, concept memory: an encoder, a reasoner and a decoder read for 10M-token context
+  (exploration program, draft spec; code + unit tests done, GPU check and 100M runs pending compute).** Encoder:
+  each closed 512-key block of the reading layer grouped into 64 balanced content concepts with links to their tokens
+  and additive statistics. Reasoner: a small looped transformer over the concepts. Decoder read: exact tokens for the
+  concepts with the largest estimated attention mass (512 per query), one calibrated second-order kernel summary per
+  other concept (log n + q·μ + |q|²σ²/2), every past token counted once. Stage A at 100M against dense, window, LSA's
+  read (our port), notes-open and the e37 arms; pass mark ≥ 90 % of the window→dense gap at 16k with no fade to 64k.
+  Branch `arch-10m`; spec [E37](../experiments_specs/ahead/E37_concept_memory.md).
+- **2026-11-06 — E33p, a note-indexed exact read on the LSA testbed: stage 1 training (six arms, 30M, home
+  servers).** E33n closed at 30M (see below): the far-context value of natural long text is exact copying, which notes
+  cannot return. E33p uses the notes as the index (address keys tied to the reading layer's own raw keys) and lets each
+  query open the raw tokens behind its 64 best notes (per-query choice, LSA's rule), against LSA's own read ported to
+  the same 30M model and three retrained controls (dense now loops, as it should have in E33n), all with training
+  instrumentation. Stage 0 passed 2026-11-06 (notes-open 0.79 × the full note read's speed); stage 1 launched
+  2026-11-06 09:30 UTC (Odra: notes-open, pages-open, LSA-native; Polonez: dense, window, full read), runs in
+  `Cache/e33p_runs/`. 15:41 UTC: the full-read control restarted from scratch (CUDA label assert at step ~35,
+  09:35 UTC, cause not found; not an instrumented step, and dense and window passed the same batches); dense resumed from checkpoint-2048 (its
+  first burst ended cleanly but lost exit code 3; the run script now detects that and resumes after a crash).
+  18:24 UTC: a second seed (seed 1) of all six arms on one AWS spot node, 4 × L40S (`g6e.12xlarge`, ≤ $7.6/h,
+  hard stop 36 h ≈ $275), the arms one after another, each on all four GPUs (new: one model on several GPUs, the
+  three evals side by side, checkpoints in S3 so a spot interruption resumes); full-read control first, as it ends
+  last at home. No on-demand H100 in us-east-1 since 2026-11-04; the us-east-2 quota request is still open.
+  2026-11-07 07:20 UTC, first results (notes-open and full read: seed 1 on AWS; controls and LSA-native: seed 42 at
+  home): share of the window→dense gap on positions ≥ 2k at 16k — LSA-native 99 %, notes-open 39 % (S1 mark 40 %),
+  full read 6 %; notes-open fades 47 → 21 % from 4k to 64k (S3 fails), LSA-native 127 % at 64k. Measured limits:
+  30 % empty notes, budget full for 8–19 % of queries (LSA 66 %), note summaries take 37 % of first-pass mass at
+  8–16k, passes re-pick 37–47 % (LSA 18–25 %), 10.6k vs 17.6k (LSA) vs 25k (dense) tokens/s at 16k. Analysis and
+  the proposed catalogue read (notes as index only + sinks, balanced filing, budget by words, new places per pass,
+  no page overlap, two-level search, choice as a list): [e33p_vs_lsa.html](../3_Evaluations_and_Baselines/e33p_vs_lsa.html).
+  Eval fixes (561fe26): RULER 16k ran out of memory on every arm (flex recompiled per generated token, fell back to
+  eager), notes-open crashed at 128k (opening table > 2³¹ elements); finished runs rerun.
+  Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
 - **2026-10-23 — Where the E33 line stands before the 100M decision.**
   - **Written reasoning also teaches latest** (19 Oct, Odra; pulled 23 Oct). From R2, with latest answers written as
     the person's last move and the steps removed in stages: latest 78 / 92 % at 4k / 16k with no generator labels.
@@ -213,6 +259,14 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-11-05 — E33n, E33 notebook on natural long text at 30M (LSA testbed: FineWeb-Edu 4k trunk, LongDocs-lite 16k
+  decay; home servers, ~66 RTX 3090 hours, AWS $0.17).** At 16k on positions ≥ 2k the dense ceiling beats the window
+  control by 0.134 nats; the full note read recovers 5.5 % of that gap and the top-64 read 6.1 % (95 % ≤ 7.8 %) — the
+  kill line was 15 %. Top-k costs nothing against the full read. A copy split shows 97 % of the gap sits on the ~10 %
+  of tokens whose 4-gram occurred earlier only beyond the window; the notebook closes ~2 % of that part and nearly all of
+  the tiny non-copy gap (0.007). Compressed notes carry gist, not exact text; the 30M dense model copies, so access, not
+  size, is missing. Spec [E33n](../experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md) ·
+  [report](../2_Experiments_Registry/run_reports/e33n_s30_lsa_testbed_20261105.md).
 - **2026-10-05 — E33a read–think–reread loop (closed, inconclusive).** Looping "global read + one local layer" ×4 (tied) before the answer layer keeps every E31 capability: 17 suite tasks within 3 points of `e31_li_m1` (median of 3 seeds), lookup-2k 99 vs 98. On the 2k → 16k lookup curriculum both learn it on 2 of 3 seeds; at the 16k training length 98 vs 98; narrowly lower when read at 2k (88 vs 98) and at 16k on the ladder (94 vs 100). Reasoning is untested: on the parallel chains every model, dense included, sat at the guessing floor (44 / 41 / 39 %), because the read never learned to address the start node. [report](../2_Experiments_Registry/run_reports/e33a_reread_loop_20261005.md) · [diagnosis](../4_Research_Notes/e33a_loop_diagnosis_20261004.md) · [spec](../experiments_specs/done_failed/E33a_reread_loop.md).
 - **2026-09-22 — E30 coverage and breadth (31M and 50M).** A 128-token window (coverage 4) passes the 1024 in-order chain (76% of answer tokens); a 512-token window scores 0 bits even with 64 questions per window. The same chain is 0 bits at 2048 tokens for both notebooks; the full read still passes. Far copy at 1024 is unsolved by the full read. The earlier 50M full-read collapse was too few steps at 1e-4: at 5e-5 it scores 99%, and the averaged notebook passes after a doubled budget. [report](../2_Experiments_Registry/run_reports/e30_coverage_and_breadth_20260922.md).
 - **2026-09-22 — E30 length and hardness (31M and 50M, Odra + Polonez).** In-order 4-hop chain @1024: e30 **40 bits / 77%** vs averaged notebook 4 bits; at 50M / 1e-4 / 4800 steps the full read on that chain falls to 3 bits and e30 still passes (44 bits / 80%). That 50M full-read miss is superseded by the coverage report (slower step, longer budget). Lookalike @1024: full read 63 bits, e30 26 after a longer budget, average 19. Lookup @1024: only e30 moves (26 bits); @4096 and @16k everyone is at zero. A 3e-4 step at 1024 is a false kill. [report](../2_Experiments_Registry/run_reports/e30_length_hardness_limits_20260922.md).

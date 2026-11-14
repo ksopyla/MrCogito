@@ -1,0 +1,1020 @@
+<title>Catalogue Read Results</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap">
+<style>
+/* Layout: one reading column (max 1040px): headline and stage strip, four figures, the main chart,
+   findings as catalogue cards, long documents, the scorecard, what runs now. Library-catalogue cues
+   (index-card findings, mono card labels) come from the design's own analogy. */
+:root {
+  --page: #f1f4f2; --surface: #fcfcfb; --surface-2: #f5f7f6;
+  --ink: #121c18; --ink-2: #47544e; --muted: #737e79;
+  --rule: #dce2df; --grid: #e1e0d9; --axis: #c3c2b7; --ref: #858c88;
+  --accent: #1d4c9a; --accent-wash: rgba(42,120,214,.09); --band: rgba(18,28,24,.04);
+  --good: #0ca30c; --good-text: #006300; --warn: #fab219; --critical: #d03b3b; --pending: #8a918d;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s8: #e34948;
+  --neutral: #8b938f;
+  --font-display: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0e1211; --surface: #1a1a19; --surface-2: #202221;
+    --ink: #eef0ee; --ink-2: #c3c8c4; --muted: #949b97;
+    --rule: #2d312f; --grid: #2c2c2a; --axis: #3a3b38; --ref: #858c88;
+    --accent: #8db0ee; --accent-wash: rgba(57,135,229,.14); --band: rgba(255,255,255,.04);
+    --good-text: #3cc23c; --pending: #8a918d;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s8: #e66767;
+    --neutral: #7f8783;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0e1211; --surface: #1a1a19; --surface-2: #202221;
+  --ink: #eef0ee; --ink-2: #c3c8c4; --muted: #949b97;
+  --rule: #2d312f; --grid: #2c2c2a; --axis: #3a3b38; --ref: #858c88;
+  --accent: #8db0ee; --accent-wash: rgba(57,135,229,.14); --band: rgba(255,255,255,.04);
+  --good-text: #3cc23c; --pending: #8a918d;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s8: #e66767;
+  --neutral: #7f8783;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--page); color: var(--ink); font: 15px/1.55 var(--font-body); }
+.wrap {
+  max-width: 1040px; margin: 0 auto; display: grid; gap: 44px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 36px 72px;
+}
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4.4vw, 42px); line-height: 1.12; max-width: 22ch; }
+h2 { font-size: clamp(21px, 2.6vw, 26px); line-height: 1.2; }
+h3 { font-size: 17px; line-height: 1.3; }
+p { margin: 0; }
+.eyebrow { font: 500 12px/1.4 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 17px; color: var(--ink-2); max-width: 66ch; }
+.section { display: grid; gap: 16px; min-width: 0; }
+.section > .intro { color: var(--ink-2); max-width: 68ch; }
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 18px; min-width: 0; }
+code, .mono { font-family: var(--font-mono); font-size: .92em; }
+
+/* header */
+header { display: grid; gap: 14px; }
+.stages { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.stage { display: grid; gap: 4px; padding: 12px 14px; border-top: 3px solid var(--rule); background: var(--surface); border-radius: 0 0 8px 8px; min-width: 0; }
+.stage[data-state="done"] { border-top-color: var(--good); }
+.stage[data-state="running"] { border-top-color: var(--s1); }
+.stage[data-state="blocked"] { border-top-color: var(--warn); }
+.stage .k { font: 500 11px/1.3 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.stage .t { font-weight: 600; font-size: 14px; }
+.stage .d { font-size: 13px; color: var(--ink-2); }
+.pill { display: inline-flex; align-items: center; gap: 5px; font: 500 11px/1 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; padding: 4px 7px; border-radius: 99px; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--rule); white-space: nowrap; }
+.pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pending); }
+.pill[data-s="done"]::before { background: var(--good); }
+.pill[data-s="running"]::before { background: var(--s1); }
+.pill[data-s="blocked"]::before { background: var(--warn); }
+.pill[data-s="waiting"]::before { background: transparent; border: 1.5px solid var(--pending); width: 5px; height: 5px; }
+
+/* figures */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.tile { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.tile .label { font-size: 13px; color: var(--ink-2); }
+.tile .value { font-family: var(--font-display); font-weight: 600; font-size: 34px; line-height: 1.05; }
+.tile .value small { font-size: 16px; font-weight: 500; color: var(--ink-2); }
+.tile .note { font-size: 12.5px; color: var(--muted); }
+
+/* controls */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg button { font: 500 13px/1 var(--font-body); color: var(--ink-2); background: transparent; border: 0; padding: 9px 12px; cursor: pointer; border-right: 1px solid var(--rule); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; font: 13px/1 var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--rule); border-radius: 99px; padding: 6px 10px 6px 8px; cursor: pointer; }
+.chip[aria-pressed="false"] { color: var(--muted); background: transparent; }
+.chip[aria-pressed="false"] svg { opacity: .35; }
+.chip svg { flex: none; }
+
+/* charts */
+.chart { position: relative; width: 100%; min-width: 0; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-family: var(--font-body); }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; line-height: 1.45; box-shadow: 0 6px 18px rgba(0,0,0,.12); min-width: 170px; z-index: 2; }
+.tip .h { font-weight: 600; margin-bottom: 4px; }
+.tip .r { display: flex; align-items: center; gap: 7px; justify-content: space-between; }
+.tip .r span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.tip .r b { font-variant-numeric: tabular-nums; font-weight: 600; }
+.caption { font-size: 13px; color: var(--ink-2); max-width: 74ch; }
+.caption b { color: var(--ink); }
+
+/* findings as catalogue cards */
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.card { position: relative; background: var(--surface); border: 1px solid var(--rule); border-radius: 4px; padding: 16px 16px 16px; display: grid; gap: 8px; align-content: start; min-width: 0;
+  background-image: linear-gradient(var(--rule), var(--rule)); background-size: 100% 1px; background-position: 0 38px; background-repeat: no-repeat; }
+.card .tag { font: 500 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); height: 14px; }
+.card h3 { margin-top: 6px; }
+.card p { font-size: 14px; color: var(--ink-2); }
+.card .num { font-family: var(--font-mono); font-size: 13px; color: var(--ink); }
+
+/* long documents */
+.two { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; }
+.pk { display: grid; gap: 10px; }
+.pk-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.pk-row .who { font-size: 13px; color: var(--ink); }
+.pk-row .who span { color: var(--muted); }
+.pk-cells { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pk-len { font: 500 11px/1 var(--font-mono); color: var(--muted); margin-bottom: 4px; }
+.dots { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 2px; }
+.dot { display: block; aspect-ratio: 1; max-width: 100%; border-radius: 50%; border: 1.5px solid var(--axis); }
+.dot[data-v="1"] { border-color: var(--s1); background: radial-gradient(circle, var(--s1) 0 34%, transparent 36%); }
+.dot[data-v="2"] { border-color: var(--s1); background: var(--s1); }
+.dot[data-v="p"] { border: 1.5px dashed var(--rule); }
+.keyrow { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--ink-2); }
+.keyrow span { display: inline-flex; align-items: center; gap: 6px; }
+.keyrow .dot { width: 12px; }
+
+/* table */
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13.5px; }
+th, td { padding: 9px 10px; text-align: right; border-bottom: 1px solid var(--rule); font-variant-numeric: tabular-nums; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; white-space: normal; }
+thead th { font: 500 12px/1.3 var(--font-body); color: var(--ink-2); vertical-align: bottom; background: var(--surface-2); }
+thead th button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; }
+thead th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+thead th .dir { color: var(--muted); font-size: 11px; }
+tbody tr:last-child td { border-bottom: 0; }
+td .nm { display: inline-flex; align-items: center; gap: 7px; font-weight: 500; }
+td .sub { display: block; font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 21px; }
+tr.ref td { color: var(--ink-2); background: var(--band); }
+td.best { font-weight: 700; color: var(--ink); }
+td.na { color: var(--muted); }
+
+/* now */
+.now { display: grid; gap: 0; }
+.now-item { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--rule); }
+.now-item:last-child { border-bottom: 0; }
+.now-item .when { font: 13px/1.4 var(--font-mono); color: var(--ink-2); }
+.now-item .what { display: grid; gap: 4px; }
+.now-item .what .top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-weight: 600; }
+.now-item .what p { font-size: 14px; color: var(--ink-2); }
+.cmd { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.cmd code { background: var(--surface-2); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 9px; user-select: all; overflow-wrap: anywhere; }
+.cmd button { font: 500 12.5px/1 var(--font-body); padding: 7px 10px; border-radius: 6px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+/* who's who, tests, menu */
+.toc { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13.5px; }
+.toc a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; }
+.toc a:hover { border-bottom-color: var(--accent); }
+table.who { min-width: 820px; }
+table.who th, table.who td { text-align: left; white-space: normal; vertical-align: top; }
+table.who td.how { color: var(--ink-2); width: 44%; }
+table.who td:first-child { width: 26%; }
+table.who td .run { display: block; font: 12px/1.4 var(--font-mono); color: var(--muted); margin-left: 21px; }
+table.who td.nums { white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.who tr.grp td { background: var(--surface-2); font: 500 11.5px/1.3 var(--font-mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding-block: 7px; }
+.train { display: grid; gap: 10px; }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--ink-2); font-size: 14px; max-width: 80ch; }
+.steps b { color: var(--ink); font-weight: 600; }
+.cards.defs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.cards.defs .card { background-position: 0 38px; }
+footer { font-size: 13px; color: var(--muted); display: grid; gap: 6px; border-top: 1px solid var(--rule); padding-top: 16px; max-width: 80ch; }
+
+@media (max-width: 860px) {
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .two { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 720px) {
+  .stages, .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .cards, .cards.defs { grid-template-columns: minmax(0, 1fr); }
+  .now-item { grid-template-columns: minmax(0, 1fr); }
+  .tile .value { font-size: 28px; }
+  .pk-cells { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chart path.series { transition: opacity .15s; }
+}
+</style>
+
+<main class="wrap">
+  <header>
+    <p class="eyebrow">E33t · the catalogue read · 30M and 100M models · as of 12 Nov 2026, 08:00 UTC</p>
+    <h1>At 30M our catalogue read matches LSA and leads past 128k; at 100M it trails the LSA port slightly</h1>
+    <p class="lede">We changed how the model looks things up in its notebook. The notes no longer get read; they only point
+      to the exact words worth rereading, like cards in a library catalogue. At 30M parameters it now recovers 91&nbsp;% of
+      what rereading every page gives at 16k tokens (our previous design, E33p notes-open: 39&nbsp;%), is level with the
+      LSA port (the published LSA read rebuilt on our backbone) at 64k, and after a short extra stage on 64k-token documents predicts 256k-token documents better than any other
+      model we trained. At 100M parameters, trained without that 64k stage, it is 0.02 nats behind the LSA port up to 64k
+      and 0.065 behind at 128k, with general knowledge tied.</p>
+    <div class="stages" role="list">
+      <div class="stage" data-state="done" role="listitem">
+        <span class="k">Stage A <span class="pill" data-s="done">done 8 Nov</span></span>
+        <span class="t">Fix the search</span>
+        <span class="d">Best version reaches 91&nbsp;% at 16k.</span>
+      </div>
+      <div class="stage" data-state="done" role="listitem">
+        <span class="k">Stage B <span class="pill" data-s="done">done 10 Nov</span></span>
+        <span class="t">Note and page sizes</span>
+        <span class="d">64 notes per page wins narrowly over 32.</span>
+      </div>
+      <div class="stage" data-state="done" role="listitem">
+        <span class="k">Stage C <span class="pill" data-s="done">done 11 Nov</span></span>
+        <span class="t">Long documents, 64k to 1M</span>
+        <span class="d">n4 ahead of LSA at 256k; passwords stay rare.</span>
+      </div>
+      <div class="stage" data-state="done" role="listitem">
+        <span class="k">Stage D <span class="pill" data-s="done">done 12 Nov</span></span>
+        <span class="t">100M full run on AWS</span>
+        <span class="d">Trails the LSA port by 0.02–0.07 nats; ties on general knowledge.</span>
+      </div>
+    </div>
+    <nav class="toc" aria-label="On this page">
+      <a href="#models">The models and their training</a><a href="#share">Share by length</a>
+      <a href="#findings">What we learned</a><a href="#long">Long documents</a><a href="#m100">At 100M</a><a href="#scorecard">Scorecard</a>
+      <a href="#tests">How each test is scored</a><a href="#now">Status and next</a>
+    </nav>
+  </header>
+
+  <section class="tiles" aria-label="Headline figures">
+    <div class="tile">
+      <span class="label">Share of the full-reread benefit at 16k</span>
+      <span class="value">91<small>&nbsp;%</small></span>
+      <span class="note">E33t catalogue_reuse (32 notes). Previous design, E33p notes-open, 39&nbsp;%; LSA port 95&nbsp;%.
+        Higher is better.</span>
+    </div>
+    <div class="tile">
+      <span class="label">Loss on 128k documents, trained on 16k</span>
+      <span class="value">2.140</span>
+      <span class="note">E33t catalogue_reuse, lowest of the 16k-trained models; LSA port 2.144, window control 2.277.
+        After the 64k stage the LSA port edges ahead of n4, 2.091 vs 2.097. Lower is better.</span>
+    </div>
+    <div class="tile">
+      <span class="label">Gain over the window control at 256k</span>
+      <span class="value">0.18<small>&nbsp;nats</small></span>
+      <span class="note">E33t n4 (64 notes) after the 64k stage; LSA port 0.16. Trained on 16k only: 0.14 and 0.10.
+        Higher is better.</span>
+    </div>
+    <div class="tile">
+      <span class="label">Loss on 128k documents at 100M</span>
+      <span class="value">2.058</span>
+      <span class="note">E33t n4 at 100M, trained on 16k; the LSA port 1.994, E37a concept memory 1.990. Lower is better.
+        About $100 on AWS; stages B and C cost $0.</span>
+    </div>
+  </section>
+
+  <section class="section" id="models">
+    <h2>The models, their size and their training</h2>
+    <p class="intro">All eleven are small language models on one backbone: width 576; two layers, then the reading layer,
+      then five more; the reading layer and one local layer run four times in a loop; the GPT-2 vocabulary of 50,257
+      tokens. They differ only in how the reading layer reaches text older than the last 512 tokens. Each name starts with
+      its experiment (E33p: our previous notebook and the controls; E33t: the catalogue read), then the run name used in
+      our result files and on W&amp;B.</p>
+    <div class="tablewrap"><table class="who" id="who"><thead></thead><tbody></tbody></table></div>
+    <div class="panel train">
+      <h3>Training data: the same for every model, in the same order</h3>
+      <ol class="steps">
+        <li><b>1.5B tokens of FineWeb-Edu</b> (educational web pages) in rows of 4,096 tokens; learning rate 1e-3, constant
+          after a 1&nbsp;% warm-up.</li>
+        <li><b>0.2B tokens of LongDocs-lite</b> in rows of 16,384 tokens: documents of at least 16k tokens from Project
+          Gutenberg books, arXiv papers, DOAB open-access books, US government publications and UK Hansard. The learning
+          rate decays to a tenth, with a fresh optimizer. 1&nbsp;% of each source's documents are held out for the tests.</li>
+        <li><b>Stage C only: 0.1B more tokens</b> of the same long documents in rows of 65,536 tokens (381 steps), learning
+          rate 1e-4 falling to 1e-5. Given to the window control, the LSA port and n4.</li>
+      </ol>
+      <p class="caption">Each optimizer step sees 64 rows of 4k tokens (0.26M tokens). 1.7B tokens is about 23 per parameter
+        counting the word tables (56 without), close to the 20 per parameter usually taken as compute-optimal. The 100M run
+        on AWS (stage D) gets 3.4B tokens (3.0B + 0.4B) for 166.4M parameters, 100.6M without the word tables.</p>
+    </div>
+  </section>
+
+  <section class="section" id="share">
+    <h2>How much of the full-reread benefit each model recovers</h2>
+    <p class="intro">Think of a student reading a long book. The <b>window control</b> only sees the last few pages (0&nbsp;%).
+      The <b>dense model</b> may reread any page at any time (100&nbsp;%). Each model's score is the share of that gap it
+      closes on words more than 2k tokens into a document. Past 16k the dense model is reading longer documents than it was
+      trained on and gets worse, so scores above 100&nbsp;% are possible there.</p>
+    <div class="panel" style="display:grid;gap:14px">
+      <div class="controls">
+        <div class="seg" id="presets" role="group" aria-label="View">
+          <button type="button" data-p="journey" aria-pressed="true">How we got here</button>
+          <button type="button" data-p="sizes" aria-pressed="false">Note sizes</button>
+          <button type="button" data-p="levels" aria-pressed="false">Two-level search</button>
+          <button type="button" data-p="all" aria-pressed="false">All models</button>
+        </div>
+      </div>
+      <div class="legend" id="legend" aria-label="Models shown (click to toggle)"></div>
+      <div class="chart" id="share-chart" aria-label="Line chart of share of the gap by document length"></div>
+      <p class="caption" id="preset-note"></p>
+    </div>
+  </section>
+
+  <section class="section" id="findings">
+    <h2>What we learned</h2>
+    <div class="cards">
+      <article class="card">
+        <span class="tag">Stage A</span>
+        <h3>Letting each pass revisit notes closed most of the gap</h3>
+        <p>E33t catalogue made each of its four reading passes look somewhere new: <span class="num">71&nbsp;%</span> at 16k.
+          Dropping that rule in training, nothing else changed (catalogue_reuse), lifted it to <span class="num">91&nbsp;%</span>. On a planted
+          password the later passes now return to it 95–97&nbsp;% of the time at 4k, as LSA's do.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage A</span>
+        <h3>Two-level search holds at 16k, slips at 64k</h3>
+        <p>Searching pages first and then the notes inside them keeps the search cost growing with pages, not words. It is
+          <span class="num">3</span> points behind the flat search at 16k but <span class="num">16</span> behind at 64k, well
+          outside the 5 points we allowed. At 256k, after the 64k stage, it keeps <span class="num">0.11</span> of the flat
+          search's <span class="num">0.18</span> nats.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage B</span>
+        <h3>32 or 64 notes per page is a near-tie; 16 is too few</h3>
+        <p>n4 (64 notes) won by the rule written before the runs (<span class="num">88</span> vs <span class="num">86&nbsp;%</span> on
+          the same machine), but the margin is a third of the hardware gap. 16 notes lost 18 points. 512-token pages sat 2–4
+          points behind, with the best needle-puzzle score.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage B</span>
+        <h3>Home and AWS runs differ by about 5 points</h3>
+        <p>The same model, seed and recipe scored <span class="num">91&nbsp;%</span> on AWS and <span class="num">86&nbsp;%</span>
+          on Odra, and the control models shift too. Comparisons are only fair between models trained on the same machines.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stages A–C</span>
+        <h3>No harm to general knowledge</h3>
+        <p>Seven short benchmarks average <span class="num">40.1–41.0&nbsp;%</span> for every AWS-trained model, the window
+          control <span class="num">40.8&nbsp;%</span>. Home-trained models score 38.9–39.9&nbsp;%, which is the hardware gap
+          again, not the notebook. The 64k stage moved none of them by more than 0.1 point.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage C</span>
+        <h3>A short 64k stage helps most past 128k</h3>
+        <p>0.1B tokens of 64k-token documents left the gains at 4k–32k unchanged and lifted them at 128k: from
+          <span class="num">0.13</span> to <span class="num">0.16</span> nats for n4 (64 notes), from
+          <span class="num">0.11</span> to <span class="num">0.17</span> for the LSA port. At 256k n4 gains
+          <span class="num">0.18</span>, LSA <span class="num">0.16</span>.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage C</span>
+        <h3>The gain is the notebook's; passwords stay rare</h3>
+        <p>With its notebook removed, n4 falls just below the window control at every length from 4k to 256k.
+          Passwords: at most <span class="num">2</span> of 20 at 128k for any model; at 1M n4 finds none and the LSA
+          port's <span class="num">1</span> of 20 is the only full answer that far.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Stage D</span>
+        <h3>At 100M the catalogue trails the LSA port, and its read fades at 128k</h3>
+        <p>Trained the standard way (no 64k stage), n4 is <span class="num">0.02</span> nats behind the LSA port up to 64k,
+          about its gap on nearby text, and <span class="num">0.065</span> behind at 128k. Its notebook carries
+          <span class="num">0.15–0.21</span> nats up to 64k but only <span class="num">0.065</span> at 128k. Whether the
+          64k stage closes this at 100M, as it did at 30M, is untested.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="long">
+    <h2>Long documents, 64k to 1M tokens</h2>
+    <p class="intro">Stage C trains every model for a short extra stretch on 64k-token documents, then tests it from 64k to
+      1M tokens. The chart compares each model with the window control trained the same way. Held-out documents get rare
+      at these lengths: 37 reach 64k, 21 reach 128k, four reach 256k and one reaches 1M, so the 1M loss is an illustration,
+      not a statistic. All models here were trained at home: the window control (Polonez) and the LSA port (Odra) are the
+      seed-42 versions, n4 the Odra run of stage B.</p>
+    <div class="two">
+      <div class="panel" style="display:grid;gap:12px">
+        <h3>Gain over the window control</h3>
+        <div class="controls">
+          <div class="seg" id="ld-phase" role="group" aria-label="Training">
+            <button type="button" data-v="decay" aria-pressed="true">Trained on 16k</button>
+            <button type="button" data-v="long" aria-pressed="false">After the 64k stage</button>
+          </div>
+          <div class="seg" id="ld-len" role="group" aria-label="Document length">
+            <button type="button" data-v="64k" aria-pressed="false">64k</button>
+            <button type="button" data-v="128k" aria-pressed="false">128k</button>
+            <button type="button" data-v="256k" aria-pressed="true">256k</button>
+            <button type="button" data-v="1M" aria-pressed="false">1M</button>
+          </div>
+        </div>
+        <div class="chart" id="ld-chart" aria-label="Bar chart of gain over the window control"></div>
+        <p class="caption" id="ld-note"></p>
+      </div>
+      <div class="panel pk">
+        <h3>Planted password, 20 depths each</h3>
+        <p class="caption">A five-digit password is planted at 20 depths (start to end) in a long real document, and asked for at
+          the end. One circle per depth.</p>
+        <div class="keyrow">
+          <span><i class="dot" data-v="2"></i>all five digits</span>
+          <span><i class="dot" data-v="1"></i>first digit only</span>
+          <span><i class="dot" data-v="0"></i>missed</span>
+          <span><i class="dot" data-v="p"></i>not tested yet</span>
+        </div>
+        <div id="pk"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="m100">
+    <h2>At 100M parameters (stage D)</h2>
+    <p class="intro">Five 100M models trained the same way by the 10M-context session on AWS: 3.0B FineWeb-Edu tokens at 4k,
+      then 0.4B LongDocs-lite tokens at 16k, seed 42, one spot machine with four L40S cards each. No 64k stage. Loss is how
+      surprised the model is by the next word on positions past 2k (lower is better; five sources, four at 128k); needle
+      puzzles are the RULER mean of 13 tasks × 100 (higher is better); general knowledge is the mean of seven benchmarks in %.
+      The dense control at this budget is training (due about 13:30 UTC on 13 Nov) and the window control waits for a
+      machine, so shares of the gap are not available yet.</p>
+    <div class="tablewrap"><table class="m100">
+      <thead><tr><th>Model at 100M<br><span class="dir">parameters in total</span></th><th>4k</th><th>16k</th><th>32k</th><th>64k</th><th>128k</th><th>Needle puzzles<br><span class="dir">4k · 16k</span></th><th>General knowledge</th></tr></thead>
+      <tbody>
+        <tr><td><span class="nm">E33t n4 (64 notes)</span><span class="sub">our catalogue read · 166.4M</span></td><td>2.342</td><td>2.189</td><td>2.275</td><td>2.270</td><td>2.058</td><td>23.1 · 18.3</td><td>41.6</td></tr>
+        <tr><td><span class="nm">E33p LSA port</span><span class="sub">LSA's read on our backbone · 162.4M</span></td><td>2.322</td><td>2.169</td><td>2.254</td><td>2.245</td><td>1.994</td><td class="best">25.5 · 20.9</td><td>41.6</td></tr>
+        <tr><td><span class="nm">E37a concept memory</span><span class="sub">the 10M-context session's model · 162.6M</span></td><td>2.320</td><td>2.166</td><td>2.254</td><td>2.250</td><td>1.990</td><td>18.5 · 13.6</td><td>41.6</td></tr>
+        <tr><td><span class="nm">E33p notes-open</span><span class="sub">the earlier notebook read (64 notes opened)</span></td><td>2.379</td><td>2.282</td><td>2.393</td><td>2.367</td><td>2.104</td><td>6.6 · 1.8</td><td>41.1</td></tr>
+        <tr><td><span class="nm">Original LSA</span><span class="sub">its authors' code and backbone, our data · 162.6M</span></td><td class="best">2.284</td><td class="best">2.135</td><td class="best">2.215</td><td class="best">2.201</td><td class="best">1.925</td><td>13.9 · 8.2</td><td class="best">42.0</td></tr>
+        <tr class="ref"><td><span class="nm">E33t n4, notebook off</span><span class="sub">the same model with its notes removed</span></td><td>2.496</td><td>2.386</td><td>2.489</td><td>2.433</td><td>2.123</td><td class="na">—</td><td class="na">—</td></tr>
+      </tbody>
+    </table></div>
+    <p class="caption">What n4's notebook carries (notebook off minus on): 0.155 / 0.197 / 0.214 / 0.163 / 0.065 nats at 4k–128k.
+      On nearby text (positions under 512 at 16k) n4 is 0.016 nats behind the LSA port, so most of its gap up to 64k is the
+      model's general quality; at 128k nearby text is equal and the gap is the read's. Needle puzzles differ by kind: n4 is
+      best of the four on several-key and UUID needles, worse than the LSA port on the essay number (0.38 vs 0.84 at 16k)
+      and word counting (0 vs 0.09). Training took 10.4 h + 2.0 h (the LSA port 9.4 h + 1.7 h). E33p notes-open (finished
+      12 Nov, 21:43 UTC, about $110) is the weakest of the five on long text: 0.04–0.12 nats behind n4 (0.09–0.12 from 16k to 64k), and its notebook
+      carries only 0.016 nats at 128k, though it is the best on nearby text (2.370 under 512 at 16k). It also does worse
+      on the needle puzzles than its own short screening run (0.116 / 0.072), so the catalogue read is a clear step up from
+      the read it replaced. Bold marks the best value.</p>
+    <h3 id="m100needles">Needle puzzles at every length</h3>
+    <p class="intro">The RULER mean of 13 tasks × 100 (higher is better), 100 documents a task, except the first 25 at 64k
+      (the same for every model). The single needle is one password hidden in filler text, in % found. Finished
+      13 Nov, 02:27 UTC; notes-open was not run past 16k.</p>
+    <div class="tablewrap"><table class="m100">
+      <thead><tr><th>Model at 100M</th><th>4k</th><th>8k</th><th>16k</th><th>32k</th><th>64k</th><th>Single needle<br><span class="dir">8k · 32k · 64k</span></th></tr></thead>
+      <tbody>
+        <tr><td><span class="nm">E33t n4 (64 notes)</span><span class="sub">our catalogue read</span></td><td>23.1</td><td>19.7</td><td>18.3</td><td>12.5</td><td>10.1</td><td class="best">98 · 98 · 96</td></tr>
+        <tr><td><span class="nm">E33p LSA port</span><span class="sub">LSA's read on our backbone</span></td><td class="best">25.5</td><td class="best">24.1</td><td class="best">20.9</td><td class="best">17.4</td><td class="best">15.1</td><td>96 · 96 · 96</td></tr>
+        <tr><td><span class="nm">E37a concept memory</span><span class="sub">the 10M-context session's model</span></td><td>18.5</td><td>18.7</td><td>13.6</td><td>10.6</td><td>8.8</td><td>95 · 96 · 92</td></tr>
+        <tr><td><span class="nm">Original LSA</span><span class="sub">its authors' code and backbone</span></td><td>13.9</td><td>11.9</td><td>8.2</td><td>4.0</td><td>2.8</td><td>9 · 3 · 4</td></tr>
+      </tbody>
+    </table></div>
+    <p class="caption">n4 trails the LSA port by 2–5 points at every length; its score as a share of the LSA port's falls from
+      82–91 % at 4k–16k to 72 % and 67 % at 32k and 64k. The harder needles fade past 16k for n4 and E37a alike: a number
+      hidden in essays is found 53 % of the time at 8k, 8 % at 32k and 4 % at 64k (LSA port 92 / 55 / 28 %), a UUID
+      32 / 7 / 0 % (LSA port 53 / 20 / 4 %). Validation loss is close for the three models on our backbone (FineWeb-Edu at
+      4k after the decay: n4 3.200, LSA port 3.193, E37a 3.187; LongDocs-lite at 16k: 2.250, 2.232, 2.228; lower is
+      better). Whether a 64k training stage at 100M helps n4, as it did at 30M, is not tested yet.</p>
+  </section>
+
+  <section class="section" id="scorecard">
+    <h2>Scorecard</h2>
+    <p class="intro">Every 30M model, one seed each. Click a column to sort. Shares are of the window-to-dense gap (higher
+      is better); the 128k loss counts how surprised the model is by the next word (lower is better); needle puzzles are the
+      13 RULER tasks in 4k-token prompts; general knowledge is the mean of seven short benchmarks. Exactly how each is
+      scored is <a href="#tests">below</a>.</p>
+    <div class="tablewrap"><table id="table"><thead></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="section" id="tests">
+    <h2>How each test is scored</h2>
+    <div class="cards defs">
+      <article class="card">
+        <span class="tag">Line chart · scorecard</span>
+        <h3>Share of the full-reread benefit</h3>
+        <p>We measure the next-word loss: how surprised the model is by each true next token of a held-out long document, in
+          nats (lower is better). Only positions more than 2,048 tokens into a document count, weighted by tokens over the
+          five sources, 8 documents per source at each length. The share is (window loss − model loss) ÷ (window loss −
+          dense loss) × 100: <span class="num">0&nbsp;%</span> is no better than seeing the last 512 tokens,
+          <span class="num">100&nbsp;%</span> is as good as rereading everything.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Long-document chart</span>
+        <h3>Gain over the window control, 64k to 1M</h3>
+        <p>The same loss as a difference: the window control's loss minus the model's, in nats (higher is better), against
+          a window control trained the same way. At 64k it averages 37 documents, at 128k 21, at 256k four (1.8M scored
+          tokens), and at 1M one document, which makes that column an illustration only.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Scorecard · needle puzzles</span>
+        <h3>RULER: 13 tasks at 4,096 tokens</h3>
+        <p>The RULER benchmark through lm-evaluation-harness, 100 prompts per task, each 4,096 tokens long: find one or
+          several planted key–value pairs in filler text (8 tasks), follow chains of variable assignments (1), name the
+          most common or most frequent words (2), and answer questions about passages (SQuAD, HotpotQA). The model writes
+          its answer greedily, up to 32 tokens; a prompt scores the share of the expected answers that appear in the reply.
+          The column is the mean of the 13 tasks × 100. At 30M parameters most tasks stay near zero (dense
+          <span class="num">16.0</span>); the easiest, one planted pair, reaches <span class="num">80–94&nbsp;%</span> for
+          the best reading models.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Scorecard · general knowledge</span>
+        <h3>Seven short benchmarks, no examples given</h3>
+        <p>lm-evaluation-harness, full test sets, zero-shot: HellaSwag (finish a sentence), ARC-Easy and ARC-Challenge
+          (school science), PIQA (physical common sense), WinoGrande (whom a pronoun means), SciQ (science questions) and
+          LAMBADA (the last word of a passage). In multiple choice the answer is the option the model finds most likely;
+          LAMBADA counts only when the model's top guess is the exact last word. The column is the mean accuracy in %.
+          Guessing gives about <span class="num">29&nbsp;%</span> and every model scores
+          <span class="num">39–41&nbsp;%</span>, so this checks that the notebook does no harm; it does not test reading.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Long documents · passwords</span>
+        <h3>A pass key hidden in a long real document</h3>
+        <p>A sentence giving a random five-digit pass key is planted at one of 20 depths, from 2.5&nbsp;% to 97.5&nbsp;% of a
+          held-out document, and the document ends by asking for the key. We read the model's top guess at each answer
+          position, given the correct digits before it, and count the first digit and all five. At 128k the 20 cases use
+          17 different documents; at 1M only one document is long enough.</p>
+      </article>
+      <article class="card">
+        <span class="tag">Every number</span>
+        <h3>How much a number can move by chance</h3>
+        <p>One seed per model. The same controls trained twice, with seed and machine both changed, moved by up to
+          <span class="num">7.6</span> points of the gap at 16k; the same model, seed and recipe scored
+          <span class="num">5.2</span> points lower on Odra than on AWS. Compare models trained on the same machines, and
+          treat gaps under about 5 points as ties.</p>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="now">
+    <h2>Status and what comes next</h2>
+    <div class="panel now" id="now-list">
+      <div class="now-item">
+        <span class="when">12 Nov 06:19</span>
+        <div class="what"><span class="top">E33t n4 at 100M, full budget <span class="pill" data-s="done">done</span></span>
+          <p>Trained and tested on one AWS spot machine with four L40S cards, 16:20 UTC Nov 11 to 06:19 UTC Nov 12, about $100;
+            the machine is shut down. Results are in the E33t spec and <a href="#m100">above</a>.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">13 Nov 02:27</span>
+        <div class="what"><span class="top">n4 at 100M: longer needle tests <span class="pill" data-s="done">done</span></span>
+          <p>The same tests as the other 100M models (needle puzzles at 8k, 32k and 64k, plus validation loss), run by the
+            10M-context session on two one-card AWS spot machines. n4 is second of four at every length, behind the LSA port.
+            It finds a single password to 64k (96 %) but loses the harder needles past 16k, as E37a does.
+            See <a href="#m100needles">the needle table</a>.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">since 22:14</span>
+        <div class="what"><span class="top">Dense control at 100M <span class="pill" data-s="running">running</span></span>
+          <p>The model that may reread every earlier word, trained by the 10M-context session on four L40S cards (spot)
+            with the same 3.0B + 0.4B tokens. Training is due about 13:30 UTC on 13 Nov, then its tests. The window control
+            (sees only the last pages) still waits for a machine. With both, n4's own pass marks at 100M can be scored:
+            the share of the gap at 16k and no fade at 64k.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">until ~15 Nov</span>
+        <div class="what"><span class="top">Capability checks for n4 <span class="pill" data-s="running">running</span></span>
+          <p>The leveled synthetic tasks, three seeds each, on Odra and Polonez (Polonez done about the morning of Nov 14,
+            Odra about Nov 15, because its hottest card is slowed to stay under 80 °C). So far n4 has lost two abilities
+            against the champion (E31): the one-hop chain lookup at every length (one seed of three learned it, and that seed
+            falls from 86 % at 1k to 8 % at 2k; E31 scores 97–99 %), and recalling 8 facts, where all three seeds stayed at
+            chance for the whole training budget. Its first keep is two-hop reasoning at 1k: 98 % of answers right on two
+            seeds (E31 94 %), but it drops to 17–55 % from 2k to 64k. Tally at 13 Nov, 01:59 UTC: 2 results kept, 22 lost,
+            49 still to run. Since 12 Nov a length test stops once a model scores at guessing level at two lengths in a row,
+            and the lengths not read count as guessing; at 128k the slow answer-writing step is skipped for now and counts
+            as guessing too.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">open</span>
+        <div class="what"><span class="top">The 64k stage at 100M <span class="pill" data-s="waiting">your call</span></span>
+          <p>At 30M a 0.1B-token 64k stage put n4 ahead past 128k. Running it at 100M for n4 and the LSA port is the fair test
+            of whether that holds at the larger size. Not started.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">11 Nov 17:37</span>
+        <div class="what"><span class="top">Stage C, long documents <span class="pill" data-s="done">done</span></span>
+          <p>All three models trained on 64k-token documents and tested from 64k to 1M on Odra and Polonez, $0 on AWS.
+            The 64k stages ended at 08:10 (window control), 11:07 (LSA port) and 15:45 UTC (n4); the last test at 17:37 UTC.
+            Results are in the E33t spec.</p></div>
+      </div>
+      <div class="now-item">
+        <span class="when">open</span>
+        <div class="what"><span class="top">A trained two-level model <span class="pill" data-s="waiting">deferred</span></span>
+          <p>The two-level search lost as a test-time switch. The plan's next step would be to train a model with it, but
+            the flat search still fits at 1M (4.6 minutes and 19.7 GB per 1M-token document on one RTX 3090), so it is
+            deferred until search cost matters, past 1M.</p></div>
+      </div>
+    </div>
+    <p class="caption">Spend: AWS usage for both sessions is about $995 of the $2,000 through 12 Nov (read 12 Nov, 22:26 UTC,
+      before credits; AWS's figure lags by up to a day, so 12 Nov is not complete). The dense control's run adds about
+      $110–130. AWS machines running (checked 12 Nov, 22:26 UTC): a four-card machine training the dense control, and four
+      small machines for the longer needle tests, two for n4 and one each for E37a and the LSA port.</p>
+  </section>
+
+  <footer>
+    <span>Sources: the E33t spec's results (stages A and B, scored against the same-seed AWS controls) and the stage C result
+      files on Odra and Polonez, read 11 Nov 2026 at 18:00 UTC (saved in the results registry as E33t_C_*); the 100M result
+      files on S3, read 12 Nov 2026 at 07:40 UTC (saved as E33t_D_catalogue_reuse_n4_m100). Scores use positions past 2k
+      tokens, weighted by tokens.</span>
+    <span>One seed per model. The same model trained twice moves by up to 7.6 points of the gap when seed and machine both
+      change.</span>
+  </footer>
+</main>
+
+<script>
+(() => {
+  const LENS = ["4k", "16k", "32k", "64k"];
+  const LOG2 = [12, 14, 15, 16];
+  const M = {
+    notes:  { name: "E33p notes-open", short: "E33p notes-open", sub: "our previous design · AWS", grp: "E33p", run: "notes_open", how: "A writer summarises each 256-token page (pages overlap) into 32 notes. The reading layer reads the notes' summaries and also opens the exact tokens of the 64 best notes.", par: "30.2M · 72.7M", where: "AWS, 4 × L40S, seed 1", c: "--neutral", shape: "tri-down", s: [42.8, 37.4, 30.1, 23.4], l128: null, ruler: 5.0, core: 40.10 },
+    cat:    { name: "E33t catalogue", short: "E33t catalogue", sub: "stage A · each pass looks somewhere new · AWS", grp: "E33t stage A", run: "catalogue", how: "Notes become an index only: searched, never read. Every token is filed under one note (about 8 per note, at most 16); each query opens the best notes until it holds 512 tokens; an index loss teaches the notes where the read looks. Each of the 4 passes must open notes it has not opened yet.", par: "30.2M · 72.7M", where: "AWS, 4 × L40S, seed 1", c: "--s3", shape: "diamond", s: [70.0, 71.1, 72.3, 115.2], l128: 2.1738, ruler: 6.0, core: 40.85 },
+    cat2l:  { name: "E33t catalogue_2l", short: "catalogue_2l", sub: "stage A · two-level search · AWS", grp: "E33t stage A", run: "catalogue_2l", how: "The catalogue with a two-level search: each query first keeps its 16 best pages, then scores only their notes.", par: "30.2M · 72.7M", where: "AWS, 4 × L40S, seed 1", c: "--s8", shape: "tri", s: [67.4, 67.9, 67.0, 99.5], l128: 2.1933, ruler: 1.2, core: 40.83 },
+    reuse:  { name: "E33t catalogue_reuse (32 notes)", short: "reuse, 32 notes", sub: "stage-A winner · passes may revisit · AWS", grp: "E33t stage A", run: "catalogue_reuse", how: "The catalogue with the new-place rule switched off in training: later passes may reopen notes. 32 notes of about 8 tokens per 256-token page. Stage A's winner.", par: "30.2M · 72.7M", where: "AWS, 4 × L40S, seed 1", c: "--s1", shape: "circle", s: [96.9, 91.4, 94.0, 151.6], l128: 2.1395, ruler: 14.1, core: 40.78 },
+    lsa:    { name: "E33p LSA port", short: "LSA port", sub: "the published LSA read on our backbone · AWS", grp: "E33p", run: "lsa", how: "LSA's published read (arXiv 2610.42147) rebuilt on our backbone: the reading layer's own keys are clustered into buckets of up to 16 tokens, and each query opens the best buckets until it holds 512 tokens. No notebook and no trained search.", par: "26.3M · 68.7M", where: "AWS, 4 × L40S, seed 1", c: "--s2", shape: "square", s: [98.2, 95.3, 99.3, 153.3], l128: 2.1441, ruler: 15.2, core: 40.99 },
+    reuseH: { name: "E33t catalogue_reuse (32 notes), home", short: "32 notes, home", sub: "stage B reference · same model and seed · Odra", grp: "E33t stage B", run: "catalogue_reuse_seed1 (home)", how: "catalogue_reuse retrained on Odra with the same seed and recipe, so the stage-B sizes compare on the same hardware.", par: "30.2M · 72.7M", where: "Odra, 2 × RTX 3090, seed 1", c: "--s1", shape: "circle", hollow: true, s: [93.0, 86.2, 89.4, 143.7], l128: 2.1586, ruler: 9.9, core: 39.84 },
+    n4:     { name: "E33t n4 (64 notes)", short: "n4, 64 notes", sub: "stage-B winner · catalogue_reuse_n4 · Odra", grp: "E33t stage B", run: "catalogue_reuse_n4", how: "catalogue_reuse with 64 notes of about 4 tokens per page. Stage B's winner, used in stage C and in the 100M run.", par: "30.3M · 72.8M", where: "Odra, 2 × RTX 3090, seed 1", c: "--s6", shape: "square", s: [91.2, 87.9, 90.8, 146.8], l128: 2.1463, ruler: 10.9, core: 38.90 },
+    p512:   { name: "E33t p512 (512-token pages)", short: "p512", sub: "catalogue_reuse_p512 · 64 notes per page · Polonez", grp: "E33t stage B", run: "catalogue_reuse_p512", how: "catalogue_reuse with 512-token pages and 64 notes of about 8 tokens.", par: "30.5M · 72.9M", where: "Polonez, 2 × RTX 3090, seed 1", c: "--s4", shape: "tri", s: [89.0, 84.0, 85.8, 133.2], l128: 2.1608, ruler: 15.5, core: 39.31 },
+    n16:    { name: "E33t n16 (16 notes)", short: "n16, 16 notes", sub: "catalogue_reuse_n16 · Polonez", grp: "E33t stage B", run: "catalogue_reuse_n16", how: "catalogue_reuse with 16 notes of about 16 tokens per page.", par: "30.2M · 72.6M", where: "Polonez, 1 × RTX 3090, seed 1", c: "--s5", shape: "diamond", s: [79.0, 73.0, 70.7, 106.2], l128: 2.1855, ruler: 8.9, core: 39.91 },
+  };
+  const REFS = {
+    window: { name: "E33p window control", sub: "sees only the last 512 tokens · AWS", grp: "Controls", run: "window", how: "Sees only the last 512 tokens: no notebook, no lookups. Scores 0 % by definition.", par: "26.3M used (30.2M built; the note writer is switched off) · 72.7M", where: "AWS, 4 × L40S, seed 1", s: [0, 0, 0, 0], l128: 2.2765, ruler: 4.1, core: 40.83 },
+    dense:  { name: "E33p dense model", sub: "rereads every token · AWS", grp: "Controls", run: "dense", how: "Rereads every earlier token (full attention): the best a model of this size can do, at a cost that grows with the square of the length. Scores 100 % by definition.", par: "26.3M · 68.7M", where: "AWS, 4 × L40S, seed 1", s: [100, 100, 100, 100], l128: 2.3209, ruler: 16.0, core: 40.69 },
+  };
+  const PRESETS = {
+    journey: { keys: ["notes", "cat", "reuse", "lsa"],
+      note: "<b>How we got here.</b> Our previous design, E33p notes-open, faded with length. E33t catalogue roughly doubled it; letting the passes revisit notes (catalogue_reuse) brought it within 1–5 points of the LSA port up to 32k and level with it at 64k." },
+    sizes: { keys: ["reuseH", "n4", "p512", "n16", "reuse"],
+      note: "<b>Note sizes.</b> All are catalogue_reuse; only the notes per page (n4: 64, n16: 16) or the page length (p512) change. The 32-note model trained on AWS scores 5 points above the same model retrained at home, so compare the home-trained ones with the hollow line." },
+    levels: { keys: ["cat", "cat2l", "reuse"],
+      note: "<b>Two-level search.</b> Pages first, then the notes inside the best 16 pages. It tracks the flat first version to 32k and falls 16 points behind at 64k. As a switch at test time on n4 it lost about a third of the gain at 256k." },
+    all: { keys: Object.keys(M),
+      note: "<b>All models.</b> Hover or tap a length to read every value. Models trained at home (Odra, Polonez) are scored against the AWS controls and sit about 5 points low for that reason alone." },
+  };
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs = {}, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  function shapePath(shape, x, y, r) {
+    switch (shape) {
+      case "square": return `M${x - r * .9},${y - r * .9}h${r * 1.8}v${r * 1.8}h${-r * 1.8}z`;
+      case "diamond": return `M${x},${y - r * 1.25}L${x + r * 1.25},${y}L${x},${y + r * 1.25}L${x - r * 1.25},${y}z`;
+      case "tri": return `M${x},${y - r * 1.2}L${x + r * 1.15},${y + r * .85}L${x - r * 1.15},${y + r * .85}z`;
+      case "tri-down": return `M${x},${y + r * 1.2}L${x + r * 1.15},${y - r * .85}L${x - r * 1.15},${y - r * .85}z`;
+      default: return `M${x - r},${y}a${r},${r} 0 1,0 ${2 * r},0a${r},${r} 0 1,0 ${-2 * r},0`;
+    }
+  }
+  function swatch(m, size = 14) {
+    const s = el("svg", { width: size, height: size, viewBox: `0 0 ${size} ${size}`, "aria-hidden": "true" });
+    el("line", { x1: 0, y1: size / 2, x2: size, y2: size / 2, stroke: css(m.c), "stroke-width": 2, opacity: m.hollow ? .6 : 1 }, s);
+    el("path", { d: shapePath(m.shape, size / 2, size / 2, 3.6), fill: m.hollow ? css("--surface") : css(m.c), stroke: m.hollow ? css(m.c) : css("--surface"), "stroke-width": m.hollow ? 1.6 : 1.2 }, s);
+    return s;
+  }
+
+  /* ---------- share chart ---------- */
+  let visible = new Set(PRESETS.journey.keys);
+  let preset = "journey";
+  const legend = document.getElementById("legend");
+  function buildLegend() {
+    legend.innerHTML = "";
+    for (const [k, m] of Object.entries(M)) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.dataset.k = k;
+      b.setAttribute("aria-pressed", visible.has(k) ? "true" : "false");
+      b.appendChild(swatch(m));
+      b.appendChild(document.createTextNode(m.name));
+      b.addEventListener("click", () => {
+        if (visible.has(k)) visible.delete(k); else visible.add(k);
+        preset = null; syncPresets(); buildLegend(); drawShare();
+      });
+      legend.appendChild(b);
+    }
+  }
+  function syncPresets() {
+    document.querySelectorAll("#presets button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.p === preset ? "true" : "false"));
+    document.getElementById("preset-note").innerHTML = preset ? PRESETS[preset].note : "<b>Custom selection.</b> Pick a view above to reset.";
+  }
+  document.querySelectorAll("#presets button").forEach((b) => b.addEventListener("click", () => {
+    preset = b.dataset.p; visible = new Set(PRESETS[preset].keys); syncPresets(); buildLegend(); drawShare();
+  }));
+
+  const shareBox = document.getElementById("share-chart");
+  let tip = null;
+  function drawShare() {
+    shareBox.innerHTML = "";
+    const W = Math.max(300, shareBox.clientWidth);
+    const narrow = W < 600;
+    const keys = Object.keys(M).filter((k) => visible.has(k));
+    const labelsOn = !narrow && keys.length <= 5;
+    const H = narrow ? 300 : 390;
+    const m = { l: 40, r: labelsOn ? 196 : 18, t: 18, b: 44 };
+    const pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const yMax = 160;
+    const X = (i) => m.l + (LOG2[i] - 12) / 4 * pw;
+    const Y = (v) => m.t + (1 - v / yMax) * ph;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "Share of the window-to-dense gap by document length" }, shareBox);
+    // beyond training length band
+    const bx = X(1);
+    el("rect", { x: bx, y: m.t, width: X(3) - bx, height: ph, fill: css("--band") }, svg);
+    el("text", { x: bx + 6, y: m.t + 14, "font-size": 11.5, fill: css("--muted") }, svg).textContent = narrow ? "longer than training" : "longer than any training document";
+    // grid
+    for (let v = 0; v <= 150; v += 25) {
+      el("line", { x1: m.l, x2: m.l + pw, y1: Y(v), y2: Y(v), stroke: css("--grid"), "stroke-width": 1 }, svg);
+      el("text", { x: m.l - 8, y: Y(v) + 4, "text-anchor": "end", "font-size": 11.5, fill: css("--muted"), "font-variant-numeric": "tabular-nums" }, svg).textContent = v + (v === 150 ? " %" : "");
+    }
+    // reference lines
+    el("line", { x1: m.l, x2: m.l + pw, y1: Y(0), y2: Y(0), stroke: css("--ref"), "stroke-width": 1.5 }, svg);
+    el("line", { x1: m.l, x2: m.l + pw, y1: Y(100), y2: Y(100), stroke: css("--ref"), "stroke-width": 1.5 }, svg);
+    el("text", { x: m.l + 6, y: Y(100) - 6, "font-size": 11.5, fill: css("--ink-2") }, svg).textContent = "dense: rereads every page (100 %)";
+    el("text", { x: m.l + 6, y: Y(0) - 6, "font-size": 11.5, fill: css("--ink-2") }, svg).textContent = "window control: last pages only (0 %)";
+    // x axis
+    LENS.forEach((L, i) => {
+      el("text", { x: X(i), y: m.t + ph + 18, "text-anchor": "middle", "font-size": 12, fill: css("--ink-2") }, svg).textContent = L;
+    });
+    el("text", { x: m.l + pw / 2, y: H - 6, "text-anchor": "middle", "font-size": 11.5, fill: css("--muted") }, svg).textContent = "document length, tokens (models trained up to 16k)";
+    // series
+    const ends = [];
+    for (const k of keys) {
+      const s = M[k];
+      const col = css(s.c);
+      const d = s.s.map((v, i) => `${i ? "L" : "M"}${X(i)},${Y(v)}`).join("");
+      el("path", { d, fill: "none", stroke: col, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", opacity: s.hollow ? .6 : 1, class: "series" }, svg);
+      s.s.forEach((v, i) => {
+        el("path", { d: shapePath(s.shape, X(i), Y(v), 4.4), fill: s.hollow ? css("--surface") : col, stroke: s.hollow ? col : css("--surface"), "stroke-width": 2 }, svg);
+      });
+      ends.push({ k, y: Y(s.s[3]), x: X(3) });
+    }
+    if (labelsOn) {
+      ends.sort((a, b) => a.y - b.y);
+      const gap = 16;
+      ends.forEach((e, i) => { e.ly = i ? Math.max(e.y, ends[i - 1].ly + gap) : e.y; });
+      const over = ends.length ? ends[ends.length - 1].ly - (m.t + ph) : 0;
+      if (over > 0) ends.forEach((e) => (e.ly -= over));
+      const lx = m.l + pw + 14;
+      for (const e of ends) {
+        const s = M[e.k];
+        el("path", { d: `M${e.x + 7},${e.y}L${lx - 4},${e.ly}`, stroke: css("--axis"), "stroke-width": 1, fill: "none" }, svg);
+        const t = el("text", { x: lx, y: e.ly + 4, "font-size": 12, fill: css("--ink") }, svg);
+        t.textContent = `${s.short} · ${Math.round(s.s[3])} %`;
+      }
+    }
+    // hover layer
+    const cross = el("line", { y1: m.t, y2: m.t + ph, stroke: css("--axis"), "stroke-width": 1, visibility: "hidden" }, svg);
+    const hit = el("rect", { x: m.l - 20, y: m.t, width: pw + 40, height: ph, fill: "transparent", style: "cursor:crosshair" }, svg);
+    tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; shareBox.appendChild(tip);
+    const show = (ev) => {
+      const r = svg.getBoundingClientRect();
+      const px = (ev.clientX - r.left) * (W / r.width);
+      let best = 0, bd = 1e9;
+      LENS.forEach((_, i) => { const dd = Math.abs(X(i) - px); if (dd < bd) { bd = dd; best = i; } });
+      cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best)); cross.setAttribute("visibility", "visible");
+      const rows = keys.map((k) => ({ k, v: M[k].s[best] })).sort((a, b) => b.v - a.v);
+      tip.innerHTML = `<div class="h">${LENS[best]} tokens · share of the gap</div>`;
+      for (const row of rows) {
+        const div = document.createElement("div"); div.className = "r";
+        const left = document.createElement("span"); left.appendChild(swatch(M[row.k], 12)); left.appendChild(document.createTextNode(M[row.k].name));
+        const val = document.createElement("b"); val.textContent = row.v.toFixed(1) + " %";
+        div.append(left, val); tip.appendChild(div);
+      }
+      tip.hidden = false;
+      const bw = shareBox.clientWidth, tw = tip.offsetWidth;
+      const sx = X(best) * (r.width / W);
+      tip.style.left = Math.min(Math.max(0, sx + 14 + tw > bw ? sx - tw - 14 : sx + 14), bw - tw) + "px";
+      tip.style.top = (m.t * (r.height / H) + 6) + "px";
+    };
+    hit.addEventListener("pointermove", show);
+    hit.addEventListener("pointerdown", show);
+    hit.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  }
+
+  /* ---------- long-document bars ---------- */
+  const LD = {
+    decay: { ref: { "64k": 2.6007, "128k": 2.2784, "256k": 1.7891, "1M": 0.9031 }, rows: [
+      { name: "E33p LSA port", c: "--s2", v: { "64k": 2.4285, "128k": 2.1702, "256k": 1.6875, "1M": 0.8488 } },
+      { name: "E33t n4 (64 notes)", c: "--s6", v: { "64k": 2.4300, "128k": 2.1463, "256k": 1.6506, "1M": 0.8873 } },
+      { name: "E33t n4, two-level search at test time", c: "--s6", hatch: true, v: { "256k": 1.6821, "1M": 0.8542 } },
+      { name: "E33t n4, notebook removed", c: "--neutral", v: { "64k": 2.6176, "128k": 2.2937, "256k": 1.8076, "1M": 0.9199 } },
+      { name: "E33p LSA port, opened tokens removed", c: "--neutral", v: { "64k": 2.6359, "128k": 2.3143, "256k": 1.8324, "1M": 0.9398 } },
+    ] },
+    long: { ref: { "64k": 2.5824, "128k": 2.2590, "256k": 1.7675, "1M": 0.8793 }, rows: [
+      { name: "E33p LSA port", c: "--s2", v: { "64k": 2.3874, "128k": 2.0910, "256k": 1.6106, "1M": 0.8421 } },
+      { name: "E33t n4 (64 notes)", c: "--s6", v: { "64k": 2.4026, "128k": 2.0972, "256k": 1.5896, "1M": 0.7904 } },
+      { name: "E33t n4, two-level search at test time", c: "--s6", hatch: true, v: { "256k": 1.6583, "1M": 0.8402 } },
+      { name: "E33t n4, notebook removed", c: "--neutral", v: { "64k": 2.6091, "128k": 2.2857, "256k": 1.8003, "1M": 0.9140 } },
+      { name: "E33p LSA port, opened tokens removed", c: "--neutral", v: { "64k": 2.6274, "128k": 2.3060, "256k": 1.8250, "1M": 0.9305 } },
+    ] },
+  };
+  let ldPhase = "decay", ldLen = "256k";
+  const ldBox = document.getElementById("ld-chart");
+  function drawLD() {
+    ldBox.innerHTML = "";
+    const set = LD[ldPhase], ref = set.ref[ldLen];
+    const W = Math.max(280, ldBox.clientWidth);
+    const narrow = true; // row names sit above their bars at every width, so long names never clip
+    const rowH = 50;
+    const m = { l: 8, r: 56, t: 22, b: 26 };
+    const H = m.t + m.b + rowH * set.rows.length;
+    const lo = -0.06, hi = 0.22;
+    const pw = W - m.l - m.r;
+    const X = (v) => m.l + (v - lo) / (hi - lo) * pw;
+    const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: "img", "aria-label": "Gain over the window control in nats" }, ldBox);
+    const defs = el("defs", {}, svg);
+    const pat = el("pattern", { id: "hatch", width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, defs);
+    el("rect", { width: 6, height: 6, fill: css("--s6"), opacity: .35 }, pat);
+    el("line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: css("--s6"), "stroke-width": 3 }, pat);
+    for (const v of [-0.05, 0, 0.05, 0.1, 0.15, 0.2]) {
+      el("line", { x1: X(v), x2: X(v), y1: m.t - 4, y2: H - m.b, stroke: v === 0 ? css("--ref") : css("--grid"), "stroke-width": v === 0 ? 1.5 : 1 }, svg);
+      el("text", { x: X(v), y: H - 8, "text-anchor": "middle", "font-size": 11, fill: css("--muted"), "font-variant-numeric": "tabular-nums" }, svg).textContent = (v > 0 ? "+" : "") + v.toFixed(2);
+    }
+    el("text", { x: X(0) + 4, y: 12, "font-size": 11, fill: css("--ink-2") }, svg).textContent = "window control";
+    el("text", { x: X(hi), y: 12, "text-anchor": "end", "font-size": 11, fill: css("--muted") }, svg).textContent = "better →";
+    const tipLD = document.createElement("div"); tipLD.className = "tip"; tipLD.hidden = true; ldBox.appendChild(tipLD);
+    set.rows.forEach((row, i) => {
+      const y0 = m.t + i * rowH;
+      const barY = narrow ? y0 + 20 : y0 + (rowH - 18) / 2;
+      const lab = el("text", { x: narrow ? m.l : m.l - 10, y: narrow ? y0 + 13 : barY + 13, "text-anchor": narrow ? "start" : "end", "font-size": 12.5, fill: css("--ink") }, svg);
+      lab.textContent = row.name;
+      if (!row.v || row.v[ldLen] == null) {
+        el("text", { x: X(0) + 8, y: barY + 13, "font-size": 12, fill: css("--muted") }, svg).textContent =
+          row.v ? "tested only past 128k" : "pending · " + row.eta;
+        return;
+      }
+      const loss = row.v[ldLen];
+      const g = ref - loss;
+      const x0 = X(Math.min(0, g)), x1 = X(Math.max(0, g));
+      const r = 4, w = Math.max(2 * r, x1 - x0);
+      // rounded data end, square at the baseline
+      const d = g >= 0
+        ? `M${x0},${barY}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${18 - 2 * r}a${r},${r} 0 0 1 ${-r},${r}h${-(w - r)}z`
+        : `M${x1},${barY}h${-(w - r)}a${r},${r} 0 0 0 ${-r},${r}v${18 - 2 * r}a${r},${r} 0 0 0 ${r},${r}h${w - r}z`;
+      const bar = el("path", { d, fill: row.hatch ? "url(#hatch)" : css(row.c) }, svg);
+      const vt = el("text", { x: g >= 0 ? x1 + 6 : x0 - 6, y: barY + 13, "text-anchor": g >= 0 ? "start" : "end", "font-size": 12, fill: css("--ink-2"), "font-variant-numeric": "tabular-nums" }, svg);
+      vt.textContent = (g >= 0 ? "+" : "−") + Math.abs(g).toFixed(3);
+      const hitR = el("rect", { x: 0, y: y0, width: W, height: rowH, fill: "transparent" }, svg);
+      const show = (ev) => {
+        const r2 = ldBox.getBoundingClientRect();
+        tipLD.innerHTML = `<div class="h">${row.name}</div><div class="r"><span>loss at ${ldLen}</span><b>${loss.toFixed(4)}</b></div><div class="r"><span>window control</span><b>${ref.toFixed(4)}</b></div><div class="r"><span>gain</span><b>${(g >= 0 ? "+" : "−") + Math.abs(g).toFixed(4)}</b></div>`;
+        tipLD.hidden = false;
+        const tw = tipLD.offsetWidth;
+        tipLD.style.left = Math.min(Math.max(0, ev.clientX - r2.left + 12), r2.width - tw) + "px";
+        tipLD.style.top = (y0 + rowH) * (r2.height / H) + "px";
+        bar.setAttribute("opacity", .85);
+      };
+      hitR.addEventListener("pointermove", show);
+      hitR.addEventListener("pointerdown", show);
+      hitR.addEventListener("pointerleave", () => { tipLD.hidden = true; bar.setAttribute("opacity", 1); });
+    });
+    const note = document.getElementById("ld-note");
+    const docs = { "64k": "37 documents, 2.3M scored tokens", "128k": "21 documents, 2.7M scored tokens",
+      "256k": "four documents, 1.8M scored tokens", "1M": "one document of 1.3M tokens, an illustration only" }[ldLen];
+    note.innerHTML = ldPhase === "decay"
+      ? `How much less surprised each model is by the next word than the window control, in nats (the unit of the loss; higher is better). ${ldLen}: ${docs}. Window control's loss ${ref.toFixed(3)}. <b>Removing the notebook makes n4 slightly worse than the window control</b>, so its gain comes from the notebook.`
+      : `Compared with the window control after the same 64k stage (loss ${ref.toFixed(3)} at ${ldLen}; the extra training lowered it by ${(LD.decay.ref[ldLen] - ref).toFixed(3)}). ${ldLen}: ${docs}. Switch between the two trainings to see what the 64k stage added: little up to 64k, most at 128k and beyond.`;
+  }
+  const segBind = (id, set) => document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener("click", () => {
+    document.querySelectorAll(`#${id} button`).forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    set(b.dataset.v); drawLD();
+  }));
+  segBind("ld-phase", (v) => (ldPhase = v));
+  segBind("ld-len", (v) => (ldLen = v));
+
+  /* ---------- passwords ---------- */
+  const Z = "0".repeat(20), P = "p".repeat(20);
+  const PK = [
+    { who: "E33p window control", when: "trained on 16k", k128: Z, k1m: Z },
+    { who: "E33p window control", when: "after the 64k stage", k128: Z, k1m: Z },
+    { who: "E33p LSA port", when: "trained on 16k", k128: "00200000000000100000", k1m: "00010000000000000000" },
+    { who: "E33t n4 (64 notes)", when: "trained on 16k", k128: "00000000000000100000", k1m: Z },
+    { who: "E33t n4, two-level search", when: "trained on 16k", k128: Z, k1m: Z },
+    { who: "E33p LSA port", when: "after the 64k stage", k128: "00200000000000100002", k1m: "20010000000000000000" },
+    { who: "E33t n4 (64 notes)", when: "after the 64k stage", k128: "00000000000000202000", k1m: Z },
+    { who: "E33t n4, two-level search", when: "after the 64k stage", k128: Z, k1m: Z },
+  ];
+  const pk = document.getElementById("pk");
+  pk.className = "pk";
+  for (const row of PK) {
+    const r = document.createElement("div"); r.className = "pk-row";
+    const exact = (s) => [...s].filter((c) => c === "2").length;
+    const done = (s) => !s.includes("p");
+    const sum = done(row.k128) ? ` · ${exact(row.k128)} / 20 at 128k` : "";
+    r.innerHTML = `<div class="who">${row.who} <span>· ${row.when}${sum}</span></div>`;
+    const cells = document.createElement("div"); cells.className = "pk-cells";
+    for (const [len, s] of [["128k", row.k128], ["1M", row.k1m]]) {
+      const c = document.createElement("div");
+      c.innerHTML = `<div class="pk-len">${len}${done(s) ? "" : " · pending"}</div>`;
+      const dots = document.createElement("div"); dots.className = "dots";
+      [...s].forEach((v, i) => {
+        const d = document.createElement("i"); d.className = "dot"; d.dataset.v = v;
+        d.title = `${len}, password at ${(2.5 + 5 * i).toFixed(1)} % of the document: ${v === "2" ? "all five digits right" : v === "1" ? "first digit right" : v === "p" ? "not tested yet" : "missed"}`;
+        dots.appendChild(d);
+      });
+      c.appendChild(dots); cells.appendChild(c);
+    }
+    r.appendChild(cells); pk.appendChild(r);
+  }
+
+  /* ---------- scorecard ---------- */
+  const COLS = [
+    { k: "name", label: "Model", dir: null },
+    { k: "s0", label: "4k", dir: "hi", get: (m) => m.s[0] },
+    { k: "s1", label: "16k", dir: "hi", get: (m) => m.s[1] },
+    { k: "s2", label: "32k", dir: "hi", get: (m) => m.s[2] },
+    { k: "s3", label: "64k", dir: "hi", get: (m) => m.s[3] },
+    { k: "l128", label: "128k loss", dir: "lo", get: (m) => m.l128 },
+    { k: "ruler", label: "Needle puzzles, 4k", dir: "hi", get: (m) => m.ruler },
+    { k: "core", label: "General knowledge", dir: "hi", get: (m) => m.core },
+  ];
+  const rowsAll = [
+    ...Object.entries(M).map(([k, m]) => ({ k, m, ref: false })),
+    ...Object.entries(REFS).map(([k, m]) => ({ k, m, ref: true })),
+  ];
+  let sortK = "s1", sortDesc = true;
+  const table = document.getElementById("table");
+  function drawTable() {
+    const thead = table.tHead, tbody = table.tBodies[0];
+    thead.innerHTML = ""; tbody.innerHTML = "";
+    const htr = document.createElement("tr");
+    const groupTr = document.createElement("tr");
+    groupTr.innerHTML = `<th></th><th colspan="4" style="text-align:center">Share of the gap (%), by length</th><th colspan="3"></th>`;
+    thead.appendChild(groupTr);
+    for (const c of COLS) {
+      const th = document.createElement("th");
+      const b = document.createElement("button");
+      const arrow = sortK === c.k ? (sortDesc ? "▼" : "▲") : "";
+      b.innerHTML = `${c.label}${c.dir ? ` <span class="dir">${c.dir === "lo" ? "lower better" : ""}</span>` : ""} <span class="dir">${arrow}</span>`;
+      b.addEventListener("click", () => {
+        if (sortK === c.k) sortDesc = !sortDesc; else { sortK = c.k; sortDesc = c.dir !== "lo"; }
+        drawTable();
+      });
+      th.setAttribute("aria-sort", sortK === c.k ? (sortDesc ? "descending" : "ascending") : "none");
+      th.appendChild(b); htr.appendChild(th);
+    }
+    thead.appendChild(htr);
+    const col = COLS.find((c) => c.k === sortK);
+    const rows = [...rowsAll].sort((a, b) => {
+      if (sortK === "name") return (sortDesc ? -1 : 1) * a.m.name.localeCompare(b.m.name);
+      const va = col.get(a.m), vb = col.get(b.m);
+      if (va == null) return 1; if (vb == null) return -1;
+      return sortDesc ? vb - va : va - vb;
+    });
+    const best = {};
+    for (const c of COLS.slice(1)) {
+      const vals = Object.values(M).map(c.get).filter((v) => v != null);
+      best[c.k] = c.dir === "lo" ? Math.min(...vals) : Math.max(...vals);
+    }
+    for (const { m, ref } of rows) {
+      const tr = document.createElement("tr"); if (ref) tr.className = "ref";
+      const td0 = document.createElement("td");
+      const nm = document.createElement("span"); nm.className = "nm";
+      if (!ref) nm.appendChild(swatch(m)); else { const sp = document.createElement("span"); sp.style.width = "14px"; nm.appendChild(sp); }
+      nm.appendChild(document.createTextNode(m.name));
+      const sub = document.createElement("span"); sub.className = "sub"; sub.textContent = m.sub;
+      td0.append(nm, sub); tr.appendChild(td0);
+      for (const c of COLS.slice(1)) {
+        const td = document.createElement("td"); const v = c.get(m);
+        if (v == null) { td.textContent = "—"; td.className = "na"; }
+        else {
+          td.textContent = c.k === "l128" ? v.toFixed(4) : v.toFixed(1);
+          if (!ref && v === best[c.k]) td.className = "best";
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+  }
+
+  /* ---------- who's who ---------- */
+  function drawWho() {
+    const t = document.getElementById("who");
+    t.tHead.innerHTML = "<tr><th>Model on this page</th><th>How it reaches past the last 512 tokens</th><th>Parameters<br><span class=\"dir\">without word tables · total</span></th><th>Trained on</th></tr>";
+    const tb = t.tBodies[0]; tb.innerHTML = "";
+    const order = [["Controls", REFS, ["window", "dense"]], ["E33p: the previous notebook and the reference read", M, ["lsa", "notes"]],
+      ["E33t stage A: the catalogue read", M, ["cat", "cat2l", "reuse"]], ["E33t stage B: note and page sizes (home servers)", M, ["reuseH", "n4", "p512", "n16"]]];
+    for (const [title, src, keys] of order) {
+      const g = document.createElement("tr"); g.className = "grp";
+      g.innerHTML = `<td colspan="4">${title}</td>`; tb.appendChild(g);
+      for (const k of keys) {
+        const m = src[k], tr = document.createElement("tr");
+        const td0 = document.createElement("td");
+        const nm = document.createElement("span"); nm.className = "nm";
+        if (m.c) nm.appendChild(swatch(m)); else { const sp = document.createElement("span"); sp.style.width = "14px"; nm.appendChild(sp); }
+        nm.appendChild(document.createTextNode(m.name));
+        const run = document.createElement("span"); run.className = "run"; run.textContent = m.run;
+        td0.append(nm, run);
+        const td1 = document.createElement("td"); td1.className = "how"; td1.textContent = m.how;
+        const td2 = document.createElement("td"); td2.className = "nums"; td2.textContent = m.par;
+        if (m.par.length > 20) td2.style.whiteSpace = "normal";
+        const td3 = document.createElement("td"); td3.textContent = m.where;
+        tr.append(td0, td1, td2, td3); tb.appendChild(tr);
+      }
+    }
+  }
+
+  /* ---------- copy ---------- */
+  document.getElementById("copy")?.addEventListener("click", (e) => {
+    const t = document.getElementById("cmd").textContent;
+    const btn = e.currentTarget;
+    const done = () => { btn.textContent = "Copied"; setTimeout(() => (btn.textContent = "Copy"), 1600); };
+    const fallback = () => { const r = document.createRange(); r.selectNodeContents(document.getElementById("cmd")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent = "Selected"; };
+    try { navigator.clipboard.writeText(t).then(done, fallback); } catch (_) { fallback(); }
+  });
+
+  /* ---------- boot ---------- */
+  const redraw = () => { drawShare(); drawLD(); drawTable(); drawWho(); buildLegend(); };
+  syncPresets(); buildLegend(); drawShare(); drawLD(); drawTable(); drawWho();
+  let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => { drawShare(); drawLD(); }, 80); }).observe(document.querySelector(".wrap"));
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  mq.addEventListener?.("change", redraw);
+  new MutationObserver(redraw).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+})();
+</script>

@@ -52,6 +52,8 @@ never bother to use the notebook.**
 
 | metric | what it measures | good direction | scale |
 |---|---|---|---|
+| **far-context gap (G) and its share** | G = window control's loss − dense ceiling's loss on far positions of long documents (≥ 2k tokens in): how much reading the whole book is worth over the last pages. A model's *share* = how much of G it closes | share higher | in nats. E33n 30M at 16k: G 0.134; notes closed 6 % |
+| **copy split (near / far / no copy)** | sorts each scored word by whether its short phrase (4-gram) appeared earlier inside the local window (near), only further back (far), or never (no copy), then measures loss per group — shows whether far context is worth exact copying or meaning | — | E33n 30M: far-copy words are ~10 % of words and 97 % of G |
 | **loss / cross-entropy (CE), in nats** | how surprised the model is by the true next token | lower | 0 = certain. 0.69 = a coin flip. 1.39 = a blind guess among 4. Typical small-LM values: 2.5–4.5. A 0.05 difference is small; 0.5 is large. |
 | **perplexity (ppl)** | the same thing as "how many options is it choosing between" | lower | `exp(loss)`. ppl 50 ≈ picking among 50 words. |
 | **bits per byte (BPB)** | loss converted to a per-byte unit, so two models with different tokenizers can be compared | lower | ~1.5 = weak small model, ~1.0 = decent small model. The only fair ruler against public models. |
@@ -95,6 +97,20 @@ meaningless without knowing which slice it came from.
 |---|---|
 | **concepts / latents / slots** | the small set of vectors the long input is compressed into. The notebook pages. |
 | **cross-attention** | the mechanism for looking things up in the notebook; the "read". |
+| **indexed notebook / opened tokens (E33p)** | the notebook used as a table of contents: the reader picks its best notes, then rereads the original tokens those notes summarise ("opened tokens") — exact words, not a summary. Like LSA's buckets: the summary only says where to look. |
+| **tied address key** | a note's lookup key built as the average of the reader's own keys for the tokens it summarises, so a question that matches those tokens also matches the note. |
+| **per-query choice** | every token picks its own notes to open (not one pick shared by a block of 128 tokens, which would let a token see what later tokens wanted: a leak of the next word). |
+| **LSA-native arm** | our 30M model with LSA's released read in the reading layer: the reader's own keys grouped into buckets of about 8 by similarity, each token opens its best buckets' tokens. No notebook. |
+| **concept memory read (E37)** | each closed block of 512 tokens is grouped by content into concepts (64 of about 8 tokens). A query rereads the tokens of its best concepts exactly and reads every other concept as one summary entry weighted by its estimated share of attention. Opened tokens = the pages reread; summaries = the chapter summaries of the rest. |
+| **length scale (E37)** | past the training length, the summaries' total weight is shrunk in proportion to how much more text they stand for, so the far past claims as much of the read as it did at the training length. Without it the summaries swamp the read on long documents (the fade). |
+| **catalogue read (E33t)** | the notebook used only as a library catalogue: notes decide which original tokens a query opens, but their summaries are no longer read. Pages are drawers, notes are cards. |
+| **balanced filing** | every page token is filed under exactly one note, with each note holding about the same number of tokens (none empty, at most 16); done by balancing the writer's assignment (Sinkhorn iterations). E33p's unbalanced filing left 30 % of notes empty. |
+| **index loss** | a small extra loss that teaches each note's score to predict how much of the read's attention its tokens actually receive once opened, so the catalogue learns where queries look. LSA's index has no such training. |
+| **empty slots (sinks)** | a few extra keys in the read with no content, where attention can go when nothing fits. LSA uses the first 4 tokens of the document; E33t uses 4 learned slots. |
+| **a new place per pass** | in the reading loop, each pass may only open notes that the same query has not opened in earlier passes, so four passes are four lookups that can follow a chain of references. Its cost (2026-11-07): a planted password found on pass 1 cannot be reread on the last pass, where the LSA port and dense copy it; the `catalogue_reuse` arm trains without the rule. |
+| **planted-password probe** | the passkey test run through the reading probe: for each answer token, was the password's place among the tokens the read opened on each loop pass, how much of the read's attention it got, and was the answer right. Separates "never found it" from "found it but did not use it". |
+| **two-level search** | a query scores page keys first, keeps its best pages, then scores only those pages' notes: the work per query grows with the number of pages, not tokens (the route past 1M tokens). |
+| **update ratio / logit lens / CKA** | training probes: how much one optimizer step changes a layer's weights (relative); the next-word loss read straight from a layer's output (where in depth the prediction forms); a 0–1 similarity of two layers' outputs on the same tokens (do two models' layers do the same work). |
 | **self-attention** | tokens looking at each other. |
 | **sliding-window attention (SWA)** | each token can only see the last *K* tokens. Cheap; limits how far back a single layer sees. |
 | **reach** | how far back information can actually travel through a stack of windows: roughly `layers × window`. |
