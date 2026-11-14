@@ -1,8 +1,8 @@
 {
   "schema": "nn-builder/graph",
   "version": 1,
-  "name": "e33p_dense_s30",
-  "description": "MrCogito E33p dense arm at 30M (scripts/run_e33n.py --arm dense --size s30): the ceiling. Same trunk as E33n s30 (scripts/run_e33n.py --size s30, FFN 1472): width 576, GPT-2 vocabulary with a 256-wide factorised input, 2 local pre layers (window 128), the reading layer (no RoPE), 5 local stack layers, 9 query heads x 64 with one key/value head; the reading layer and the next layer loop 4 rounds. Protocol: E33p stage 1 (1.5B FineWeb-Edu tokens at 4k, then 0.2B LongDocs-lite at 16k, 64 rows per step). The reading layer reads every earlier token. Trainer: 68,701,396 parameters.",
+  "name": "E33p · dense ceiling · 68.7M (26.3M core)",
+  "description": "E33p arm dense — dense ceiling, 30M testbed. New against e33n_s30: no page writer and no notebook; the reading layer reads every earlier token (full causal attention). Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-06; status done (as of 2026-11-08). The ceiling (100 % of the gap). E33n's dense run (5 Nov) trained with one loop round (factory bug); E33p retrained it with 4. Spec: docs/experiments_specs/ahead/E33p_note_indexed_exact_read.md. Source: origin/e33n-lsa-testbed @ 8701b17. Parameters: 68,701,396 in total, 26,260,308 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm dense --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
   "stacks": [
     {
       "id": "main",
@@ -26,7 +26,7 @@
               "proj": "gated_mlp",
               "out_norm": "rmsnorm",
               "id": "main.input.emb",
-              "label": "GPT-2 token table 50,257 \u00d7 256 + input MLP"
+              "label": "GPT-2 token table 50,257 × 256 + input MLP"
             },
             {
               "type": "positional",
@@ -34,7 +34,7 @@
               "theta": 500000,
               "max_len": 4096,
               "id": "main.input.pos",
-              "label": "RoPE \u03b8 500k (every layer but the reading layer)"
+              "label": "RoPE θ 500k (every layer but the reading layer)"
             }
           ],
           "label": "input"
@@ -84,7 +84,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "pre 0 \u00b7 local 128"
+          "label": "pre 0 · local 128"
         },
         {
           "id": "main.L1",
@@ -131,7 +131,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "pre 1 \u00b7 local 128"
+          "label": "pre 1 · local 128"
         },
         {
           "id": "main.L2",
@@ -161,8 +161,8 @@
                 "pos_prior": false,
                 "logit_scale": false
               },
-              "label": "full causal read of every earlier token, no RoPE",
-              "id": "main.L2.attn"
+              "id": "main.L2.attn",
+              "label": "full causal read of every earlier token, no RoPE"
             },
             {
               "type": "ffn",
@@ -178,7 +178,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "reading layer \u00b7 full read"
+          "label": "reading layer · full read"
         },
         {
           "id": "main.L3",
@@ -225,7 +225,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 0 (in the loop) \u00b7 local 128"
+          "label": "stack 0 (in the loop) · local 128"
         },
         {
           "id": "main.L4",
@@ -272,7 +272,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 1 \u00b7 local 128"
+          "label": "stack 1 · local 128"
         },
         {
           "id": "main.L5",
@@ -319,7 +319,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 2 \u00b7 local 128"
+          "label": "stack 2 · local 128"
         },
         {
           "id": "main.L6",
@@ -366,7 +366,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 3 \u00b7 local 128"
+          "label": "stack 3 · local 128"
         },
         {
           "id": "main.L7",
@@ -413,7 +413,7 @@
               "label": "SwiGLU 1472"
             }
           ],
-          "label": "stack 4 \u00b7 local 128"
+          "label": "stack 4 · local 128"
         },
         {
           "id": "main.head",
@@ -508,31 +508,29 @@
   "run": {
     "row_length": 4096,
     "rows_per_step": 64,
-    "micro_batch": 0,
+    "micro_batch": 4,
     "precision": "amp_bf16",
     "optimizer": "adamw",
     "weight_decay": 0.1,
     "zero_stage": 0,
     "checkpointing": false,
     "gpu": "rtx3090",
-    "gpu_count": 2,
-    "token_budget": 1700000000,
+    "gpu_count": 1,
+    "token_budget": 1500000000,
     "deadline_hours": 0,
     "mfu": 0,
     "irregular_ratio": 0,
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-05T20:29:12.409Z",
-    "hash": "nnb1-108bd156eed1b019e5f7682d22e2",
+    "exported_at": "2026-11-08T12:50:54.799Z",
+    "hash": "nnb1-1b7417973afd5410dd1464c37f3f",
     "row_length": 4096,
-    "params_total": 72687252,
+    "params_total": 68701396,
     "params_by_stack": {
-      "main": 68701396,
-      "pages": 1377792,
-      "notes": 2608064
+      "main": 68701396
     },
-    "train_flops_per_token": 516570732,
+    "train_flops_per_token": 518390712,
     "cells": {
       "main.input.emb": {
         "params": 13493056,
@@ -646,66 +644,6 @@
         "params": 28948608,
         "width_in": 576,
         "width_out": 576,
-        "runs_per_row": 1
-      },
-      "pages.in.proj": {
-        "params": 65792,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "pages.in.pos": {
-        "params": 0,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "pages.enc0.attn": {
-        "params": 262528,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "pages.enc0.ffn": {
-        "params": 393472,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "pages.enc1.attn": {
-        "params": 262528,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "pages.enc1.ffn": {
-        "params": 393472,
-        "width_in": 256,
-        "width_out": 256,
-        "runs_per_row": 1
-      },
-      "notes.init.q": {
-        "params": 49664,
-        "width_in": 0,
-        "width_out": 512,
-        "runs_per_row": 1
-      },
-      "notes.read.attn": {
-        "params": 852864,
-        "width_in": 512,
-        "width_out": 512,
-        "runs_per_row": 2
-      },
-      "notes.ffn.ffn": {
-        "params": 1573376,
-        "width_in": 512,
-        "width_out": 512,
-        "runs_per_row": 2
-      },
-      "notes.out.kv": {
-        "params": 132160,
-        "width_in": 512,
-        "width_out": 512,
         "runs_per_row": 1
       }
     }

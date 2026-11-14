@@ -31,6 +31,8 @@
 #   E33N_LONG_TOKENS: tokens of the 64k phase (default: the size's, scripts/run_e33n.py SIZES; m100 at 1e8 repeats
 #   the 30M stage's 0.1B tokens, E33t stage D+).
 # E33N_LONGDOC_LENGTHS (default 4096,16384,32768,65536,131072): lengths of the long-document loss.
+# E33N_MIX=NAME (E38): train on the built data mix s3://BUCKET/data/NAME/ (home: E33N_DATA/NAME) instead of the GPT-2
+#   FineWeb-Edu / LongDocs-lite shards: its tokenizer, sources, row lengths and tokens per phase (run_e33n.py --mix).
 # E33N_CKPT_S3=1 (AWS spot nodes): checkpoints go to S3 with the rest, and a relaunched node first pulls the run
 #   folder back, so an interrupted run resumes from its newest checkpoint instead of starting over.
 set -uo pipefail
@@ -39,11 +41,13 @@ export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_PROJECT=MrCogito EXPERIMENT_ID=${E33N_EXPERIMENT:-E33n}
 if [ -f /etc/mrcogito.env ]; then
   source /etc/mrcogito.env
-  D="$MC_DISK/data"; RUNS="$MC_DISK/runs"; export WANDB_MODE=offline
+  D="$MC_DISK/data"; RUNS="$MC_DISK/runs"
+  source "$(dirname "${BASH_SOURCE[0]}")/wandb_env.sh"   # online with the key from Secrets Manager, else offline
 else
   D="${E33N_DATA:?set E33N_DATA}"; RUNS="${E33N_RUNS:?set E33N_RUNS}"; MC_BUCKET=""
 fi
-RUN="e33n_${SIZE}_${ARM}${LR:+_lr$LR}${TT:+_tok$TT}${E33N_SEED:+_seed$E33N_SEED}"
+# E33N_TAG: an extra word in the run name (e.g. muon0.01), so two recipes of one arm and size keep apart
+RUN="e33n_${SIZE}_${ARM}${E33N_TAG:+_$E33N_TAG}${LR:+_lr$LR}${TT:+_tok$TT}${E33N_SEED:+_seed$E33N_SEED}"
 EXP=$(echo "$EXPERIMENT_ID" | tr "[:upper:]" "[:lower:]")
 R="$RUNS/$RUN"; S3R="${MC_BUCKET:+s3://$MC_BUCKET/runs/$EXP/$RUN}"
 export WANDB_DIR="$R/wandb"
@@ -100,7 +104,11 @@ phase() {
 }
 
 log "start $RUN on ${MC_IID:-$(hostname)} GPU ${CUDA_VISIBLE_DEVICES:-all} ($G per model)"
-if [ -n "$MC_BUCKET" ]; then
+if [ -n "$MC_BUCKET" ] && [ -n "${E33N_MIX:-}" ]; then
+  # E38: a built data mix (scripts/build_m21_mix.py), copied whole; scripts/run_e33n.py --mix reads its phases
+  aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/$E33N_MIX/" "$D/$E33N_MIX/"
+  log "data: mix $E33N_MIX, $(ls "$D/$E33N_MIX"/*_train_*.bin | wc -l) train shards, $(du -sh "$D/$E33N_MIX" | cut -f1)"
+elif [ -n "$MC_BUCKET" ]; then
   mkdir -p "$D/fineweb_edu_gpt2"
   NSH=$(uv run python -c "import sys; sys.path.insert(0, '.'); from scripts.run_e33n import SIZES; print(int(float('${TT:-0}') or SIZES['$SIZE']['trunk']) // 100_000_000 + 2)")
   aws s3 cp --only-show-errors "s3://$MC_BUCKET/data/fineweb_edu_gpt2/finewebedu_val_000000.bin" "$D/fineweb_edu_gpt2/"
@@ -111,7 +119,8 @@ if [ -n "$MC_BUCKET" ]; then
   aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/tokenizer_gpt2/" "$D/tokenizer_gpt2/"
   aws s3 sync --only-show-errors "s3://$MC_BUCKET/data/longdocs_lite_gpt2/" "$D/longdocs_lite_gpt2/"
 fi
-log "data: $(ls "$D"/fineweb_edu_gpt2/finewebedu_train_*.bin | wc -l) FineWeb shards, $(ls "$D"/longdocs_lite_gpt2/*_train_*.bin | wc -l) LongDocs-lite shards"
+[ -n "${E33N_MIX:-}" ] || log "data: $(ls "$D"/fineweb_edu_gpt2/finewebedu_train_*.bin | wc -l) FineWeb shards, $(ls "$D"/longdocs_lite_gpt2/*_train_*.bin | wc -l) LongDocs-lite shards"
+[ -n "${E33N_MIX:-}" ] && E33N_CMD_EXTRA="${E33N_CMD_EXTRA:-} --mix $D/$E33N_MIX"
 
 TRUNK=$(ls -d "$R"/trunk/*/final 2>/dev/null | tail -1)
 if [ -z "$TRUNK" ]; then

@@ -21,7 +21,13 @@ CK="${1:?checkpoint}"; O="${2:?out dir}"; D="${3:?data dir}"; S3D="${4:-}"
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1 \
   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 cd "$(dirname "$0")/../../.." || exit 1
+# cached decoding compiles one attention graph per prompt length per call; past dynamo's limit it falls back to
+# the eager kernel, which ran out of memory at 128k (e37-needles 806b655, 2026-11-14)
+export MC_DYNAMO_CACHE_LIMIT=${MC_DYNAMO_CACHE_LIMIT:-2048}
 P="$O/long_evals"; mkdir -p "$P"
+# E38 (a built data mix): E33N_TOKENIZER = its tokenizer dir, E33N_LONGDOCS = the dir with <source>_val_*.bin,
+# E33N_LONGDOC_ARGS = extra long_doc_loss.py arguments (--sources, --eot, --tokenizer). Defaults: the GPT-2 data.
+TOK="${E33N_TOKENIZER:-$D/tokenizer_gpt2}"; LDD="${E33N_LONGDOCS:-$D/longdocs_lite_gpt2}"
 IFS=, read -ra GL <<< "${CUDA_VISIBLE_DEVICES:-$(seq -s, 0 $(( $(nvidia-smi -L | wc -l) - 1 )))}"
 log() { echo "[e37_evals_long $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$O/events.log"; }
 ALL13="niah_single_1,niah_single_2,niah_single_3,niah_multikey_1,niah_multikey_2,niah_multikey_3,niah_multiquery"
@@ -51,13 +57,13 @@ run_item() {  # GPU ITEM
   case "$kind" in
     ruler) CUDA_VISIBLE_DEVICES=$g PERCEIVER_AR_GEN_CACHE=$cache uv run --with wonderwords python \
              evaluation/run_lsa_suite.py --checkpoint "$CK" \
-             --tokenizer "$D/tokenizer_gpt2" --suite ruler --lengths "$L" --tasks "$tasks" --limit "$LIM" --batch "$B" \
+             --tokenizer "$TOK" --suite ruler --lengths "$L" --tasks "$tasks" --limit "$LIM" --batch "$B" \
              --out "$P/$name.json" > "$P/$name.log" 2>&1 ;;
     longdoc) CUDA_VISIBLE_DEVICES=$g uv run python evaluation/long_doc_loss.py --checkpoint "$CK" \
-             --data "$D/longdocs_lite_gpt2" --lengths "$LD" --rows "$ROWS" --notes_off --open_off --gist_off \
+             --data "$LDD" --lengths "$LD" --rows "$ROWS" --notes_off --open_off --gist_off ${E33N_LONGDOC_ARGS:-} \
              --out "$P/$name.json" > "$P/$name.log" 2>&1 ;;
     core) CUDA_VISIBLE_DEVICES=$g uv run python evaluation/run_lsa_suite.py --checkpoint "$CK" \
-             --tokenizer "$D/tokenizer_gpt2" --suite core --limit "$CLIM" --batch "${E33N_CORE_BATCH:-32}" \
+             --tokenizer "$TOK" --suite core --limit "$CLIM" --batch "${E33N_CORE_BATCH:-32}" \
              --backend "${E33N_CORE_BACKEND:-sdpa}" --out "$P/$name.json" > "$P/$name.log" 2>&1 ;;
   esac
 }

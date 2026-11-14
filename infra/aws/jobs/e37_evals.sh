@@ -17,6 +17,9 @@ export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE
   PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 cd "$(dirname "$0")/../../.." || exit 1
 mkdir -p "$O"
+# E38 (a built data mix): E33N_TOKENIZER = its tokenizer dir, E33N_LONGDOCS = the dir with <source>_val_*.bin,
+# E33N_LONGDOC_ARGS = extra long_doc_loss.py arguments (--sources, --eot, --tokenizer). Defaults: the GPT-2 data.
+TOK="${E33N_TOKENIZER:-$D/tokenizer_gpt2}"; LDD="${E33N_LONGDOCS:-$D/longdocs_lite_gpt2}"
 IFS=, read -ra GL <<< "${CUDA_VISIBLE_DEVICES:-$(seq -s, 0 $(( $(nvidia-smi -L | wc -l) - 1 )))}"
 N=${#GL[@]}
 log() { echo "[e37_evals $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$O/events.log"; }
@@ -34,20 +37,20 @@ RGROUPS=("niah_single_1,niah_multikey_2,niah_multivalue,ruler_cwe,ruler_qa_hotpo
 
 ruler() {  # GPU LENGTH TASKS NAME
   CUDA_VISIBLE_DEVICES=$1 uv run --with wonderwords python evaluation/run_lsa_suite.py --checkpoint "$CK" \
-    --tokenizer "$D/tokenizer_gpt2" --suite ruler --lengths "$2" ${3:+--tasks "$3"} --limit "$LIM" --batch 8 \
+    --tokenizer "$TOK" --suite ruler --lengths "$2" ${3:+--tasks "$3"} --limit "$LIM" --batch 8 \
     --out "$O/ruler_$4.json" > "$O/ruler_$4.log" 2>&1 || log "RULER $4 FAILED (see ruler_$4.log)"
 }
 longdoc() {  # NAME [extra args]
   local name=$1; shift
-  uv run python evaluation/long_doc_loss.py --checkpoint "$CK" --data "$D/longdocs_lite_gpt2" --lengths "$LD" \
-    --rows "$ROWS" --notes_off --open_off --gist_off "$@" --out "$O/$name.json" > "$O/$name.log" 2>&1 \
+  uv run python evaluation/long_doc_loss.py --checkpoint "$CK" --data "$LDD" --lengths "$LD" \
+    --rows "$ROWS" --notes_off --open_off --gist_off ${E33N_LONGDOC_ARGS:-} "$@" --out "$O/$name.json" > "$O/$name.log" 2>&1 \
     || log "$name FAILED (see $name.log)"
 }
 lane0() {
   export CUDA_VISIBLE_DEVICES=${GL[0]}
   longdoc eval_longdoc
   [ "$CONCEPT" = 1 ] && longdoc eval_longdoc_nosum --concept_sum_len 0
-  uv run python evaluation/run_lsa_suite.py --checkpoint "$CK" --tokenizer "$D/tokenizer_gpt2" --suite core \
+  uv run python evaluation/run_lsa_suite.py --checkpoint "$CK" --tokenizer "$TOK" --suite core \
     --limit "$CLIM" --batch "${E33N_CORE_BATCH:-32}" --backend "${E33N_CORE_BACKEND:-sdpa}" --out "$O/core.json" \
     > "$O/eval_core.log" 2>&1 || log "core FAILED (see eval_core.log)"
   ruler "${GL[0]}" 4096 "" 4k

@@ -114,7 +114,7 @@ export interface KvOutCell {
   entries: number; // keys/values per slot
   kv_heads: number;
   head_dim: number;
-  projections: number; // 2 = k, v; 4 = k, k_read, v, v_state (E33)
+  projections: number; // 0 = none (the slot states already are the keys/values, E37's weightless summaries); 2 = k, v; 4 = k, k_read, v, v_state (E33)
   in_norms: number;
   key_norm: boolean;
   layers?: number; // keys/values for this many reader layers (E36: every layer of the frozen reader)

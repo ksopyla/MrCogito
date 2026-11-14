@@ -109,6 +109,21 @@ class ModelArguments:
         default=False,
         metadata={"help": "Apply torch.compile(dynamic=True)."},
     )
+    model_compile: str = field(
+        default="off",
+        metadata={"help": "Compile the whole model: 'off' | 'static' (torch.compile(dynamic=False): fixed row "
+                          "shapes, as in the bin-manifest phases) | 'dynamic' (same as --torch_compile_dynamic)."},
+    )
+    lm_head_tied: bool = field(
+        default=False,
+        metadata={"help": "perceiver_ar: the output layer reuses the input token table through a projection "
+                          "(logits = h·Pᵀ·Eᵀ); the table is stored once. For the Tiny-ML leaderboard's 150M cap."},
+    )
+    concept_compile: bool = field(
+        default=False,
+        metadata={"help": "E37 concept read: compile the grouping of keys into concepts (same labels, a fixed "
+                          "~50 ms less per step at 100M). Sets CONCEPT_COMPILE=1 for nn/concept_memory.py."},
+    )
     objective_variant: str = field(
         default=OBJECTIVE_RECONSTRUCTION,
         metadata={"help": "One of: reconstruction, reconstruction+contrastive, prefix_suffix."},
@@ -706,6 +721,16 @@ class DataTrainingArguments:
 class OptimizerArguments:
     """Optimizer family and Muon-specific fallback parameters."""
 
+    loss_step_token_mean: bool = field(
+        default=False,
+        metadata={
+            "help": "E37 SFT: the next-token CE is the token mean over the whole optimizer step (CE summed over "
+            "the step's target tokens on every process, divided by their count), as torchtitan trains, instead "
+            "of the mean of per-micro-batch means. Matters when rows carry uneven numbers of targets (answer-"
+            "masked rows). z-loss and auxiliary losses keep their weighting. Needs a forward with ce_norm "
+            "(perceiver_ar). Default off: trunk, decay and every earlier run unchanged."
+        },
+    )
     optimizer: str = field(
         default="adam",
         metadata={
@@ -730,6 +755,15 @@ class OptimizerArguments:
     muon_momentum: float = field(
         default=0.95,
         metadata={"help": "Muon only: momentum coefficient for the Muon momentum buffer."},
+    )
+    muon_follow_schedule: bool = field(
+        default=False,
+        metadata={"help": "Muon only: the AdamW fallback LR follows the LR schedule (warm-up, decay). Default off: "
+                          "constant fallback LR, as every Muon run before 2026-11-14."},
+    )
+    muon_decay_1d: bool = field(
+        default=True,
+        metadata={"help": "Muon only: weight decay on 1-D params (norms, biases). False: no decay there, as HF AdamW."},
     )
 
 

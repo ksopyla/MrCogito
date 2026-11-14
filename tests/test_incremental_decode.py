@@ -2,7 +2,8 @@
 
 The cached decoding must write the tokens of the uncached harness loop
 (`evaluation/lm_eval_perceiver_ar.PerceiverARLMEval._model_generate`, one forward over the fixed-length row per token),
-and each step's hidden state must equal that forward's at the same position: full attention, LSA's read (answers that
+and each step's hidden state must equal that forward's at the same position: full attention (with and without
+RoPE on the reading layer), LSA's read (answers that
 cross a block end, so the buckets are rebuilt), the catalogue read (E33t, reuse arm), E33p's notes read (pages rewritten
 as the answer grows) and E37's concept read (with the reasoner and the length scale), with a left-padded row.
 """
@@ -27,7 +28,7 @@ from tests.test_note_open import make as make_notes
 CAT_REUSE = dict(CAT, lm_open_new_per_pass=False)
 DEEP = dict(pre_layers=2, stack_layers=3)
 REASONER = dict(concept_reasoner_layers=1, concept_reasoner_dim=16, concept_reasoner_heads=2)
-ARMS = ["dense", "lsa", "catalogue", "notes", "concept", "concept_reasoner", "concept_scaled"]
+ARMS = ["dense", "dense_rope", "lsa", "catalogue", "notes", "concept", "concept_reasoner", "concept_scaled"]
 
 
 class _Tok:
@@ -42,6 +43,8 @@ def _model(arm, deep=False):
     extra = DEEP if deep else {}
     if arm == "dense":
         return make_lsa(**DENSE, **extra)
+    if arm == "dense_rope":  # E37's fair full-attention control: RoPE on the reading layer too
+        return make_lsa(**dict(DENSE, global_nope=False), **extra)
     if arm == "lsa":
         return make_lsa(**LSA, **extra)
     if arm == "catalogue":
@@ -162,3 +165,84 @@ def test_unsupported_reads_fall_back(which, monkeypatch):
     got = _generate(m, ids, attn, 6, monkeypatch, cached=True)
     want = _generate(m, ids, attn, 6, monkeypatch, cached=False)
     assert torch.equal(got, want)
+
+
+@pytest.mark.parametrize("arm", ARMS)
+def test_read_once_answer_many(arm):
+    """A document read once, then several questions from its snapshot: each answer is the one a fresh prefill over
+    document + question decodes, and asking again from the same snapshot gives the same answer (a question leaves
+    nothing behind). Question + answer cross a block end for LSA (32) and the concept read (16) and stay under the
+    note reads' exact horizon (16)."""
+    m = _model(arm)
+    L0, new, Lb = 150, 6, 208
+    ids, attn = _prompt(L0)
+    torch.manual_seed(11)
+    questions = [torch.randint(3, 80, (2, 5)), torch.randint(3, 80, (2, 9))]
+    buf = torch.zeros(2, Lb, dtype=torch.long)
+    buf[:, :L0] = ids
+    doc = torch.full((2, Lb), -1, dtype=torch.long)
+    doc[:, :L0] = torch.where(attn.bool(), 0, -1)
+
+    want = []
+    for q in questions:  # the reference: the question is part of the prompt the prefill reads
+        n = q.shape[1]
+        b, d = buf.clone(), doc.clone()
+        b[:, L0: L0 + n] = q
+        d[:, L0: L0 + n] = 0
+        out = IncrementalDecoder(m).greedy(b, d, L0 + n, new, eos=0)
+        want.append(out[:, L0 + n:])
+
+    dec = IncrementalDecoder(m)
+    dec.prefill(buf.clone(), doc.clone(), L0)
+    snap = dec.snapshot()
+    got = [dec.ask(snap, q, new, eos=0) for q in questions]
+    again = dec.ask(snap, questions[0], new, eos=0)
+    for g, w in zip(got, want):
+        assert torch.equal(g, w)
+    assert torch.equal(again, got[0])
+    assert not torch.equal(questions[0][:, :5], questions[1][:, :5])  # the two questions differ
+
+
+def test_ask_needs_room_and_respects_the_exact_horizon():
+    m = _model("dense")
+    ids, attn = _prompt(150)
+    buf = torch.zeros(2, 160, dtype=torch.long)
+    buf[:, :150] = ids
+    doc = torch.full((2, 160), -1, dtype=torch.long)
+    doc[:, :150] = torch.where(attn.bool(), 0, -1)
+    dec = IncrementalDecoder(m)
+    dec.prefill(buf, doc, 150)
+    snap = dec.snapshot()
+    with pytest.raises(ValueError):
+        dec.ask(snap, torch.randint(3, 80, (2, 8)), 6, eos=0)  # 14 slots needed, 10 free
+    assert dec.ask(snap, torch.randint(3, 80, (2, 4)), 6, eos=0).shape[1] <= 6
+    notes = _model("notes")
+    d2 = IncrementalDecoder(notes)
+    with pytest.raises(NotImplementedError):
+        d2.ask({}, torch.randint(3, 80, (2, 12)), 6, eos=0)  # 18 > the horizon of 16
+
+
+@pytest.mark.parametrize("arm", ["dense", "lsa", "concept", "catalogue"])
+def test_document_session_answers_as_a_fresh_prompt(arm):
+    """evaluation/doc_session.DocumentSession: one read, two questions, each answer the tokens a fresh cached
+    decoding of document + question writes (the row is one document, no padding)."""
+    from evaluation.doc_session import DocumentSession
+
+    m = _model(arm)
+    ids = _prompt(150)[0][:1]
+    torch.manual_seed(5)
+    qs = [torch.randint(3, 80, (4,)), torch.randint(3, 80, (7,))]
+    s = DocumentSession(m, _Tok(), room=16, pad=16)
+    r = s.read(ids[0])
+    assert r["tokens"] == 150 and r["row"] == 176
+    for q in qs:
+        text, sec, toks = s.ask(q, 6)
+        n = len(q)
+        buf = torch.zeros(1, 176, dtype=torch.long)
+        buf[0, :150], buf[0, 150:150 + n] = ids[0], q
+        doc = torch.full((1, 176), -1, dtype=torch.long)
+        doc[0, :150 + n] = 0
+        want = IncrementalDecoder(m).greedy(buf, doc, 150 + n, 6, eos=0)[0, 150 + n:].tolist()
+        while want and want[-1] == 0:
+            want.pop()
+        assert toks == want and text == _Tok.decode(want) and sec >= 0

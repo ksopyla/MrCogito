@@ -1,8 +1,8 @@
 {
   "schema": "nn-builder/graph",
   "version": 1,
-  "name": "catalogue read 72.7M (30.2M core, E33t)",
-  "description": "The catalogue read: E33t (docs/experiments_specs/ahead/E33t_catalogue_read.md), our fix that keeps the page writer and the notebook but uses LSA's lessons. Pages do not overlap (256 tokens, stride 256). Each page token is filed under exactly one of the page's 32 notes, at most 16 tokens per note (balanced filing). In the reading layer the notes are ONLY an index: a query scores them (best head's cosine), opens up to 128 notes' tokens (≤512), reads them plus 4 learned empty slots and the last 512 tokens; the notes' own values are not read. Each loop round opens notes not opened before. An extra index loss teaches the scores to predict where the read's attention goes. Trained like every arm of the testbed: 1.5B tokens at 4k, then 0.2B at 16k (the decay), same data (FineWeb + LongDocs-lite), seed 1 on AWS. Trained 7 Nov 2026 11:24–16:05 UTC. Result (scored 19:58 UTC against the home seed-42 window and dense controls, preliminary): 75 % of the window-to-dense gap at 16k, 99 % at 64k. Parameters: 72,687,765 in total, 30,246,677 without the word tables (input table 13,493,056 + output layer 28,948,032); the writer and notebook 3,985,856, the empty slots and index temperature 513; the trainer's count and the trained checkpoint's stored weights give the same number. The testbed is called '30M' after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
+  "name": "E33t · catalogue read · 72.7M (30.2M core)",
+  "description": "E33t arm catalogue — catalogue read, 30M testbed. New against e33p_notes_open_30m: pages without overlap; each token filed under one note (≤ 16 per note); the notes are only an index (their values are not read); up to 128 notes' tokens (≤ 512) open per query; a new place each loop pass; 4 learned empty slots; an index loss. Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-07; status done (as of 2026-11-08). Trained 7 Nov 11:24–16:05 UTC (AWS, seed 1). Scored 8 Nov against the seed-1 controls (e33n-lsa-testbed a372da3): 71 % of the window-to-dense gap at 16k (S1, 80 %, missed), 115 % at 64k; LSA port 95 / 153 %. Probe: opens a planted password on pass 1 (94 % at 4k) but rarely returns to it on passes 2–4. Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md. Source: origin/e33n-lsa-testbed @ 47339bf. Not a builder field: Balanced filing, the per-pass exclusion and the index loss have no weights (0-parameter custom cells); the read is drawn as a 1,028-key window. Parameters: 72,687,765 in total, 30,246,677 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm catalogue --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
   "stacks": [
     {
       "id": "main",
@@ -162,7 +162,7 @@
                 "logit_scale": false
               },
               "id": "main.L2.attn",
-              "label": "Catalogue read: notes only choose → open ≤128 notes' tokens (≤512) + 4 empty slots + last 512 tokens · no RoPE"
+              "label": "Catalogue read: notes only choose → open ≤128 notes' tokens (≤512) + 4 empty slots + last 512 tokens · no RoPE · each loop pass opens notes not opened before"
             },
             {
               "type": "custom",
@@ -817,5 +817,205 @@
     "mfu": 0,
     "irregular_ratio": 0,
     "dp_efficiency": 0.95
+  },
+  "derived": {
+    "exported_at": "2026-11-08T19:28:25.723Z",
+    "hash": "nnb1-11b8df787bd67b1ada98782e2639",
+    "row_length": 4096,
+    "params_total": 72687765,
+    "params_by_stack": {
+      "main": 68701909,
+      "pages": 1377792,
+      "notes": 2608064
+    },
+    "train_flops_per_token": 525638651,
+    "cells": {
+      "main.input.emb": {
+        "params": 13493056,
+        "width_in": 0,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.input.pos": {
+        "params": 0,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L0.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L0.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L1.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L1.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L2.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L2.sinks": {
+        "params": 513,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L2.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L3.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L3.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 4
+      },
+      "main.L4.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L4.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L5.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L5.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L6.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L6.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L7.attn": {
+        "params": 737984,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.L7.ffn": {
+        "params": 2544192,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "main.head.lm": {
+        "params": 28948608,
+        "width_in": 576,
+        "width_out": 576,
+        "runs_per_row": 1
+      },
+      "pages.in.proj": {
+        "params": 65792,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.in.pos": {
+        "params": 0,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc0.attn": {
+        "params": 262528,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc0.ffn": {
+        "params": 393472,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc1.attn": {
+        "params": 262528,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "pages.enc1.ffn": {
+        "params": 393472,
+        "width_in": 256,
+        "width_out": 256,
+        "runs_per_row": 1
+      },
+      "notes.init.q": {
+        "params": 49664,
+        "width_in": 0,
+        "width_out": 512,
+        "runs_per_row": 1
+      },
+      "notes.read.attn": {
+        "params": 852864,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 2
+      },
+      "notes.ffn.ffn": {
+        "params": 1573376,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 2
+      },
+      "notes.out.filing": {
+        "params": 0,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 1
+      },
+      "notes.out.kv": {
+        "params": 132160,
+        "width_in": 512,
+        "width_out": 512,
+        "runs_per_row": 1
+      }
+    }
   }
 }

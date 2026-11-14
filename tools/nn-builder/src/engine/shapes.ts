@@ -108,7 +108,7 @@ export function cellTensorSteps(g: Graph, a: Analysis, cellId: string, b: number
       const notes = (seq.pages?.count ?? 1) * (seq.perPage ?? seq.P) * c.entries;
       const L = Math.max(1, c.layers ?? 1);
       const layer = L > 1 ? [dim("layers", L)] : [];
-      push(`${c.projections === 4 ? "4" : "2"} projections → keys / values`, [B, ...pos, dim("entries", c.entries), ...layer, dim("g", c.kv_heads), dim("dh", c.head_dim)]);
+      push(c.projections === 0 ? "no projections: the states are the keys / values" : `${c.projections === 4 ? "4" : "2"} projections → keys / values`, [B, ...pos, dim("entries", c.entries), ...layer, dim("g", c.kv_heads), dim("dh", c.head_dim)]);
       push(L > 1 ? `notes: ready keys / values for each of ${L} reader layers` : "notes: ready keys / values for a reader", [B, dim("notes", notes), ...layer, dim("g", c.kv_heads), dim("dh", c.head_dim)]);
       break;
     }

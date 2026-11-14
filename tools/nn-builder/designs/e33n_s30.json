@@ -1,8 +1,8 @@
 {
   "schema": "nn-builder/graph",
   "version": 1,
-  "name": "e33n s30",
-  "description": "MrCogito E33n s30 as trained (scripts/run_e33n.py --arm e33n --size s30; plan docs/experiments_specs/done_failed/E33n_plan.md). Width 576, 2 pre layers + the reading layer + 5 stack layers, FFN 1472, 9 query heads × 64 with one KV head, local windows 128. GPT-2 vocabulary (50,257), factorised input table e = 256 with the input MLP, untied output layer. Notebook: the page writer reads the token table over 256-token pages (stride 192); 32 notes per page; closed read (a note is readable once its page is complete). Reading layer (L2): last 512 raw tokens + notes, no RoPE; it and the next layer loop 4 rounds with shared weights (round embedding, no feedback). TOP-K READ (not a builder field): each query and head reads only its 64 best-scoring visible notes (lm_read_topk 64); the cut is chosen without gradient. It changes no parameters. The trained kernel still visits every note block, so compute and memory equal the full read's, as shown here; the extra no-gradient pass that finds each query's 64th score (fp32, query chunks of 1,024) is not counted. Trainer count (evaluation/text_checks.count_params): 72,687,252 total, 30,246,164 without the input layer and the output layer.",
+  "name": "E33n · top-64 note read · 72.7M (30.2M core)",
+  "description": "E33n arm e33n — top-64 note read, 30M testbed. New against e33m_plain_30m: E33's notebook on the LSA testbed (GPT-2 vocabulary, natural long text); each query and head reads only its 64 best notes. Protocol: 1.5B FineWeb-Edu tokens in rows of 4,096, then a 0.2B LongDocs-lite decay in rows of 16,384, 64 rows per step (E33p stage 1). Built 2026-11-05; status failed (as of 2026-11-08). Result: 6.1 % of the gap at 16k, the same as the full read; 97 % of the gap is far-copy tokens. Closed at stage 1 (K1). Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md. Source: origin/e33n-lsa-testbed @ 27577bc. Not a builder field: The top-k cut (lm_read_topk 64) is chosen without gradient and has no builder field; compute is drawn as the full read's, which the trained kernel also spends. Parameters: 72,687,252 in total, 30,246,164 without the word tables (input embedding 13,493,056 + output layer 28,948,032); exact against the trainer's own count (evaluation/text_checks.count_params on scripts/run_e33n.py --arm e33n --size s30 (FFN 1472 from fit())). The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention).",
   "stacks": [
     {
       "id": "main",
@@ -799,7 +799,7 @@
     "dp_efficiency": 0.95
   },
   "derived": {
-    "exported_at": "2026-11-05T20:29:12.409Z",
+    "exported_at": "2026-11-08T12:50:54.801Z",
     "hash": "nnb1-108bd156eed1b019e5f7682d22e2",
     "row_length": 4096,
     "params_total": 72687252,

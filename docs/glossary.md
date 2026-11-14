@@ -44,6 +44,11 @@ never bother to use the notebook.**
 | **free-run / generation** | the model writes from its own output. Hard mode; where weak models fall apart. |
 | **warm start** | continuing from an existing checkpoint instead of from scratch. |
 | **pilot / main run** | small cheap version to decide; the full-budget version afterwards. |
+| **data mix `m21mix_v1`** (E38) | the training text for the long 100M runs, built on an AWS machine from public sources only and cut into the SmolLM2 tokenizer's tokens: web pages picked for teaching value, code, math, rewritten encyclopedia text, long documents (books, papers, PDFs, whole code repositories) and a few percent of constructed rows. Three stages by row length: 4k, 16k, 64k tokens. |
+| **multi-hop library** (E38) | a constructed training row: the source paragraphs of many two-step questions shuffled together like shelves of a library, with all the questions and answers at the end, so each answer needs paragraphs thousands of tokens back. Built from 2WikiMultihopQA's training split. |
+| **planted-fact lookup** (E38) | a constructed training row: a stretch of a real book with a handful of invented facts slipped in, asked for at the end. Some questions ask for a fact that was never stated (the right answer says so); some facts are corrected later (the right answer is the latest). The password test's cousin, used for training. |
+| **fast settings (`--fast`)** | the 2026-11-14 training speed switches: the loss computed by one fused routine instead of in chunks (the same number, a third less memory) and the notebook's grouping step compiled (the same groups), with more rows per card. 39–50 % more tokens per second on a home card. |
+| **read once, answer many** | the model reads a long document one time and keeps its working state; each question then costs only the question's and the answer's tokens, not the document again. Same answers as reading document + question from scratch. |
 | **frontier-shaped dense control** | a dense model laid out like current frontier models (MAI-Thinking-1, Gemma): five sliding-window layers (window 512, with position code) for every one full-attention layer (no position code). Proposed 2026-10-30 as the fair competitor: its global layers are exactly what our notebook replaces. |
 
 ---
@@ -72,6 +77,11 @@ never bother to use the notebook.**
 | **RankMe** | how many genuinely different directions the notebook uses (`exp` of the entropy of the singular values) | higher | out of the slot count or width. Near 1 = **collapse**: every page says the same thing. 200 of 2048 = healthy. |
 | **passkey accuracy** | hide a password early in a long text, ask for it at the end | higher | 0.0 means the model cannot retrieve at all. |
 | **RULER / RULER-lite** | a small suite of long-context retrieval tasks: passkey, multi-key lookup, variable tracking, frequent-word counting | higher | |
+| **RULER (13 tasks)** | the full lm-eval version used for the 100M comparison: eight needle-in-a-haystack kinds, variable tracking, common- and frequent-word counting, SQuAD and HotpotQA questions; the model writes the answer, string-matched | higher | share of puzzles solved. 100M models at 16k: 8–21 %. |
+| **BLiMP** | grammar: 67 sets of sentence pairs, one grammatical and one not; right when the model finds the grammatical one more likely | higher | 50 % = guessing. Added 2026-11-12. |
+| **SWDE** | read a real web page and copy one field out of it (e.g. a film's director); the Based paper's recall test, where efficient-attention models fall behind full attention | higher | share of pages answered. Added 2026-11-12. |
+| **BABILong (tasks 1–3)** | one, two or three facts (who went where) scattered through book text at 2k–128k; answer the question about them | higher | share answered. Tests combining facts, where RULER tests finding them. Added 2026-11-12. |
+| **instruction tuning (SFT)** | a short extra training stage on question → answer conversations, with loss only on the answers, so the model learns the answer format | — | E37's run: about 200M tokens of smol-smoltalk, ~6 % of pretraining. |
 | **STS-B (zero-shot)** | do two sentences the model considers similar match human similarity ratings — our semantic-quality reference | higher | 0.714 is our best from-scratch result. |
 | **distinct-1** | share of the words the model generates that are different from each other — is it saying new things? | higher | our gate has been ≥0.20. Below that it is looping. |
 | **REP-3** | share of 3-word sequences it has already said — is it repeating itself? | lower | our gate has been ≤0.60. Quoted next to distinct-1, so a pair like `0.162/0.686` means "not diverse enough and repeating too much". |

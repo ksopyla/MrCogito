@@ -7,6 +7,7 @@ a batch). Weights in bf16 (the trainer evaluated fp32 weights under bf16 autocas
 Results for several checkpoints merge into --out under --name.
 Usage: uv run python evaluation/val_loss.py --checkpoint RUN/decay/.../final --name decay_final \
          --data DATA (fineweb_edu_gpt2/, longdocs_lite_gpt2/) --out R/eval_val.json [--no_longdocs]
+       E37 SFT: add --sft_manifest MIX/manifest_sft.json (its eval rows, loss on answer tokens only) [--sft_only]
 """
 from __future__ import annotations
 
@@ -37,7 +38,8 @@ def val_loss(model, ds, batch: int, device: str = "cuda") -> dict:
         items = [ds[j] for j in range(i, min(len(ds), i + batch))]
         ids = torch.stack([x["input_ids"] for x in items]).to(device)
         doc = torch.stack([x["doc_ids"] for x in items]).to(device)
-        labels = ids.clone()
+        # rows of an answer-masked manifest (E37 SFT) carry their own labels: -100 off the answers
+        labels = torch.stack([x["labels"] for x in items]).to(device) if "labels" in items[0] else ids.clone()
         labels[:, 1:] = labels[:, 1:].masked_fill(doc[:, 1:] != doc[:, :-1], -100)
         _, per, valid = model(input_ids=ids, labels=labels, doc_ids=doc, return_per_token_loss=True)
         s, c = float(per.float()[valid].sum()), int(valid.sum())
@@ -55,6 +57,8 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--no_longdocs", action="store_true", help="FineWeb-Edu only (a trunk checkpoint)")
     ap.add_argument("--backend", default="flex")
+    ap.add_argument("--sft_manifest", default="", help="E37 SFT: also score this manifest's eval rows (answer tokens)")
+    ap.add_argument("--sft_only", action="store_true", help="with --sft_manifest: skip the FineWeb / LongDocs sets")
     a = ap.parse_args()
     sys.path.insert(0, str(ROOT))
     from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval
@@ -64,11 +68,16 @@ def main() -> None:
     out = Path(a.out)
     man = run.manifests(Path(a.data), out.parent / "eval_work", "m100")
     model = load_perceiver_ar_for_eval(a.checkpoint, attn_backend=a.backend)
-    _, fw_val, _ = bins.load_bin_manifest(str(man["trunk"]))
-    r = {"checkpoint": a.checkpoint, "fineweb_val_4k": val_loss(model, fw_val, 4)}
-    if not a.no_longdocs:
+    r = {"checkpoint": a.checkpoint}
+    if not a.sft_only:
+        _, fw_val, _ = bins.load_bin_manifest(str(man["trunk"]))
+        r["fineweb_val_4k"] = val_loss(model, fw_val, 4)
+    if not a.no_longdocs and not a.sft_only:
         _, ld_val, _ = bins.load_bin_manifest(str(man["decay"]))
         r["longdocs_val_16k"] = val_loss(model, ld_val, 1)
+    if a.sft_manifest:  # held-out instruction loss: smol-smoltalk test conversations, answer tokens only
+        _, sft_val, m = bins.load_bin_manifest(a.sft_manifest)
+        r[f"sft_test_{m['seq_len'] // 1024}k"] = val_loss(model, sft_val, 1)
     res = json.loads(out.read_text()) if out.exists() else {
         "note": "fineweb: the trunk manifest's eval rows (256 at 4k, seed 43); longdocs: the decay manifest's eval "
                 "rows (16 per source at 16k, seed 1043); hf_eval_loss as our trainer's; evaluation/val_loss.py"}

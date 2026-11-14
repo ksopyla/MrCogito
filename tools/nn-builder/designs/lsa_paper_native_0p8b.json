@@ -1,7 +1,7 @@
 {
   "schema": "nn-builder/graph",
   "version": 1,
-  "name": "LSA paper native 752M (0.50B core)",
+  "name": "LSA · LSA as published (Qwen3.5-0.8B) · 752.4M (498.1M core)",
   "description": "LSA as published, native version (Kubicek et al., arXiv 2610.42147, 30 Oct 2026; code github.com/Prefrontal-AI/latent-sparse-attention, native config default flavor Qwen3.5-0.8B, text only). 24 layers, width 1024: three Gated DeltaNet layers then one attention layer, six times. Only the attention layers use the LSA read (window 512, 4 sinks, buckets of ~8 inside 512-key blocks, top 1,024 keys in the code default; the paper reports 2,048–4,096 at long lengths). No notebook, no loop. Trained on 100B FineWeb-Edu tokens at 4k, then a 12B-token decay at 128k. Result in the paper: matches full attention at 128k (validation loss 1.085 = 1.085; RULER 32.2 vs 34.7). Dimensions from Qwen/Qwen3.5-0.8B config.json; the multi-token-prediction layer and vision tower are left out. We never trained this model. Parameters: 752,393,024 (text model, tied output), 498,113,344 without the word table (254,279,680). Check against the Hub: Qwen/Qwen3.5-0.8B lists 873.4M = this + the vision tower 100,592,896 + the prediction layer 20,452,864 (873,438,784; the safetensors index's 1,746,882,752 bytes match once the 18 linear layers' A_log and norm weights, stored in float32, are counted at 4 bytes).",
   "stacks": [
     {
@@ -251,5 +251,95 @@
     "mfu": 0,
     "irregular_ratio": 0,
     "dp_efficiency": 0.95
+  },
+  "derived": {
+    "exported_at": "2026-11-08T12:47:30.285Z",
+    "hash": "nnb1-18ac52290ef631130c9269ceaf17",
+    "row_length": 4096,
+    "params_total": 752393024,
+    "params_by_stack": {
+      "main": 752393024
+    },
+    "train_flops_per_token": 4830563112,
+    "cells": {
+      "main.input.emb": {
+        "params": 254279680,
+        "width_in": 0,
+        "width_out": 1024,
+        "runs_per_row": 1
+      },
+      "main.input.pos": {
+        "params": 0,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 1
+      },
+      "main.L0.gdn": {
+        "params": 63265728,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.L0.ffn": {
+        "params": 66066432,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.L1.gdn": {
+        "params": 63265728,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.L1.ffn": {
+        "params": 66066432,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.L2.gdn": {
+        "params": 63265728,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.L2.ffn": {
+        "params": 66066432,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.L3.index": {
+        "params": 0,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.L3.attn": {
+        "params": 31466496,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.L3.gate": {
+        "params": 12582912,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.L3.ffn": {
+        "params": 66066432,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 6
+      },
+      "main.head.lm": {
+        "params": 1024,
+        "width_in": 1024,
+        "width_out": 1024,
+        "runs_per_row": 1
+      }
+    }
   }
 }

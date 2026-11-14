@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-10-01 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-11-14 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,15 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-14 — E38, two 100M models on a modern data mix (approved by the author, in build).** The two best
+  reads of E37 (concept memory `e37a`, the LSA port), unchanged, on `m21mix_v1`: the SmolLM2 tokenizer, 11.5B tokens
+  in three length stages (8.0B at 4k web-heavy with code, math and rewritten text; 3.0B at 16k with 60 % long
+  documents; 0.5B at 64k), and 9–15 % rows whose answer sits thousands of tokens back (multi-hop libraries from
+  2WikiMultihopQA, planted-fact lookups in real books). Every source is public and built on an AWS node, no laptop
+  step. Pass marks in bits per byte against the E37 models on the same documents. Engineering pass the same day
+  (branch `eng-100m`, CHANGELOG 2026-11-14): cache, tuning and architecture branches merged; `--fast` trains the
+  100M models 39–50 % faster on a home card; a document is read once and questions are answered from its cache.
+  Spec [E38](../experiments_specs/ahead/E38_long_budget_mix.md).
 - **2026-11-12 — E33t, the catalogue read: stages A–D done.** The notes only
   index the text (never read), balanced filing, an index loss, the budget filled by tokens. Stage A: letting loop
   passes revisit notes (`catalogue_reuse`) lifts 71 → **91 %** of the window→dense gap at 16k (LSA port 95 %), level
