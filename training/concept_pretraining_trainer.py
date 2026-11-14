@@ -39,6 +39,8 @@ class PerceiverDenoiseTrainer(Trainer):
         concept_memory_lr: Optional[float] = None,
         muon_adamw_lr: float = 2e-3,
         muon_momentum: float = 0.95,
+        muon_follow_schedule: bool = False,
+        muon_decay_1d: bool = True,
         batch_packing_mode: str = "none",
         train_lengths=None,
         length_group_mega_batch_mult: int = 20,
@@ -66,6 +68,8 @@ class PerceiverDenoiseTrainer(Trainer):
         self.concept_memory_lr = concept_memory_lr
         self.muon_adamw_lr = muon_adamw_lr
         self.muon_momentum = muon_momentum
+        self.muon_follow_schedule = bool(muon_follow_schedule)
+        self.muon_decay_1d = bool(muon_decay_1d)
         self.batch_packing_mode = batch_packing_mode
         self.train_lengths = train_lengths
         self.length_group_mega_batch_mult = length_group_mega_batch_mult
@@ -208,6 +212,8 @@ class PerceiverDenoiseTrainer(Trainer):
                 momentum=self.muon_momentum,
                 adamw_lr=self.muon_adamw_lr,
                 weight_decay=self.args.weight_decay,
+                follow_schedule=self.muon_follow_schedule,
+                decay_1d=self.muon_decay_1d,
             )
             return self.optimizer
         if self.concept_memory_lr is not None:

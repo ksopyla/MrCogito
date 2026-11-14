@@ -532,6 +532,8 @@ def main():
         concept_memory_lr=optim_args.concept_memory_lr,
         muon_adamw_lr=optim_args.muon_adamw_lr,
         muon_momentum=optim_args.muon_momentum,
+        muon_follow_schedule=optim_args.muon_follow_schedule,
+        muon_decay_1d=optim_args.muon_decay_1d,
         batch_packing_mode=data_args.batch_packing_mode,
         train_lengths=train_lengths,
         length_group_mega_batch_mult=data_args.length_group_mega_batch_mult,

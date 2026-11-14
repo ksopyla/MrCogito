@@ -222,3 +222,38 @@ def test_differential_concept_lr_rejects_muon(tmp_path):
     trainer = _backbone_trainer(tmp_path, optimizer_choice="muon")
     with pytest.raises(ValueError, match="only supported with optimizer='adam'"):
         trainer.create_optimizer()
+
+
+
+def test_muon_fallback_follows_schedule_and_skips_1d_decay_when_asked():
+    """follow_schedule: the AdamW fallback LR is adamw_lr x lr / initial_lr; decay_1d False: no decay on 1-D params.
+    The defaults keep the earlier behaviour (constant fallback LR, decay everywhere)."""
+    def run(**kw):
+        torch.manual_seed(0)
+        emb = torch.nn.Parameter(torch.randn(400, 4))      # aspect 100: AdamW fallback
+        gain = torch.nn.Parameter(torch.ones(4))           # 1-D: AdamW fallback
+        opt = Muon([emb, gain], lr=0.02, adamw_lr=1e-2, weight_decay=0.1, **kw)
+        sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda step: 0.0)   # LR 0: a schedule at its warm-up start
+        e0, g0 = emb.detach().clone(), gain.detach().clone()
+        emb.grad, gain.grad = torch.ones_like(emb), torch.zeros_like(gain)
+        opt.step()
+        return (emb - e0).abs().max().item(), (gain - g0).abs().max().item(), sched
+    moved_e, moved_g, _ = run()
+    assert moved_e > 0 and moved_g > 0                      # old behaviour: constant fallback LR, gains decayed
+    moved_e, moved_g, _ = run(follow_schedule=True, decay_1d=False)
+    assert moved_e == 0 and moved_g == 0                    # LR 0 reaches the fallback; gains are not decayed
+
+
+def test_run_e33n_muon_flags(tmp_path):
+    import pytest as _pt
+
+    from scripts.run_e33n import train_cmd
+
+    (tmp_path / "longdocs_lite_gpt2").mkdir()
+    cmd = train_cmd("dense", "tiny", "trunk", data=tmp_path, out=tmp_path / "o", optimizer="muon", lr=0.01, warmup=7)
+    v = lambda f: cmd[cmd.index(f) + 1]
+    assert v("--optimizer") == "muon" and v("--learning_rate") == "0.01" and v("--muon_adamw_lr") == "0.001"
+    assert v("--muon_follow_schedule") == "True" and v("--muon_decay_1d") == "False" and v("--warmup_steps") == "7"
+    with _pt.raises(ValueError):
+        train_cmd("dense", "tiny", "trunk", data=tmp_path, out=tmp_path / "o", optimizer="muon")
+    assert "--optimizer" not in train_cmd("dense", "tiny", "trunk", data=tmp_path, out=tmp_path / "o")

@@ -746,6 +746,15 @@ class OptimizerArguments:
         default=0.95,
         metadata={"help": "Muon only: momentum coefficient for the Muon momentum buffer."},
     )
+    muon_follow_schedule: bool = field(
+        default=False,
+        metadata={"help": "Muon only: the AdamW fallback LR follows the LR schedule (warm-up, decay). Default off: "
+                          "constant fallback LR, as every Muon run before 2026-11-14."},
+    )
+    muon_decay_1d: bool = field(
+        default=True,
+        metadata={"help": "Muon only: weight decay on 1-D params (norms, biases). False: no decay there, as HF AdamW."},
+    )
 
 
 def validate_training_configuration(

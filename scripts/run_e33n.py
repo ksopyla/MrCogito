@@ -365,7 +365,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               flow: bool = False, gpus: int = 1, sft_manifest: str | None = None,
               grad_ckpt: bool = False, compile: str = "off", liger: bool = False, rows: int | None = None,
               workers: int = 6, fast: bool = False, mix: str | None = None,
-              save_every: int | None = None, mix_lenient: bool = False) -> list[str]:
+              save_every: int | None = None, mix_lenient: bool = False, optimizer: str = "adam",
+              muon_adamw_lr: float | None = None, warmup: int | None = None) -> list[str]:
     liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
@@ -415,9 +416,11 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     for k, v in args.items():
         cmd += [f"--{k}", str(v)]
     if phase == "trunk":
-        sched = ["--lr_scheduler_type", "constant_with_warmup", "--warmup_steps", str(max(1, int(0.01 * steps)))]
+        sched = ["--lr_scheduler_type", "constant_with_warmup",
+                 "--warmup_steps", str(warmup if warmup is not None else max(1, int(0.01 * steps)))]
     else:  # decay: peak → 10 % of it; long: 10 % → 1 % of the peak (min_lr_ratio is relative to its own start)
-        sched = ["--lr_scheduler_type", "warmup_stable_decay", "--warmup_steps", str(max(1, int(0.03 * steps))),
+        sched = ["--lr_scheduler_type", "warmup_stable_decay",
+                 "--warmup_steps", str(warmup if warmup is not None else max(1, int(0.03 * steps))),
                  "--lr_scheduler_kwargs", json.dumps({"num_decay_steps": int(0.97 * steps), "decay_type": "1-sqrt",
                                                       "min_lr_ratio": 0.1})]
     # --save_every N: at most N steps between checkpoints, and never fewer than ten checkpoints in a phase
@@ -438,6 +441,14 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         "--overwrite_output_dir", "True", "--disable_tqdm", "True", "--dataloader_num_workers", str(workers),
         "--prediction_loss_only", "True", "--chunked_ce_block_size", "2048",
     ]
+    if optimizer == "muon":
+        # Muon on the matrices at --lr (no default: the size's AdamW rate is not a Muon rate); the AdamW fallback
+        # (word tables, output layer, norms) at muon_adamw_lr, default the size's AdamW peak, following the schedule;
+        # no weight decay on 1-D params, as HF AdamW groups them
+        if lr is None or lr == z["lr"]:
+            raise ValueError("--optimizer muon needs its own --lr (e.g. 0.01-0.02)")
+        cmd += ["--optimizer", "muon", "--muon_adamw_lr", str(muon_adamw_lr or z["lr"]),
+                "--muon_follow_schedule", "True", "--muon_decay_1d", "False"]
     if compile != "off":  # the whole model through torch.compile (the attention kernel is compiled either way)
         cmd += ["--model_compile", compile]
     if fast:  # the 2026-11-14 speed settings: Liger's fused loss (above) and the compiled concept grouping
@@ -492,6 +503,10 @@ def main() -> None:
     c.add_argument("--compile", default="off", choices=("off", "static", "dynamic"),
                    help="torch.compile the whole model (static: fixed row shapes)")
     c.add_argument("--liger", action="store_true", help="Liger's fused linear + cross-entropy for the loss")
+    c.add_argument("--optimizer", default="adam", choices=("adam", "muon"),
+                   help="muon: nn.muon.Muon on the matrices at --lr, AdamW on the rest at --muon_adamw_lr")
+    c.add_argument("--muon_adamw_lr", type=float, help="Muon's AdamW fallback LR (default: the size's AdamW peak)")
+    c.add_argument("--warmup", type=int, help="warm-up steps instead of 1 %% (trunk) / 3 %% (later phases) of the phase")
     c.add_argument("--mix_lenient", action="store_true",
                    help="small check builds: leave out a source with no row at a phase's length and share a stream "
                         "source that has too few shards to split, instead of stopping")
@@ -537,7 +552,8 @@ def main() -> None:
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
                     local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
                     grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
-                    fast=a.fast, mix=a.mix, save_every=a.save_every, mix_lenient=a.mix_lenient)
+                    fast=a.fast, mix=a.mix, save_every=a.save_every, mix_lenient=a.mix_lenient,
+                    optimizer=a.optimizer, muon_adamw_lr=a.muon_adamw_lr, warmup=a.warmup)
     print(shlex.join(cmd))
 
 
