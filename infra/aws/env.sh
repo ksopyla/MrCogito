@@ -4,7 +4,7 @@
 # AWS_REGION=us-east-2 (after `AWS_REGION=us-east-2 bash infra/aws/setup.sh` once); the bucket stays in us-east-1.
 export AWS_PROFILE="${AWS_PROFILE:-m21-research}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
-export MC_REGIONS="${MC_REGIONS:-us-east-1 us-east-2}"    # status.sh / terminate.sh look in all of these
+export MC_REGIONS="${MC_REGIONS:-us-east-1 us-east-2 us-west-2}"    # status.sh / terminate.sh look in all of these
 export MC_BUCKET_REGION="us-east-1"
 export AWS_PAGER=""
 
