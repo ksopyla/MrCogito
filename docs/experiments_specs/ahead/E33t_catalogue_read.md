@@ -516,3 +516,66 @@ at 16k in E33p) show the marks are reachable at this size and data.
   100M is not yet checked (30M at 64k with recomputation: n4 15.6 GB, the LSA port 6.6 GB). Handed to the E37 session
   2026-11-13 10:47 UTC, on a 4 × L40S spot node per model, hard stop 8 h; estimate about 1–1.5 h of training and
   about 1.5 h of tests per model, about $50–80 in total.
+  **Result (run by the E37 session; read here 2026-11-14 ~07:00 UTC from its E37 spec entries, b10f0012 and 037ee1fc
+  on `arch-10m`; files `long/`, `long_evals/`, `eval_*_long.json` in each run's S3 folder):**
+  - *Runs:* n4 on `e37-long-catalogue-reuse-n4` (i-07e15db9d75d8c8ac): training 19:16–20:54, tests 20:54–21:37 UTC
+    Nov 13, about 2.4 h, about $18; ~22 GB of 46 GB a card, ~32 s a step. LSA port on `e37-long-lsa`
+    (i-0806f36773e567902): training 21:57–22:58, tests 22:58–23:33 UTC, about 1.7 h, about $13; ~12 GB a card, ~19 s
+    a step. So at 64k n4 trains at about 0.59 × the LSA port's speed (16k: 0.82 ×). Both nodes shut down by themselves.
+  - *Loss on positions ≥ 2k* (5 sources, 4 at 128k), stage D → D+:
+
+    | model | 4k | 16k | 32k | 64k | 128k | positions < 512 at 16k |
+    |---|---|---|---|---|---|---|
+    | n4 | 2.342 → 2.339 | 2.189 → 2.187 | 2.275 → 2.264 | 2.270 → **2.232** | 2.058 → **1.943** | 2.400 → 2.399 |
+    | LSA port | 2.322 → 2.320 | 2.169 → 2.166 | 2.254 → 2.244 | 2.245 → **2.212** | 1.994 → **1.923** | 2.384 → 2.382 |
+    | n4 − LSA port | +0.019 | +0.021 | +0.020 | +0.020 | +0.020 | +0.017 |
+
+    n4's notebook off is unchanged by the stage (−0.002 to −0.005), so its gain is the catalogue read's. E37a 1.990
+    and the original LSA 1.925 at 128k (stage B, no 64k stage).
+  - *RULER* (mean of 13 tasks, 4k / 8k / 16k / 32k): n4 0.231 / 0.197 / 0.183 / 0.125 → 0.224 / 0.191 / 0.180 /
+    **0.158** (32k essay number 0.08 → 0.19, UUID 0.07 → 0.21; single needle 0.99 at every length); LSA port 0.255 /
+    0.241 / 0.209 / 0.174 → 0.247 / 0.233 / 0.203 / 0.172 (essay number 0.88 / 0.92 / 0.84 / 0.55 → 0.81 / 0.82 / 0.70 /
+    0.38; UUID at 32k 0.20 → 0.28). Core: n4 41.6 → 41.6, LSA port 41.6 → 41.4. RULER here uses the cached decoding;
+    on the same model at 4k it matches the old loop on 10 of 13 tasks for n4 and 7 of 13 for the LSA port (the rest
+    differ by one or two documents, bf16 near-ties), so mean differences under ~0.005 are not results.
+  - **Reading:** at 100M the 64k stage does what it did at 30M on long text: nothing up to 16k, −0.04 nats at 64k and
+    −0.12 at 128k for n4 (−0.03 / −0.07 for the LSA port). n4's 128k gap to the LSA port shrinks from 0.064 to 0.020
+    nats, the same 0.02 it trails by at every other length and on nearby text, so what remains is the model's general
+    quality, not the read. Unlike 30M, n4 does not pull ahead: the LSA port stays 0.02 nats better at every length and
+    better on the needle puzzles (0.172 vs 0.158 at 32k), though it gives up part of its essay-number needle.
+- **The full-budget controls and the criteria at 100M** (window and dense trained by the E37 session on the same
+  protocol, seed 42, 4 × L40S spot: dense 22:14–08:03 UTC Nov 12–13, window 08:34–18:56 UTC Nov 13; shares from its
+  `full_gap.py` with the same pooling, E37 spec fb95eb14):
+  - Loss on positions ≥ 2k at 4k / 16k / 32k / 64k / 128k: window 2.461 / 2.351 / 2.449 / 2.397 / 2.086, dense 2.319 /
+    2.163 / 2.256 / 2.332 / 2.194 (dense reads with no position code and falls below the window past 32k, so it is no
+    ceiling there). Near text (< 512 at 16k): window 2.367, dense 2.394. Core: window 42.1, dense 42.2. RULER at 4k /
+    16k: window 0.047 / 0.011, dense 0.210 / 0.175.
+  - Share of the window → dense gap at 4k / 16k / 32k: **n4 84 / 86 / 90 %**, LSA port 98 / 97 / 101, E37a 99 / 99 /
+    101, notes-open 58 / 37 / 29, original LSA 125 / 115 / 121. Gain over the window at 64k / 128k (nats): n4 0.127 /
+    0.027 (after stage D+ 0.165 / 0.143, against a window control without a 64k stage; at 30M the window gained
+    0.014–0.024 from it), LSA port 0.153 / 0.092 (after D+ 0.185 / 0.163), E37a 0.147 / 0.096.
+  - **S1 passes** (86 % ≥ 80 %), 11–13 points below the LSA port and E37a. **S2:** as a share undefined past 32k (no
+    ceiling); in nats n4's gain over the window is 0.162 / 0.174 / 0.127 / 0.027 at 16k / 32k / 64k / 128k: it holds
+    to 32k and fades past it on 16k training, and holds to 128k after the 64k stage (as at 30M). **S5 misses** (0.82 ×
+    the LSA port's speed at 16k, about 0.59 × at 64k). **S6:** core holds (41.6 vs the window's 42.1, within 1 point);
+    nearby text misses (+0.033 nats against the 0.01 bar; the LSA port +0.017 and E37a +0.021 miss it too); the 4k
+    held-out part is not scored (no matching file for the window). S3 and S4 were not measured at 100M.
+- **Needle puzzles with cached decoding (E37 session, branch `e37-needles`; stage-D weights; all 100 documents a
+  task; `eval_ruler_needles.json` in each run folder, read here 2026-11-14 ~06:30 UTC):** RULER mean at 64k: LSA port
+  0.139, **n4 0.099**, E37a 0.083, dense 0.073 (the earlier first-25-documents pass: 0.151 / 0.101 / 0.088 / —).
+  At 128k: LSA port 0.128, dense 0.083; n4, E37a and the original LSA still running. n4 at 64k: single needle 0.97,
+  essay number 0.03, UUID 0.01, multi-key-1 0.12; at 4k cached 0.228 (old loop 0.231).
+- **Capability checks, core package (run by the capability session; finished 2026-11-14 02:29:43 UTC; full verdict,
+  per-task table and ledger on branch `e33t-capability`, commit 24b163c3, not yet merged here):** the no-harm check
+  against the champion E31 fails — 9 cells kept, 50 lost on 10 tasks, 14 not run — and both targets are missed
+  (`C1.lookup-16k` not run after its 2k stage stayed at chance; `C4.chain4-1k` 23–25 % first letter, chance 25 %, the
+  champion 68 %). The read learns tasks whose book fits its 256-token raw window (15 of 15 runs at 128–256 tokens),
+  seldom learns to open a page from random weights (24 of 56 first stages from 512 tokens up), and what it learned at
+  1k does not carry to 2k (2-hop path 98 → 7–64 %, 3-hop 97–99 → 3–19 %; the champion holds 79–95 % to 16k). The
+  startup issue (`catalogue-startup`) stays open, so these cells read "lost", never "cannot".
+- **Overall verdict (2026-11-14 ~07:00 UTC):** the catalogue read is a clear step up from the read it replaced (at
+  100M 86 % of the gap against notes-open's 37 %, needle puzzles 3.5–10 × higher) and at 30M it matched the LSA
+  port and led it past 128k. At 100M it passes S1 but stays 0.02 nats behind the LSA port (and E37a) at every length,
+  also after the 64k stage, trails the LSA port on the needle puzzles at every length, trains slower (S5 misses), and
+  fails the capability no-harm check. No E33t arm beats the LSA port at 100M, so the LSA port and E37a remain the
+  leads; closing this spec (and moving it to its lifecycle folder) is open for the author.
