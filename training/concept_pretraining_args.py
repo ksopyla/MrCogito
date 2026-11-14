@@ -114,6 +114,11 @@ class ModelArguments:
         metadata={"help": "Compile the whole model: 'off' | 'static' (torch.compile(dynamic=False): fixed row "
                           "shapes, as in the bin-manifest phases) | 'dynamic' (same as --torch_compile_dynamic)."},
     )
+    lm_head_tied: bool = field(
+        default=False,
+        metadata={"help": "perceiver_ar: the output layer reuses the input token table through a projection "
+                          "(logits = h·Pᵀ·Eᵀ); the table is stored once. For the Tiny-ML leaderboard's 150M cap."},
+    )
     concept_compile: bool = field(
         default=False,
         metadata={"help": "E37 concept read: compile the grouping of keys into concepts (same labels, a fixed "

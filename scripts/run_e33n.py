@@ -70,6 +70,11 @@ SIZES = {
     "tiny": dict(hidden=128,  e=64,  pre=1, stack=2, target=8e6,   trunk=2e6,   decay=1e6,   long=0.5e6, rows=4,
                  lr=1.0e-3),
 }
+# Tiny-ML leaderboard sizes (2026-11-14, author: "SmolLM2, bigger body"): the output reuses the input token table
+# (lm_head_tied), the SmolLM2 vocabulary is counted, and the body grows to fill the board's 150M total-parameter cap
+# with a margin. Sized by size_report() below; data comes from a built mix (--mix), so the token budgets are the mix's.
+SIZES["m120t"] = dict(hidden=896, e=384, pre=3, stack=9, target=None, ffn=2816, trunk=8.0e9, decay=3.0e9, long=0.5e9,
+                      rows=128, lr=6.0e-4, tied=True, vocab=49152)
 
 _LOOP = {"message_loop_rounds": 4, "message_loop_exit_aux": 0.0}  # loop span 1 is the default
 _WRITER = {
@@ -153,6 +158,8 @@ def model_args(arm: str, size: str, ffn: int | None = None) -> dict:
         "logit_softcap": 30.0, "z_loss": 1e-4,
     }
     a.update(ARMS[arm])
+    if z.get("tied"):
+        a["lm_head_tied"] = "true"
     if size == "tiny" and "lm_latents" in a:
         a.update(TINY_WRITER)
         if "lm_read_topk" in a:
@@ -168,7 +175,7 @@ def model_args(arm: str, size: str, ffn: int | None = None) -> dict:
     return a
 
 
-def count(args: dict, non_embedding: bool = True) -> int:
+def count(args: dict, non_embedding: bool = True, vocab: int = VOCAB) -> int:
     """Trainable parameters through the trainer's own factory (meta device). Sizes are named by the NON-embedding
     count (Kaplan et al. 2020's convention): the GPT-2 vocabulary puts ~V·(e + H) parameters in the input table and
     the untied output layer (29M + 13M at width 576), which would otherwise be most of a "30M" model."""
@@ -181,7 +188,7 @@ def count(args: dict, non_embedding: bool = True) -> int:
     fields = set(ModelArguments.__dataclass_fields__)
     ma = ModelArguments(**{k: v for k, v in args.items() if k in fields})
     ma.attn_backend, ma.use_liger = "sdpa", False
-    tok = type("T", (), {"pad_token_id": EOT, "bos_token_id": EOT, "eos_token_id": EOT, "__len__": lambda self: VOCAB})()
+    tok = type("T", (), {"pad_token_id": EOT, "bos_token_id": EOT, "eos_token_id": EOT, "__len__": lambda self: vocab})()
     with torch.device("meta"):
         model, _, _ = _build_perceiver_ar_model(tok, ma, SimpleNamespace(max_seq_length=4096, tokenizer_name="gpt2"))
     skip = ("embed.", "lm_head.") if non_embedding else ()
@@ -190,8 +197,12 @@ def count(args: dict, non_embedding: bool = True) -> int:
 
 def fit(arm: str, size: str) -> tuple[dict, int]:
     """FFN width (multiple of 64) bringing the WINDOW arm's non-embedding count closest to the target; every arm of a
-    size uses that width, so arms differ only in the reading layer (the window arm carries the writer too)."""
+    size uses that width, so arms differ only in the reading layer (the window arm carries the writer too). A size
+    with a fixed "ffn" (the leaderboard sizes) uses it as given."""
     z = SIZES[size]
+    if z.get("ffn"):
+        args = model_args(arm, size, int(z["ffn"]))
+        return args, count(args, vocab=int(z.get("vocab", VOCAB)))
     lo, hi, best = 64, z["hidden"] * 12, None
     while lo <= hi:
         mid = max(64, round((lo + hi) / 2 / 64) * 64)
@@ -389,6 +400,12 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
                 raise ValueError(f"mix {mix} has no phase {phase!r}")
             tokenizer = str(Path(mix) / mx.get("tokenizer", "tokenizer"))
             tokens = tokens or float(mx["phases"][phase]["tokens"])
+            if z.get("vocab") and int(mx.get("vocab_size", 0)) > int(z["vocab"]):
+                # a leaderboard size is sized for its vocabulary; a larger one would cross the 150M cap
+                raise ValueError(f"size {size} is sized for a {z['vocab']}-token vocabulary; mix {mix} has "
+                                 f"{mx['vocab_size']}")
+        elif z.get("tied"):
+            raise ValueError(f"size {size} trains on a built data mix (--mix): it is sized for its tokenizer")
         else:
             man = manifests(data, out, size)
         seq = json.loads(man[phase].read_text())["seq_len"]
@@ -480,6 +497,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="what", required=True)
     sub.add_parser("params")
+    sub.add_parser("sizes", help="total parameters per arm for the Tiny-ML leaderboard sizes")
     mi = sub.add_parser("mixinfo", help="what a built mix can feed each phase (reads DIR/mix.json only)")
     mi.add_argument("--mix", required=True)
     c = sub.add_parser("cmd")
@@ -541,6 +559,15 @@ def main() -> None:
         return
     if a.what == "cmd" and a.phase == "sft" and not (a.lr and a.init and a.sft_manifest):
         ap.error("--phase sft needs --lr (the pre-flight's pick), --init (a decay's final folder) and --sft_manifest")
+    if a.what == "sizes":   # total parameters per arm for the leaderboard sizes (the board counts everything, once)
+        for size in [k for k, z in SIZES.items() if z.get("tied")]:
+            V = int(SIZES[size].get("vocab", VOCAB))
+            for arm in ("e37a", "lsa", "catalogue_reuse_n4", "dense_rope", "window"):
+                args, n = fit(arm, size)
+                tot = count(args, non_embedding=False, vocab=V)
+                print(f"{size} {arm:20} body {n / 1e6:7.2f}M  total {tot / 1e6:7.2f}M  ffn {args['intermediate_size']}"
+                      f"  {'OK' if tot < 150e6 else 'OVER 150M'}")
+        return
     if a.what == "params":
         for size in ("s30", "m100", "l300"):
             for arm in ARMS:

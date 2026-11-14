@@ -6,7 +6,9 @@ import json
 import numpy as np
 
 from data.bin_token_dataset import load_bin_manifest, write_shard
-from scripts.run_e33n import mix_manifests, train_cmd
+import pytest
+
+from scripts.run_e33n import SIZES, count, fit, mix_manifests, train_cmd
 
 
 def _mix(tmp_path, eot=0):
@@ -104,3 +106,24 @@ def test_lenient_mode_for_small_builds(tmp_path):
     man = {k: json.loads(p.read_text()) for k, p in paths.items()}
     assert [s["name"] for s in man["long"]["train"]] == ["web"] and man["long"]["eval"] == []
     assert all(len([s for s in m["train"] if s["name"] == "web"][0]["files"]) == 1 for m in man.values())
+
+
+def test_leaderboard_size_shares_the_table_and_stays_under_150m(tmp_path):
+    """m120t (Tiny-ML leaderboard): the output reuses the input table, and every arm's TOTAL count, the SmolLM2
+    vocabulary included, stays under the board's 150M cap."""
+    d = _mix(tmp_path)
+    cmd = train_cmd("e37a", "m120t", "trunk", data=tmp_path, out=tmp_path / "run", mix=str(d), fast=True)
+    v = lambda flag: cmd[cmd.index(flag) + 1]
+    assert v("--lm_head_tied") == "true" and v("--intermediate_size") == "2816" and v("--num_hidden_layers") == "9"
+    V = SIZES["m120t"]["vocab"]
+    for arm in ("e37a", "lsa", "catalogue_reuse_n4", "dense_rope"):
+        args, body = fit(arm, "m120t")
+        total = count(args, non_embedding=False, vocab=V)
+        assert 115e6 < body < total < 150e6, (arm, body, total)
+    with pytest.raises(ValueError, match="built data mix"):
+        train_cmd("e37a", "m120t", "trunk", data=tmp_path, out=tmp_path / "run")
+    mix = json.loads((d / "mix.json").read_text())
+    mix["vocab_size"] = 128256
+    (d / "mix.json").write_text(json.dumps(mix))
+    with pytest.raises(ValueError, match="vocabulary"):
+        train_cmd("e37a", "m120t", "trunk", data=tmp_path, out=tmp_path / "run", mix=str(d))

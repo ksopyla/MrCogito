@@ -307,6 +307,7 @@ class PerceiverARConfig(PretrainedConfig):
         bos_token_id: int = 1,
         eos_token_id: int = 2,
         tie_word_embeddings: bool = False,
+        lm_head_tied: bool = False,          # 2026-11-14: the output reuses the input token table through a projection
         **kwargs,
     ):
         super().__init__(
@@ -320,6 +321,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.token_embedding_dim = token_embedding_dim
+        self.lm_head_tied = bool(lm_head_tied)
         self.par_mode = par_mode
         self.pre_layers = pre_layers
         self.pre_window = pre_window
@@ -2500,6 +2502,36 @@ class NoteCounter(nn.Module):
 
 
 
+class TiedFactorizedHead(nn.Module):
+    """Output layer that shares the input token table (2026-11-14, for the Tiny-ML leaderboard's 150M cap).
+
+    logits = (h · Pᵀ) · Eᵀ with E the input table [V, e] (`embed.tok`) and P a projection [e, H]: the table is stored
+    and counted once, and the head adds H·e parameters instead of H·V (at width 896 and e = 384 with the SmolLM2
+    vocabulary: 0.34M instead of 44M). The model's own loss paths call `project` and use `table` ([B,S,e] against
+    [V,e]); `weight` is the effective [V, H] matrix E·P for code that multiplies hidden states directly (evaluation,
+    cached decoding), so `F.linear(h, lm_head.weight)` gives the same logits everywhere. E is held by reference, not
+    registered a second time, so the state dict carries it once (as `embed.tok.weight`)."""
+
+    def __init__(self, tok: nn.Embedding, hidden: int):
+        super().__init__()
+        self.proj = nn.Linear(hidden, tok.weight.shape[1], bias=False)
+        object.__setattr__(self, "_tok", tok)
+
+    @property
+    def table(self) -> torch.Tensor:
+        return self._tok.weight
+
+    @property
+    def weight(self) -> torch.Tensor:
+        return self._tok.weight @ self.proj.weight
+
+    def project(self, h: torch.Tensor) -> torch.Tensor:
+        return self.proj(h)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        return F.linear(self.proj(h), self._tok.weight)
+
+
 class TinyHashedEmbedding(nn.Module):
     """token table [V,e] + Σ n-gram tables [buckets,e] → MLP up-projection to d → RMSNorm."""
 
@@ -3309,7 +3341,10 @@ class PerceiverARLM(PreTrainedModel):
             for i in cfg.resolved_global_positions:
                 self.layers[i].attn.use_rope = False
         self.final_norm = nn.RMSNorm(cfg.hidden_size)
-        self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False)
+        if getattr(cfg, "lm_head_tied", False):
+            self.lm_head = TiedFactorizedHead(self.embed.tok, cfg.hidden_size)
+        else:
+            self.lm_head = nn.Linear(cfg.hidden_size, cfg.vocab_size, bias=False)
         self.memory_writer = (
             LatentMemoryWriter(cfg)
             if str(getattr(cfg, "message_write", "block_mean") or "block_mean") == "latent_memory"
@@ -3441,6 +3476,13 @@ class PerceiverARLM(PreTrainedModel):
 
     def get_output_embeddings(self):
         return self.lm_head
+
+    def _head_parts(self):
+        """(output matrix, map applied to the final hidden state before it): ([V, H], identity) for the plain head,
+        ([V, e] table, the projection) for the tied head, so the loss multiplies [.., e] by [V, e] (no [V, H] matrix)."""
+        if isinstance(self.lm_head, TiedFactorizedHead):
+            return self.lm_head.table, self.lm_head.project
+        return self.lm_head.weight, (lambda x: x)
 
     def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
         self.gradient_checkpointing = True
@@ -4135,8 +4177,9 @@ class PerceiverARLM(PreTrainedModel):
                 rec.armed = False
         h = self.final_norm(x)
 
+        head_w, head_in = self._head_parts()
         if labels is None or return_logits:
-            logits = F.linear(h[:, P:S_orig], self.lm_head.weight).float()
+            logits = F.linear(head_in(h[:, P:S_orig]), head_w).float()
             if cfg.logit_softcap:
                 logits = cfg.logit_softcap * torch.tanh(logits / cfg.logit_softcap)
             if labels is None:
@@ -4147,7 +4190,7 @@ class PerceiverARLM(PreTrainedModel):
         hid = h[:, :-1]
         if return_per_token_loss:
             per = per_token_ce_chunked(
-                hid, self.lm_head.weight, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap
+                head_in(hid), head_w, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap
             )[:, P: S_orig - 1]
             valid = tgt[:, P: S_orig - 1] != -100
             loss = per.sum() / valid.sum().clamp(min=1)
@@ -4159,10 +4202,11 @@ class PerceiverARLM(PreTrainedModel):
         flce = self._get_flce() if (cfg.use_liger and hid.is_cuda and ce_norm is None) else None
         if flce is not None:
             n = (tgt != -100).sum().clamp(min=1)
-            loss = flce(self.lm_head.weight, hid.reshape(-1, hid.shape[-1]), tgt.reshape(-1)) / n
+            hin = head_in(hid)
+            loss = flce(head_w, hin.reshape(-1, hin.shape[-1]), tgt.reshape(-1)) / n
         else:
             ce, z, n = chunked_softcap_ce(
-                hid, self.lm_head.weight, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap, cfg.z_loss
+                head_in(hid), head_w, tgt, cfg.chunked_ce_block_size, cfg.logit_softcap, cfg.z_loss
             )
             if ce_norm is None:
                 loss = (ce + z) / n.clamp(min=1)
@@ -4535,7 +4579,7 @@ def analytic_param_count(cfg: PerceiverARConfig) -> ParamBreakdown:
     per_layer = (d * h * dh) + 2 * (d * g * dh) + (h * dh * d) + 3 * d * ff + 2 * d + 2 * dh + 2
     dense = L * per_layer + (L // 2)                # + one σ per skip-consuming layer
     dense += V * e + 2 * e * d + d * d + d          # tok table + up0/up1/up2 + norm
-    dense += d + d * V                              # final norm + head
+    dense += d + (d * e if getattr(cfg, "lm_head_tied", False) else d * V)   # final norm + head (tied: projection)
     if cfg.write_back_hook:
         dense += d * 2 * g * dh
     if getattr(cfg, "global_logit_scale", "none") == "log":
