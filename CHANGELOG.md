@@ -15,6 +15,51 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-14] - Engineering pass for the 100M models: branches merged, faster training, read-once decoding, data mixes
+
+Author, 2026-11-14: "please implement the engineering improvements and merge to dev, inform other agents what have
+been done. Test it properly, and compare to past runs." Branch `eng-100m` (worktree `MrCogito-eng`).
+
+- **Merged into one line:** `e37-needles` (which holds `kv-cache` and `e37-long`), `arch-10m` and `e37-sft`, on top of
+  dev. `scripts/run_e33n.py` keeps both extra phases (`long`, 64k rows; `sft`). The NN Builder designs keep dev's
+  versions (the architecture tracker's, 8 Nov). With no new flag, the launcher's commands are byte-identical to the
+  source branches' (checked for e37a, lsa, catalogue_reuse_n4 at m100: trunk, decay, long, sft).
+- **Faster training, `scripts/run_e33n.py --fast`:** Liger's fused linear + cross-entropy instead of the chunked loss
+  (the same function: equal in fp32 with gradients to 1e-6; 7e-5 apart in bf16, gradients 0.3–0.5 %), and the
+  concept read's grouping compiled (`nn/concept_memory.concept_labels`, `CONCEPT_COMPILE=1`: the same labels, 12 ms →
+  4.5 ms a call). The fused loss frees a third of the memory, which pays for more rows per pass. One RTX 3090 (Odra),
+  m100, real trainer and shards, 100 steps, tokens per second:
+
+  | model, phase | old settings | fused loss, same rows | `--fast`, 4 rows per pass |
+  |---|---|---|---|
+  | e37a, trunk 4k | 13,076 (16.2 GB, 2 rows) | 14,400 (11.2 GB) | 19,674 (19.0 GB), +50 % |
+  | lsa, trunk 4k | 15,044 (15.8 GB, 2 rows) | 16,976 (10.8 GB) | 20,882 (18.1 GB), +39 % |
+  | e37a, decay 16k | 10,297 (21.5 GB, 1 row) | 11,115 (19.2 GB) | 11,665 (19.2 GB, 1 row), +13 % |
+
+  The bare step without the Trainer gives the old settings' speed (13,089 vs 13,076): the trainer and the dataloader
+  add nothing. 57 % of e37a's forward is the reading layer (four passes), and the step has a fixed cost per pass that
+  larger batches spread. L40S numbers: `infra/aws/jobs/eng_check_node.sh` (queued, results in
+  `s3://…/runs/eng_check/`).
+- **Whole-model `torch.compile` is not usable** on these models with torch 2.11 (`--compile static`, kept as a switch):
+  after graph breaks on the forward's data-dependent branches the process aborts inside dynamo's guard code ("failed to
+  add version watcher to dict"). The earlier estimate of 1.5–2× from compiling was wrong.
+- **Read once, answer many:** `IncrementalDecoder.snapshot / restore / feed / ask` and `evaluation/doc_session.py`
+  (`DocumentSession`, with a CLI). A document is prefilled once; each question restores the snapshot, writes its
+  tokens as steps and decodes. Every read type (dense, dense + RoPE, LSA, catalogue, notes, concept, concept +
+  reasoner, concept + length scale) answers with the tokens of a fresh prefill over document + question
+  (`tests/test_incremental_decode.py`). `evaluation/bench_cached_decoding.py --questions N` times it.
+- **Data mixes:** `scripts/run_e33n.py --mix DIR` trains on a built mix (its tokenizer, sources, row lengths and
+  tokens per phase; a stream source read by several phases is split by shards); `evaluation/long_doc_loss.py
+  --sources / --eot / --tokenizer` (bits per byte, to compare tokenizers on the same documents); `E33N_MIX`,
+  `E33N_TOKENIZER`, `E33N_LONGDOCS` in the job scripts. Spec: `docs/experiments_specs/ahead/E38_long_budget_mix.md`.
+- **Operations:** `infra/aws/keep_running.sh` (relaunches a spot job until its done-marker is in S3; refuses a launch
+  that could pass the cap), `infra/aws/jobs/e38_full.sh`, `scripts/profile_train_step.py`; `MC_BUDGET_USD` default
+  4,000 (author, 2026-11-14: "Increase our budget to $4000").
+- **Tests:** 1,583 passed on the merged branch before the changes; the one failure
+  (`test_launcher_e05_profile_reaches_canonical_parser`) is the same on dev.
+
+---
+
 ## [2026-11-13] - Cached decoding timed on one L40S: 25-28x at 64k, same answers
 
 - `infra/aws/jobs/bench_cache_node.sh` (new) on one spot g6e.xlarge (us-west-2c, 08:15-08:45 UTC, ~$1): the five
