@@ -109,6 +109,11 @@ class ModelArguments:
         default=False,
         metadata={"help": "Apply torch.compile(dynamic=True)."},
     )
+    model_compile: str = field(
+        default="off",
+        metadata={"help": "Compile the whole model: 'off' | 'static' (torch.compile(dynamic=False): fixed row "
+                          "shapes, as in the bin-manifest phases) | 'dynamic' (same as --torch_compile_dynamic)."},
+    )
     objective_variant: str = field(
         default=OBJECTIVE_RECONSTRUCTION,
         metadata={"help": "One of: reconstruction, reconstruction+contrastive, prefix_suffix."},

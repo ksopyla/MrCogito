@@ -238,7 +238,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               lr: float | None = None, tokens: float | None = None, micro: int | None = None, seed: int = 42,
               wandb: bool = False, eval_every: int = 0, backend: str = "flex", local: bool = False,
               flow: bool = False, gpus: int = 1, sft_manifest: str | None = None,
-              grad_ckpt: bool = False) -> list[str]:
+              grad_ckpt: bool = False, compile: str = "off", liger: bool = False, rows: int | None = None,
+              workers: int = 6) -> list[str]:
     z = SIZES[size]
     args, n = fit(arm, size)
     if phase == "sft":
@@ -260,6 +261,9 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         rows_per_step = max(1, rows_per_step)
         micro = micro or (1 if phase == "long" else max(1, min(rows_per_step, (16 if phase == "trunk" else 4)
                                                                  if size == "s30" else (8 if phase == "trunk" else 2))))
+    if rows:  # speed checks only: fewer rows per optimizer step, so a short run logs enough steps
+        rows_per_step = max(1, int(rows))
+        micro = min(micro, rows_per_step)
     # gpus > 1: one model on several GPUs (data parallel, torchrun); each optimizer step still sees rows_per_step
     # rows: micro × accum × gpus. When gpus does not divide the step (64 rows on 3 GPUs) the step is rounded down
     # and the step count rises to keep the same total tokens.
@@ -285,7 +289,7 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     if phase == "sft" and not eval_every:
         eval_every = _final_eval_every(steps)
     cmd += [
-        "--attn_backend", backend, "--attn_pad_multiple", "1", "--use_liger", "False",
+        "--attn_backend", backend, "--attn_pad_multiple", "1", "--use_liger", "True" if liger else "False",
         "--bin_manifest", str(man[phase]), "--tokenizer_name", str(data / "tokenizer_gpt2"),
         "--max_seq_length", str(seq), "--batch_packing_mode", "none",
         "--per_device_train_batch_size", str(micro), "--per_device_eval_batch_size", str(max(1, micro // 2)),
@@ -295,9 +299,11 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         "--eval_strategy", "steps" if eval_every else "no", "--eval_steps", str(eval_every or save_every),
         "--save_strategy", "steps", "--save_steps", str(save_every), "--save_total_limit", "2",
         "--output_dir", str(out / phase), "--seed", str(seed), "--report_to", "wandb" if wandb else "none",
-        "--overwrite_output_dir", "True", "--disable_tqdm", "True", "--dataloader_num_workers", "6",
+        "--overwrite_output_dir", "True", "--disable_tqdm", "True", "--dataloader_num_workers", str(workers),
         "--prediction_loss_only", "True", "--chunked_ce_block_size", "2048",
     ]
+    if compile != "off":  # the whole model through torch.compile (the attention kernel is compiled either way)
+        cmd += ["--model_compile", compile]
     if init:
         cmd += ["--model_name_or_path", init]
     if phase == "sft":
@@ -342,6 +348,11 @@ def main() -> None:
     c.add_argument("--seed", type=int, default=42, help="trainer seed: initial weights and the order rows are drawn in")
     c.add_argument("--gpus", type=int, default=1, help="GPUs for one model (data parallel via torchrun)")
     c.add_argument("--sft_manifest", help="sft: manifest_sft.json of scripts/build_sft_mix.py")
+    c.add_argument("--compile", default="off", choices=("off", "static", "dynamic"),
+                   help="torch.compile the whole model (static: fixed row shapes)")
+    c.add_argument("--liger", action="store_true", help="Liger's fused linear + cross-entropy for the loss")
+    c.add_argument("--rows", type=int, help="speed checks only: rows per optimizer step instead of the size's")
+    c.add_argument("--workers", type=int, default=6, help="dataloader worker processes per GPU")
     c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
     a = ap.parse_args()
     if a.what == "cmd" and a.phase == "sft" and not (a.lr and a.init and a.sft_manifest):
@@ -356,7 +367,7 @@ def main() -> None:
     cmd = train_cmd(a.arm, a.size, a.phase, data=Path(a.data), out=Path(a.out), init=a.init, lr=a.lr,
                     tokens=a.tokens, micro=a.micro, wandb=a.wandb, eval_every=a.eval_every, backend=a.backend,
                     local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
-                    grad_ckpt=a.grad_ckpt)
+                    grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers)
     print(shlex.join(cmd))
 
 
