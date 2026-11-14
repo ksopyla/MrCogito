@@ -55,7 +55,9 @@ bash infra/aws/jobs/e33n_run.sh "$ARM" s30 "" 4e5 > "$C/train_again.log" 2>&1 ||
 grep -q "trunk done" "$R/events.log" || fail "events.log has no 'trunk done'"
 
 say "4/4 tests of the 64k model, quick form"
-export E33N_TOKENIZER="$D/tokenizer" E33N_LONGDOCS="$D" E37_EVAL_QUICK=1 \
+# core at batch 8: batch 32 x 2,048 tokens x the vocabulary needs a 12 GB log-softmax, too much next to the model
+# on a 24 GB home card (e33n_run.sh's own note); the 48 GB AWS cards keep the default 32
+export E33N_TOKENIZER="$D/tokenizer" E33N_LONGDOCS="$D" E37_EVAL_QUICK=1 E33N_CORE_BATCH="${E33N_CORE_BATCH:-8}" \
   E33N_LONGDOC_ARGS="--sources books,arxiv,doab,usgpo,hansard,pdfs,code_repos --eot 0 --tokenizer $D/tokenizer"
 bash infra/aws/jobs/e37_evals_long.sh "$LONG" "$R" "$C" > "$C/evals.log" 2>&1 || fail "e37_evals_long.sh (see $C/evals.log, $R/long_evals/*.log)"
 uv run python - "$R" <<'PY' || fail "the test files are incomplete"
