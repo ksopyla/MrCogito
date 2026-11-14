@@ -70,6 +70,11 @@ been done. Test it properly, and compare to past runs." Branch `eng-100m` (workt
   |---|---|---|---|---|---|
   | e37a | 16k / 64k / 128k | 1.10 / 4.92 / 16.55 | 0.46 / 4.26 / 15.89 | 1.06 / 1.06 / 1.07 | yes |
   | dense | 16k / 64k / 128k | 0.45 / 1.03 / 2.23 | 0.07 / 0.42 / 1.17 | 0.59 / 0.90 / 1.62 | yes |
+  | lsa | 16k / 64k / 128k | 1.01 / 3.38 / 10.92 | 0.27 / 2.66 / 10.09 | 1.16 / 1.17 / 1.19 | no at 16k, yes at 64k and 128k |
+
+  The LSA port's 16k prompt is the near-tie already seen on 2026-11-13: its first answer token is decided by 0.015
+  logits (":" then the number, against " the"), under bf16 rounding, so the uncached loop, the cached prefill and
+  the stepped question do not all land on the same side. The eight other cases agree token for token.
 
   For the concept read a question costs about a second whatever the document's length (its step reads 512 opened
   tokens and the summaries), so at 128k a question is 15× cheaper than a fresh prompt once the document is read;
