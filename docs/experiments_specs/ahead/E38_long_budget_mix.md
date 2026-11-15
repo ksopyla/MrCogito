@@ -13,8 +13,11 @@
   (`e33n_m100_e37a_tok8.0e9_seed42`, 162M total, over the board's 150M cap) was stopped at about step 4,300 of 15,259;
   the four 150M runs (`m120t` on `m21mix_v2`, seed 42) are queued by a launcher on the laptop
   (`Cache/keepers/e38-board-chain.sh` and `e38_pick_opt.py`, not in git) that applied the pass mark and started four
-  keepers. Estimate per model about 32 h and $250: stage 1 at 121k tokens/s (measured on the v1 run), stage 2 about
-  81k (one-card speed check), stage 3 about 68k (estimate), tests about 1.5 h. Data: `m21mix_v1` in S3 since 07:58 UTC
+  keepers. Per model about 37 h and $295 (spot about $8.00/h): stage 1 at 105.6k tokens/s (measured 06:25 UTC Nov 15
+  on this run: 13% below the v1 AdamW 100M run's 121k; cards at 21.5 of 48 GB), stage 2 about 71k and stage 3 about
+  59k (estimates scaled by the same 13%), tests about 1.5 h. Expected done: concept memory Mon 16 Nov ~18:30 UTC,
+  LSA port Wed 18 ~07:30, catalogue Thu 19 ~20:30, fair full-attention control Sat 21 ~09:30. W&B online, run name
+  "150M concept memory, Muon, stage 1 of 3". Data: `m21mix_v1` in S3 since 07:58 UTC
   Nov 14, `m21mix_v2` since 19:53 UTC (author, 2026-11-14: "Train two best models 100M with a longer data budget, with
   a better tokenizer and data mix"; "Increase our budget to $4000"; "SmolLM2, bigger body").
 - **Serves:** the meridian21 goal of 2026-11-13 (first models and a demo for investors: show that the memory
