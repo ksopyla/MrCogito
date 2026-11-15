@@ -17,7 +17,15 @@
   on this run: 13% below the v1 AdamW 100M run's 121k; cards at 21.5 of 48 GB), stage 2 about 71k and stage 3 about
   59k (estimates scaled by the same 13%), tests about 1.5 h. Expected done: concept memory Mon 16 Nov ~18:30 UTC,
   LSA port Wed 18 ~07:30, catalogue Thu 19 ~20:30, fair full-attention control Sat 21 ~09:30. W&B online, run name
-  "150M concept memory, Muon, stage 1 of 3". Data: `m21mix_v1` in S3 since 07:58 UTC
+  "150M concept memory, Muon, stage 1 of 3". Two lanes since 06:54 UTC Nov 15 (author: "Could you try to spin another
+  machine for next schedule model, do we have capacity and quota? Maybe next L40 or H100?"): a second g6e.12xlarge
+  does not fit (G spot 64 vCPU in us-east-1, 48 in use; 8 in us-east-2 and us-west-2; G on-demand 0 / 8 / 0; the
+  increases to 96 are still open), so the LSA port's keeper asks for one on-demand p5.4xlarge (P on-demand 64 vCPU in
+  us-east-1; P spot 8, too small) every 10 min, falling back to the L40S slot after the concept-memory run's tests.
+  First try 06:54 UTC: no capacity in any us-east-1 zone. The catalogue waits for the concept-memory tests and the
+  LSA port's start (`events.log` in S3); the fair full-attention control waits for the catalogue's start and takes the
+  L40S slot, or the H100 once the LSA port is done. One H100 is an estimate of 55-60 h and about $410 per model
+  (same rows per step: 8 rows at 4k and 2 at 16k per pass on 80 GB). Data: `m21mix_v1` in S3 since 07:58 UTC
   Nov 14, `m21mix_v2` since 19:53 UTC (author, 2026-11-14: "Train two best models 100M with a longer data budget, with
   a better tokenizer and data mix"; "Increase our budget to $4000"; "SmolLM2, bigger body").
 - **Serves:** the meridian21 goal of 2026-11-13 (first models and a demo for investors: show that the memory
