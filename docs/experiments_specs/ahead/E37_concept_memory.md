@@ -565,7 +565,10 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     (launched 21:47 UTC Nov 14, `e37-b-l40s-e37a-s7` i-00d119b79cce2d64e). It gives the slot back at its first trunk
     checkpoint after the E38 Muon test ends (~05:00 UTC Nov 15) and resumes from that checkpoint, then lsa seed 7,
     once the four leaderboard runs are done (~20 Nov). The resumed run differs from an unbroken one only in the
-    restart.
+    restart. **Stopped 05:13 UTC Nov 15** at trunk checkpoint-4004 of 5722 (70 %), the checkpoint verified complete in
+    S3 first (4 of 4 key files, 0 pending); node terminated, ≈ 7.4 h on the slot. The Muon test passed (lower by 0.040
+    at step 2000, pass mark 0.03), so the leaderboard runs use Muon at lr 0.01; the seeds wait for the dense_rope
+    leaderboard run's `eval_core_long.json`.
   - **64k stage at 100M (the "10M context architecture analysis" session's request, author: "Yes, run it"; recipe
     of e33n-lsa-testbed a729ca7, branch e37-long = it + the jobs + cached decoding): 0.1B LongDocs-lite tokens in
     rows of 65,536 from the stage-B decay final, 191 steps of 8 rows (micro 1 × accum 2 × 4 GPUs), lr 6.4e-5 →
