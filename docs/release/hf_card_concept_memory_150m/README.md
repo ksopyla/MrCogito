@@ -73,7 +73,8 @@ model, one training seed. We publish it with its weak spots measured, because we
 believed.
 
 > **Claim level.** On held-out long documents the model predicts text better when it can see more of the document,
-> and it does so from *that document's* content, not from generic "more text" (see [Long context](#long-context)).
+> up to its 64k training length, and it does so from *that document's* content, not from generic "more text" (see
+> [Long context](#long-context)). Past 64k, extra context makes it slightly worse.
 > It retrieves a single planted fact 32k tokens back almost always, after training on similar lookup rows. It does
 > **not** yet track several facts at once, and we have **not** compared it with a full-attention model of the same
 > size on the same data. No claim here is about chat, safety or downstream tasks.
@@ -105,7 +106,7 @@ believed.
 | **Compute and cost** | ~40 machine hours on one 4 × NVIDIA L40S spot node (AWS g6e.12xlarge), ~$320 |
 | **Finished** | 2026-11-16 23:16 UTC (training and AWS tests) |
 | **Tiny-ML Leaderboard tests** | grammar 80.56 %, easy science quiz 48.95 %, WikiText-2 byte perplexity 1.950 → would place **24th of 101** (snapshot 2026-11-14) |
-| **Longest context trained** | 65,536 tokens; scored to 131,072 |
+| **Context** | trained to 65,536 tokens and uses all of it; at 131,072, context beyond 64k makes predictions slightly worse |
 | **Developed by** | Krzysztof Sopyła ([ai.ksopyla.com](https://ai.ksopyla.com)) · ⟦DECISION: NAMESPACE⟧ meridian21 |
 | **Code** | [github.com/ksopyla/MrCogito](https://github.com/ksopyla/MrCogito) (public; model code on the `dev` branch) ⟦DECISION: IP / LICENCE⟧ |
 
@@ -165,6 +166,8 @@ does: exact, but the cost grows with the square of the book's length. Our studen
   not).
 - **Production long-document question answering.** It finds one planted fact well; it fails at several facts at once
   (see [Long context](#long-context)).
+- **Inputs longer than 64k tokens.** Past its training length more context makes it slightly worse; feed the last
+  ~64k tokens instead.
 
 ---
 
@@ -378,7 +381,7 @@ arXiv papers, open-access academic books (DOAB), US government publications (GPO
 `evaluation/long_context_use.py`. The documents are stored as GPT-2 tokens; they are decoded back to the exact text
 and re-encoded with this model's tokenizer.
 
-**The three tests**, always on the same target: the **last 4,096 tokens** of a 16k or 64k span.
+**The three tests**, always on the same target: the **last 4,096 tokens** of a 16k, 64k or 128k span.
 1. **Context cut.** Predict the target after 1k, 4k, 16k … or all of the document before it. If the far past is
    used, the loss keeps falling as the context grows.
 2. **Swapped far past.** Keep the document's own nearest 4k tokens, but replace everything older with text from a
@@ -404,7 +407,22 @@ by bootstrap over documents):
 4k +0.042 [0.034, 0.050]; cut to 1k +0.094 [0.080, 0.110] (99 % of documents worse); another document's far past
 +0.052 [0.043, 0.060]; summaries off +0.023; memory off +0.271.
 
-⟦LONGCTX_128K⟧
+**Results at 128k, twice the training length** (15 documents: 4 books, 8 DOAB, 2 US GPO, 1 arXiv; no Hansard
+debate is that long; Odra 20:05–20:35 UTC):
+
+| Context before the last 4,096 tokens | Loss | Compared with the whole document | Documents worse than whole |
+|---|---:|---:|---:|
+| the whole document before it (126,975 tokens) | 2.451 | — | — |
+| last 61,440 tokens only | 2.391 | **−0.060** [−0.077, −0.045]: better | 0 % |
+| last 16,384 tokens only | 2.409 | −0.042: better | 13 % |
+| last 4,096 tokens only | 2.441 | −0.010 [−0.047, +0.031]: a tie | 40 % |
+| own last 4,096 + another document's 123k before them | 2.533 | +0.082 [0.050, 0.115] | 93 % (of 14; no donor for the arXiv paper) |
+| whole document, memory off | 2.645 | +0.194 | 100 % |
+
+**Past its training length, more context hurts.** Feeding the whole 127k is worse than feeding only the last 61k
+on all 15 documents, and no better than the last 4k. The length scale keeps the read from collapsing (switching the
+memory off is still far worse), but the model does not turn text beyond 64k into better predictions, and a long
+wrong past distracts it more than at 64k. **In practice: give it at most the last ~64k tokens.**
 
 **What this shows.**
 - **The far past is used.** Even 16k tokens back is not enough: the last 45k tokens of a 64k document still lower
@@ -428,7 +446,8 @@ by bootstrap over documents):
 stage. Loss on positions past 2k, in bits per byte (lower is better), was 0.785 at 4k, 0.750 at 16k, 0.737 at 32k,
 0.717 at 64k and 0.663 at 128k. But each length uses different documents, 8 per source. At 128k there was one
 arXiv paper and two PDFs; without that arXiv paper the other four sources are flat from 64k to 128k (0.735 →
-0.733). Read the 128k line as "no fade", not as "gets better".
+0.733). That comparison uses different documents at each length; the direct test above, on the same documents,
+shows that past 64k the extra context hurts slightly.
 
 ### What we have not measured
 
@@ -466,8 +485,9 @@ arXiv paper and two PDFs; without that arXiv paper the other four sources are fl
 - **The needle score is not zero-shot.** The 1.00 / 0.97 needle results come after training on planted-fact lookups;
   read them as "learned the skill", not as transfer.
 - **RULER falls with length**: the mean drops from 0.43 at 4k to 0.30 at 32k, and several-fact tasks are near zero.
-- **Weak gain past the training length.** At 128k the long-document loss is flat rather than better, and we had few
-  128k documents (a single arXiv paper and two PDFs in the AWS test).
+- **No gain past the training length.** At 128k, feeding the whole document is worse than feeding the last 61k
+  on all 15 test documents (by 0.06 nats per token), and a long wrong past distracts it. Few documents are that
+  long (15 in our test, 8 per source in the AWS test), so the size of the effect is rough; its direction is not.
 - **No full-attention control on this data and one seed**: differences of a point or two are not established.
 - **A research model.** Custom code (not loadable with Transformers alone yet), no chat or safety tuning, English
   only, may produce false or offensive text.
