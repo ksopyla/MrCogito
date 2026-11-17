@@ -1,7 +1,14 @@
 # 150M concept memory: open questions before the Hugging Face release
 
-Draft of 2026-11-17, for the card in `README.md` next to this file. Nothing is uploaded. Nothing goes to the
-Hub without the author's explicit decisions below. Weights stay private or gated until the IP decision is made.
+**Decided 2026-11-17, ~20:40 UTC (author: "post as meridian21 organization, as public with Apache-2.0"):**
+organisation `Meridian21Lab` (the account's only meridian21 organisation, full name "Meridian21 Lab"), public,
+Apache-2.0 for the weights and the card; the card describes the mechanism at the level of the public code.
+Repository: `Meridian21Lab/concept-memory-140m-11.5bt`, code pinned at commit `1fddc505` (branch `eng-100m`).
+
+Still open after the release: a LICENSE file in the GitHub repository (the card's "clone the code" path), the stale
+W&B tags, and the loading gaps in section 3. The sections below are the pre-decision record.
+
+Draft of 2026-11-17, for the card in `README.md` next to this file.
 
 ## 1. Decisions for the author (each with a recommendation)
 

@@ -1,14 +1,7 @@
 ---
-# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# DRAFT, NOT PUBLISHED (2026-11-17). Three decisions are the author's and are marked ⟦DECISION⟧ in this file:
-#   ⟦DECISION: VISIBILITY⟧ public or gated · ⟦DECISION: NAMESPACE⟧ ksopyla or a meridian21 org ·
-#   ⟦DECISION: IP / LICENCE⟧ how much of the architecture to describe, and the licence.
-# See OPEN_QUESTIONS.md next to this file before uploading anything.
-# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 language:
   - en
-license: other                 # ⟦DECISION: IP / LICENCE⟧ e.g. apache-2.0, or a research licence; check the
-license_name: TBD              #   Nemotron-CC data terms first (OPEN_QUESTIONS.md, item 3)
+license: apache-2.0
 pipeline_tag: text-generation
 # library_name is left out on purpose: the weights do not load with 🤗 Transformers alone yet (see "How to use").
 # Add `library_name: transformers` and the `custom_code` tag once the repository ships its modeling code.
@@ -36,12 +29,6 @@ datasets:
   - common-pile/uk_hansard_filtered
   - allenai/dolma3_longmino_pool
   - HuggingFaceTB/smol-smoltalk
-# ⟦DECISION: VISIBILITY⟧ if gated, uncomment and adapt:
-# extra_gated_prompt: >-
-#   This is an early research model. Tell us who you are and what you plan to test.
-# extra_gated_fields:
-#   Affiliation: text
-#   Intended use: text
 model-index:
   - name: concept-memory-140m-11.5bt
     results:
@@ -58,7 +45,7 @@ model-index:
 
 # 150M concept memory — a small base model with a long-context memory
 
-**Hub id:** `⟦DECISION: NAMESPACE⟧/concept-memory-140m-11.5bt` · internal labels: experiment E38, run
+**Hub id:** `Meridian21Lab/concept-memory-140m-11.5bt` · internal labels: experiment E38, run
 `e33n_m120t_e37a_muon0.01_tok8.0e9_seed42`, arm `e37a`
 
 A 141.5M-parameter English base language model trained from scratch on 11.5B tokens of public data. Its one unusual
@@ -107,15 +94,13 @@ believed.
 | **Finished** | 2026-11-16 23:16 UTC (training and AWS tests) |
 | **Tiny-ML Leaderboard tests** | grammar 80.56 %, easy science quiz 48.95 %, WikiText-2 byte perplexity 1.950 → would place **24th of 101** (snapshot 2026-11-14) |
 | **Context** | trained to 65,536 tokens and uses all of it; at 131,072, context beyond 64k makes predictions slightly worse |
-| **Developed by** | Krzysztof Sopyła ([ai.ksopyla.com](https://ai.ksopyla.com)) · ⟦DECISION: NAMESPACE⟧ meridian21 |
-| **Code** | [github.com/ksopyla/MrCogito](https://github.com/ksopyla/MrCogito) (public; model code on the `dev` branch) ⟦DECISION: IP / LICENCE⟧ |
+| **Developed by** | Krzysztof Sopyła ([ai.ksopyla.com](https://ai.ksopyla.com)), [Meridian21 Lab](https://huggingface.co/Meridian21Lab) |
+| **Code** | [github.com/ksopyla/MrCogito](https://github.com/ksopyla/MrCogito), commit [`1fddc505`](https://github.com/ksopyla/MrCogito/tree/1fddc505) (branch `eng-100m`) |
+| **Licence** | Apache-2.0 |
 
 ---
 
 ## How the concept memory works
-
-<!-- ⟦DECISION: IP / LICENCE⟧ This section describes the mechanism at the level of the code that is already public on
-     GitHub (branch `dev`, nn/concept_memory.py). Trim it to the first paragraph if the author wants less disclosed. -->
 
 Think of a student reading a long book for an exam. Rereading every page for every answer is what full attention
 does: exact, but the cost grows with the square of the book's length. Our student keeps a **notebook** instead.
@@ -180,7 +165,7 @@ with the MrCogito code (tested on CUDA with PyTorch ≥ 2.10 and Transformers 4.
 
 ```bash
 git clone https://github.com/ksopyla/MrCogito.git && cd MrCogito
-git checkout dev            # ⟦TODO before publishing: pin the exact commit⟧
+git checkout 1fddc505       # the code this release was trained and tested with (branch eng-100m)
 uv sync
 ```
 
@@ -190,7 +175,7 @@ from huggingface_hub import snapshot_download
 from transformers import AutoTokenizer
 from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval
 
-path = snapshot_download("⟦DECISION: NAMESPACE⟧/concept-memory-140m-11.5bt")
+path = snapshot_download("Meridian21Lab/concept-memory-140m-11.5bt")
 tok = AutoTokenizer.from_pretrained(path)
 # bf16 on CUDA, the flex-attention path; the loader turns off training-only kernels (Liger)
 model = load_perceiver_ar_for_eval(path, device="cuda", attn_backend="flex")
@@ -226,8 +211,9 @@ For long prompts use the cached decoder in `nn/incremental.py` (reads the prompt
 token); it is what our RULER tests used. Benchmarks: `evaluation/run_lm_eval_suite.py --tier leaderboard` runs the
 board's three tests through our lm-eval adapter (`--model perceiver_ar`), not lm-eval's stock `hf` model.
 
-What is missing for a one-line load is listed in `OPEN_QUESTIONS.md` (modeling files, `auto_map`, a cached
-`generate`, a CPU path for long inputs).
+Still missing for a one-line `from_pretrained`: self-contained modeling files in this repository with an `auto_map`
+in `config.json`, a cached `generate` that follows 🤗 Transformers' interface, and a fast CPU path (the CPU reference
+attention builds a full length × length mask, so it suits short inputs only).
 
 ---
 
@@ -262,7 +248,7 @@ Every document starts with `<|endoftext|>`. Shares are of each stage's tokens.
 | Steps × rows per step | 15,259 × 128 | 5,722 × 32 | 954 × 8 |
 | Tokens per step | 524,288 | 524,288 | 524,288 |
 | Learning rate | Muon peak 0.01, constant after 1 % warm-up | fresh optimizer, 3 % warm-up, 1 − √ decay to 0.1 × | a tenth of the peak, decaying |
-| Held-out loss (nats per token, lower is better) | 2.732 → 2.135 (4k web rows) | 2.295 → 1.996 (16k long-document rows) | 1.960 → 1.936 (64k rows) |
+| Held-out loss (nats per token, lower is better) | 2.732 → 2.134 (4k web rows) | 2.295 → 1.996 (16k long-document rows) | 1.960 → 1.936 (64k rows) |
 | Speed | 105.6k tokens/s | 69.7k tokens/s | 21.6k tokens/s (activations recomputed) |
 | Wall time | 21.2 h | 12.2 h | 6.5 h (+ ~1 h lost to a spot interruption) |
 
@@ -302,12 +288,22 @@ score of 99.15, an overall score of 76.22 and an efficiency score of 77.72: **24
 2026-11-14 snapshot, and **14th** on overall quality without the board's bonus for being small. ARC-Easy is the weak
 test: at 51.4 % the model would rank 19th, at 55 % 17th, at 60 % 12th.
 
+**Same-size reference, same harness.** SmolLM2-135M (HuggingFaceTB), trained on about 2T tokens (≈ 170 × ours),
+scored by us on Odra on 2026-11-17 with the same script and test settings:
+
+| Model | Params | Training tokens | BLiMP % ↑ | ARC-Easy % ↑ | WikiText-2 byte ppl ↓ | Board formula |
+|---|---:|---:|---:|---:|---:|---|
+| **150M concept memory (ours)** | 141.5M | 11.5B | **80.56** ± 0.14 | 48.95 ± 1.03 | 1.950 | 24th of 101 |
+| SmolLM2-135M | 134.5M | ~2T | 80.15 ± 0.14 | **64.27** ± 0.98 | **1.799** | would be 4th of 101 |
+
+On grammar the two are level (ours 0.4 points higher, about two standard errors). On the science quiz and on
+WikiText, SmolLM2-135M is far ahead, most likely the effect of 170 times more training text.
+
 **Quoted for context** (as listed on the board's snapshot of 2026-11-14; the board's own runs, not ours — treat small
 differences with care):
 
 | Model (as listed) | Params | Training tokens (reported) | BLiMP % ↑ | ARC-Easy % ↑ | WikiText-2 byte ppl ↓ |
 |---|---:|---:|---:|---:|---:|
-| **150M concept memory (ours, our harness)** | 141.5M | 11.5B | **80.56** | **48.95** | **1.950** |
 | JugnuLM-53M (the board's 12B-token reference) | 53M | 12B | 78.14 | 51.43 | 2.040 |
 | Hydrion-v1-Base | 114.1M | ~2.5B | 80.08 | 47.26 | 2.040 |
 | Zedev-134M-Fudas | 134M | 20.7B | 81.69 | 46.38 | 1.880 |
@@ -321,24 +317,24 @@ Of the 55 entries that report 15B training tokens or fewer, three rank above thi
 
 ### Seven core zero-shot tasks
 
-Run on AWS on 2026-11-16 (same harness, same adapter). Accuracy, higher is better. "Previous generation" is our 100M
-concept-memory model trained on 3.4B tokens with the GPT-2 tokenizer (E37), scored on the same harness.
+Run on Odra on 2026-11-17 for this model and SmolLM2-135M, same script and settings; the previous generation on
+the same harness earlier (AWS). Accuracy (`acc`), higher is better. "Previous generation" is our 100M
+concept-memory model trained on 3.4B tokens with the GPT-2 tokenizer (E37).
 
-| Task | What it measures | Chance | Previous generation (100M, 3.4B tokens) | **This model** |
-|---|---|---:|---:|---:|
-| ARC-Challenge | hard grade-school science | 25 % | 24.7 % | **21.0 %** |
-| ARC-Easy | easy grade-school science | 25 % | 42.2 % | **48.7 %**¹ |
-| HellaSwag | picks a sensible continuation | 25 % | 30.3 % | **29.9 %** |
-| LAMBADA (OpenAI) | the last word of a passage | ~0 % | 20.1 % | **33.2 %** |
-| PIQA | physical common sense | 50 % | 59.9 % | **63.1 %** |
-| SciQ | science questions with a passage | 25 % | 63.3 % | **77.0 %** |
-| WinoGrande | who a pronoun refers to | 50 % | 51.0 % | **50.7 %** |
-| **Mean of the 7** | | 28.6 % | 41.6 % | **46.2 %** |
+| Task | What it measures | Chance | Previous generation (100M, 3.4B tokens) | **This model** (11.5B tokens) | SmolLM2-135M (~2T tokens) |
+|---|---|---:|---:|---:|---:|
+| ARC-Challenge | hard grade-school science | 25 % | 24.7 % | **21.3 %** | 28.0 % |
+| ARC-Easy | easy grade-school science | 25 % | 42.2 % | **49.0 %** | 64.3 % |
+| HellaSwag | picks a sensible continuation | 25 % | 30.3 % | **29.9 %** | 35.5 % |
+| LAMBADA (OpenAI) | the last word of a passage | ~0 % | 20.1 % | **33.2 %** | 43.0 % |
+| PIQA | physical common sense | 50 % | 59.9 % | **62.8 %** | 68.6 % |
+| SciQ | science questions with a passage | 25 % | 63.3 % | **77.0 %** | 84.1 % |
+| WinoGrande | who a pronoun refers to | 50 % | 51.0 % | **50.4 %** | 53.6 % |
+| **Mean of the 7** | | 28.6 % | 41.6 % | **46.2 %** | 53.9 % |
 
-¹ 48.74 % on AWS and 48.95 % on Odra: the same test on two machines, five questions apart out of 2,376.
-
-ARC-Challenge, HellaSwag and WinoGrande are still at or near chance: those need more knowledge and more training
-tokens than this budget gives. SmolLM2-135M (2T tokens) has **not** been scored on this harness yet.
+The AWS run of 2026-11-16 gave the same mean for this model (46.2 %); single tasks moved by up to 0.4 points between
+the two runs (batch size, machine). ARC-Challenge, HellaSwag and WinoGrande are still at or near chance for this
+model: they need more knowledge and more training text than this budget gives.
 
 ### Long context, standard tests
 
@@ -378,7 +374,7 @@ measured.
 arXiv papers, open-access academic books (DOAB), US government publications (GPO) and UK parliamentary debates
 (Hansard), the LongDocs-lite validation sets from Common Pile. Up to 16 documents per source at 64k (55 in all),
 24 per source at 16k (120). Run on Odra (three RTX 3090s) on 2026-11-17, 19:58–20:11 UTC, with
-`evaluation/long_context_use.py`. The documents are stored as GPT-2 tokens; they are decoded back to the exact text
+`long_context/long_context_use.py` (in this repository). The documents are stored as GPT-2 tokens; they are decoded back to the exact text
 and re-encoded with this model's tokenizer.
 
 **The three tests**, always on the same target: the **last 4,096 tokens** of a 16k, 64k or 128k span.
@@ -467,8 +463,8 @@ shows that past 64k the extra context hurts slightly.
 ## Strengths and limitations
 
 **Strengths**
-- **Strong grammar for its budget.** BLiMP 80.56 % is 8th of 101 on the board, above the 100–150M median (79.41 %),
-  from 11.5B tokens where most models above it report 20–200B.
+- **Strong grammar for its budget.** BLiMP 80.56 % is 8th of 101 on the board, above the 100–150M median (79.41 %)
+  and level with SmolLM2-135M on our harness (80.15 %), from 11.5B tokens where SmolLM2-135M read about 2T.
 - **Good text prediction.** WikiText-2 byte perplexity 1.950, near the 100–150M median (1.944), with far less data.
 - **Uses long context on real documents.** On 55 held-out documents its loss on the last 4k tokens of a 64k span
   falls by 0.15 nats per token from 1k to 61k of context, and still by 0.06 from 16k to 61k. Another document's text
@@ -476,12 +472,14 @@ shows that past 64k the extra context hurts slightly.
   memory.
 - **Finds one fact far back.** The essay needle is 1.00 to 16k and 0.97 at 32k, up from 0.14 at 16k in the previous
   generation.
-- **Cheap and documented.** ~$320 of spot compute, all data public on the Hub, every stage logged on public W&B.
+- **Cheap and documented.** ~$320 of spot compute, all training data from public Hub datasets (two of them gated),
+  every stage logged on public W&B.
 
 **Limitations**
-- **Weak knowledge and reasoning.** ARC-Easy 48.95 % is below the 100–150M median (53.24 %); ARC-Challenge,
+- **Weak knowledge and reasoning.** ARC-Easy 48.95 % is below the 100–150M median (53.24 %) and far below
+  SmolLM2-135M on our harness (64.27 %); the 7-task mean is 46.2 % against SmolLM2-135M's 53.9 %. ARC-Challenge,
   HellaSwag and WinoGrande are at chance. The likely cause is the data budget: 11.5B tokens against 20–200B for the
-  models above it on the board.
+  models above it on the board and about 2T for SmolLM2-135M.
 - **The needle score is not zero-shot.** The 1.00 / 0.97 needle results come after training on planted-fact lookups;
   read them as "learned the skill", not as transfer.
 - **RULER falls with length**: the mean drops from 0.43 at 4k to 0.30 at 32k, and several-fact tasks are near zero.
@@ -501,12 +499,16 @@ shows that past 64k the extra context hurts slightly.
   [stage 2](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_ar_perceiver_H896L3g1s9N128_20261116_024010_e37a_m120t_decay) ·
   [stage 3](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_ar_perceiver_H896L3g1s9N128_20261116_155301_e37a_m120t_long) ·
   report [150M concept memory vs earlier 100M runs](https://wandb.ai/ksopyla/MrCogito/reports/150M-concept-memory-vs-earlier-100M-runs--VmlldzoxODMxMjMwMw)
-- **Experiment spec:** `docs/experiments_specs/ahead/E38_long_budget_mix.md` (hypothesis, pass marks set before
-  training, results).
+- **Experiment spec:** `docs/experiments_specs/ahead/E38_long_budget_mix.md` (hypothesis and the pass marks set
+  before training). All MrCogito paths here are at commit `1fddc505`.
 - **Data recipe:** `data/mix_recipes/m21_mix_v2.json`; builders `scripts/build_m21_mix.py`, `scripts/build_reasoning_rows.py`.
 - **Training:** `scripts/run_e33n.py` (size `m120t`, arm `e37a`), job `infra/aws/jobs/e38_board.sh`.
-- **Tests:** `evaluation/run_lm_eval_suite.py`, `evaluation/tiny_ml_board.py`, `evaluation/long_doc_loss.py`,
-  `evaluation/long_context_use.py` (the real-document tests on this card).
+- **Tests:** `evaluation/run_lm_eval_suite.py`, `evaluation/tiny_ml_board.py`, `evaluation/long_doc_loss.py`. The
+  `eval_results/` folder of this repository holds the full lm-eval outputs behind the leaderboard and seven-task
+  tables, for this model and for SmolLM2-135M.
+- **The real-document long-context tests on this card:** the `long_context/` folder of this repository holds the
+  test script (`long_context_use.py`, run from a MrCogito checkout), the raw per-document results at 16k, 64k and
+  128k, and `summarise.py`, which turns them into the tables above.
 - **Architecture:** `nn/perceiver_ar_lm.py`, `nn/concept_memory.py`.
 
 ## Citation
@@ -517,17 +519,20 @@ shows that past 64k the extra context hurts slightly.
   title        = {150M concept memory: a small base model with a long-context concept memory},
   year         = {2026},
   publisher    = {Hugging Face},
-  howpublished = {\url{https://huggingface.co/⟦DECISION: NAMESPACE⟧/concept-memory-140m-11.5bt}},
+  howpublished = {\url{https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt}},
   note         = {MrCogito / meridian21, experiment E38. Code: https://github.com/ksopyla/MrCogito}
 }
 ```
 
 ## Licence
 
-⟦DECISION: IP / LICENCE⟧ Not chosen yet. The weights are trained on data with several licences: CC BY 4.0, ODC-By,
-Apache-2.0, openly licensed Common Pile sources, and NVIDIA's Nemotron-CC and Nemotron-CC-Math, which are gated on
-the Hub under their own terms (`license: other`). Together the two NVIDIA datasets are about 45 % of the training
-tokens. The model's licence has to respect those terms.
+The weights and this card are released under the **Apache License 2.0**.
+
+The training data come from public Hub datasets under their own licences: DCLM-Edu (CC BY 4.0), Dolma 3 Longmino
+(ODC-By), smol-smoltalk (Apache-2.0), the openly licensed Common Pile sources (Stack v2 Edu, Gutenberg, arXiv,
+DOAB, US GPO, UK Hansard), Nemotron-Pretraining-Specialized (CC BY 4.0, CC BY-SA 4.0, GFDL and NVIDIA terms per
+subset), and NVIDIA's Nemotron-CC-v2 and Nemotron-CC-Math-v1 (gated on the Hub under NVIDIA's own terms; together
+about 45 % of the training tokens). We thank their authors; see each dataset's card for its terms.
 
 ## Contact
 
