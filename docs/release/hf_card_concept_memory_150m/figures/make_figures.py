@@ -6,6 +6,9 @@ radar.png        ours, SmolLM2-135M at its earliest public checkpoint (~252B tok
                  standard benchmarks. Each axis is the model's score as a share of the best of the three (rim = the
                  best, centre = zero); for WikiText, where lower is better, the share is best ÷ score. The raw
                  numbers are printed next to each axis and in the card's table.
+ruler_radar.png  RULER at 8k by task family (0–1, share of expected answers found), ours against each reference
+                 model in its own small radar: SmolLM2-135M, Gemma 3 270M, Granite 4.0 350M, LFM2.5-350M-Base.
+ruler_heat.png   our 13 RULER tasks at 4k, 8k, 16k and 32k.
 long_docs.png    bits per byte on the last pages of 55 held-out 64k-token documents against the context each model
                  is given, every model on the same text; a line ends at the most context the model can take.
 data_eff.png     score against training tokens (log scale): Pythia-160M's and SmolLM2-135M's published checkpoints
@@ -306,7 +309,96 @@ def long_docs() -> None:
     print("wrote long_docs.png")
 
 
+RU = ROOT / "ruler"
+RULER_FAMILIES = [("One needle", ["niah_single_1", "niah_single_2", "niah_single_3"]),
+                  ("Needle among\ndistractor keys", ["niah_multikey_1", "niah_multikey_2", "niah_multikey_3"]),
+                  ("Several values\nor keys at once", ["niah_multivalue", "niah_multiquery"]),
+                  ("Count words", ["ruler_cwe", "ruler_fwe"]),
+                  ("Follow variables", ["ruler_vt"]),
+                  ("Answer questions", ["ruler_qa_squad", "ruler_qa_hotpot"])]
+RULER_TASKS = [("niah_single_1", "single needle, noise filler"), ("niah_single_2", "single needle, essays"),
+               ("niah_single_3", "single needle, UUID value"), ("niah_multikey_1", "multi-key 1"),
+               ("niah_multikey_2", "multi-key 2"), ("niah_multikey_3", "multi-key 3 (UUIDs)"),
+               ("niah_multivalue", "multi-value"), ("niah_multiquery", "multi-query"), ("ruler_vt", "variable tracking"),
+               ("ruler_cwe", "common words"), ("ruler_fwe", "frequent words"), ("ruler_qa_squad", "QA (SQuAD)"),
+               ("ruler_qa_hotpot", "QA (HotpotQA)")]
+RULER_REFS = [("ref_smollm2_135m", "SmolLM2-135M", "~2T"), ("ref_gemma3_270m", "Gemma 3 270M", "6T"),
+              ("ref_granite4_350m", "Granite 4.0 350M", "~15T"), ("ref_lfm25_350m", "LFM2.5-350M-Base", "28T")]
+
+
+def ruler_scores(prefix: str) -> dict[int, dict[str, float]]:
+    """{length: {task: score}} merged over the run files whose name starts with `prefix` (lengths may be split)."""
+    res: dict[int, dict[str, float]] = {}
+    for f in sorted(RU.glob(f"{prefix}*.json")):
+        for L, r in json.load(open(f))["results"].items():
+            res.setdefault(int(L), {}).update({t: v[f"{L},none"] for t, v in r.items()
+                                               if isinstance(v, dict) and isinstance(v.get(f"{L},none"), (int, float))})
+    return {L: r for L, r in res.items() if len(r) == 13}
+
+
+def ruler_family(r: dict[str, float]) -> list[float]:
+    return [float(np.mean([r[t] for t in ts])) for _, ts in RULER_FAMILIES]
+
+
+def ruler_figures(L: int = 8192) -> None:
+    ours = ruler_scores("ruler_")
+    refs = [(n, lab, tok, ruler_scores(n)) for n, lab, tok in RULER_REFS]
+    refs = [x for x in refs if L in x[3]]
+    if L not in ours or not refs:
+        print("skip ruler figures: missing results", file=sys.stderr)
+        return
+    names = [f for f, _ in RULER_FAMILIES]
+    ang = np.linspace(0, 2 * np.pi, len(names), endpoint=False)
+    o = ruler_family(ours[L])
+    fig, axs = plt.subplots(2, 2, figsize=(9.0, 9.4), subplot_kw={"projection": "polar"})
+    for ax, (n, lab, tok, sc) in zip(np.ravel(axs), refs):
+        ax.set_theta_offset(np.pi / 2); ax.set_theta_direction(-1); ax.set_thetalim(0, 2 * np.pi)
+        ax.set_ylim(0, 1); ax.set_yticks([0.25, 0.5, 0.75, 1.0]); ax.set_yticklabels(["", "0.5", "", "1"], fontsize=7,
+                                                                                         color=MUTED)
+        ax.set_rlabel_position(90)
+        ax.grid(color=GRID, linewidth=0.7); ax.spines["polar"].set_color(GRID)
+        ax.set_xticks(ang); ax.set_xticklabels(names, fontsize=8.5, color=INK2)
+        ax.tick_params(axis="x", pad=2)
+        r = ruler_family(sc[L])
+        for vals, col, w, z in ((r, "#eb6834", 1.8, 3), (o, OURS["color"], 2.4, 4)):
+            ax.fill(np.append(ang, ang[0]), vals + vals[:1], color=col, alpha=0.12, zorder=z - 1)
+            ax.plot(np.append(ang, ang[0]), vals + vals[:1], color=col, linewidth=w, zorder=z)
+            ax.scatter(ang, vals, s=18, color=col, edgecolor=SURFACE, linewidth=1.2, zorder=z + 1)
+        ax.set_title(f"vs {lab} · {tok} tokens\nmean of 13: ours {np.mean(list(ours[L].values())):.2f}, "
+                     f"it {np.mean(list(sc[L].values())):.2f}", fontsize=9.5, color=INK, pad=30)
+    handles = [plt.Line2D([], [], color=OURS["color"], linewidth=2.4, marker="o", label="150M concept memory (ours) · 11.5B tokens"),
+               plt.Line2D([], [], color="#eb6834", linewidth=1.8, marker="o", label="the reference model named above each chart")]
+    fig.legend(handles=handles, loc="upper center", ncol=2, frameon=False, fontsize=9, bbox_to_anchor=(0.5, 1.0))
+    fig.text(0.5, 0.012, f"RULER at {L // 1024}k tokens, 100 prompts per task, greedy, each task's own answer length;"
+             " score = share of expected answers found\n(0 at the centre, 1 at the rim). Each family averages its tasks. "
+             "Ours trained on planted-fact lookups, so its needle scores are not zero-shot.", ha="center", fontsize=8,
+             color=MUTED)
+    fig.subplots_adjust(top=0.86, bottom=0.08, left=0.12, right=0.88, wspace=0.75, hspace=0.6)
+    fig.savefig(OUT / "ruler_radar.png", dpi=160)
+    print("wrote ruler_radar.png")
+    # heatmap: our 13 tasks at every length
+    Ls = sorted(ours)
+    M = np.array([[ours[x][t] for x in Ls] for t, _ in RULER_TASKS])
+    fig, ax = plt.subplots(figsize=(5.6, 5.2))
+    cmap = matplotlib.colors.LinearSegmentedColormap.from_list("blue", ["#f0f4fa", "#9ec5f4", "#3987e5", "#184f95"])
+    ax.imshow(M, cmap=cmap, vmin=0, vmax=1, aspect="auto")
+    for i in range(M.shape[0]):
+        for j in range(M.shape[1]):
+            ax.text(j, i, f"{M[i, j]:.2f}", ha="center", va="center", fontsize=8.5,
+                    color=SURFACE if M[i, j] > 0.55 else INK)
+    ax.set_xticks(range(len(Ls))); ax.set_xticklabels([f"{x // 1024}k" for x in Ls])
+    ax.set_yticks(range(len(RULER_TASKS))); ax.set_yticklabels([n for _, n in RULER_TASKS], fontsize=8.5)
+    ax.tick_params(length=0)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.set_title("RULER, ours: share of expected answers found", fontsize=9.5, color=INK, loc="right")
+    fig.tight_layout()
+    fig.savefig(OUT / "ruler_heat.png", dpi=160)
+    print("wrote ruler_heat.png")
+
+
 if __name__ == "__main__":
     radar([OURS, SMOL, PYTH])
     long_docs()
+    ruler_figures()
     data_efficiency()

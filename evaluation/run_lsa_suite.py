@@ -121,8 +121,14 @@ def redirect_hotpot_download() -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--checkpoint", required=True)
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--checkpoint", help="our perceiver_ar checkpoint folder")
+    src.add_argument("--hf_model", help="ruler/core: a 🤗 causal LM (Hub id or folder) through lm-eval's stock hf model, "
+                                        "for reference rows; prompts are sized with --tokenizer (its own tokenizer)")
     ap.add_argument("--tokenizer", required=True)
+    ap.add_argument("--dtype", default="bfloat16", help="--hf_model only: the model's training precision")
+    ap.add_argument("--max_length", type=int, default=0,
+                    help="--hf_model only: cap on input + answer (the model's own limit); 0 = length + 256")
     ap.add_argument("--suite", choices=("ruler", "core", "extra"), required=True)
     ap.add_argument("--lengths", default="4096,8192,16384")
     ap.add_argument("--extra_lengths", default="2048,4096,8192,16384", help="extra: BABILong context lengths")
@@ -155,8 +161,15 @@ def main() -> None:
     babilong = a.suite == "extra" and "babilong" in a.extra_parts
     max_len = (max(lengths) + 2 * (a.max_gen_toks or 128) if a.suite == "ruler"
                else max(lengths) + max(lengths) // 8 + 512 if babilong else 4096 if a.suite == "extra" else 2048)
-    lm = PerceiverARLMEval(pretrained=a.checkpoint, tokenizer=a.tokenizer, attn_backend=a.backend,
-                           max_length=max_len, batch_size=a.batch, device=a.device)
+    if a.hf_model:
+        from lm_eval.models.huggingface import HFLM
+
+        # the tokenizer's own defaults decide the start of a text (lm-eval's add_bos_token left unset)
+        lm = HFLM(pretrained=a.hf_model, tokenizer=a.tokenizer, max_length=a.max_length or max_len,
+                  batch_size=a.batch, device=a.device, dtype=a.dtype, trust_remote_code=True)
+    else:
+        lm = PerceiverARLMEval(pretrained=a.checkpoint, tokenizer=a.tokenizer, attn_backend=a.backend,
+                               max_length=max_len, batch_size=a.batch, device=a.device)
     if a.notes_off:
         lm.model._message_override = "none"
     if a.concept_sum_len >= 0:
@@ -205,7 +218,7 @@ def main() -> None:
                                             "score": r.get(f"{L}", r.get("score"))}, default=str) + "\n")
         return ev["results"]
 
-    out = {"checkpoint": a.checkpoint, "suite": a.suite, "lengths": lengths if a.suite == "ruler" else None,
+    out = {"checkpoint": a.checkpoint or a.hf_model, "suite": a.suite, "lengths": lengths if a.suite == "ruler" else None,
            "limit": a.limit, "notes_off": a.notes_off, "concept_sum_len": a.concept_sum_len,
            "max_gen_toks": a.max_gen_toks or "task default"}
     if a.suite == "ruler":
