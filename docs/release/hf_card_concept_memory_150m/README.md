@@ -3,10 +3,11 @@ language:
   - en
 license: apache-2.0
 pipeline_tag: text-generation
-# library_name is left out on purpose: the weights do not load with 🤗 Transformers `from_pretrained` yet (see "How to use").
+library_name: transformers
 tags:
   - mrcogito
   - meridian21
+  - custom_code
   - concept-memory
   - size-140m
   - budget-11.5bt
@@ -321,16 +322,39 @@ HotpotQA, SQuAD, the held-out long documents) are not in the training data. Stag
   long-document gain is the memory's.
 - **Longer budgets and larger models** with the same memory, and a second memory design on the same data.
 - **Reasoning over concepts:** the reasoner is built and tested, and switched off in this release.
-- **Loading with 🤗 Transformers `from_pretrained`**, so every future release works with one line.
 
 ## How to use
 
-The weights do not load with `AutoModelForCausalLM.from_pretrained` yet: `perceiver_ar` is our own architecture and
-this repository does not ship modeling code. Making every release load with `from_pretrained` is on our engineering
-list. Until then, load it with the MrCogito code at commit
-[`1fddc505`](https://github.com/ksopyla/MrCogito/tree/1fddc505) (`evaluation/lm_eval_perceiver_ar.py`,
-`load_perceiver_ar_for_eval`): our lm-eval adapter, the long-document scripts in `long_context/` and the sampling
-script that wrote `samples/` all run from that checkout on one CUDA GPU.
+Needs `torch` and `transformers` (tested with 4.57.6 and 5.23.0). The modeling code ships in this repository, so
+loading takes `trust_remote_code=True`. Runs on one CUDA GPU in bf16.
+
+```python
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+repo = "Meridian21Lab/concept-memory-140m-11.5bt"
+tok = AutoTokenizer.from_pretrained(repo, trust_remote_code=True)
+model = AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True, dtype=torch.bfloat16).to("cuda")
+
+inputs = tok("The capital of France is", return_tensors="pt").to("cuda")
+out = model.generate(**inputs, max_new_tokens=40, do_sample=True, temperature=0.7, top_p=0.9,
+                     repetition_penalty=1.1)
+print(tok.decode(out[0], skip_special_tokens=True))
+
+# scoring: mean next-token loss in nats per token
+loss = model(**inputs, labels=inputs["input_ids"]).loss
+```
+
+- `generate` is 🤗 Transformers' own (sampling, greedy, beam search), running over the model's cached decoder. This
+  is a base model, not a chat model.
+- **Long documents** (up to the 64k training length): add `attn_backend="flex"` to `from_pretrained` (PyTorch flex
+  attention on CUDA). The default, `sdpa`, builds a dense attention mask and suits short inputs.
+- For exact scores, batch prompts of one length or score them one at a time: left padding moves the memory's block
+  edges and changes scores slightly.
+- `modeling_perceiver_ar.py` is generated from the MrCogito source by `scripts/export_hub_model.py`;
+  `export_manifest.json` names the source commit. Our lm-eval adapter, the long-document scripts in `long_context/`
+  and the sampling script that wrote `samples/` run from the MrCogito code at
+  [`1fddc505`](https://github.com/ksopyla/MrCogito/tree/1fddc505).
 
 ## Citation
 
@@ -364,6 +388,7 @@ See each dataset's card for its terms.
 ## Changelog and contact
 
 - 2026-11-18: first public release (weights, card, evaluation page, raw results, figures).
+- 2026-11-18: loads with 🤗 Transformers `from_pretrained` (modeling code, `generation_config.json` and `export_manifest.json` added; `config.json` gains `auto_map`).
 
 Krzysztof Sopyła · [ai.ksopyla.com](https://ai.ksopyla.com) · [Meridian21 Lab](https://huggingface.co/Meridian21Lab)
 · questions and errors: open a discussion on this page.

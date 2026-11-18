@@ -159,13 +159,25 @@ radar and long-context charts), the units, text samples, tone, and the pre-publi
 
 This skill keeps the Hub side of the checklist:
 
-1. Hub id, tags and `license:` follow the naming and licence sections above; `library_name: transformers` only when
-   `AutoModelForCausalLM.from_pretrained` works from the Hub id.
-2. Upload the whole release folder (README.md, EVALUATION.md, figures/, eval_results/, long_context/, samples/,
-   ruler/, the weights and tokenizer), **private first**; open the rendered page, check figures, links and tables;
-   then make it public.
-3. Smoke-load from the Hub id (once modeling code ships, with `from_pretrained`); record the Hub URL in the run
-   report.
+1. Hub id, tags and `license:` follow the naming and licence sections above; `library_name: transformers` and the
+   `custom_code` tag only after the Hub smoke test (step 3) passed.
+2. Upload the export folder (`scripts/export_hub_model.py`, section below: modeling and configuration code,
+   `config.json` with `auto_map`, weights, tokenizer, `export_manifest.json`) together with the release folder
+   (README.md, EVALUATION.md, figures/, eval_results/, long_context/, samples/, ruler/), **private first**; open the
+   rendered page, check figures, links and tables.
+3. **Hub smoke test, from the Hub id, before the repo goes public:** in an environment with only `torch` and
+   `transformers` (a fresh venv; `-I` keeps the repo's `nn/` off the path), on the server whose stored login can read
+   the private repo:
+
+   ```bash
+   python -I scripts/hub_smoke_test.py Meridian21Lab/<repo>
+   ```
+
+   It loads with `AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)`, checks the class comes from the
+   repo's own code, scores one sentence (finite loss) and samples 20 tokens (seed 0, temperature 0.7, top-p 0.9);
+   exit 0 = pass. Save its JSON line with the release files. A failure blocks the public switch and the
+   `from_pretrained` snippet in the card.
+4. Make it public; record the Hub URL in the run report.
 
 ### Templates
 
@@ -198,7 +210,8 @@ hf upload ksopyla/<hub-repo-name> "$STAGE" --repo-type model \
   --commit-message "Add <Exp> <hub-repo-name> + model card"
 ```
 
-4. Verify card, tags, license gate; smoke-load from Hub id.
+4. Verify card, tags, license gate; run the Hub smoke test from the Hub id (`scripts/hub_smoke_test.py`, checklist
+   step 3 above). For `perceiver_ar`, stage with `scripts/export_hub_model.py` instead of step 2's copy.
 
 ### B. Legacy interactive script (old Perceiver only)
 
@@ -208,6 +221,19 @@ uv run python scripts/upload_model_to_hf.py --run-name perceiver_mlm_H512L6C128_
 ```
 
 Do **not** use this for `backbone_concept` — naming + card must follow section Naming convention.
+
+## Loading with `from_pretrained` (`perceiver_ar`, since 2026-11-18)
+
+`scripts/export_hub_model.py <checkpoint> <out_dir> [--card README.md]` writes a Hub folder that loads with
+`AutoModelForCausalLM.from_pretrained(<id>, trust_remote_code=True, dtype=torch.bfloat16)`: the `nn/` modules the
+checkpoint's config uses, vendored into flat `modeling_perceiver_ar.py` / `configuration_perceiver_ar.py` (generated,
+never edited by hand: change the source and export again), `auto_map`, `use_liger: false`, the Hub tokenizer id,
+`attn_backend: sdpa` (pass `attn_backend="flex"` for long inputs on CUDA), weights and tokenizer, and
+`export_manifest.json` (source commit, changed config fields, sha256). 🤗 `generate` (greedy, sampling, beam search)
+runs over our cached decoder (`nn/perceiver_ar_hub.py`); `labels=` gives our eval loader's per-token loss.
+Tests: `tests/test_hub_export.py` (CPU always; `HUB_EXPORT_CHECKPOINT=<dir>` adds the real checkpoint on CUDA).
+Spec: `docs/engineering_specs/hub_from_pretrained_loading.md`. Other families (`perceiver_concept`, Gemma grafts)
+have no export yet.
 
 ## External load (`BackboneConceptLM`)
 
