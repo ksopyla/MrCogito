@@ -88,6 +88,14 @@ choose the licence after reading NVIDIA's data terms.**
 **2026-11-18:** now an engineering task: `docs/engineering_specs/hub_from_pretrained_loading.md` (export script,
 `GenerationMixin` over the cached decoder, tests, a Hub smoke test in the release checklist, backfill of this model).
 
+**2026-11-18, later:** done except the backfill. `scripts/export_hub_model.py` writes a folder that loads with
+`AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)` and generates with 🤗 `generate` over the cached
+decoder; for this model it matches our loader's loss (2.75207 both) and our cached greedy (32 tokens), and passes the
+smoke test on a clean machine with Transformers 4.57.6 and 5.23.0. The export sits on Odra
+(`~/dev/MrCogito-hubexport/Cache/hub_export/concept-memory-140m-11.5bt`), not uploaded. Points 1–3 and 5 below are
+solved by the export; 4 (CPU dense mask) and 6 (lm-eval's stock `hf` type) stand. Result and the remaining steps:
+the spec's "Result (2026-11-18)" section.
+
 Today a Hub user needs the MrCogito code (`evaluation/lm_eval_perceiver_ar.load_perceiver_ar_for_eval`). For
 `AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True)` the repository needs:
 

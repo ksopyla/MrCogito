@@ -72,10 +72,11 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
     held-out real documents of the same text for every model, plus a swapped-past control.
 11. **Keep what backers and replicators need:** training budget in tokens, wall time, machines, cost; the data mix by
     stage with Hub links to every dataset and their licences; where the raw results are.
-12. **How to use goes at the bottom, and only with code that runs for the reader.** If the weights do not load with
-    `AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)`, say so in two lines, point to the repo, and
-    keep the engineering task open (target: every release loads with `from_pretrained` and the release checklist
-    smoke-tests it from the Hub id).
+12. **How to use goes at the bottom, and only with code that runs for the reader.** `perceiver_ar` releases are
+    exported with `scripts/export_hub_model.py` and load with
+    `AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)` (2026-11-18). The card shows that snippet
+    only after the **Hub smoke test** passed from the Hub id (checklist below); a family without an export says so in
+    two lines and points to the repo.
 13. **Citation ready to copy:** a BibTeX `@misc` for the model and an `@online` for the project page
     (<https://ai.ksopyla.com/projects/concept-reasoning/>), plus the code at its commit.
 14. **Show the road ahead, briefly.** A *What's next* section of 3–5 bullets naming work that is actually queued or
@@ -98,8 +99,10 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
    the `dataviz` skill (validated palette, light background, one idea per chart).
 5. **Write the card** from [references/card_template.md](references/card_template.md) and the long material into
    `EVALUATION.md`. Reference filled card: `docs/release/hf_card_concept_memory_150m/` (150M concept memory).
-6. **Check** with the list below, then hand the folder to `huggingface-project` for the upload (private first, look
-   at the rendered page, then public).
+6. **Export and check:** `uv run python scripts/export_hub_model.py <checkpoint> <export_dir> --card README.md`
+   (modeling code, `auto_map`, weights, tokenizer, `export_manifest.json`), run `tests/test_hub_export.py` with
+   `HUB_EXPORT_CHECKPOINT=<checkpoint>` on a CUDA machine, go through the list below, then hand both folders to
+   `huggingface-project` for the upload (private first, Hub smoke test, rendered page, then public).
 7. **Record** the Hub URL in the run report and the result files' location on the ledger (append-only).
 
 ## Before publishing — checklist
@@ -116,5 +119,10 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
 - [ ] Samples: sampling settings stated, seed-0 reply shown unpicked, no greedy prose.
 - [ ] Training budget, cost, machines, data mix with links and licences present.
 - [ ] How to use at the bottom; no code that fails for a reader; `from_pretrained` status stated.
+- [ ] **Hub smoke test passed** after the private upload, before going public: in an environment with only `torch`
+      and `transformers`, `python -I scripts/hub_smoke_test.py <org>/<repo>` loads the model from the Hub id with
+      `trust_remote_code=True`, scores one sentence and samples 20 tokens (exit 0, its JSON line saved next to the
+      release files). Only then: the `from_pretrained` snippet in How to use, `library_name: transformers` and the
+      `custom_code` tag in the YAML.
 - [ ] BibTeX for the model and the project page; changelog line with the date.
 - [ ] Raw results, scripts and figures in the repo folder that gets uploaded.

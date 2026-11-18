@@ -15,6 +15,25 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-18] - Hub releases that load with `from_pretrained`
+
+**Why:** the first public release (150M concept memory) could only be used by cloning the repo and calling our
+loader; the author asked that every release load with `AutoModelForCausalLM.from_pretrained` and be smoke-tested that
+way before it goes public (spec `docs/engineering_specs/hub_from_pretrained_loading.md`).
+
+- **Export:** `scripts/export_hub_model.py <checkpoint> <out_dir>` vendors the `nn/` modules a `perceiver_ar`
+  config uses into flat `modeling_perceiver_ar.py` / `configuration_perceiver_ar.py` (generated from the source, never
+  edited), adds `auto_map`, switches off training-only fields (`use_liger`, the AWS `tokenizer_name`, flex as the
+  default backend), copies weights + tokenizer and writes `export_manifest.json`.
+- **🤗 interface:** `nn/perceiver_ar_hub.PerceiverARForCausalLM` (same weights and keys as `PerceiverARLM`):
+  `labels=` gives the eval loader's per-token loss (no z-loss); 🤗 `generate` (greedy, sampling, beam search) runs
+  over the cached decoder through `PerceiverARCache`, re-prefills when the row is full, falls back to the uncached
+  loop where the cache does not cover a read. `IncrementalDecoder.reorder` (beam search) is new in `nn/incremental.py`.
+- **Release checklist:** `scripts/hub_smoke_test.py` (load from the Hub id, score one sentence, sample 20 tokens) in
+  the `model-release` and `huggingface-project` skills.
+- Checked: `tests/test_hub_export.py` (CPU tiny models; the 150M checkpoint on an Odra RTX 3090: same loss as our
+  loader, 32 greedy tokens identical to our cached greedy); clean venvs with Transformers 4.57.6 and 5.23.0.
+
 ## [2026-11-14] - Plain W&B names for the AWS long runs
 
 - `training/utils_training.init_wandb` reads `MC_WANDB_NAME` (display name), `MC_WANDB_TAGS` (extra comma-separated
