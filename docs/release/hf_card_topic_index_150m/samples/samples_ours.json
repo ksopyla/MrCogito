@@ -1,5 +1,5 @@
 {
- "model": "Meridian21Lab/lsa-140m-11.5bt (final weights)",
+ "model": "Meridian21Lab/topic-index-140m-11.5bt (final weights)",
  "new_tokens": 60,
  "start_tokens": [
   0

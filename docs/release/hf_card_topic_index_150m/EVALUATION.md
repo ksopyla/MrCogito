@@ -1,4 +1,4 @@
-# 150M LSA: evaluation details
+# 150M topic index: evaluation details
 
 The method and the full tables behind the [model card](README.md). Every number here has its raw file in this
 repository (`eval_results/`, `long_context/`, `ruler/`, `samples/`), and `figures/make_figures.py` draws the card's
@@ -44,20 +44,20 @@ head-to-head can be recomputed from this repository alone.
 ## Head to head with the sibling
 
 The two 150M models read the same shards in the same order (identical data manifests in all three stages), with the
-same seed, budget, optimizer, schedule and layers; only the reading layer differs. Differences are LSA minus concept
+same seed, budget, optimizer, schedule and layers; only the reading layer differs. Differences are topic index minus concept
 memory; intervals are 95 % bootstrap over the test items (documents for long text, prompts for RULER), paired wherever both
 models saw the same items (all documents; RULER from 4k to 16k).
 
-| Test | Unit, direction | LSA | Concept memory | LSA − concept memory [95 %] | Verdict |
+| Test | Unit, direction | Topic index | Concept memory | Topic index − concept memory [95 %] | Verdict |
 |---|---|---:|---:|---:|---|
-| RULER at 4k, mean of 13 | share found ↑ | 0.541 | 0.488 | +0.052 [+0.034, +0.071] | LSA ahead |
-| RULER at 8k | share found ↑ | 0.540 | 0.439 | +0.101 [+0.081, +0.119] | LSA ahead |
-| RULER at 16k | share found ↑ | 0.439 | 0.373 | +0.066 [+0.047, +0.084] | LSA ahead |
-| RULER at 32k ¹ | share found ↑ | 0.390 | 0.319 | +0.072 [+0.052, +0.092] | LSA ahead |
+| RULER at 4k, mean of 13 | share found ↑ | 0.541 | 0.488 | +0.052 [+0.034, +0.071] | topic index ahead |
+| RULER at 8k | share found ↑ | 0.540 | 0.439 | +0.101 [+0.081, +0.119] | topic index ahead |
+| RULER at 16k | share found ↑ | 0.439 | 0.373 | +0.066 [+0.047, +0.084] | topic index ahead |
+| RULER at 32k ¹ | share found ↑ | 0.390 | 0.319 | +0.072 [+0.052, +0.092] | topic index ahead |
 | Long documents, 61k context, cross-model test | bits per byte ↓ | 0.797 | 0.795 | +0.002 [+0.001, +0.003] | concept memory ahead by 0.2 % |
 | Same, our tokens, 64k spans (55 documents) | nats per token ↓ | 2.299 | 2.293 | +0.005 [+0.002, +0.009] | concept memory ahead by 0.2 % |
 | Our tokens, 16k spans (120 documents) | nats per token ↓ | 2.129 | 2.126 | +0.004 [+0.002, +0.006] | concept memory ahead by 0.2 % |
-| Our tokens, 128k spans, whole document (15) | nats per token ↓ | 2.426 | 2.451 | −0.025 [−0.034, −0.017] | LSA ahead by 1.0 % |
+| Our tokens, 128k spans, whole document (15) | nats per token ↓ | 2.426 | 2.451 | −0.025 [−0.034, −0.017] | topic index ahead by 1.0 % |
 | Gain from far context, 1k → 61k, cross-model test | bits per byte ↑ | 0.049 | 0.051 | −0.002 | tie |
 | Cost of switching the far read off, 64k | nats per token | 0.308 | 0.287 | | both read far |
 | Grammar (BLiMP) | % ↑ | 80.11 ± 0.14 | 80.56 ± 0.14 | −0.45 (≈2 standard errors) | concept memory ahead |
@@ -74,10 +74,10 @@ model's prompts resampled on their own); the other 5 tasks at 32k, and every tas
 prompt and are paired.
 
 **Reading it.** The two reads tie on everything that is prediction of ordinary text, with a consistent 0.2 % edge to
-the concept memory up to the training length, and LSA degrades less past it. On retrieval LSA is clearly ahead, and
+the concept memory up to the training length, and the topic index degrades less past it. On retrieval the topic index is clearly ahead, and
 the gain is concentrated: several values or keys at once (+0.12 to +0.34 by length), counting words (+0.11 to +0.25),
 questions (+0.03 to +0.06, intervals touching zero at three lengths); single needles and distractor keys tie. A
-plausible reading: LSA spends its 512 opened tokens on the best-matching buckets only, while the concept memory spends
+plausible reading: the LSA read spends its 512 opened tokens on the best-matching buckets only, while the concept memory spends
 part of its read on summaries of every group; when several separate facts must be copied out, opened tokens win. This
 is one seed of each model.
 
@@ -86,7 +86,7 @@ is one seed of each model.
 Accuracy in %, higher is better, ± standard error from the harness. In brackets: EleutherAI's own published
 zero-shot results for Pythia-160M (quoted).
 
-| Benchmark | Chance | **LSA** · 11.5B | Concept memory · 11.5B | SmolLM2-135M · 252B | SmolLM2-135M · ≈2T (final) | Pythia-160M · 300B | LFM2.5-350M-Base · 28T |
+| Benchmark | Chance | **Topic index** · 11.5B | Concept memory · 11.5B | SmolLM2-135M · 252B | SmolLM2-135M · ≈2T (final) | Pythia-160M · 300B | LFM2.5-350M-Base · 28T |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | BLiMP, 67 sets | 50 | 80.11 ± 0.14 | **80.56** ± 0.14 | 79.72 ± 0.14 | 80.15 ± 0.14 | 77.48 | 80.17 |
 | ARC-Easy | 25 | 48.40 ± 1.03 | 48.95 ± 1.03 | 61.62 ± 1.0 | 64.27 ± 0.98 | 43.64 ± 1.0 (43.52) | **70.03** ± 0.9 |
@@ -141,7 +141,7 @@ of 2026-11-14; each of our rows is placed on its own.
 | (24) | *150M concept memory (sibling)* | Meridian21 Lab | 141.5M | 11.5B | 80.56 | 48.95 | 1.950 | 76.2 | 77.7 |
 | 24 | Glint-2.3 | glintresearch | 1.7M | 10B | 67.30 | 36.00 | 3.051 | 64.8 | 77.6 |
 | 25 | Zedev-134M-Fudas | meridianmrm | 134.0M | 20.7b | 81.69 | 46.38 | 1.880 | 76.0 | 77.6 |
-| **26** | **150M LSA (ours)** | Meridian21 Lab | 141.5M | 11.5B | 80.11 | 48.40 | 1.950 | 75.9 | 77.4 |
+| **26** | **150M topic index (ours)** | Meridian21 Lab | 141.5M | 11.5B | 80.11 | 48.40 | 1.950 | 75.9 | 77.4 |
 | 27 | Hydrion-v1-Base | opengcm | 114.1M | ≈2.5B | 80.08 | 47.26 | 2.040 | 75.2 | 77.4 |
 | 28 | GoLLeM-v5 64M | Fabryka AI | 62.9M | 24.9B | 76.16 | 48.19 | 2.347 | 73.4 | 77.2 |
 | 29 | Ivme-Conversate-v2-Base | ivmelabs | 23.9M | ≈12.85B | 75.09 | 39.98 | 2.225 | 70.6 | 77.1 |
@@ -172,7 +172,7 @@ By quality alone (no size bonus) the model is 16th of 101; on grammar alone, 11t
 
 ## Data efficiency
 
-| Test | **LSA** at 11.5B | Concept memory at 11.5B | Pythia-160M at 10.5B | at 12.6B | at 300B (final) | SmolLM2-135M at 252B | at 503B | at ≈2T (final) |
+| Test | **Topic index** at 11.5B | Concept memory at 11.5B | Pythia-160M at 10.5B | at 12.6B | at 300B (final) | SmolLM2-135M at 252B | at 503B | at ≈2T (final) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | Grammar (BLiMP) % ↑ | 80.11 | 80.56 | 77.94 | 78.28 | 77.48 | 79.72 | 79.62 | 80.15 |
 | Science quiz (ARC-Easy) % ↑ | 48.40 | 48.95 | 42.59 | 42.76 | 43.64 | 61.62 | 59.97 | 64.27 |
@@ -200,7 +200,7 @@ cannot take a budget is scored with sliding windows of its own maximum length ("
 
 | Model | Params | Max length | 1k | 4k | 16k | 28k | whole document | saved, 1k → most context | docs better with more | another document's far past |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 150M LSA (ours) | 141.5M | 65,536 | 0.845 | 0.828 | 0.816 | 0.809 | 0.797 | 0.049 [0.035, 0.065] | 93 % | 0.834 |
+| 150M topic index (ours) | 141.5M | 65,536 | 0.845 | 0.828 | 0.816 | 0.809 | 0.797 | 0.049 [0.035, 0.065] | 93 % | 0.834 |
 | 150M concept memory (sibling) | 141.5M | 65,536 | 0.846 | 0.828 | 0.816 | 0.808 | 0.795 | 0.051 [0.037, 0.067] | 96 % | 0.832 |
 | SmolLM2-135M at 252B tokens (step 240,000) | 134.5M | 2,048 | 0.933 (limit) | — | — | — | — | 0.000 [0.000, 0.000] | 0 % | 0.932 |
 | SmolLM2-135M | 134.5M | 8,192 | 0.851 | 0.835 | 0.832 (limit) | — | — | 0.018 [0.014, 0.024] | 95 % | 0.836 |
@@ -209,9 +209,9 @@ cannot take a budget is scored with sliding windows of its own maximum length ("
 | Granite 4.0 350M base | 352.4M | 32,768 | 0.817 | 0.797 | 0.783 | 0.776 | 0.776 (limit) | 0.041 [0.033, 0.051] | 100 % | 0.798 |
 | LFM2.5-350M-Base | 354.5M | 32,768 | 0.893 | 0.879 | 0.912 | 0.928 | 0.928 (limit) | -0.035 [-0.051, -0.020] | 22 % | 0.933 |
 
-Each model with the most of the document it can take, against 150M LSA (ours) with the whole document:
+Each model with the most of the document it can take, against 150M topic index (ours) with the whole document:
 
-| Model | its bits per byte | 150M LSA (ours) | difference (+ = 150M LSA (ours) better) | documents where 150M LSA (ours) is better |
+| Model | its bits per byte | 150M topic index (ours) | difference (+ = 150M topic index (ours) better) | documents where 150M topic index (ours) is better |
 |---|---:|---:|---:|---:|
 | 150M concept memory (sibling) | 0.795 | 0.797 | -0.002 [-0.003, -0.001] | 38 % |
 | SmolLM2-135M at 252B tokens (step 240,000) | 0.933 | 0.797 | +0.136 [+0.112, +0.161] | 98 % |
@@ -241,7 +241,7 @@ over documents.
 
 **At 64k** (55 documents; the concept memory's values from the sibling card's run on the same documents):
 
-| variant | LSA | worse than LSA full by [95 %] | docs worse | CM | LSA − CM [95 %] | docs LSA better |
+| variant | Topic index | worse than its full context by [95 %] | docs worse | Concept memory | topic index − concept memory [95 %] | docs where the topic index is better |
 |---|---:|---:|---:|---:|---:|---:|
 | 1024 (n=55) | 2.439 | +0.141 [+0.100, +0.186] | 93 % | 2.441 | -0.0017 [-0.0046, +0.0013] | 62 % |
 | 4096 (n=55) | 2.390 | +0.091 [+0.059, +0.127] | 85 % | 2.390 | -0.0001 [-0.0029, +0.0026] | 51 % |
@@ -251,8 +251,8 @@ over documents.
 | swap (n=55) | 2.406 | +0.108 [+0.079, +0.139] | 98 % | 2.400 | +0.0064 [+0.0032, +0.0095] | 29 % |
 
 Rows: the context before the target (1k … the whole 61,439 tokens), "off" (the far read switched off on the full
-span) and "swap" (own last 4k + another document's 57k). "Worse than full" is LSA's own cost; the last two columns
-compare the two models on the same variant (+ = concept memory better). Full context in bits per byte: LSA 0.793.
+span) and "swap" (own last 4k + another document's 57k). "Worse than full" is the topic index's own cost; the last two columns
+compare the two models on the same variant (+ = concept memory better). Full context in bits per byte: the topic index 0.793.
 
 **At 16k** (120 documents, 12,287 tokens of full context): full 2.129 nats per token (concept memory 2.126); cut to 4k
 +0.040 [0.033, 0.049]; cut to 1k +0.091 [0.077, 0.107] (98 % of documents worse); another document's far past +0.049;
@@ -260,7 +260,7 @@ far read off +0.308 (concept memory: memory off +0.271).
 
 **At 128k, twice the training length** (15 documents: 4 books, 8 DOAB, 2 US GPO, 1 arXiv):
 
-| variant | LSA | worse than LSA full by [95 %] | docs worse | CM | LSA − CM [95 %] | docs LSA better |
+| variant | Topic index | worse than its full context by [95 %] | docs worse | Concept memory | topic index − concept memory [95 %] | docs where the topic index is better |
 |---|---:|---:|---:|---:|---:|---:|
 | 4096 (n=15) | 2.440 | +0.014 [-0.021, +0.052] | 53 % | 2.441 | -0.0011 [-0.0065, +0.0044] | 53 % |
 | 16384 (n=15) | 2.410 | -0.016 [-0.041, +0.014] | 33 % | 2.409 | +0.0007 [-0.0053, +0.0069] | 53 % |
@@ -276,15 +276,15 @@ The arXiv document has no swap row: no other arXiv validation document is long e
 - **Per source** (64k, nats per token from 1k to full): US government documents 2.019 → 1.648, arXiv 1.218 → 0.941,
   DOAB 2.300 → 2.150, books 2.984 → 2.918, debates 2.591 → 2.542, the same ranking as the sibling.
 - **Past 64k:** as for the sibling, the last 61k tokens predict better than the whole 127k (by 0.031 nats per token,
-  on 14 of 15 documents), so feed the last ≈64k; but LSA's whole-document read holds up better than the sibling's
+  on 14 of 15 documents), so feed the last ≈64k; but the topic index's whole-document read holds up better than the sibling's
   (2.426 against 2.451) and a long wrong past distracts it less (2.646 against 2.683).
 - **"Far read off" overstates the read's value:** the model never trained without it; the context cut is the cleaner
   measure.
 
 **From the AWS tests (2026-11-18, training machine, 8 rows per source and length, different rows per length):** on
 seven long-document sources (books, arXiv, DOAB, US GPO, Hansard, science PDFs, code repositories) at 4k, 16k, 32k
-and 64k tokens, LSA and the concept memory differ by at most 0.008 nats per token (LSA ahead by up to 0.006 at 4k,
-behind by up to 0.008 at 16k–64k), the same small edge to the concept memory as above. Switching LSA's far read off
+and 64k tokens, the topic index and the concept memory differ by at most 0.008 nats per token (the topic index ahead by up to 0.006 at 4k,
+behind by up to 0.008 at 16k–64k), the same small edge to the concept memory as above. Switching the topic index's far read off
 costs 0.06 (debates, 4k) to 0.40 nats per token (open-access books, 32k).
 
 ## RULER
@@ -297,7 +297,7 @@ shape (different wording), for both models.
 **This model at every length, the sibling in brackets** (RTX 3090 cards, 2026-11-18 15:19–16:11 UTC; 4k and 8k, 16k
 on one card each; 32k split by task over three cards):
 
-<p align="center"><img src="figures/ruler_heat.png" width="520" alt="Heatmap of the 150M LSA's 13 RULER tasks at 4k, 8k, 16k and 32k."></p>
+<p align="center"><img src="figures/ruler_heat.png" width="520" alt="Heatmap of the 150M topic index's 13 RULER tasks at 4k, 8k, 16k and 32k."></p>
 
 | RULER task | What it asks | 4k | 8k | 16k | 32k |
 |---|---|---:|---:|---:|---:|
@@ -321,7 +321,7 @@ through lm-eval's stock `hf` model, each in bf16, its prompts sized with its own
 answer (length + 256 positions). Pythia-160M and SmolLM2-135M's 252B checkpoint read 2,048 tokens and cannot take
 RULER's shortest length. Best in each row in **bold** (ties bolded together).
 
-| RULER task, 8k | **LSA** | Concept memory | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
+| RULER task, 8k | **Topic index** | Concept memory | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
 |---|---:|---:|---:|---:|---:|---:|
 | single needle, noise filler | **1.00** | **1.00** | **1.00** | **1.00** | **1.00** | 0.99 |
 | single needle, essays | **1.00** | **1.00** | 0.97 | 0.51 | **1.00** | **1.00** |
@@ -338,7 +338,7 @@ RULER's shortest length. Best in each row in **bold** (ties bolded together).
 | QA (HotpotQA) | 0.25 | 0.15 | 0.22 | 0.19 | **0.27** | 0.25 |
 | **Mean of 13** | **0.54** | 0.44 | 0.30 | 0.33 | **0.54** | 0.42 |
 
-| RULER task, 4k | **LSA** | Concept memory | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
+| RULER task, 4k | **Topic index** | Concept memory | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
 |---|---:|---:|---:|---:|---:|---:|
 | single needle, noise filler | **1.00** | **1.00** | **1.00** | **1.00** | **1.00** | 0.98 |
 | single needle, essays | **1.00** | **1.00** | 0.98 | 0.97 | **1.00** | **1.00** |

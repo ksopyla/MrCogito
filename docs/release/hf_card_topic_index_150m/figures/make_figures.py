@@ -1,9 +1,9 @@
-"""Figures for the 150M LSA model card, drawn from the result files next to the card.
+"""Figures for the 150M topic index model card, drawn from the result files next to the card.
 
-    python figures/make_figures.py          (from docs/release/hf_card_lsa_150m)
+    python figures/make_figures.py          (from docs/release/hf_card_topic_index_150m)
 
 Same forms and settings as the sibling card (docs/release/hf_card_concept_memory_150m/figures/make_figures.py); here
-the LSA model is "ours" and its sibling, the 150M concept memory, is the second highlighted model.
+the topic index (our LSA model) is "ours" and its sibling, the 150M concept memory, is the second highlighted model.
 
 radar.png        ours, the 150M concept memory and SmolLM2-135M at its earliest public checkpoint (~252B tokens) on
                  six standard benchmarks. Each axis is the model's score as a share of the best of the three (rim =
@@ -45,8 +45,8 @@ from summarise_compare import load as load_long, pooled  # noqa: E402
 
 SURFACE, INK, INK2, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
-OURS = dict(name="150M LSA (ours)", board="e38_lsa150m_final", core7="e38_lsa150m_core7", long="compare_ours.json",
-            ruler="ruler_", tokens=11.5e9, color=BLUE, short="LSA")
+OURS = dict(name="150M topic index (ours)", board="e38_lsa150m_final", core7="e38_lsa150m_core7", long="compare_ours.json",
+            ruler="ruler_", tokens=11.5e9, color=BLUE, short="Topic index")
 SIB = dict(name="150M concept memory (sibling)", board="e38_mem150m_final", core7="e38_mem150m_core7",
            long="compare_concept_memory.json", ruler="cm_ruler_", tokens=11.5e9, color=ORANGE, short="Concept mem.")
 SMOL = dict(name="SmolLM2-135M, earliest public checkpoint", board="ref_smollm2_135m_step240k_board",
@@ -54,7 +54,7 @@ SMOL = dict(name="SmolLM2-135M, earliest public checkpoint", board="ref_smollm2_
 SMOL_FINAL = dict(name="SmolLM2-135M", board="ref_smollm2_135m_board", tokens=2.0e12, color=AQUA)
 PYTH = dict(name="Pythia-160M", tokens=299.9e9, color=MUTED)
 # the long-document chart: (file, label, parameters, training tokens as reported, colour or None for grey)
-LONG = [("compare_ours.json", "LSA (ours)", "141.5M", "11.5B", BLUE),
+LONG = [("compare_ours.json", "Topic index (ours)", "141.5M", "11.5B", BLUE),
         ("compare_concept_memory.json", "Concept memory (sibling)", "141.5M", "11.5B", ORANGE),
         ("compare_smollm2_step240k.json", "SmolLM2-135M, 252B checkpoint", "135M", "252B", None),
         ("compare_smollm2.json", "SmolLM2-135M final", "135M", "≈2T", None),
@@ -268,7 +268,7 @@ def ruler_heat() -> None:
     ax.tick_params(length=0)
     for sp in ax.spines.values():
         sp.set_visible(False)
-    ax.set_title("RULER, 150M LSA: share of expected answers found", fontsize=9.5, color=INK, loc="left")
+    ax.set_title("RULER, 150M topic index: share of expected answers found", fontsize=9.5, color=INK, loc="left")
     fig.tight_layout()
     fig.savefig(OUT / "ruler_heat.png", dpi=160)
     print("wrote ruler_heat.png")
@@ -306,9 +306,9 @@ def ruler_radar(L: int = 8192) -> None:
             ax.fill(np.append(ang, ang[0]), vals + vals[:1], color=col, alpha=0.10, zorder=z - 1)
             ax.plot(np.append(ang, ang[0]), vals + vals[:1], color=col, linewidth=w, zorder=z, linestyle=ls)
             ax.scatter(ang, vals, s=18, color=col, edgecolor=SURFACE, linewidth=1.2, zorder=z + 1)
-        ax.set_title(f"vs {lab} · {tok} tokens\nmean of 13: LSA {np.mean(list(ours[L].values())):.2f}, "
+        ax.set_title(f"vs {lab} · {tok} tokens\nmean of 13: ours {np.mean(list(ours[L].values())):.2f}, "
                      f"it {np.mean(list(sc[L].values())):.2f}", fontsize=8.5, color=INK, pad=28)
-    handles = [plt.Line2D([], [], color=BLUE, linewidth=2.4, marker="o", label="150M LSA (ours) · 11.5B tokens"),
+    handles = [plt.Line2D([], [], color=BLUE, linewidth=2.4, marker="o", label="150M topic index (ours) · 11.5B tokens"),
                plt.Line2D([], [], color=ORANGE, linewidth=1.8, marker="o", linestyle=(0, (5, 2)),
                           label="150M concept memory (sibling)"),
                plt.Line2D([], [], color=MUTED, linewidth=1.6, marker="o", label="the reference named above each chart")]

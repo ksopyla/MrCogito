@@ -1,10 +1,15 @@
-# 150M LSA: open questions before the Hugging Face release
+# 150M topic index (LSA): open questions before the Hugging Face release
 
 Card: `README.md` next to this file (card standard v3), long tables in `EVALUATION.md`. Sibling release:
 `Meridian21Lab/concept-memory-140m-11.5bt` (`docs/release/hf_card_concept_memory_150m/`).
 
-**2026-11-18 ≈17:03 UTC: uploaded PRIVATE** (author: "Yes, upload private") to
-<https://huggingface.co/Meridian21Lab/lsa-140m-11.5bt>, Hub commit `8066f778`, 99 files (export from MrCogito commit
+**2026-11-18, name:** the author asked for a better name than "LSA port" / "LSA (ours)" and chose **"Topic index"**
+from four proposals (topic index, sparse recall, bucket reader, LSA native): the model and the line of long models with
+this read are "topic index"; "LSA" names the method and stays credited to its authors. The private repo was renamed
+`Meridian21Lab/lsa-140m-11.5bt` → `Meridian21Lab/topic-index-140m-11.5bt` (the old id redirects while it exists).
+
+**2026-11-18 ≈17:03 UTC: uploaded PRIVATE** (author: "Yes, upload private") as `lsa-140m-11.5bt`, renamed as above;
+now <https://huggingface.co/Meridian21Lab/topic-index-140m-11.5bt>, first Hub commit `8066f778`, 99 files (export from MrCogito commit
 `e380a125`, the card folder, `LICENSE`, `NOTICE`), uploaded from the Mac with the `.env` variable
 `HF_TOKEN_MERIDAIN21_ORG`. Hub smoke test from the repo id passed (`hub_smoke_test.json`). Still private: the public
 switch waits for the author's look at the rendered page and a yes.
@@ -12,7 +17,7 @@ switch waits for the author's look at the rendered page and a yes.
 ## 1. Decisions for the author (each with a recommendation)
 
 ### 1.1 Repository id
-**Recommendation: `Meridian21Lab/lsa-140m-11.5bt`.** It follows the sibling's pattern (line · size · data budget)
+**Decided: `Meridian21Lab/topic-index-140m-11.5bt` (see the top). First recommendation, superseded: `Meridian21Lab/lsa-140m-11.5bt`.** It follows the sibling's pattern (line · size · data budget)
 and the naming rule (a short family name people can say aloud). "LSA" is the name Kubicek et al. (Prefrontal AI,
 ETH Zürich) gave their method, so a reader may take the repo for theirs; the card's first line says it is our
 from-scratch training of a port of their released read and links their paper and code. Alternative:
@@ -34,7 +39,7 @@ in place of their Triton kernel). Optional: tell the authors before the public s
 
 ## 2. Pre-publish checklist
 
-- [x] 1.1–1.3: the author approved the private upload as `Meridian21Lab/lsa-140m-11.5bt` (2026-11-18); licence and
+- [x] 1.1–1.3: the author approved the private upload (2026-11-18) and the name `Meridian21Lab/topic-index-140m-11.5bt`; licence and
       visibility as the sibling.
 - [x] Results from the Odra run (2026-11-18 15:08–16:24 UTC, `scripts/release_evals.sh`, 13 jobs, none failed) in
       `eval_results/`, `long_context/`, `ruler/`, `samples/`; figures drawn (`python figures/make_figures.py`).
@@ -49,14 +54,14 @@ in place of their Triton kernel). Optional: tell the authors before the public s
 - [ ] README is 396 lines after the YAML (sibling 362, skill target ≈300). Candidates to move to EVALUATION.md if
       the author wants it shorter: the leaderboard rows 5–10, the data-efficiency bullets, the long-document table's
       reference rows.
-- [x] Upload **private** (author's yes, 2026-11-18) and `python -I scripts/hub_smoke_test.py Meridian21Lab/lsa-140m-11.5bt`
+- [x] Upload **private** (author's yes, 2026-11-18) and `python -I scripts/hub_smoke_test.py Meridian21Lab/<id>`
       in a clean venv (torch 2.11 + Transformers 4.57.6 only): passed, revision `8066f778`, sentence loss 2.3029 (CPU,
       fp32), 20 sampled tokens.
 - [ ] The author looks at the rendered page (figures, tables, links; no strikethrough), then switches it public.
 - [ ] After the public switch: the sibling card's back-link (the sibling session adds it), `library_name` stays.
 - [ ] W&B: the three training runs carry the stale default tags `JeanKaddour/minipile` and `minipile` (the model
       never read MiniPile) and a machine-name tag (`ip-…`); fix before the card links them.
-- [ ] Tiny-ML Leaderboard: the LSA model may be submitted next to the concept memory; disclose the planted-fact
+- [ ] Tiny-ML Leaderboard: the topic index may be submitted next to the concept memory; disclose the planted-fact
       lookup rows, as for the sibling.
 
 ## 3. Notes for the record

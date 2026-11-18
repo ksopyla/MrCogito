@@ -14,7 +14,7 @@ import sys
 import numpy as np
 
 LN2 = math.log(2)
-NAMES = {"lsa_m120t_final": "150M LSA (ours)", "e37a_m120t_final": "150M concept memory (sibling)",
+NAMES = {"lsa_m120t_final": "150M topic index (ours)", "e37a_m120t_final": "150M concept memory (sibling)",
          "SmolLM2-135M": "SmolLM2-135M", "pythia-160m": "Pythia-160M",
          "gemma-3-270m": "Gemma 3 270M", "granite-4.0-350m-base": "Granite 4.0 350M base",
          "smollm2_135m_step240k": "SmolLM2-135M at 252B tokens (step 240,000)", "lfm25_350m_base": "LFM2.5-350M-Base"}

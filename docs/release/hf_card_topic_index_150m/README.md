@@ -8,6 +8,7 @@ tags:
   - mrcogito
   - meridian21
   - custom_code
+  - topic-index
   - latent-sparse-attention
   - lsa
   - size-140m
@@ -31,7 +32,7 @@ datasets:
   - allenai/dolma3_longmino_pool
   - HuggingFaceTB/smol-smoltalk
 model-index:
-  - name: lsa-140m-11.5bt
+  - name: topic-index-140m-11.5bt
     results:
       - task: {type: text-generation, name: Grammar (BLiMP, 67 sets, 0-shot)}
         dataset: {type: blimp, name: BLiMP}
@@ -44,9 +45,9 @@ model-index:
         metrics: [{type: perplexity, value: 1.950, name: byte perplexity (lower is better)}]
 ---
 
-# 150M LSA: a small base model that reads 64k tokens with Latent Sparse Attention
+# 150M topic index: a small base model that reads 64k tokens with Latent Sparse Attention
 
-**`Meridian21Lab/lsa-140m-11.5bt`** · [Project page](https://ai.ksopyla.com/projects/concept-reasoning/) ·
+**`Meridian21Lab/topic-index-140m-11.5bt`** · [Project page](https://ai.ksopyla.com/projects/concept-reasoning/) ·
 [Code](https://github.com/ksopyla/MrCogito/tree/1fddc505) · [Evaluation details](EVALUATION.md) ·
 [Training on W&B](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_ar_perceiver_H896L3g1s9N128_20261118_083324_lsa_m120t_long) ·
 Sibling: [150M concept memory](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt)
@@ -57,7 +58,8 @@ ETH Zürich, [arXiv 2610.42147](https://arxiv.org/abs/2610.42147),
 [code](https://github.com/Prefrontal-AI/latent-sparse-attention)): it sorts the text it has already read into small
 groups of tokens with related content, and for every next word it looks up the groups that match best and rereads
 those tokens word for word. This model is our port of their released read, trained from scratch in our own
-architecture; it is not a model from the LSA authors.
+architecture, and we name it after what the read does: a **topic index**. It is not a model from the LSA authors;
+the method and its name are theirs.
 
 It has a **sibling**: the [150M concept memory](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt),
 trained on the same data, in the same order, for the same budget, with the same layers. Only the reading layer
@@ -88,7 +90,7 @@ concepts and reason over them. A research release: base model, one training seed
   `AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)`, scores a whole 64k document in one pass on a
   single 24 GB RTX 3090, and every number on this card has its raw result file in this repository.
 
-<p align="center"><img src="figures/ruler_siblings.png" width="860" alt="Six small charts, one per RULER task family, share of answers found against context length from 4k to 32k tokens for the 150M LSA and the 150M concept memory. The lines overlap for single needles, distractor keys, variable tracking and questions; LSA is clearly higher for several values or keys at once and for counting words."></p>
+<p align="center"><img src="figures/ruler_siblings.png" width="860" alt="Six small charts, one per RULER task family, share of answers found against context length from 4k to 32k tokens for the 150M topic index and the 150M concept memory. The lines overlap for single needles, distractor keys, variable tracking and questions; the topic index is clearly higher for several values or keys at once and for counting words."></p>
 
 *RULER by task family, 4k to 32k tokens: this model (blue) and its sibling, the concept memory (orange, dashed), same harness and settings, 100 prompts per task and length (the same prompts for both models from 4k to 16k). Both trained on planted-fact lookups, so the needle tasks are not zero-shot for either.*
 
@@ -99,9 +101,9 @@ lm-evaluation-harness 0.4.11, 0-shot, all test items, max length 2,048; each mod
 the concept memory, SmolLM2 and LFM2.5 in bf16, Pythia in fp32). Long documents: our cross-model test (below).
 Accuracy in %, higher is better; best in each row in **bold**.
 
-<p align="center"><img src="figures/radar.png" width="560" alt="Radar chart of six standard benchmarks for the 150M LSA, the 150M concept memory and SmolLM2-135M at its 252B-token checkpoint. The two 150M models overlap almost everywhere; SmolLM2 is further out on the science quizzes, HellaSwag and WikiText, level on grammar."></p>
+<p align="center"><img src="figures/radar.png" width="560" alt="Radar chart of six standard benchmarks for the 150M topic index, the 150M concept memory and SmolLM2-135M at its 252B-token checkpoint. The two 150M models overlap almost everywhere; SmolLM2 is further out on the science quizzes, HellaSwag and WikiText, level on grammar."></p>
 
-| Measure | Chance | **150M LSA** · 11.5B tokens | 150M concept memory ¹ · 11.5B | SmolLM2-135M · 252B ² | Pythia-160M · 300B ³ | LFM2.5-350M-Base · 28T ⁴ |
+| Measure | Chance | **150M topic index** · 11.5B tokens | 150M concept memory ¹ · 11.5B | SmolLM2-135M · 252B ² | Pythia-160M · 300B ³ | LFM2.5-350M-Base · 28T ⁴ |
 |---|---:|---:|---:|---:|---:|---:|
 | Grammar (BLiMP, 67 sets) | 50 | 80.11 ± 0.14 | **80.56** | 79.72 | 77.48 | 80.17 |
 | Science quiz (ARC-Easy) | 25 | 48.40 ± 1.03 | 48.95 | 61.62 | 43.64 (43.52) | **70.03** |
@@ -139,7 +141,7 @@ tokens, so models with different tokenizers compare fairly. At these values a di
 
 ## Finding facts far back (RULER)
 
-<p align="center"><img src="figures/ruler_radar.png" width="900" alt="Four small radar charts of RULER at 8k tokens by task family, the 150M LSA and the 150M concept memory each against one reference model: SmolLM2-135M, Gemma 3 270M, Granite 4.0 350M and LFM2.5-350M-Base."></p>
+<p align="center"><img src="figures/ruler_radar.png" width="900" alt="Four small radar charts of RULER at 8k tokens by task family, the 150M topic index and the 150M concept memory each against one reference model: SmolLM2-135M, Gemma 3 270M, Granite 4.0 350M and LFM2.5-350M-Base."></p>
 
 The standard long-context suite: 13 tasks, 100 prompts per task and length, greedy decoding, each task's own answer
 length; score = share of the expected answers found in the reply (higher is better). RTX 3090 cards, 2026-11-18.
@@ -166,7 +168,7 @@ tokenizer. Not zero-shot for our two models: their training included planted-fac
 
 ## Long documents
 
-<p align="center"><img src="figures/long_docs.png" width="860" alt="Bits per byte on the last pages of 55 held-out 64k-token documents against the context each model is given. The 150M LSA and the 150M concept memory lie on top of each other and improve steadily up to 61k tokens; same-size models stop at 2k and 8k; Gemma 3 270M is level up to its 32k limit; Granite 4.0 350M is ahead; LFM2.5-350M-Base gets worse past 4k."></p>
+<p align="center"><img src="figures/long_docs.png" width="860" alt="Bits per byte on the last pages of 55 held-out 64k-token documents against the context each model is given. The 150M topic index and the 150M concept memory lie on top of each other and improve steadily up to 61k tokens; same-size models stop at 2k and 8k; Gemma 3 270M is level up to its 32k limit; Granite 4.0 350M is ahead; LFM2.5-350M-Base gets worse past 4k."></p>
 
 Every model reads the same characters: the last ≈16 KB of each 64k-token span is the target, and the context before
 it is cut to the budget on the x-axis (sliding windows past a model's maximum length). Held-out documents from five
@@ -176,7 +178,7 @@ very documents. One RTX 3090, 2026-11-18.
 
 | Model | Size | Training tokens | Reads at most | Bits per byte ↓ | Gain, 1k → most ↑ | Another document's far past ↓ |
 |---|---:|---:|---:|---:|---:|---:|
-| **150M LSA** | 141.5M | 11.5B | 64k | 0.797 | 0.049 [0.035, 0.065] | 0.834 |
+| **150M topic index** | 141.5M | 11.5B | 64k | 0.797 | 0.049 [0.035, 0.065] | 0.834 |
 | 150M concept memory (sibling) | 141.5M | 11.5B | 64k | **0.795** | **0.051** [0.037, 0.067] | 0.832 |
 | SmolLM2-135M, 252B checkpoint | 134.5M | 252B | 2k | 0.933 | — | 0.932 |
 | SmolLM2-135M, final | 134.5M | ≈2T | 8k | 0.832 | 0.018 [0.014, 0.024] | 0.836 |
@@ -226,7 +228,7 @@ board's own runs (quoted, snapshot 2026-11-14); rows in *italics* are our runs o
 | *(24)* | *150M concept memory (sibling)* | *141.5M* | *11.5B* | *80.56* | *48.95* | *1.950* | *76.2* | *77.7* |
 | 24 | Glint-2.3 | 1.7M | 10B | 67.30 | 36.00 | 3.051 | 64.8 | 77.6 |
 | 25 | Zedev-134M-Fudas | 134M | 20.7B | 81.69 | 46.38 | 1.880 | 76.0 | 77.6 |
-| **26** | **150M LSA** | **141.5M** | **11.5B** | **80.11** | **48.40** | **1.950** | **75.9** | **77.4** |
+| **26** | **150M topic index** | **141.5M** | **11.5B** | **80.11** | **48.40** | **1.950** | **75.9** | **77.4** |
 | 27 | Hydrion-v1-Base | 114.1M | ≈2.5B | 80.08 | 47.26 | 2.040 | 75.2 | 77.4 |
 | … | | | | | | | | |
 | *(44)* | *Pythia-160M (over the 150M cap)* | *162.3M* | *300B* | *77.48* | *43.64* | *1.924* | *73.5* | *74.5* |
@@ -277,7 +279,7 @@ Fluent, on-topic English and code-shaped output; the facts are often wrong (Pari
 were special, not general, relativity) and the code is wrong, as expected from a 140M base model at 11.5B tokens. The
 sibling's samples read the same.
 
-## How LSA works
+## How the topic index (LSA) works
 
 Think of a student reading a long book for an exam. Rereading every page for every answer is what full attention
 does: exact, but the cost grows with the square of the book's length. LSA gives the student a **library index by
@@ -370,7 +372,7 @@ loading takes `trust_remote_code=True`. Runs on one CUDA GPU in bf16.
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-repo = "Meridian21Lab/lsa-140m-11.5bt"
+repo = "Meridian21Lab/topic-index-140m-11.5bt"
 tok = AutoTokenizer.from_pretrained(repo, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True, dtype=torch.bfloat16).to("cuda")
 
@@ -396,12 +398,12 @@ loss = model(**inputs, labels=inputs["input_ids"]).loss
 ## Citation
 
 ```bibtex
-@misc{sopyla2026lsa150m,
+@misc{sopyla2026topicindex150m,
   author       = {Sopyła, Krzysztof},
-  title        = {150M LSA: a small base language model with Latent Sparse Attention for long context},
+  title        = {150M topic index: a small base language model with Latent Sparse Attention for long context},
   year         = {2026},
   publisher    = {Hugging Face},
-  howpublished = {\url{https://huggingface.co/Meridian21Lab/lsa-140m-11.5bt}},
+  howpublished = {\url{https://huggingface.co/Meridian21Lab/topic-index-140m-11.5bt}},
   note         = {Meridian21 Lab, MrCogito project. Code: \url{https://github.com/ksopyla/MrCogito}}
 }
 
