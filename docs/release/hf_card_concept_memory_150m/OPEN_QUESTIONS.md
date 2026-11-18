@@ -6,7 +6,9 @@ Apache-2.0 for the weights and the card; the card describes the mechanism at the
 Repository: `Meridian21Lab/concept-memory-140m-11.5bt`, code pinned at commit `1fddc505` (branch `eng-100m`).
 
 Still open after the release: a LICENSE file in the GitHub repository (the card's "clone the code" path), the stale
-W&B tags, and the loading gaps in section 3. The sections below are the pre-decision record.
+W&B tags, the loading gaps in section 3, and the same-data control: a standard transformer of the same size on our
+exact mix and budget, needed before the card can say the concept memory itself (not the data) is data-efficient.
+2026-11-18: card reworked to the skill's standard v2 (radar, data-efficiency and cross-model long-document sections). The sections below are the pre-decision record.
 
 Draft of 2026-11-17, for the card in `README.md` next to this file.
 
