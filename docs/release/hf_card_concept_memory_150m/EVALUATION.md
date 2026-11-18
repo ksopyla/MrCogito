@@ -267,7 +267,11 @@ reference answers found in the reply (higher is better). **Not zero-shot for our
 included planted-fact lookups of a similar shape (different wording).
 
 **Our model at every length** (RTX 3090 cards, 2026-11-18 12:40–13:51 UTC; 4k and 8k, 16k on one card each; 32k split
-by task over three cards):
+by task over three cards). A later run of the sibling LSA model, with the same settings and the same three 32k task
+groups, drew the same prompts as ours at 4k, 8k and 16k, but at 32k only for 5 tasks (UUID multi-key, both word
+counts, both QA); the other 8 got different needles, for a cause we have not found (RULER's needle tasks draw from
+Python's shared random state). Compare 32k scores across runs as two separate draws of 100 prompts, not prompt by
+prompt.
 
 <p align="center"><img src="figures/ruler_heat.png" width="520" alt="Heatmap of our 13 RULER tasks at 4k, 8k, 16k and 32k."></p>
 
