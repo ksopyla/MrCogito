@@ -47,7 +47,8 @@ model-index:
 **`Meridian21Lab/concept-memory-140m-11.5bt`** ·
 [Project page](https://ai.ksopyla.com/projects/concept-reasoning/) ·
 [Code](https://github.com/ksopyla/MrCogito/tree/1fddc505) · [Evaluation details](EVALUATION.md) ·
-[Training on W&B](https://wandb.ai/ksopyla/MrCogito/reports/150M-concept-memory-vs-earlier-100M-runs--VmlldzoxODMxMjMwMw)
+[Training on W&B](https://wandb.ai/ksopyla/MrCogito/reports/150M-concept-memory-vs-earlier-100M-runs--VmlldzoxODMxMjMwMw) ·
+Sibling: [150M topic index](https://huggingface.co/Meridian21Lab/topic-index-140m-11.5bt)
 
 A 141.5M-parameter English base language model, trained from scratch on 11.5B tokens of public data for about
 $320. Its new part is a **concept memory**: while it reads, it groups the text it has already seen into small
@@ -59,6 +60,11 @@ short novel).
 It is the first public model of [MrCogito](https://ai.ksopyla.com/projects/concept-reasoning/), a project building
 models that compress long text into concepts and reason over them. A research release: base model, one training
 seed, not instruction-tuned.
+
+Its sibling, the [150M topic index](https://huggingface.co/Meridian21Lab/topic-index-140m-11.5bt), was trained on the
+same data, in the same order, for the same budget, and differs only in the reading layer (Latent Sparse Attention,
+Kubicek et al.). On the same tests the two tie on long documents (0.795 vs 0.797 bits per byte) and on the seven
+standard tasks (mean 46.2 vs 46.5 %); the topic index scores higher on RULER (mean 0.44 vs 0.54 at 8k).
 
 ## Highlights
 
@@ -376,6 +382,8 @@ See each dataset's card for its terms.
 ## Changelog and contact
 
 - 2026-11-18: first public release (weights, card, evaluation page, raw results, figures).
+- 2026-11-18: RULER against four reference models at 4k and 8k; link to the sibling 150M topic index; note that
+  RULER's 32k prompts differ between runs for 8 of 13 tasks.
 
 Krzysztof Sopyła · [ai.ksopyla.com](https://ai.ksopyla.com) · [Meridian21 Lab](https://huggingface.co/Meridian21Lab)
 · questions and errors: open a discussion on this page.
