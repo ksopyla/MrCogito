@@ -85,7 +85,7 @@ def _blimp(evaluate, cap, out, save) -> None:
 
 
 # lm-eval's RULER HotpotQA task downloads the dev set (distractor) from this host, which no longer resolves
-# (2026-11-05, from Odra and Polonez). The same 7,405 questions are on the Hub as parquet.
+# (2026-11-05, from two networks). The same 7,405 questions are on the Hub as parquet.
 HOTPOT_URL = "http://curtis.ml.cmu.edu/datasets/hotpot/hotpot_dev_distractor_v1.json"
 
 

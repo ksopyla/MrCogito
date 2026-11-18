@@ -21,10 +21,9 @@ document-masked). Positions: the reading layer has no position code (global_nope
 window is 128 tokens, so moving the target from position 61k to position 4k does not change what the model sees
 apart from the context itself.
 
-Usage (one card per process; the script is read from stdin, nothing is written to the checkout):
-  ssh odra 'cd ~/dev/MrCogito-eng && uv run python - --checkpoint Cache/e38_board/e37a_m120t_final \
-      --data ../MrCogito-lsa/Cache/e33n_data/longdocs_lite_gpt2 --sources gutenberg,arxiv --span 65536' \
-      < evaluation/long_context_use.py > out.json
+Usage (from a MrCogito checkout, one GPU per process):
+  uv run python evaluation/long_context_use.py --checkpoint <our checkpoint folder> \
+      --data <LongDocs-lite shards> --sources gutenberg,arxiv --span 65536 > out.json
 """
 from __future__ import annotations
 

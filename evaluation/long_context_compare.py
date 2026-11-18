@@ -14,13 +14,11 @@ compares models with different tokenizers and context limits on exactly the same
            512 / 1,024 / 4,096 tokens for limits of 2k / 8k / longer), so every model gets as much of the document as
            it can take; larger budgets then give the same score and are copied, marked "windowed".
 
-Usage (Odra; script read from stdin, so nothing is written to the checkout; spans go to the cache):
-  ssh odra 'cd ~/dev/MrCogito-eng && .venv/bin/python - prepare --tokenizer Cache/e38_board/e37a_m120t_final \
-      --data ../MrCogito-lsa/Cache/e33n_data/longdocs_lite_gpt2 --out Cache/e38_board/longctx/spans_64k.json.gz' \
-      < evaluation/long_context_compare.py
-  ssh odra 'cd ~/dev/MrCogito-eng && CUDA_VISIBLE_DEVICES=0 .venv/bin/python - score \
-      --spans Cache/e38_board/longctx/spans_64k.json.gz --model HuggingFaceTB/SmolLM2-135M' \
-      < evaluation/long_context_compare.py > smollm2.json
+Usage (from a MrCogito checkout, one GPU per process):
+  uv run python evaluation/long_context_compare.py prepare --tokenizer <our checkpoint folder> \
+      --data <LongDocs-lite shards> --out spans_64k.json.gz
+  CUDA_VISIBLE_DEVICES=0 uv run python evaluation/long_context_compare.py score \
+      --spans spans_64k.json.gz --model HuggingFaceTB/SmolLM2-135M > smollm2.json
 """
 from __future__ import annotations
 
