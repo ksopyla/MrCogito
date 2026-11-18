@@ -1,0 +1,11 @@
+150M LSA (Meridian21Lab/lsa-140m-11.5bt)
+Copyright 2026 Krzysztof Sopyła (Meridian21 Lab). Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This repository includes code from Latent Sparse Attention
+(https://github.com/Prefrontal-AI/latent-sparse-attention, commit 5ebea73), Copyright 2026 Prefrontal AI,
+licensed under the Apache License, Version 2.0. It is ported into modeling_perceiver_ar.py (the bucket construction
+and selection of the native LSA read); the changes are listed in the header of that section ("MrCogito:" marks).
+Paper: Kubicek et al., "Latent Sparse Attention: Towards Subquadratic Ultra-Long Context Attention",
+arXiv:2610.42147, 2026.
+
+The model weights were trained from scratch by Meridian21 Lab; they are not weights released by the LSA authors.

@@ -1,0 +1,52 @@
+{
+ "model": "Meridian21Lab/lsa-140m-11.5bt (final weights)",
+ "new_tokens": 60,
+ "start_tokens": [
+  0
+ ],
+ "sample": {
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "repetition_penalty": 1.1,
+  "seeds": [
+   0,
+   1,
+   2
+  ]
+ },
+ "beam": {
+  "beams": 4,
+  "no_repeat_ngram": 3
+ },
+ "date_utc": "2026-11-18 16:17 UTC",
+ "prompts": [
+  {
+   "prompt": "The capital of France is",
+   "sample": {
+    "0": " Paris, and the capital of France is also the capital of the French Republic. As a result of the international treaty with Germany, France's capital was renamed to Paris in 1914. The capital of France was renamed to Paris after 1914 because it was necessary for the",
+    "1": " Paris. Its status is a vehicle for the French language, and it's a hub for all things French.\n\nFrance is the country that defines itself as a place where French culture can be enjoyed. It is the home of the famous Avenue de Paris, which is home to many of the world",
+    "2": " Paris, the capital city of France. It's a beautiful place where you can relax and enjoy the beauty of nature, as well as indulge in its rich history and culture.\n\nThe capital of France is Paris, the capital city of France. It's a beautiful place where you can relax and"
+   },
+   "beam": " Paris. It is the capital city of France, and it is the largest city in the country. The capital is also the most populous city in France, with a population of over 100 million people.\n\nThe capital is located in the heart of the country, in the center of"
+  },
+  {
+   "prompt": "In 1905, Albert Einstein published",
+   "sample": {
+    "0": " his famous work on the theory of relativity. His paper provides a new understanding of the relationship between matter and energy in a massive universe and the theory of general relativity. It also shows how Newton's laws apply to the Earth and explains why light is not the same as heat or electricity.\n\nThe",
+    "1": " a book called \"The Theory of Relativity\" in which he described how the theory of relativity has been applied to many aspects of life. The theory was first introduced by Albert Einstein and later developed by the British physicist James Clerk Maxwell. Maxwell's theory was originally intended to explain phenomena that occurred at speeds faster",
+    "2": " the result of a double experiment in which he measured the speed of light and the velocity of light. He found that the speed of light was inversely proportional to the square of the distance between two points. This would be a law of conservation of mass and energy.\n\nThe speed of light is directly"
+   },
+   "beam": " his theory of general relativity, which is now known as General Relativity. The theory is based on the principle that the speed of light is inversely proportional to the square of the distance between two objects. This means that the more distant an object is, the faster it will be traveling.\n\nThe theory"
+  },
+  {
+   "prompt": "def fibonacci(n):",
+   "sample": {
+    "0": " return (n + 1) // 2\n\ndef fibonacci(n):\nreturn n + 1\n\ndef fibonacci(0):\nreturn 0\n\ndef fibonacci(n):\nreturn (n + 1) // 2\n\ndef fibonacci",
+    "1": "\n```python\ndef fibonacci(n):\n    \"\"\"\n    Given a number n, return the fibonacci sequence of n.\n\n    Args:\n        n (int): The number to generate the Fibonacci sequence of.\n\n    Returns:\n        int: The Fibonacci sequence of n.\n\n    Raises:",
+    "2": "\n    fib[0] = 0\n    fib[n] = 1\n    for i in range(1, n+1):\n        fib[i] = fib[i-1] + fib[i-2]\n    return fib\n\nHere is a simple program that uses recurs"
+   },
+   "beam": "\n    fib(n) = 0\n    for i in range(2, n + 1):\n        fib(i) = (fib(i - 1) + fib( i - 2 )) / 2\n    return fib(0)\n\nprint(fib(10"
+  }
+ ],
+ "note": "evaluation/sample_text.py on one RTX 3090, 2026-11-18 16:17 UTC; prompts start with <|endoftext|> as in training"
+}

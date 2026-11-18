@@ -1,0 +1,140 @@
+{
+  "tag": "ref_pythia160m_step143000_core7",
+  "model_kind": "hf",
+  "model": "Cache/e38_board/ref_models/pythia160m_step143000",
+  "tasks": [
+    "arc_challenge",
+    "arc_easy",
+    "hellaswag",
+    "lambada_openai",
+    "piqa",
+    "sciq",
+    "winogrande",
+    "wikitext"
+  ],
+  "num_fewshot": 0,
+  "limit": null,
+  "max_length": 2048,
+  "elapsed_s": 189.53490114212036,
+  "results": {
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.1945392491467577,
+      "acc_stderr,none": 0.011567709174648689,
+      "acc_norm,none": 0.2363481228668942,
+      "acc_norm_stderr,none": 0.012414960524301884
+    },
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.4364478114478115,
+      "acc_stderr,none": 0.010176569980110963,
+      "acc_norm,none": 0.39646464646464646,
+      "acc_norm_stderr,none": 0.010037412763064506
+    },
+    "hellaswag": {
+      "alias": "hellaswag",
+      "acc,none": 0.28380800637323245,
+      "acc_stderr,none": 0.004499233874427458,
+      "acc_norm,none": 0.3027285401314479,
+      "acc_norm_stderr,none": 0.004584997935360197
+    },
+    "lambada_openai": {
+      "alias": "lambada_openai",
+      "perplexity,none": 37.25528409225895,
+      "perplexity_stderr,none": 1.399819956543857,
+      "acc,none": 0.35358043857946825,
+      "acc_stderr,none": 0.006660601226776665
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.6229597388465724,
+      "acc_stderr,none": 0.011307569752543913,
+      "acc_norm,none": 0.6196953210010882,
+      "acc_norm_stderr,none": 0.011326620892570301
+    },
+    "sciq": {
+      "alias": "sciq",
+      "acc,none": 0.754,
+      "acc_stderr,none": 0.01362606581775054,
+      "acc_norm,none": 0.677,
+      "acc_norm_stderr,none": 0.01479492784334854
+    },
+    "wikitext": {
+      "alias": "wikitext",
+      "word_perplexity,none": 33.116220331195514,
+      "word_perplexity_stderr,none": "N/A",
+      "byte_perplexity,none": 1.9242222008112695,
+      "byte_perplexity_stderr,none": "N/A",
+      "bits_per_byte,none": 0.9442754048766077,
+      "bits_per_byte_stderr,none": "N/A"
+    },
+    "winogrande": {
+      "alias": "winogrande",
+      "acc,none": 0.5122336227308603,
+      "acc_stderr,none": 0.014048278820405729
+    }
+  },
+  "versions": {
+    "arc_challenge": 1.0,
+    "arc_easy": 1.0,
+    "hellaswag": 1.0,
+    "lambada_openai": 1.0,
+    "piqa": 1.0,
+    "sciq": 1.0,
+    "wikitext": 2.0,
+    "winogrande": 1.0
+  },
+  "n_samples": {
+    "wikitext": {
+      "original": 62,
+      "effective": 62
+    },
+    "winogrande": {
+      "original": 1267,
+      "effective": 1267
+    },
+    "sciq": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "piqa": {
+      "original": 1838,
+      "effective": 1838
+    },
+    "lambada_openai": {
+      "original": 5153,
+      "effective": 5153
+    },
+    "hellaswag": {
+      "original": 10042,
+      "effective": 10042
+    },
+    "arc_easy": {
+      "original": 2376,
+      "effective": 2376
+    },
+    "arc_challenge": {
+      "original": 1172,
+      "effective": 1172
+    }
+  },
+  "lm_eval_config": {
+    "model": "Cache/e38_board/ref_models/pythia160m_step143000",
+    "model_args": null,
+    "model_num_parameters": 162322944,
+    "model_dtype": "torch.float32",
+    "model_revision": "main",
+    "model_sha": "",
+    "batch_size": null,
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": null,
+    "random_seed": 1234,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  }
+}
