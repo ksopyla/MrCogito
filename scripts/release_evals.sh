@@ -10,6 +10,8 @@
 #       [memory_modes=off] [tag=model] > /dev/null 2>&1 < /dev/null &
 # memory_modes: what long_context_use.py switches off on the full span: "off,nosum" for the concept read,
 # "off" for the LSA read (it has no summaries). Progress: <out_dir>/logs/events.log (UTC stamps).
+# Every job waits until its GPU runs no compute process (other sessions' jobs included), checking once a minute.
+# LONGCTX=<dir> reuses an existing retokenised-document cache + spans (default Cache/e38_board/longctx).
 set -euo pipefail
 CK=$1; OUT=$2; DATA=$3; GPUS=${4:-0,1,2}; MODES=${5:-off}; TAG=${6:-model}
 IFS=, read -r G0 G1 G2 <<< "$GPUS"
@@ -17,16 +19,24 @@ export PATH="$HOME/.local/bin:$PATH"
 PY=(.venv/bin/python)
 RULER=(uv run --no-sync --with wonderwords python evaluation/run_lsa_suite.py --checkpoint "$CK" --tokenizer "$CK"
        --suite ruler)
-LONGCTX=Cache/e38_board/longctx            # retokenised documents + the 55 spans (document text: never published)
+LONGCTX=${LONGCTX:-Cache/e38_board/longctx}  # retokenised documents + the 55 spans (document text: never published)
 SPANS=$LONGCTX/spans_64k.json.gz
 SOURCES=gutenberg,arxiv,doab,usgpo,hansard
 mkdir -p "$OUT"/{eval_results,long_context,ruler,samples,logs} "$LONGCTX"
 EV="$OUT/logs/events.log"
 
 stamp() { echo "[$(date -u +%FT%TZ)] $*" >> "$EV"; }
+wait_gpu() {  # until GPU $1 runs no compute process
+  local said=0
+  while [[ -n $(nvidia-smi -i "$1" --query-compute-apps=pid --format=csv,noheader 2>/dev/null) ]]; do
+    (( said )) || { stamp "GPU $1: busy with another job, waiting"; said=1; }
+    sleep 60
+  done
+}
 job() {  # job <gpu> <name> <stdout file or -> <command...>
   local g=$1 n=$2 so=$3; shift 3
   [[ $so == - ]] && so="$OUT/logs/$n.out"
+  wait_gpu "$g"
   stamp "GPU $g: $n start"
   local t0=$SECONDS rc=0
   CUDA_VISIBLE_DEVICES=$g "$@" > "$so" 2> "$OUT/logs/$n.log" || rc=$?
@@ -35,10 +45,12 @@ job() {  # job <gpu> <name> <stdout file or -> <command...>
 }
 
 stamp "start: $TAG, checkpoint $CK, GPUs $GPUS, memory modes $MODES"
-# Spans first (CPU): builds the retokenised cache once, so the lanes never race on writing it.
+# Spans first (CPU; it builds the retokenised cache once, so the lanes never race on writing it).
 if [[ ! -f $SPANS ]]; then
-  job "$G0" spans_prepare - "${PY[@]}" evaluation/long_context_compare.py prepare --tokenizer "$CK" --data "$DATA" \
-      --cache "$LONGCTX" --sources "$SOURCES" --out "$SPANS"
+  stamp "spans_prepare start"
+  CUDA_VISIBLE_DEVICES= "${PY[@]}" evaluation/long_context_compare.py prepare --tokenizer "$CK" --data "$DATA" \
+      --cache "$LONGCTX" --sources "$SOURCES" --out "$SPANS" > "$OUT/logs/spans_prepare.out" 2> "$OUT/logs/spans_prepare.log" \
+      && stamp "spans_prepare done" || { stamp "spans_prepare FAILED: no spans, stopping"; exit 1; }
 fi
 
 lane0() {
