@@ -120,7 +120,8 @@ Accuracy in %, higher is better; best in each row in **bold**.
 | **Finding facts far back** (RULER at 8k, mean of 13) ↑ | ≈0 | **0.54** | 0.44 | — (reads 2k) | — (reads 2k) | 0.42 |
 | Tiny-ML Leaderboard place (of 101) ⁵ | | 26th | 24th | 9th | 44th (over the 150M cap) | 12th (over the 150M cap) |
 
-¹ Our sibling: same data, order, budget and layers; its reading layer is a concept memory instead of LSA.
+¹ Our sibling, the [150M concept memory](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt): same
+data, order, budget and layers; its reading layer is a concept memory instead of Latent Sparse Attention.
 ² SmolLM2-135M's **earliest public training checkpoint** (step 240,000, ≈252B tokens, 22× ours), the closest to our
 budget a reader can check; its final ≈2T-token model is in the leaderboard table. These early checkpoints read 2,048
 tokens.
@@ -139,6 +140,12 @@ prediction at all, and lower is better. On the same pages, gzip needs 2.49 bits 
 our model needs 0.797, so it could store those pages in about a tenth of their size. It counts bytes rather than
 tokens, so models with different tokenizers compare fairly. At these values a difference of 0.01 is about 1.2 %.
 
+**Against its sibling** (same tests, documents and settings): RULER 0.05–0.10 higher at every length, from tasks that
+ask for several facts at once and from counting words; level on the seven standard tasks (46.5 % against 46.2 %),
+WikiText (1.950 both) and long documents (0.797 against 0.795 bits per byte, the sibling better on 62 % of documents);
+grammar 0.45 points lower (80.11 % against 80.56 %). Paired differences with intervals:
+[EVALUATION.md](EVALUATION.md#head-to-head-with-the-sibling).
+
 ## Finding facts far back (RULER)
 
 <p align="center"><img src="figures/ruler_radar.png" width="900" alt="Four small radar charts of RULER at 8k tokens by task family, the 150M topic index and the 150M concept memory each against one reference model: SmolLM2-135M, Gemma 3 270M, Granite 4.0 350M and LFM2.5-350M-Base."></p>
@@ -148,23 +155,28 @@ length; score = share of the expected answers found in the reply (higher is bett
 The reference models ran through lm-eval's stock `hf` model with the same tasks, each prompt sized with its own
 tokenizer. Not zero-shot for our two models: their training included planted-fact lookups of a similar shape.
 
-| RULER, this model / its sibling | 4k | 8k | 16k | 32k |
-|---|---:|---:|---:|---:|
-| One needle (3 tasks) | 0.73 / 0.76 | 0.85 / 0.76 | 0.69 / 0.69 | 0.70 / 0.68 |
-| Needle among distractor keys (3 tasks) | 0.73 / 0.73 | 0.59 / 0.62 | 0.54 / 0.58 | 0.42 / 0.41 |
-| Several values or keys at once (2 tasks) | 0.56 / 0.35 | 0.67 / 0.33 | 0.41 / 0.18 | 0.28 / 0.16 |
-| Count words (2 tasks) | 0.45 / 0.34 | 0.45 / 0.29 | 0.36 / 0.14 | 0.34 / 0.09 |
-| Follow variables (1 task) | 0.01 / 0.01 | 0.00 / 0.01 | 0.01 / 0.01 | 0.00 / 0.01 |
-| Answer questions (2 tasks) | 0.30 / 0.24 | 0.23 / 0.17 | 0.23 / 0.20 | 0.23 / 0.17 |
-| **Mean of 13** | **0.54** / 0.49 | **0.54** / 0.44 | **0.44** / 0.37 | **0.39** / 0.32 |
+| RULER at 8k, by task family | **Ours** | Concept memory (sibling) | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
+|---|---:|---:|---:|---:|---:|---:|
+| One needle | 0.85 | 0.76 | 0.72 | 0.55 | **1.00** | 0.83 |
+| Needle among distractor keys | 0.59 | **0.62** | 0.20 | 0.34 | 0.42 | 0.36 |
+| Several values or keys at once | 0.67 | 0.33 | 0.28 | 0.29 | **0.70** | 0.51 |
+| Count words | **0.45** | 0.29 | 0.11 | 0.34 | 0.31 | 0.05 |
+| Follow variables | 0.00 | 0.01 | 0.06 | 0.00 | **0.17** | 0.13 |
+| Answer questions | 0.23 | 0.17 | 0.15 | 0.15 | 0.27 | **0.31** |
+| **Mean of the 13 tasks, 8k** | **0.54** | 0.44 | 0.30 | 0.33 | **0.54** | 0.42 |
+| Mean of the 13 tasks, 4k | 0.54 | 0.49 | 0.40 | 0.48 | **0.62** | 0.47 |
+| Mean of the 13 tasks, 16k | **0.44** | 0.37 | — | — | — | — |
+| Mean of the 13 tasks, 32k | **0.39** | 0.32 | — | — | — | — |
 
-- **Against references at 8k** (mean of 13): this model 0.54, Granite 4.0 350M 0.54, LFM2.5-350M-Base 0.42, Gemma 3
-  270M 0.33, SmolLM2-135M 0.30. At 4k: Granite 0.62, this model 0.54, Gemma 0.48, LFM2.5 0.47, SmolLM2 0.40.
-  Granite leads on the UUID needle, multi-value and multi-query; this model leads on distractor keys and word counts.
+- **Level with Granite 4.0 350M at 8k** (0.54 each; 2.5× our size, ≈1,300× our training text) and ahead of
+  LFM2.5-350M-Base, Gemma 3 270M and SmolLM2-135M; at 4k Granite leads (0.62 against 0.54) and finds 32-character IDs
+  that this model rarely writes out.
 - **Against its sibling:** +0.05 [0.03, 0.07], +0.10 [0.08, 0.12], +0.07 [0.05, 0.08] and +0.07 [0.05, 0.09] at 4k,
-  8k, 16k and 32k (95 % bootstrap over prompts; paired from 4k to 16k, where both models saw the same prompts; at 32k eight of the 13
-  tasks are two separate 100-prompt draws, compared unpaired). Every task, against every
-  reference: [EVALUATION.md](EVALUATION.md#ruler).
+  8k, 16k and 32k (95 % bootstrap over prompts; paired from 4k to 16k, where both saw the same prompts; at 32k eight
+  of the 13 tasks are two separate 100-prompt draws, compared unpaired). The gain is in several facts at once and in
+  counting words; the sibling leads on needles among distractor keys (0.62 against 0.59).
+- **It keeps going past 8k:** 0.44 at 16k and 0.39 at 32k (the reference models were run at 4k and 8k only). Every
+  task at every length: [EVALUATION.md](EVALUATION.md#ruler).
 
 ## Long documents
 
@@ -209,7 +221,7 @@ The board ranks models up to 150M parameters on grammar (BLiMP), the easy scienc
 (WikiText-2 byte perplexity, lower is better), with a bonus of up to 50 % for small size. Board entries are the
 board's own runs (quoted, snapshot 2026-11-14); rows in *italics* are our runs of other models, each placed on its own.
 
-| Place | Model | Size | Training tokens | BLiMP % ↑ | ARC-Easy % ↑ | WikiText-2 byte ppl ↓ | Quality ⁷ | Board score |
+| Place | Model | Size | Training tokens | BLiMP % ↑ | ARC-Easy % ↑ | WikiText-2 byte ppl ↓ | Quality ⁶ | Board score |
 |---:|---|---:|---:|---:|---:|---:|---:|---:|
 | 1 | Tiny Chick 10M V3 | 9.6M | 24.6B | 77.76 | 59.60 | 2.335 | 77.8 | 87.7 |
 | 2 | Tiny Chick 10M V2.1 | 9.6M | 16.3B | 76.79 | 53.79 | 2.342 | 75.5 | 85.2 |
@@ -233,9 +245,9 @@ board's own runs (quoted, snapshot 2026-11-14); rows in *italics* are our runs o
 | … | | | | | | | | |
 | *(44)* | *Pythia-160M (over the 150M cap)* | *162.3M* | *300B* | *77.48* | *43.64* | *1.924* | *73.5* | *74.5* |
 
-⁷ Quality: the mean of BLiMP, ARC-Easy and the board's WikiText score, before the size bonus. By quality alone the
+⁶ Quality: the mean of BLiMP, ARC-Easy and the board's WikiText score, before the size bonus. By quality alone the
 model is 16th of 101; on grammar alone, 11th. Of the 55 board entries that report 15B training tokens or fewer, four
-place above it. The same tests run through the `from_pretrained` release (lm-eval's stock `hf` model) give the same
+place above it. Its sibling places 24th (14th by quality). The same tests run through the `from_pretrained` release (lm-eval's stock `hf` model) give the same
 three numbers. Full board with our rows: [EVALUATION.md](EVALUATION.md#tiny-ml-leaderboard).
 
 ## Data efficiency
@@ -439,6 +451,8 @@ under NVIDIA's terms; about 45 % of the training tokens). See each dataset's car
 ## Changelog and contact
 
 - 2026-11-18: first release (weights, modeling code, card, evaluation page, raw results, figures).
+- 2026-11-18: aligned with the sibling card: the 150M concept memory in every results table and chart, one colour per
+  model across both cards, a head-to-head section in EVALUATION.md.
 
 Krzysztof Sopyła · [ai.ksopyla.com](https://ai.ksopyla.com) · [Meridian21 Lab](https://huggingface.co/Meridian21Lab)
 · questions and errors: open a discussion on this page.
