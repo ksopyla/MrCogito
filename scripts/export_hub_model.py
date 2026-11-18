@@ -39,6 +39,7 @@ import datetime as _dt
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,9 @@ ALLOWED_PACKAGES = set(sys.stdlib_module_names) | {"torch", "transformers"}
 TOKENIZER_FILES = ("tokenizer.json", "tokenizer_config.json", "special_tokens_map.json", "vocab.json", "merges.txt",
                    "added_tokens.json", "chat_template.jinja", "tokenizer.model")
 WEIGHT_PATTERNS = ("model.safetensors", "model-*.safetensors", "model.safetensors.index.json", "pytorch_model.bin")
+# Internal machine names stay out of public files (model-release rule 11): the source comments that cite a run's
+# server say "our GPU server" in the export; local paths in the manifest become "<local path>".
+PUBLIC_NAMES = {"Odra": "our GPU server", "Polonez": "our GPU server"}
 
 
 # ---------------------------------------------------------------------------------------------- which modules
@@ -350,6 +354,16 @@ def check_code(path: Path) -> list[str]:
     return req
 
 
+def _public(text: str) -> str:
+    for name, generic in PUBLIC_NAMES.items():
+        text = re.sub(rf"\b{name}\b", generic, text)
+    return text
+
+
+def _public_value(v):
+    return "<local path>" if isinstance(v, str) and v.startswith(("/", "~")) else v
+
+
 # ---------------------------------------------------------------------------------------------- config + files
 def export_config(cfg: dict, tokenizer_name: str, attn_backend: str) -> tuple[dict, dict]:
     cfg = dict(cfg)
@@ -402,8 +416,8 @@ def export(checkpoint: str | Path, out_dir: str | Path, *, tokenizer_name: str =
     out.mkdir(parents=True, exist_ok=True)
     prov = _provenance()
 
-    (out / CONFIG_FILE).write_text(build_configuration(prov), encoding="utf-8")
-    (out / MODELING_FILE).write_text(build_modeling(modules, prov), encoding="utf-8")
+    (out / CONFIG_FILE).write_text(_public(build_configuration(prov)), encoding="utf-8")
+    (out / MODELING_FILE).write_text(_public(build_modeling(modules, prov)), encoding="utf-8")
     requires = sorted(set(check_code(out / CONFIG_FILE)) | set(check_code(out / MODELING_FILE)))
 
     new_cfg, changes = export_config(cfg, tokenizer_name, attn_backend)
@@ -441,11 +455,11 @@ def export(checkpoint: str | Path, out_dir: str | Path, *, tokenizer_name: str =
     manifest = {
         "exported_at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         "source": prov,
-        "checkpoint": str(ckpt.resolve()),
+        "checkpoint": ckpt.resolve().name,  # the folder name only: no local paths in public files
         "vendored_modules": [f"nn/{m}.py" for m in modules],
         "left_out": [f"nn/{m}.py" for m in SOURCE_ORDER if m not in modules],
         "remote_code_requires": requires,
-        "config_changes": changes,
+        "config_changes": {k: [_public_value(a), b] for k, (a, b) in changes.items()},
         "auto_map": AUTO_MAP,
         "exported_with": {"transformers": transformers.__version__, "torch": torch.__version__},
         "warnings": warnings,

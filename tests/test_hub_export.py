@@ -20,6 +20,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -125,6 +126,8 @@ def test_export_folder(exported, arm):
     for opt in ("nn/concept_memory.py", "nn/lsa_buckets.py"):
         assert (opt in man["vendored_modules"]) == (opt == want)
     assert man["files"]["model.safetensors"]["sha256"]
+    assert man["checkpoint"] == "ckpt"  # no local paths in public files
+    assert not any(str(old).startswith("/") for old, _ in man["config_changes"].values())
 
 
 @pytest.mark.parametrize("arm", list(ARMS))
@@ -311,7 +314,12 @@ def test_real_checkpoint_on_cuda(tmp_path):
     t0 = time.time()
     man = _exporter().export(CKPT, out, overwrite=True)
     t_export = time.time() - t0
-    tok = AutoTokenizer.from_pretrained(str(out), local_files_only=True)
+    # public files: no internal machine names or local paths (model-release rule 11)
+    for f in out.iterdir():
+        if f.suffix in (".py", ".json"):
+            text = f.read_text()
+            assert not re.search(r"\b(Odra|Polonez)\b|/home/|/opt/|/Users/", text), f.name
+    tok = AutoTokenizer.from_pretrained(str(out), local_files_only=True, trust_remote_code=True)
     t0 = time.time()
     model = _load(out, dtype=torch.bfloat16, device="cuda")
     t_load = time.time() - t0
