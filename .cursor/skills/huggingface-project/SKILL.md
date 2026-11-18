@@ -10,6 +10,9 @@ Use this skill for Hugging Face Hub actions and Hub-specific discovery, not for 
 ## Auth & namespace
 
 - Authenticated user: **`ksopyla`** — https://huggingface.co/ksopyla
+- **Community releases** go to the **`Meridian21Lab`** organisation (author's decision 2026-11-17: public, Apache-2.0
+  for from-scratch models). Research-only uploads may stay under `ksopyla`. Agents never read, print or enter the
+  HF token; uploads use the login already stored on the server, and its write rights are the author's to grant.
 - Token: `HF_TOKEN` / `HUGGINGFACE_TOKEN` / `HUGGINGFACE_HUB_TOKEN` in `.env`
 - MCP: `plugin-huggingface-skills-huggingface-skills` (`hf_whoami`, `hub_repo_search`, `hub_repo_details`, `hf_fs`, …)
 - CLI: `hf` (preferred) or `huggingface_hub` Python API
@@ -37,14 +40,14 @@ still incomplete.
 ### Repo id template
 
 ```text
-ksopyla/{line}-{size}-c{C}-{budget}[-v{N}]
+{org}/{line}-{size}[-c{C}]-{budget}[-v{N}]      # org = Meridian21Lab (releases) or ksopyla (research)
 ```
 
 | Slot | What | Format | Examples |
 |---|---|---|---|
 | `{line}` | Architecture family (memorable) | lowercase kebab | `gemma3-concepts`, `concept-ar`, `perceiver`, `diffusion` |
 | `{size}` | **Weight scale** (params in checkpoint) | `{N}m` / `{N}b` | `61m`, `74m`, `1b`, `3b` |
-| `c{C}` | **Concept count** | `c` + int | `c128`, `c256`, `c512` |
+| `c{C}` | **Concept count**, only when fixed (omit when concepts grow with the document, e.g. concept memory) | `c` + int | `c128`, `c256`, `c512` |
 | `{budget}` | **Data budget** (primary scale axis) | tokens or epochs | `100mt`, `1bt`, `5ep` |
 | `-v{N}` | Optional **release version** of the *same* line/size/C/budget | integer | `-v1`, `-v2` |
 
@@ -146,23 +149,35 @@ Do **not** invent GPU-h. Pull from run report / audit when available.
 | From-scratch MrCogito (no Gemma) | `apache-2.0` | |
 | Gemma-derived (`google/gemma-3-*`) | **`gemma`** | `base_model:` + gated prompt; never Apache |
 
-## Model card checklist
+## Model card checklist — standard v2 (2026-11-18)
 
-1. Links: GitHub, [ai.ksopyla.com](https://ai.ksopyla.com) (+ project page), W&B, spec, run report
-2. Naming slots reflected in title + tags
-3. Identity + Training + **Compute** + Evaluation tables
-4. Honest quality: mark **not run** for unmeasured probes
-5. Limitations + external load recipe (clone MrCogito)
-6. Citation + correct license
+Every card follows [templates/MODEL_CARD.md](templates/MODEL_CARD.md) (built from a survey of SmolLM2/3, OLMo-2/3,
+Gemma 3, Qwen3, Granite 4.0, Pythia and LFM2 cards). The rules at the end of that template are the checklist; the
+short form:
+
+1. Section order: summary + link bar → claim level → **Why try it** (measured strengths) + weak spots → headline
+   figure → at a glance → how it works → uses → how to use → evaluation (standard, **data efficiency**, own tests) →
+   training → checkpoints and reproducibility → strengths and limitations → licence → citation → changelog/contact.
+2. Same-harness numbers only in comparison tables; others in a **quoted** table. Name harness, shots, dtype, machine,
+   date. Benchmarks as rows, ours first, best bold, ± where available.
+3. References chosen before running: ≥ 2 same-size models (the strongest open one included) and a data-matched one
+   when its checkpoints are public (Pythia: every 2.1B tokens; SmolLM2-135M: every ~250B).
+4. Figures from `figures/make_figures.py` (radar vs two same-size references; score vs training tokens), light PNG,
+   numbers repeated in a table. Cross-model text prediction in bits per byte on identical text
+   (`evaluation/long_context_compare.py`).
+5. Raw outputs shipped: `eval_results/`, the own-test folder with its script and summariser.
+6. Plain names; every number with unit + direction; nearest unsupported claim stated.
+7. Upload private first, check the rendered page, then public; record the Hub URL in the run report.
 
 ### Templates
 
 | File | Role |
 |---|---|
-| [templates/MODEL_CARD.md](templates/MODEL_CARD.md) | **Canonical** card structure for all MrCogito Hub releases |
+| [templates/MODEL_CARD.md](templates/MODEL_CARD.md) | **Standard v2** card structure + rules for all MrCogito / Meridian21 Hub releases |
 | [templates/backbone_concept_model_card.md](templates/backbone_concept_model_card.md) | Older Gemma-oriented draft — prefer `MODEL_CARD.md` |
 
-Reference filled card: `Cache/HF_staging/gemma3-concepts-1b-c128-1bt/README.md` (E16b draft).
+Reference filled card (standard v2): `docs/release/hf_card_concept_memory_150m/README.md` (150M concept memory).
+Older draft: `Cache/HF_staging/gemma3-concepts-1b-c128-1bt/README.md` (E16b).
 
 Card structure follows HF’s annotated model card + patterns from SmolLM2
 (TOC + early How-to-use), OLMo (identity tables), and Pythia (research
