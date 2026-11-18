@@ -1,30 +1,30 @@
-"""Figures for the two sibling 150M model cards (concept memory, topic index), drawn from the result files next to
-the card. The same script ships with both cards; only CARD below differs.
+"""Figures for the Meridian21 150M model cards (concept-memory-140m-11.5bt, topic-index-140m-11.5bt), drawn from the
+result files next to the card. The same script ships with every card; only CARD below differs.
 
     python figures/make_figures.py          (from the card's folder)
 
-In each card "ours" is that card's model (solid line) and the other 150M model is its sibling (dashed); the two
-trained on the same data, in the same order, for the same budget, and differ only in the reading layer. Each model keeps
+In each card "this model" is drawn solid and the other model trained on the same data dashed; the two trained on the
+same data, in the same order, for the same budget, and differ only in the reading layer. Each model keeps
 one colour on every chart of both cards: concept memory blue, topic index orange, SmolLM2-135M aqua, other references
 grey (the dataviz skill's first three categorical slots, validated all-pairs on the light surface, 2026-11-18).
 
-radar.png        ours, the 150M concept memory and SmolLM2-135M at its earliest public checkpoint (~252B tokens) on
+radar.png        this model, the other model on the same data and SmolLM2-135M at its earliest public checkpoint (~252B tokens) on
                  six standard benchmarks. Each axis is the model's score as a share of the best of the three (rim =
                  the best, centre = zero); for WikiText, where lower is better, the share is best ÷ score. The raw
                  numbers are printed next to each axis and in the card's table.
-ruler_siblings.png  RULER by task family at 4k, 8k, 16k and 32k tokens: ours against the 150M concept memory, the
-                 same harness and settings (share of expected answers found, 0–1).
+ruler_lengths.png  RULER by task family at 4k, 8k, 16k and 32k tokens: this model against the other model on the same
+                 data, the same harness and settings (share of expected answers found, 0–1).
 ruler_heat.png   our 13 RULER tasks at 4k, 8k, 16k and 32k.
-ruler_radar.png  RULER at 8k by task family, ours and the concept memory against each reference model, when the
+ruler_radar.png  RULER at 8k by task family, this model and the other model on the same data against each reference, when the
                  reference runs are in ruler/ (ref_*.json).
 long_docs.png    bits per byte on the last pages of 55 held-out 64k-token documents against the context each model
                  is given, every model on the same text; a line ends at the most context the model can take.
 data_eff.png     score against training tokens (log scale): Pythia-160M's and SmolLM2-135M's published checkpoints
-                 (scored by us, same harness) and our two 150M models at 11.5B tokens.
+                 (scored by us, same harness) and the two 150M models at 11.5B tokens.
 
 Colour follows the model on every chart: ours blue, the concept memory orange, SmolLM2-135M aqua, other references
 All numbers come from eval_results/, long_context/ and ruler/: this card's model under plain names (ruler_*,
-compare_ours.json, e38_*), the sibling's with a cm_ / ti_ prefix (compare_concept_memory.json / compare_topic_index.json).
+compare_ours.json, e38_*), the other model's with a cm_ / ti_ prefix (compare_concept_memory.json / compare_topic_index.json).
 """
 from __future__ import annotations
 
@@ -49,22 +49,22 @@ from summarise_compare import load as load_long, pooled  # noqa: E402
 SURFACE, INK, INK2, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9"
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
 CARD = "concept_memory"  # this card's model: "topic_index" or "concept_memory" (the one line that differs between the cards)
-MODELS = {"concept_memory": dict(name="150M concept memory", board="e38_mem150m_final", core7="e38_mem150m_core7",
-                                 color=BLUE, short="Concept memory", prefix="cm_", file="compare_concept_memory.json",
+MODELS = {"concept_memory": dict(name="concept-memory-140m-11.5bt", board="e38_mem150m_final", core7="e38_mem150m_core7",
+                                 color=BLUE, short="concept-memory", prefix="cm_", file="compare_concept_memory.json",
                                  ramp=["#f0f4fa", "#9ec5f4", "#3987e5", "#184f95"]),
-          "topic_index": dict(name="150M topic index", board="e38_lsa150m_final", core7="e38_lsa150m_core7",
-                              color=ORANGE, short="Topic index", prefix="ti_", file="compare_topic_index.json",
+          "topic_index": dict(name="topic-index-140m-11.5bt", board="e38_lsa150m_final", core7="e38_lsa150m_core7",
+                              color=ORANGE, short="topic-index", prefix="ti_", file="compare_topic_index.json",
                               ramp=["#fdf0e9", "#f6b896", "#eb6834", "#a3401b"])}
 _o, _s = MODELS[CARD], MODELS["concept_memory" if CARD == "topic_index" else "topic_index"]
-OURS = dict(_o, name=_o["name"] + " (ours)", long="compare_ours.json", ruler="ruler_", tokens=11.5e9)
-SIB = dict(_s, name=_s["name"] + " (sibling)", long=_s["file"], ruler=_s["prefix"] + "ruler_", tokens=11.5e9)
+OURS = dict(_o, name=_o["name"] + " (this model)", long="compare_ours.json", ruler="ruler_", tokens=11.5e9)
+OTHER = dict(_s, name=_s["name"], long=_s["file"], ruler=_s["prefix"] + "ruler_", tokens=11.5e9)
 SMOL = dict(name="SmolLM2-135M, earliest public checkpoint", board="ref_smollm2_135m_step240k_board",
             core7="ref_smollm2_135m_step240k_core7", tokens=240_000 * 1_048_576, color=AQUA, short="SmolLM2")
 SMOL_FINAL = dict(name="SmolLM2-135M", board="ref_smollm2_135m_board", tokens=2.0e12, color=AQUA)
 PYTH = dict(name="Pythia-160M", tokens=299.9e9, color=MUTED)
 # the long-document chart: (file, label, parameters, training tokens as reported, colour or None for grey)
-LONG = [(OURS["long"], OURS["name"].replace("150M ", "").capitalize(), "141.5M", "11.5B", OURS["color"]),
-        (SIB["long"], SIB["name"].replace("150M ", "").capitalize(), "141.5M", "11.5B", SIB["color"]),
+LONG = [(OURS["long"], OURS["name"], "", "", OURS["color"]),  # the Hub id already names size and budget
+        (OTHER["long"], OTHER["name"], "", "", OTHER["color"]),
         ("compare_smollm2_step240k.json", "SmolLM2-135M, 252B checkpoint", "135M", "252B", None),
         ("compare_smollm2.json", "SmolLM2-135M final", "135M", "≈2T", None),
         ("compare_pythia.json", "Pythia-160M", "162M", "300B", None),
@@ -160,10 +160,10 @@ def radar(models: list[dict]) -> None:
         ours = m is vals[0][0]
         ax.fill(np.append(ang, ang[0]), r + r[:1], color=m["color"], alpha=0.16 if ours else 0.08, zorder=2)
         ax.plot(np.append(ang, ang[0]), r + r[:1], color=m["color"], linewidth=2.4 if ours else 1.8, zorder=3,
-                linestyle="-" if ours else (0, (5, 2)) if m is SIB else "-")
+                linestyle="-" if ours else (0, (5, 2)) if m is OTHER else "-")
         ax.scatter(ang, r, s=34, color=m["color"], edgecolor=SURFACE, linewidth=2, zorder=4)
     handles = [plt.Line2D([], [], color=m["color"], linewidth=2.4, marker="o", markersize=6,
-                          linestyle="-" if m is not SIB else (0, (5, 2)),
+                          linestyle="-" if m is not OTHER else (0, (5, 2)),
                           label=f"{m['name']} · {fmt_tokens(m['tokens'])} training tokens")
                for m, _ in vals]
     fig.legend(handles=handles, loc="upper center", ncol=1, frameon=False, fontsize=9.5, bbox_to_anchor=(0.5, 0.995))
@@ -206,18 +206,18 @@ def ruler_family(r: dict[str, float]) -> list[float]:
     return [float(np.mean([r[t] for t in ts])) for _, ts in RULER_FAMILIES]
 
 
-def ruler_siblings() -> None:
-    """Small multiples, one per task family: score against length, ours and the concept memory."""
-    ours, sib = ruler_scores(OURS["ruler"]), ruler_scores(SIB["ruler"])
-    Ls = sorted(set(ours) & set(sib))
+def ruler_lengths() -> None:
+    """Small multiples, one per task family: score against length, this model and the other model on the same data."""
+    ours, other = ruler_scores(OURS["ruler"]), ruler_scores(OTHER["ruler"])
+    Ls = sorted(set(ours) & set(other))
     if not Ls:
-        print("skip ruler_siblings: missing results", file=sys.stderr)
+        print("skip ruler_lengths: missing results", file=sys.stderr)
         return
     fig, axs = plt.subplots(2, 3, figsize=(10.6, 5.6), sharex=True, sharey=True)
     for ax, (fam, _) in zip(axs.flat, RULER_FAMILIES):
         i = [f for f, _ in RULER_FAMILIES].index(fam)
         ends = {}
-        for m, sc in ((SIB, sib), (OURS, ours)):
+        for m, sc in ((OTHER, other), (OURS, ours)):
             ys = [ruler_family(sc[L])[i] for L in Ls]
             ax.plot(range(len(Ls)), ys, color=m["color"], linewidth=2.4 if m is OURS else 2,
                     linestyle="-" if m is OURS else (0, (5, 2)), marker="o", markersize=6, markeredgecolor=SURFACE,
@@ -245,15 +245,15 @@ def ruler_siblings() -> None:
                           linestyle="-" if m is OURS else (0, (5, 2)),
                           label=f"{m['name']} · mean of 13 tasks: " +
                                 " / ".join(f"{mean(sc, L):.2f}" for L in Ls) + " at " + " / ".join(f"{L // 1024}k" for L in Ls))
-               for m, sc in ((OURS, ours), (SIB, sib))]
+               for m, sc in ((OURS, ours), (OTHER, other))]
     fig.legend(handles=handles, loc="upper center", ncol=1, frameon=False, fontsize=9, bbox_to_anchor=(0.5, 1.0))
     fig.text(0.01, 0.01, "RULER, 100 prompts per task and length, greedy, each task's own answer length; a family "
              "averages its tasks; same harness and settings for both models.\nBoth trained on planted-fact lookups, "
              "so the needle tasks are not zero-shot. Run-to-run noise at 100 prompts is up to ±0.09 on a single task.",
              fontsize=7.5, color=MUTED)
     fig.tight_layout(rect=(0, 0.06, 1, 0.88))
-    fig.savefig(OUT / "ruler_siblings.png", dpi=160)
-    print("wrote ruler_siblings.png")
+    fig.savefig(OUT / "ruler_lengths.png", dpi=160)
+    print("wrote ruler_lengths.png")
 
 
 def ruler_heat() -> None:
@@ -284,7 +284,7 @@ def ruler_heat() -> None:
 
 
 def ruler_radar(L: int = 8192) -> None:
-    ours, sib = ruler_scores(OURS["ruler"]), ruler_scores(SIB["ruler"])
+    ours, other = ruler_scores(OURS["ruler"]), ruler_scores(OTHER["ruler"])
     refs = [(n, lab, tok, ruler_scores(n)) for n, lab, tok in RULER_REFS]
     refs = [x for x in refs if L in x[3]]
     if L not in ours or not refs:
@@ -308,18 +308,18 @@ def ruler_radar(L: int = 8192) -> None:
         ax.set_xticklabels(names, fontsize=7.5, color=INK2)
         ax.tick_params(axis="x", pad=2)
         lines = [(ruler_family(sc[L]), MUTED, 1.6, 2, "-")]
-        if L in sib:
-            lines.append((ruler_family(sib[L]), SIB["color"], 1.8, 3, (0, (5, 2))))
+        if L in other:
+            lines.append((ruler_family(other[L]), OTHER["color"], 1.8, 3, (0, (5, 2))))
         lines.append((ruler_family(ours[L]), OURS["color"], 2.4, 4, "-"))
         for vals, col, w, z, ls in lines:
             ax.fill(np.append(ang, ang[0]), vals + vals[:1], color=col, alpha=0.10, zorder=z - 1)
             ax.plot(np.append(ang, ang[0]), vals + vals[:1], color=col, linewidth=w, zorder=z, linestyle=ls)
             ax.scatter(ang, vals, s=18, color=col, edgecolor=SURFACE, linewidth=1.2, zorder=z + 1)
-        ax.set_title(f"vs {lab} · {tok} tokens\nmean of 13: ours {np.mean(list(ours[L].values())):.2f}, "
+        ax.set_title(f"vs {lab} · {tok} tokens\nmean of 13: this model {np.mean(list(ours[L].values())):.2f}, "
                      f"it {np.mean(list(sc[L].values())):.2f}", fontsize=8.5, color=INK, pad=28)
     handles = [plt.Line2D([], [], color=OURS["color"], linewidth=2.4, marker="o", label=f"{OURS['name']} · 11.5B tokens"),
-               plt.Line2D([], [], color=SIB["color"], linewidth=1.8, marker="o", linestyle=(0, (5, 2)),
-                          label=SIB["name"]),
+               plt.Line2D([], [], color=OTHER["color"], linewidth=1.8, marker="o", linestyle=(0, (5, 2)),
+                          label=OTHER["name"]),
                plt.Line2D([], [], color=MUTED, linewidth=1.6, marker="o", label="the reference named above each chart")]
     fig.legend(handles=handles, loc="upper center", ncol=3, frameon=False, fontsize=9, bbox_to_anchor=(0.5, 1.0))
     fig.text(0.5, 0.01, f"RULER at {L // 1024}k tokens, 100 prompts per task, greedy, each task's own answer length; "
@@ -354,8 +354,9 @@ def long_docs() -> None:
         hi = col is not None
         ax.plot(xs, ys, color=col or MUTED, linewidth=2.6 if hi else 1.4, marker="o", markersize=6 if hi else 4,
                 markeredgecolor=SURFACE, markeredgewidth=1.5, zorder=4 if hi else 3,
-                linestyle=(0, (5, 2)) if fname == SIB["long"] else "-")
-        end_labels.append((xs[-1], ys[-1], f"{label} · {params} · {tok} tokens   {ys[-1]:.3f}", col or MUTED, hi))
+                linestyle=(0, (5, 2)) if fname == OTHER["long"] else "-")
+        end_labels.append((xs[-1], ys[-1], f"{label}" + (f" · {params} · {tok} tokens" if params else "") + f"   {ys[-1]:.3f}",
+                           col or MUTED, hi))
     end_labels.sort(key=lambda e: e[1])
     placed = []
     for x, y, txt, col, hi in end_labels:  # direct labels at each line's end, nudged apart vertically
@@ -407,7 +408,7 @@ def smol_step(stem: str):
 
 
 def data_efficiency() -> None:
-    ours, sib = board(OURS["board"]), board(SIB["board"])
+    ours, other = board(OURS["board"]), board(OTHER["board"])
     if ours is None:
         print("skip data_eff: missing results", file=sys.stderr)
         return
@@ -425,10 +426,10 @@ def data_efficiency() -> None:
             if pts:
                 ax.plot([p[0] for p in pts], [get(p[1]) for p in pts], color=m["color"], linewidth=2, marker="o",
                         markersize=5, markeredgecolor=SURFACE, markeredgewidth=1.5, label=m["name"])
-        if sib:
+        if other:
             # both at 11.5B tokens: drawn a little apart on the token axis so neither hides the other
-            ax.scatter([SIB["tokens"] / 1.12], [get(sib)], s=90, color=SIB["color"], edgecolor=SURFACE, linewidth=2,
-                       zorder=5, label=SIB["name"], marker="D")
+            ax.scatter([OTHER["tokens"] / 1.12], [get(other)], s=90, color=OTHER["color"], edgecolor=SURFACE, linewidth=2,
+                       zorder=5, label=OTHER["name"], marker="D")
         ax.scatter([OURS["tokens"] * 1.12], [get(ours)], s=90, color=OURS["color"], edgecolor=SURFACE, linewidth=2, zorder=6,
                    label=OURS["name"])
         ax.axvline(OURS["tokens"], color=GRID, linewidth=1, zorder=0)
@@ -468,8 +469,8 @@ def data_efficiency() -> None:
 
 
 if __name__ == "__main__":
-    radar([OURS, SIB, SMOL])
-    ruler_siblings()
+    radar([OURS, OTHER, SMOL])
+    ruler_lengths()
     ruler_heat()
     ruler_radar()
     long_docs()

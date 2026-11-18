@@ -45,12 +45,12 @@ model-index:
         metrics: [{type: perplexity, value: 1.950, name: byte perplexity (lower is better)}]
 ---
 
-# 150M topic index: a small base model that reads 64k tokens with Latent Sparse Attention
+# topic-index-140m-11.5bt: a small base model that reads 64k tokens with Latent Sparse Attention
 
 **`Meridian21Lab/topic-index-140m-11.5bt`** · [Project page](https://ai.ksopyla.com/projects/concept-reasoning/) ·
 [Code](https://github.com/ksopyla/MrCogito/tree/1fddc505) · [Evaluation details](EVALUATION.md) ·
 [Training on W&B](https://wandb.ai/ksopyla/MrCogito/runs/perceiver_ar_perceiver_H896L3g1s9N128_20261118_083324_lsa_m120t_long) ·
-Sibling: [150M concept memory](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt)
+Same data, other read: [concept-memory-140m-11.5bt](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt)
 
 A 141.5M-parameter English base language model, trained from scratch on 11.5B tokens of public data for about
 $290. Its long-range read is **Latent Sparse Attention (LSA)**, the method of Kubicek et al. (Prefrontal AI and
@@ -61,11 +61,15 @@ those tokens word for word. This model is our port of their released read, train
 architecture, and we name it after what the read does: a **topic index**. It is not a model from the LSA authors;
 the method and its name are theirs.
 
-It has a **sibling**: the [150M concept memory](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt),
-trained on the same data, in the same order, for the same budget, with the same layers. Only the reading layer
-differs, so the two models are a fair test of the two ways to read a long past. Both are the first public models of
-[MrCogito](https://ai.ksopyla.com/projects/concept-reasoning/), a project building models that compress long text into
-concepts and reason over them. A research release: base model, one training seed, not instruction-tuned.
+It is a public model of [MrCogito](https://ai.ksopyla.com/projects/concept-reasoning/), a project building models that
+compress long text into concepts and reason over them. A research release: base model, one training seed, not
+instruction-tuned.
+
+Meridian21 trains several models on the same data, in the same order, for the same budget, with the same layers,
+and changes only the reading layer, so each card compares them on the same tests. Released so far: this model and
+[concept-memory-140m-11.5bt](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt) (a concept memory). The two tie on long documents (0.797 vs 0.795 bits per byte)
+and the seven standard tasks (mean 46.5 vs 46.2 %); this model finds more facts far back (RULER mean 0.54 vs 0.44
+at 8k).
 
 ## Highlights
 
@@ -74,36 +78,37 @@ concepts and reason over them. A research release: base model, one training seed
   level with Granite 4.0 350M (0.54; ≈15T training tokens; it leads at 4k, 0.62 against 0.54) and ahead of
   LFM2.5-350M-Base (0.42; 28T), Gemma 3 270M (0.33; 6T) and SmolLM2-135M (0.30; ≈2T), all scored by us with the same
   harness.
-- **Ahead of its sibling at every length.** 0.54 / 0.54 / 0.44 / 0.39 at 4k / 8k / 16k / 32k
+- **Ahead of concept-memory-140m-11.5bt at every length.** 0.54 / 0.54 / 0.44 / 0.39 at 4k / 8k / 16k / 32k
   tokens against the concept memory's 0.49 / 0.44 / 0.37 / 0.32: +0.05 to +0.10, with 95 % intervals above zero
   at every length. The gain is where several facts are asked at once (+0.12 to +0.34) and in counting words across
   the text (+0.11 to +0.25); on single hidden facts the two tie.
-- **Reads long documents as well as its sibling, and holds up better past them.** On the last pages of 55 held-out
+- **Reads long documents as well as concept-memory-140m-11.5bt, and holds up better past them.** On the last pages of 55 held-out
   64k-token documents it needs **0.797 bits per byte** (lower is better; scale below): level with the concept memory
   (0.795) and Gemma 3 270M (0.805, twice our size), ahead of every same-size model (SmolLM2-135M 0.832, Pythia-160M
   0.942). At 128k tokens, twice its training length, it beats the concept memory by 0.025 nats per token on 13 of 15
   documents.
-- **The new read costs nothing on short text.** Mean of seven standard tasks 46.5 % (sibling 46.2 %), WikiText byte
-  perplexity 1.950 (sibling 1.950), grammar (BLiMP) 80.11 % (sibling 80.56 %); against Pythia-160M at our training
+- **The new read costs nothing on short text.** Mean of seven standard tasks 46.5 % (concept-memory-140m-11.5bt 46.2 %), WikiText byte
+  perplexity 1.950 (concept-memory-140m-11.5bt 1.950), grammar (BLiMP) 80.11 % (concept-memory-140m-11.5bt 80.56 %); against Pythia-160M at our training
   budget it is ahead on every test.
 - **Cheap, open, and one line to load.** ≈36 hours on one 4-GPU node (≈ $290). It loads with
-  `AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)`, scores a whole 64k document in one pass on a
-  single 24 GB RTX 3090, and every number on this card has its raw result file in this repository.
+  `AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)` and scores a whole 64k document in one pass on a
+  single 24 GB RTX 3090; every training source is a public Hugging Face dataset, every training stage is on public
+  W&B, and every number on this card has its raw result file in this repository.
 
-<p align="center"><img src="figures/ruler_siblings.png" width="860" alt="Six small charts, one per RULER task family, share of answers found against context length from 4k to 32k tokens for the 150M topic index and the 150M concept memory. The lines overlap for single needles, distractor keys, variable tracking and questions; the topic index is clearly higher for several values or keys at once and for counting words."></p>
+<p align="center"><img src="figures/radar.png" width="560" alt="Radar chart of six standard benchmarks for topic-index-140m-11.5bt (this model), concept-memory-140m-11.5bt and SmolLM2-135M at its 252B-token checkpoint. The two 150M models overlap almost everywhere; SmolLM2 is further out on the science quizzes, HellaSwag and WikiText, level on grammar."></p>
 
-*RULER by task family, 4k to 32k tokens: this model (blue) and its sibling, the concept memory (orange, dashed), same harness and settings, 100 prompts per task and length (the same prompts for both models from 4k to 16k). Both trained on planted-fact lookups, so the needle tasks are not zero-shot for either.*
+*Six standard benchmarks, same harness for all three, each score as a share of the best of the three (rim = best).
+This model and concept-memory-140m-11.5bt trained on 11.5B tokens each, SmolLM2-135M on 252B at this checkpoint.
+Every number, Pythia-160M and LFM2.5-350M-Base included, in the table below.*
 
 ## Results at a glance
 
 All numbers in this table come from **one harness**, run by us on RTX 3090 cards on 2026-11-17/18: EleutherAI's
-lm-evaluation-harness 0.4.11, 0-shot, all test items, max length 2,048; each model in its training precision (ours,
-the concept memory, SmolLM2 and LFM2.5 in bf16, Pythia in fp32). Long documents: our cross-model test (below).
-Accuracy in %, higher is better; best in each row in **bold**.
+lm-evaluation-harness 0.4.11, 0-shot, all test items, max length 2,048; each model in its training precision (our two
+models, SmolLM2 and LFM2.5 in bf16, Pythia in fp32). Long documents: our cross-model test (below). Accuracy in %,
+higher is better; best in each row in **bold**.
 
-<p align="center"><img src="figures/radar.png" width="560" alt="Radar chart of six standard benchmarks for the 150M topic index, the 150M concept memory and SmolLM2-135M at its 252B-token checkpoint. The two 150M models overlap almost everywhere; SmolLM2 is further out on the science quizzes, HellaSwag and WikiText, level on grammar."></p>
-
-| Measure | Chance | **150M topic index** · 11.5B tokens | 150M concept memory ¹ · 11.5B | SmolLM2-135M · 252B ² | Pythia-160M · 300B ³ | LFM2.5-350M-Base · 28T ⁴ |
+| Measure | Chance | **topic-index-140m-11.5bt** · 11.5B tokens | concept-memory-140m-11.5bt ¹ · 11.5B | SmolLM2-135M · 252B ² | Pythia-160M · 300B ³ | LFM2.5-350M-Base · 28T ⁴ |
 |---|---:|---:|---:|---:|---:|---:|
 | Grammar (BLiMP, 67 sets) | 50 | 80.11 ± 0.14 | **80.56** | 79.72 | 77.48 | 80.17 |
 | Science quiz (ARC-Easy) | 25 | 48.40 ± 1.03 | 48.95 | 61.62 | 43.64 (43.52) | **70.03** |
@@ -120,42 +125,84 @@ Accuracy in %, higher is better; best in each row in **bold**.
 | **Finding facts far back** (RULER at 8k, mean of 13) ↑ | ≈0 | **0.54** | 0.44 | — (reads 2k) | — (reads 2k) | 0.42 |
 | Tiny-ML Leaderboard place (of 101) ⁵ | | 26th | 24th | 9th | 44th (over the 150M cap) | 12th (over the 150M cap) |
 
-¹ Our sibling, the [150M concept memory](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt): same
-data, order, budget and layers; its reading layer is a concept memory instead of Latent Sparse Attention.
+¹ [concept-memory-140m-11.5bt](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt), Meridian21's model on the same data: same data, order, budget and layers; its
+reading layer is a concept memory instead of Latent Sparse Attention (Kubicek et al.).
 ² SmolLM2-135M's **earliest public training checkpoint** (step 240,000, ≈252B tokens, 22× ours), the closest to our
-budget a reader can check; its final ≈2T-token model is in the leaderboard table. These early checkpoints read 2,048
-tokens.
-³ Pythia-160M's final checkpoint, scored by us in fp32 (it loses ≈6 ARC-Easy points in bf16). In brackets: EleutherAI's
-own published zero-shot results (`evals/pythia-v1/pythia-160m` in their GitHub repository, quoted).
-⁴ LFM2.5-350M-Base (Liquid AI, March 2026), 2.5× our size; training tokens as its card reports (quoted). It predicts
-these documents best with 4k of context and worse with more (checked in fp32 and bf16, two attention kernels,
-Transformers 4.57 and 5.23).
-⁵ The [Tiny-ML Leaderboard](https://huggingface.co/spaces/Glint-Research/Tiny-ML-Leaderboard) formula reproduced
-from its page (snapshot of 2026-11-14), each of our runs placed on its own. WikiText-2 is reported there as byte
-perplexity: 1.950 for both of our models (bits per byte = log₂ of it).
+budget a reader can check; its final ≈2T-token model is in the leaderboard table below. These early checkpoints read
+2,048 tokens; SmolLM2's 8k context came in its last training phase.
+³ Pythia-160M's final checkpoint, scored by us in fp32 (it loses ≈6 ARC-Easy points in bf16). In brackets:
+EleutherAI's own published zero-shot results (`evals/pythia-v1/pythia-160m` in their GitHub repository, quoted).
+⁴ LFM2.5-350M-Base (Liquid AI, March 2026), 2.5× our size; training tokens as its card reports (quoted). Its card
+states a 32k context; on these documents it predicts best with 4k and worse with more (checked in fp32 and bf16, two
+attention kernels, Transformers 4.57 and 5.23).
+⁵ The [Tiny-ML Leaderboard](https://huggingface.co/spaces/Glint-Research/Tiny-ML-Leaderboard) formula reproduced from
+its page (snapshot of 2026-11-14), each of our runs placed on its own. WikiText-2 is reported there as byte perplexity:
+1.950 for both of our models (bits per byte = log₂ of it).
 
 **What "bits per byte" means.** The number of bits a model needs, on average, to store each byte (about one
 character) of text it has not seen, using its own predictions: 0 would be perfect prediction, 8 is plain text with no
-prediction at all, and lower is better. On the same pages, gzip needs 2.49 bits per byte, xz 1.97 and bzip2 1.77;
-our model needs 0.797, so it could store those pages in about a tenth of their size. It counts bytes rather than
-tokens, so models with different tokenizers compare fairly. At these values a difference of 0.01 is about 1.2 %.
+prediction at all, and lower is better. There is no 0-to-1 scale. On the same pages, gzip needs 2.49 bits per byte,
+xz 1.97 and bzip2 1.77; this model needs 0.797, so it could store those pages in about a tenth of their
+size. It counts bytes rather than tokens, so models with different tokenizers compare fairly. At these values a
+difference of 0.01 is about 1.2 %.
 
-**Against its sibling** (same tests, documents and settings): RULER 0.05–0.10 higher at every length, from tasks that
-ask for several facts at once and from counting words; level on the seven standard tasks (46.5 % against 46.2 %),
-WikiText (1.950 both) and long documents (0.797 against 0.795 bits per byte, the sibling better on 62 % of documents);
-grammar 0.45 points lower (80.11 % against 80.56 %). Paired differences with intervals:
-[EVALUATION.md](EVALUATION.md#head-to-head-with-the-sibling).
+**Against concept-memory-140m-11.5bt** (same tests, documents and settings): RULER 0.05–0.10 higher at every length, from tasks that
+ask for several facts at once and from counting words; level on the seven standard tasks (46.5 % against
+46.2 %), WikiText (1.950 both) and long documents (0.797 against 0.795 bits per byte,
+concept-memory-140m-11.5bt better on 62 % of documents); grammar 0.45 points lower (80.11 % against
+80.56 %). Paired differences with intervals: [EVALUATION.md](EVALUATION.md#models-on-the-same-data).
+
+## Long documents
+
+<p align="center"><img src="figures/long_docs.png" width="860" alt="Bits per byte on the last pages of 55 held-out 64k-token documents against the context each model is given. This model and concept-memory-140m-11.5bt lie on top of each other and improve steadily up to 61k tokens; same-size models stop at 2k and 8k; Gemma 3 270M is level up to its 32k limit; Granite 4.0 350M is ahead; LFM2.5-350M-Base gets worse past 4k."></p>
+
+Every model reads the same characters: the last ≈16 KB of each 64k-token span is the target, and the context before
+it is cut to the budget on the x-axis (sliding windows past a model's maximum length). Held-out documents from five
+public sources (Gutenberg books, arXiv papers, open-access academic books, US government publications, UK
+parliamentary debates); our two models trained on other documents of these sources, the others may have seen these
+very documents. One RTX 3090, 2026-11-18.
+
+| Model | Size | Training tokens | Reads at most | Bits per byte ↓ | Gain, 1k → most ↑ | Another document's far past ↓ |
+|---|---:|---:|---:|---:|---:|---:|
+| **topic-index-140m-11.5bt** | 141.5M | 11.5B | 64k | 0.797 | 0.049 [0.035, 0.065] | 0.834 |
+| concept-memory-140m-11.5bt | 141.5M | 11.5B | 64k | 0.795 | **0.051** [0.037, 0.067] | 0.832 |
+| SmolLM2-135M, 252B checkpoint | 134.5M | 252B | 2k | 0.933 | — | 0.932 |
+| SmolLM2-135M, final | 134.5M | ≈2T | 8k | 0.832 | 0.018 [0.014, 0.024] | 0.836 |
+| Pythia-160M | 162.3M | 300B | 2k | 0.942 | — | 0.941 |
+| Gemma 3 270M | 268.1M | 6T | 32k | 0.805 | 0.038 [0.029, 0.049] | 0.827 |
+| Granite 4.0 350M base | 352.4M | ≈15T | 32k | **0.776** | 0.041 [0.033, 0.051] | **0.798** |
+| LFM2.5-350M-Base | 354.5M | 28T | 32k | 0.879 at 4k; 0.928 at 28k | −0.035 [−0.051, −0.020] | 0.933 |
+
+Training tokens as each card reports them (quoted); 95 % bootstrap intervals over documents. "Another document's
+far past": the own last 4k tokens kept, everything older taken from a different document of the same source.
+
+- **Ahead of every same-size model,** on 75 % (SmolLM2-135M final, +0.036) to
+  98 % (SmolLM2-135M at 252B, +0.136) of documents, because it reads 8–30 times further back;
+  level with Gemma 3 270M (+0.008 [−0.007, +0.023]) and ahead of LFM2.5-350M-Base at its best (+0.082 [0.059, 0.105]).
+- **It gains from far context like the 32k models trained on 500–1,300 times more text, and keeps going:**
+  0.036 bits per byte from 1k to 28k (Gemma 3 270M 0.038, Granite 4.0 350M 0.041), then 0.013
+  more from 28k to 61k.
+- **It reads the content.** With another document's far past it scores like a plain 4k cut, worse than the real past
+  on 54 of 55 documents.
+- **Level with concept-memory-140m-11.5bt:** 0.002 bits per byte apart (concept-memory-140m-11.5bt better on
+  62 % of documents) and the same gain from far context; the two reads differ in how they find facts (RULER below),
+  not in how well they predict text.
+
+Our own tests of the read (context cut in our tokens, the far read switched off, 16k and 128k documents) are
+in [EVALUATION.md](EVALUATION.md#our-own-long-context-tests). In short: switching the far read off costs
+0.31 nats per token at 64k; past 64k, the training length, extra context no longer helps, so feed the
+last ≈64k tokens; past 64k, this model holds up better than concept-memory-140m-11.5bt (at 128k, 0.025 nats per token better with the whole document, on 13 of 15 documents).
 
 ## Finding facts far back (RULER)
 
-<p align="center"><img src="figures/ruler_radar.png" width="900" alt="Four small radar charts of RULER at 8k tokens by task family, the 150M topic index and the 150M concept memory each against one reference model: SmolLM2-135M, Gemma 3 270M, Granite 4.0 350M and LFM2.5-350M-Base."></p>
-
 The standard long-context suite: 13 tasks, 100 prompts per task and length, greedy decoding, each task's own answer
-length; score = share of the expected answers found in the reply (higher is better). RTX 3090 cards, 2026-11-18.
-The reference models ran through lm-eval's stock `hf` model with the same tasks, each prompt sized with its own
-tokenizer. Not zero-shot for our two models: their training included planted-fact lookups of a similar shape.
+length; score = share of the expected answers found in the reply (0 to 1, higher is better). Every model runs through
+the same harness, its prompts sized in its own tokens; RTX 3090 cards, 2026-11-18. Not zero-shot for our two models:
+two training stages included planted-fact lookups of a similar shape.
 
-| RULER at 8k, by task family | **Ours** | Concept memory (sibling) | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
+<p align="center"><img src="figures/ruler_radar.png" width="900" alt="Four small radar charts of RULER at 8k tokens by task family, this model and concept-memory-140m-11.5bt each against one reference model: SmolLM2-135M, Gemma 3 270M, Granite 4.0 350M and LFM2.5-350M-Base."></p>
+
+| RULER at 8k, by task family | **topic-index-140m-11.5bt** | concept-memory-140m-11.5bt | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
 |---|---:|---:|---:|---:|---:|---:|
 | One needle | 0.85 | 0.76 | 0.72 | 0.55 | **1.00** | 0.83 |
 | Needle among distractor keys | 0.59 | **0.62** | 0.20 | 0.34 | 0.42 | 0.36 |
@@ -169,51 +216,19 @@ tokenizer. Not zero-shot for our two models: their training included planted-fac
 | Mean of the 13 tasks, 32k | **0.39** | 0.32 | — | — | — | — |
 
 - **Level with Granite 4.0 350M at 8k** (0.54 each; 2.5× our size, ≈1,300× our training text) and ahead of
-  LFM2.5-350M-Base, Gemma 3 270M and SmolLM2-135M; at 4k Granite leads (0.62 against 0.54) and finds 32-character IDs
-  that this model rarely writes out.
-- **Against its sibling:** +0.05 [0.03, 0.07], +0.10 [0.08, 0.12], +0.07 [0.05, 0.08] and +0.07 [0.05, 0.09] at 4k,
-  8k, 16k and 32k (95 % bootstrap over prompts; paired from 4k to 16k, where both saw the same prompts; at 32k eight
-  of the 13 tasks are two separate 100-prompt draws, compared unpaired). The gain is in several facts at once and in
-  counting words; the sibling leads on needles among distractor keys (0.62 against 0.59).
-- **It keeps going past 8k:** 0.44 at 16k and 0.39 at 32k (the reference models were run at 4k and 8k only). Every
-  task at every length: [EVALUATION.md](EVALUATION.md#ruler).
+  LFM2.5-350M-Base, Gemma 3 270M and SmolLM2-135M; at 4k Granite leads (0.62 against 0.54) and finds 32-character
+  IDs that this model rarely writes out.
+- **Against concept-memory-140m-11.5bt:** +0.05 [0.03, 0.07], +0.10 [0.08, 0.12], +0.07 [0.05, 0.08] and +0.07 [0.05, 0.09] at
+  4k, 8k, 16k and 32k (95 % bootstrap over prompts; paired from 4k to 16k; at 32k eight of the 13 tasks are two
+  separate 100-prompt draws, compared unpaired). The gain is in several facts at once and in counting words; concept-memory-140m-11.5bt
+  leads on needles among distractor keys (0.62 against 0.59).
+- **It keeps going past 8k:** mean 0.44 at 16k and 0.39 at 32k, with the essay needle at 1.00 and 0.98 (the reference
+  models were run at 4k and 8k only). Every task at every length: [EVALUATION.md](EVALUATION.md#ruler).
 
-## Long documents
+<p align="center"><img src="figures/ruler_lengths.png" width="860" alt="Six small charts, one per RULER task family, share of answers found against context length from 4k to 32k tokens for this model and concept-memory-140m-11.5bt. The lines overlap for single needles, distractor keys, variable tracking and questions; topic-index-140m-11.5bt is higher for several values or keys at once and for counting words."></p>
 
-<p align="center"><img src="figures/long_docs.png" width="860" alt="Bits per byte on the last pages of 55 held-out 64k-token documents against the context each model is given. The 150M topic index and the 150M concept memory lie on top of each other and improve steadily up to 61k tokens; same-size models stop at 2k and 8k; Gemma 3 270M is level up to its 32k limit; Granite 4.0 350M is ahead; LFM2.5-350M-Base gets worse past 4k."></p>
-
-Every model reads the same characters: the last ≈16 KB of each 64k-token span is the target, and the context before
-it is cut to the budget on the x-axis (sliding windows past a model's maximum length). Held-out documents from five
-public sources (Gutenberg books, arXiv papers, open-access academic books, US government publications, UK
-parliamentary debates); our two models trained on other documents of these sources, the others may have seen these
-very documents. One RTX 3090, 2026-11-18.
-
-| Model | Size | Training tokens | Reads at most | Bits per byte ↓ | Gain, 1k → most ↑ | Another document's far past ↓ |
-|---|---:|---:|---:|---:|---:|---:|
-| **150M topic index** | 141.5M | 11.5B | 64k | 0.797 | 0.049 [0.035, 0.065] | 0.834 |
-| 150M concept memory (sibling) | 141.5M | 11.5B | 64k | **0.795** | **0.051** [0.037, 0.067] | 0.832 |
-| SmolLM2-135M, 252B checkpoint | 134.5M | 252B | 2k | 0.933 | — | 0.932 |
-| SmolLM2-135M, final | 134.5M | ≈2T | 8k | 0.832 | 0.018 [0.014, 0.024] | 0.836 |
-| Pythia-160M | 162.3M | 300B | 2k | 0.942 | — | 0.941 |
-| Gemma 3 270M | 268.1M | 6T | 32k | 0.805 | 0.038 [0.029, 0.049] | 0.827 |
-| Granite 4.0 350M base | 352.4M | ≈15T | 32k | **0.776** | 0.041 [0.033, 0.051] | **0.798** |
-| LFM2.5-350M-Base | 354.5M | 28T | 32k | 0.879 at 4k; 0.928 at 28k | −0.035 [−0.051, −0.020] | 0.933 |
-
-Training tokens as each card reports them (quoted); 95 % bootstrap intervals over documents. "Another document's
-far past": the own last 4k tokens kept, everything older taken from a different document of the same source. The
-reference rows are the sibling card's runs on the same spans.
-
-- **Level with its sibling:** 0.002 bits per byte apart (0.797 against 0.795; the concept memory is better on 62 %
-  of documents), about 0.2 %. Both gain the same from far context: 0.036 bits per byte from 1k to 28k tokens, then
-  0.013 more from 28k to 61k.
-- **Ahead of every same-size model,** on 75 % (SmolLM2-135M final, +0.036) to 98 % (SmolLM2-135M at 252B, +0.136)
-  of documents, because it reads 8–30 times further back; level with Gemma 3 270M (+0.008 [−0.007, +0.023]) and
-  ahead of LFM2.5-350M-Base at its best (+0.082 [0.059, 0.105]).
-- **It reads the content.** With another document's far past it scores like a 4k cut, worse than the real past on 54
-  of 55 documents.
-
-Our own tests of the read ([EVALUATION.md](EVALUATION.md#our-own-long-context-tests)): switching the far read off
-costs 0.31 nats per token at 64k; at 128k the whole-document read beats the sibling's by 0.025 (13 of 15 documents).
+*RULER by task family, 4k to 32k tokens: this model (orange) and concept-memory-140m-11.5bt (blue, dashed), same harness and
+settings, 100 prompts per task and length (the same prompts for both from 4k to 16k).*
 
 ## Tiny-ML Leaderboard
 
@@ -237,35 +252,36 @@ board's own runs (quoted, snapshot 2026-11-14); rows in *italics* are our runs o
 | 10 | Boris-2 | 143.7M | 200B | 81.13 | 59.76 | 1.895 | 80.2 | 81.7 |
 | … | | | | | | | | |
 | 23 | GPT-S-5M | 5.2M | 25B | 72.27 | 35.69 | 2.570 | 67.4 | 77.7 |
-| *(24)* | *150M concept memory (sibling)* | *141.5M* | *11.5B* | *80.56* | *48.95* | *1.950* | *76.2* | *77.7* |
+| *(24)* | *concept-memory-140m-11.5bt* | *141.5M* | *11.5B* | *80.56* | *48.95* | *1.950* | *76.2* | *77.7* |
 | 24 | Glint-2.3 | 1.7M | 10B | 67.30 | 36.00 | 3.051 | 64.8 | 77.6 |
 | 25 | Zedev-134M-Fudas | 134M | 20.7B | 81.69 | 46.38 | 1.880 | 76.0 | 77.6 |
-| **26** | **150M topic index** | **141.5M** | **11.5B** | **80.11** | **48.40** | **1.950** | **75.9** | **77.4** |
+| **26** | **topic-index-140m-11.5bt** | **141.5M** | **11.5B** | **80.11** | **48.40** | **1.950** | **75.9** | **77.4** |
 | 27 | Hydrion-v1-Base | 114.1M | ≈2.5B | 80.08 | 47.26 | 2.040 | 75.2 | 77.4 |
 | … | | | | | | | | |
 | *(44)* | *Pythia-160M (over the 150M cap)* | *162.3M* | *300B* | *77.48* | *43.64* | *1.924* | *73.5* | *74.5* |
 
 ⁶ Quality: the mean of BLiMP, ARC-Easy and the board's WikiText score, before the size bonus. By quality alone the
-model is 16th of 101; on grammar alone, 11th. Of the 55 board entries that report 15B training tokens or fewer, four
-place above it. Its sibling places 24th (14th by quality). The same tests run through the `from_pretrained` release (lm-eval's stock `hf` model) give the same
-three numbers. Full board with our rows: [EVALUATION.md](EVALUATION.md#tiny-ml-leaderboard).
+model is 16th of 101; on grammar alone, 11th. Of the 55 board entries that report 15B
+training tokens or fewer, four place above it. concept-memory-140m-11.5bt places 24th (14th by quality).
+Full board with our rows: [EVALUATION.md](EVALUATION.md#tiny-ml-leaderboard).
 
 ## Data efficiency
-
-<p align="center"><img src="figures/data_eff.png" width="860" alt="Three panels, score against training tokens on a log scale: Pythia-160M's checkpoints, SmolLM2-135M's checkpoints, and our two 150M models as points at 11.5B tokens."></p>
 
 "Data-efficient" here means a better score from the same number of training tokens, measured against the published
 training checkpoints of Pythia-160M (one every 2.1B tokens) and SmolLM2-135M (from 252B tokens), all scored by us
 with the same harness.
 
-- **Same budget:** against Pythia-160M at 10.5B and 12.6B tokens, this model is ahead on every test: +1.8 to +2.2
-  points of grammar, +5.6 to +5.8 on the science quiz, +3.3 to +4.4 on the 7-task mean, and 0.07–0.09 lower
-  WikiText byte perplexity.
-- **Tokens to match:** Pythia-160M does not reach its grammar or science-quiz score at any checkpoint up to 300B
-  tokens (26× ours); it reaches its WikiText score after ≈36B tokens (3.2×). SmolLM2-135M stays below its grammar
-  score at 252B and 503B tokens and is level at ≈2T; it is ahead on the knowledge tests from its first checkpoint.
-- **What it does not separate:** architecture from data. The sibling, on the same data, scores the same; a standard
-  transformer of the same size on our data and budget (training) will measure the architecture's share.
+<p align="center"><img src="figures/data_eff.png" width="860" alt="Three panels, score against training tokens on a log scale: Pythia-160M's checkpoints, SmolLM2-135M's checkpoints, and this model and concept-memory-140m-11.5bt as points at 11.5B tokens."></p>
+
+- **Same budget:** against Pythia-160M at 10.5B and 12.6B tokens, this model is ahead on every test: +1.8 to +2.2 points of grammar, +5.6 to +5.8 on the science quiz, +3.3 to +4.4 on the 7-task mean,
+  and 0.07–0.09 lower WikiText byte perplexity.
+- **Tokens to match:** Pythia-160M does not reach this model's grammar or science-quiz score at any checkpoint up to
+  300B tokens (26× ours); it reaches its WikiText score after ≈36B tokens (3.2×). SmolLM2-135M stays below
+  its grammar score at 252B and 503B tokens and is level at ≈2T (80.15 %); it is ahead on the knowledge tests from its first
+  checkpoint.
+- **What it does not separate:** architecture from data. Part of the gap to Pythia is newer, cleaner data; concept-memory-140m-11.5bt,
+  on the same data and order, lands within half a point on every test; a standard transformer of the same size on our
+  data and budget (training) will measure the architecture's share.
 
 ## What its text looks like
 
@@ -289,7 +305,7 @@ bold, unedited, cut at a sentence end (…). More seeds and beam-search outputs:
 
 Fluent, on-topic English and code-shaped output; the facts are often wrong (Paris was never renamed; the 1905 papers
 were special, not general, relativity) and the code is wrong, as expected from a 140M base model at 11.5B tokens. The
-sibling's samples read the same.
+concept-memory-140m-11.5bt's samples read the same.
 
 ## How the topic index (LSA) works
 
@@ -316,7 +332,7 @@ parameters: the model learns what to look up only through its next-token loss. O
 construction and selection and changes two things: a token reads only its own document (we pack several documents
 into one training row), and the selected tokens become a mask for PyTorch's flex attention instead of the authors'
 Triton kernel (a third, a runtime check moved to configuration time, changes nothing the model computes). The design
-difference from the sibling: the concept memory also reads a one-line summary of every group it did not open; LSA
+difference from concept-memory-140m-11.5bt: the concept memory also reads a one-line summary of every group it did not open; LSA
 ignores them.
 
 ## Training
@@ -332,7 +348,7 @@ ignores them.
 | **Time and cost** | ≈36 hours of node time (≈145 GPU-hours) including ≈0.6 h of tests and ≈40 min lost to the interruption; ≈ $290 at ≈ $8/h spot; energy not measured |
 | **Finished** | 2026-11-18 13:06 UTC |
 
-**Data (`m21mix_v2`), all public Hugging Face datasets**, the same shards in the same order as the sibling. Shares are
+**Data (`m21mix_v2`), all public Hugging Face datasets**, the same shards in the same order as concept-memory-140m-11.5bt. Shares are
 of each stage's tokens.
 
 | Stage | Tokens | What it reads |
@@ -354,13 +370,14 @@ HotpotQA, SQuAD, the held-out long documents) are not in the training data. Stag
 - **Knowledge tests** (ARC, SciQ, HellaSwag, LAMBADA) are below SmolLM2-135M, which trained on 22× (at 252B) to
   ≈170× (final) more text, and LFM2.5-350M-Base (2.5× our size, ≈2,400× our text); at this size these tests track
   training tokens closely.
-- **Next to its sibling:** grammar 0.45 points lower (80.11 % against 80.56 %, about two standard errors), long-document
-  prediction 0.002 bits per byte (0.2 %) behind with the whole 61k past, and level or slightly behind on the RULER
-  tasks with distractor keys and UUIDs.
-- **Context:** trained and tested to 64k tokens. Past 64k, the last ≈61k tokens predict better than the whole
-  document (by 0.031 nats per token, on 14 of 15 documents at 128k); feed the last ≈64k.
-- **Hard RULER tasks stay hard:** variable tracking 0.00–0.01 at every length, the UUID tasks 0.02–0.55; most tasks
-  fall with length.
+- **Next to concept-memory-140m-11.5bt:** grammar 0.45 points lower (80.11 % against 80.56 %, about two standard errors); level on the
+  other standard tests and on long documents (0.002 bits per byte behind); RULER 0.05–0.10 higher at every length;
+  past 64k this model holds up better (0.025 nats per token at 128k).
+- **Context:** trained and tested to 64k tokens. Past 64k, extra context no longer improves predictions (at 128k, the
+  whole document is 0.031 nats per token worse than its last 61k, on 14 of 15 documents); feed
+  the last ≈64k.
+- **Hard RULER tasks:** variable tracking stays at 0.00–0.01 at every length, the UUID tasks at 0.02–0.55, and most
+  tasks fall with length.
 - **Controls not run yet:** one seed; no full-attention model of the same size on the same data, so the share of
   the architecture in any result is not separated from the data.
 - **Facts and safety:** it makes things up, and has no safety tuning or output filtering; not for high-stakes or
@@ -412,7 +429,7 @@ loss = model(**inputs, labels=inputs["input_ids"]).loss
 ```bibtex
 @misc{sopyla2026topicindex150m,
   author       = {Sopyła, Krzysztof},
-  title        = {150M topic index: a small base language model with Latent Sparse Attention for long context},
+  title        = {topic-index-140m-11.5bt: a small base language model with Latent Sparse Attention for long context},
   year         = {2026},
   publisher    = {Hugging Face},
   howpublished = {\url{https://huggingface.co/Meridian21Lab/topic-index-140m-11.5bt}},
@@ -451,7 +468,7 @@ under NVIDIA's terms; about 45 % of the training tokens). See each dataset's car
 ## Changelog and contact
 
 - 2026-11-18: first release (weights, modeling code, card, evaluation page, raw results, figures).
-- 2026-11-18: aligned with the sibling card: the 150M concept memory in every results table and chart, one colour per
+- 2026-11-18: aligned with the concept-memory-140m-11.5bt card: concept-memory-140m-11.5bt in every results table and chart, one colour per
   model across both cards, a head-to-head section in EVALUATION.md.
 
 Krzysztof Sopyła · [ai.ksopyla.com](https://ai.ksopyla.com) · [Meridian21 Lab](https://huggingface.co/Meridian21Lab)
