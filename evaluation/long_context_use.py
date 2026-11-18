@@ -73,17 +73,30 @@ def load_docs(data: Path, src: str, tok, eot: int, min_len: int, cache: Path) ->
 
 @contextmanager
 def memory_mode(model, mode: str):
-    """'on' (the model as trained), 'off' (sinks + window only), 'nosum' (opened tokens, no summaries)."""
+    """'on' (the model as trained), 'off' (sinks + window only), 'nosum' (opened tokens, no summaries).
+
+    Concept read: `concept_off` / `concept["summaries"]`. LSA read (`par_global_read: lsa`, 2026-11-18): `lsa_off`
+    keeps its sinks + 512-token window; it has no summaries, so 'nosum' is refused rather than silently a no-op."""
     attns = [l.attn for l in model.layers if getattr(l.attn, "concept", None) is not None]
+    lsa = [l.attn for l in model.layers if getattr(l.attn, "lsa", None) is not None]
+    if mode == "nosum" and lsa and not attns:
+        raise ValueError("'nosum' needs a concept read; the LSA read has no summaries (use --modes off)")
+    if mode != "on" and not attns and not lsa:
+        raise ValueError(f"memory mode {mode!r}: the checkpoint has no concept or LSA read to switch")
     prev = [(a.concept_off, a.concept["summaries"]) for a in attns]
+    prev_lsa = [a.lsa_off for a in lsa]
     for a in attns:
         a.concept_off = mode == "off"
         a.concept["summaries"] = mode != "nosum"
+    for a in lsa:
+        a.lsa_off = mode == "off"
     try:
         yield
     finally:
         for a, (off, s) in zip(attns, prev):
             a.concept_off, a.concept["summaries"] = off, s
+        for a, v in zip(lsa, prev_lsa):
+            a.lsa_off = v
 
 
 @torch.no_grad()
