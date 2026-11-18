@@ -66,8 +66,32 @@ believed.
 > **not** yet track several facts at once, and we have **not** compared it with a full-attention model of the same
 > size on the same data. No claim here is about chat, safety or downstream tasks.
 
+## Why try it
+
+- **A 140M model that reads 64k tokens and gets better for it.** On 55 held-out real documents (books, papers,
+  government reports), it predicts the last pages better with the whole 61k-token past than with only the last 1k
+  (0.15 nats per token less surprise, lower is better; 96 % of documents) or the last 16k (0.06 less; 84 %). For
+  scale: SmolLM2-135M, the usual same-size reference, is configured for 8,192 positions (its `config.json`; quoted).
+- **It reads the document, not just "more text".** Put another document of the same kind in the far past and the
+  gain disappears: it scores like a plain cut to 4k, and worse than the real past on 55 of 55 documents. This is the
+  check that tells real long-context use from a model that only tolerates long inputs.
+- **Small and cheap where it matters.** Every layer except the memory reader looks at only the last 128 tokens, so
+  the long reach is the memory's work. A 64k-token document (and a 128k one) is scored in one pass on a single 24 GB
+  RTX 3090.
+- **Strong for its data budget.** On the Tiny-ML Leaderboard it would be 4th of the 55 entries (ours included) that
+  report 15B training tokens or fewer, and 8th of 101 on grammar. On our harness it is level with SmolLM2-135M on
+  grammar (80.56 % vs 80.15 %) after 11.5B tokens instead of about 2T. The board's tests are short (we ran them at
+  2,048 tokens at most), so they do not see the memory at all.
+- **An open testbed for memory research.** Two switches turn the far read, or only its summaries, off at inference,
+  so you can measure what the memory adds on your own documents. The test script and every per-document result ship
+  in this repository; the code, the all-public data recipe and every training stage on W&B are public; the whole
+  run cost ~$320. It shares SmolLM2's tokenizer, so per-token comparisons with that family need no conversion.
+
+**Where it is weak:** knowledge and reasoning (ARC-Easy 48.95 % vs SmolLM2-135M's 64.27 %), several facts at once,
+and anything past 64k tokens. Details in [Strengths and limitations](#strengths-and-limitations).
+
 ## Contents
-1. [At a glance](#at-a-glance)
+1. [Why try it](#why-try-it) · [At a glance](#at-a-glance)
 2. [How the concept memory works](#how-the-concept-memory-works)
 3. [Uses](#uses)
 4. [How to use](#how-to-use)
