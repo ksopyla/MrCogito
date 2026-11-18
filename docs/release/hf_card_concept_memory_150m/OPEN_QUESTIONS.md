@@ -85,6 +85,9 @@ choose the licence after reading NVIDIA's data terms.**
 
 ## 3. What is missing for `from_pretrained` from the Hub
 
+**2026-11-18:** now an engineering task: `docs/engineering_specs/hub_from_pretrained_loading.md` (export script,
+`GenerationMixin` over the cached decoder, tests, a Hub smoke test in the release checklist, backfill of this model).
+
 Today a Hub user needs the MrCogito code (`evaluation/lm_eval_perceiver_ar.load_perceiver_ar_for_eval`). For
 `AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True)` the repository needs:
 

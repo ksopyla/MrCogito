@@ -1,0 +1,52 @@
+{
+  "model": "Cache/e38_board/e37a_m120t_final",
+  "new_tokens": 60,
+  "start_tokens": [
+    0
+  ],
+  "sample": {
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "repetition_penalty": 1.1,
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "beam": {
+    "beams": 4,
+    "no_repeat_ngram": 3
+  },
+  "date_utc": "2026-11-18 12:49 UTC",
+  "prompts": [
+    {
+      "prompt": "The capital of France is",
+      "sample": {
+        "0": " Paris, the second largest city in the world, with a population of 7.5 million people. It is known for its rich history and culture, as well as its iconic landmarks such as the Eiffel Tower, Louvre Museum, and Notre-Dame Cathedral.\n\nFrance has a",
+        "1": " Paris. It has a population of 10 million, and it is the second-largest city in France. The city is located in the western part of the country, and it has a rich history that spans centuries. It is one of the oldest cities in the world, and its architecture is",
+        "2": " Paris, the capital of France. It has a population of 1.54 million. It is the most populous city in France with over 120 million people.\n\nParis is a major metropolitan area and it is the largest city in France. It is located in the northern part"
+      },
+      "beam": " Paris. It is the largest city in France, and it is also the capital of the French Republic. The capital is located in the heart of the city, near the border with Germany.\n\nThe capital is the most populous city in the world, with a population of over 100"
+    },
+    {
+      "prompt": "In 1905, Albert Einstein published",
+      "sample": {
+        "0": " his famous theory of general relativity, which was later later developed by Wolfgang Pauli. The idea that the universe is expanding and contracting like a rubber band was first introduced by Karl Platon in 1910, which had been observed only 100 years earlier by the English physicist J",
+        "1": " a book called \"The Theory of Relativity\" in which he described how the curvature of space-time is a measure of the amount of energy that can be transferred between objects. This book was later revised and extended by the physicist Eugene Fields, who developed his theory of relativity. In 191",
+        "2": " the famous equation \"E=mc²\", which he had developed as a way to measure the speed of light. He found that this equation was equal to the speed of light multiplied by the square of the distance traveled by an object in space. For example, if you stand on a flat surface at"
+      },
+      "beam": " his famous theory of general relativity, which was the foundation of modern physics. The theory of relativity is based on the assumption that the speed of light is constant, and that the curvature of space-time is constant. This means that light travels at a constant speed, regardless of the direction of travel."
+    },
+    {
+      "prompt": "def fibonacci(n):",
+      "sample": {
+        "0": "\n    \"\"\"Returns the nth Fibonacci number\"\"\"\n    if len(fibonacci) == 0:\n        return 0\n    elif len(fibonacci) == 1:\n        return fibonacci[0]\n    else:\n        return fibonacci[len(fibonacci) - 1]",
+        "1": "\ndef fibonacci(n):\nreturn fibonacci(n + 1)\n\ndef fibonacci(n):\nreturn fibonacci(n)\n\ndef fibonacci(n):\nreturn fibonacci(n) + fibonacci(n - 1)\n\ndef fib",
+        "2": "\n    fib = [0, 1]\n    fib.append(fib[-1])\n    for i in range(2, n + 1):\n        fib.append(fib[-1] + fib[-i - 1])\n    return fib\n\ndef fib_sum(n):"
+      },
+      "beam": "\n    if n == 0:\n        return 0\n    return fib(n-1) + fib(2*n-2)\n\nThe Fibonacci sequence is a series of numbers in which each number is the sum of the two preceding numbers. The first number is 0, the"
+    }
+  ],
+  "note": "evaluation/sample_text.py on Odra (RTX 3090), 2026-11-18 12:49 UTC; prompt start <|endoftext|> as in training"
+}

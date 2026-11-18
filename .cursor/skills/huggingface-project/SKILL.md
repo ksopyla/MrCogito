@@ -1,6 +1,6 @@
 ---
 name: huggingface-project
-description: Publish and inspect Concept Encoder artifacts on the Hugging Face Hub. Use when uploading checkpoints, generating model cards, checking the ksopyla namespace, searching the Hub via MCP for related models, datasets, or papers, or comparing Hub baselines before release. Not for general research planning or run bookkeeping.
+description: The Hugging Face Hub mechanics for Concept Encoder / Meridian21 artifacts - repo naming, tags, licence gates, the Meridian21Lab organisation, staging and uploading checkpoints (private first, then public), checking the namespace, and searching the Hub via MCP for related models, datasets or papers. Use when uploading or renaming a Hub repo, setting card metadata, or looking up Hub models. For what a model card says, which models to compare against and how to present results, use the model-release skill (it owns the card template). Not for general research planning or run bookkeeping.
 ---
 
 # HuggingFace Project Integration
@@ -149,39 +149,32 @@ Do **not** invent GPU-h. Pull from run report / audit when available.
 | From-scratch MrCogito (no Gemma) | `apache-2.0` | |
 | Gemma-derived (`google/gemma-3-*`) | **`gemma`** | `base_model:` + gated prompt; never Apache |
 
-## Model card checklist — standard v2 (2026-11-18)
+## Model card content → `model-release` skill
 
-Every card follows [templates/MODEL_CARD.md](templates/MODEL_CARD.md) (built from a survey of SmolLM2/3, OLMo-2/3,
-Gemma 3, Qwen3, Granite 4.0, Pythia and LFM2 cards). The rules at the end of that template are the checklist; the
-short form:
+What the card says, which references to run, how results are shown (one comparison table, the leaderboard table,
+radar and long-context charts), the units, text samples, tone, and the pre-publish checklist all live in the
+**`model-release`** skill, with the card template (standard v3) in
+`.cursor/skills/model-release/references/card_template.md`. Reference filled card:
+`docs/release/hf_card_concept_memory_150m/` (README.md + EVALUATION.md).
 
-1. Section order: summary + link bar → claim level → **Why try it** (measured strengths) + weak spots → headline
-   figure → at a glance → how it works → uses → how to use → evaluation (standard, **data efficiency**, own tests) →
-   training → checkpoints and reproducibility → strengths and limitations → licence → citation → changelog/contact.
-2. Same-harness numbers only in comparison tables; others in a **quoted** table. Name harness, shots, dtype, machine,
-   date. Benchmarks as rows, ours first, best bold, ± where available.
-3. References chosen before running: ≥ 2 same-size models (the strongest open one included) and a data-matched one
-   when its checkpoints are public (Pythia: every 2.1B tokens; SmolLM2-135M: every ~250B).
-4. Figures from `figures/make_figures.py` (radar vs two same-size references; score vs training tokens), light PNG,
-   numbers repeated in a table. Cross-model text prediction in bits per byte on identical text
-   (`evaluation/long_context_compare.py`).
-5. Raw outputs shipped: `eval_results/`, the own-test folder with its script and summariser.
-6. Plain names; every number with unit + direction; nearest unsupported claim stated.
-7. Upload private first, check the rendered page, then public; record the Hub URL in the run report.
+This skill keeps the Hub side of the checklist:
+
+1. Hub id, tags and `license:` follow the naming and licence sections above; `library_name: transformers` only when
+   `AutoModelForCausalLM.from_pretrained` works from the Hub id.
+2. Upload the whole release folder (README.md, EVALUATION.md, figures/, eval_results/, long_context/, samples/,
+   ruler/, the weights and tokenizer), **private first**; open the rendered page, check figures, links and tables;
+   then make it public.
+3. Smoke-load from the Hub id (once modeling code ships, with `from_pretrained`); record the Hub URL in the run
+   report.
 
 ### Templates
 
 | File | Role |
 |---|---|
-| [templates/MODEL_CARD.md](templates/MODEL_CARD.md) | **Standard v2** card structure + rules for all MrCogito / Meridian21 Hub releases |
-| [templates/backbone_concept_model_card.md](templates/backbone_concept_model_card.md) | Older Gemma-oriented draft — prefer `MODEL_CARD.md` |
+| [`model-release/references/card_template.md`](../model-release/references/card_template.md) | **Standard v3** card structure + rules for all MrCogito / Meridian21 Hub releases |
+| [templates/backbone_concept_model_card.md](templates/backbone_concept_model_card.md) | Older Gemma-oriented draft — prefer the v3 template |
 
-Reference filled card (standard v2): `docs/release/hf_card_concept_memory_150m/README.md` (150M concept memory).
 Older draft: `Cache/HF_staging/gemma3-concepts-1b-c128-1bt/README.md` (E16b).
-
-Card structure follows HF’s annotated model card + patterns from SmolLM2
-(TOC + early How-to-use), OLMo (identity tables), and Pythia (research
-intended / out-of-scope honesty).
 
 ## Upload workflows
 

@@ -4,8 +4,12 @@ on a perceiver_ar checkpoint, through lm-eval-harness.
   ruler  the 13 RULER tasks (needle-in-a-haystack single 1–3, multikey 1–3, multiquery, multivalue, variable tracking,
          common / frequent word extraction, SQuAD and HotpotQA QA), `--limit` documents each (LSA: 100), prompts sized by
          the model's own GPT-2 tokenizer, RULER's string-match grading (fraction of references found in the reply);
-         LSA's headline column is the mean of the 13 at 4,096 tokens. Greedy answers are capped at `--max_gen_toks`
-         tokens (32 holds every RULER answer; the harness default of 128 only lengthens uncached decoding).
+         LSA's headline column is the mean of the 13 at 4,096 tokens. Greedy answers keep each task's own length
+         (lm-eval's RULER configs: up to 128 tokens) unless `--max_gen_toks` sets a cap. Until 2026-11-18 the default
+         cap was 32, which held every answer in GPT-2 tokens but not in SmolLM2's, which writes every digit as its own
+         token: a 32-character UUID is 35 tokens, four 7-digit numbers 36, ten numbered common words 41. RULER runs of
+         SmolLM2-tokenizer models before that date under-score the UUID, multi-value, multi-query and common-word
+         tasks. `--answers_out` saves every reply with its reference, so a score can be checked by reading it.
   core   HellaSwag, ARC-easy, ARC-challenge, PIQA, WinoGrande, LAMBADA (OpenAI), WikiText, SciQ (log-likelihood).
   extra  three tests added 2026-11-12 for a wider view (docs/experiments_specs/ahead/E37_sft_sensitivity.md):
          BLiMP — grammar, all 67 minimal-pair sets (log-likelihood, accuracy, mean over the sets);
@@ -127,7 +131,9 @@ def main() -> None:
     ap.add_argument("--limit", type=int, default=100)
     ap.add_argument("--tasks", default="", help="comma-separated subset (default: the whole suite)")
     ap.add_argument("--batch", type=int, default=8)
-    ap.add_argument("--max_gen_toks", type=int, default=32)
+    ap.add_argument("--max_gen_toks", type=int, default=0,
+                    help="ruler: cap on answer tokens (0 = each task's own length; a cap shorter than an answer scores a correct reply as wrong)")
+    ap.add_argument("--answers_out", default="", help="ruler: JSONL of every reply with its references and score")
     ap.add_argument("--backend", default="flex")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--notes_off", action="store_true", help="notebook models: message_override none")
@@ -147,7 +153,7 @@ def main() -> None:
     lengths = [int(x) for x in (a.extra_lengths if a.suite == "extra" else a.lengths).split(",")]
     # extra: a BABILong row is its config's length plus the 2-shot examples and the instruction; SWDE pages are short
     babilong = a.suite == "extra" and "babilong" in a.extra_parts
-    max_len = (max(lengths) + 2 * a.max_gen_toks if a.suite == "ruler"
+    max_len = (max(lengths) + 2 * (a.max_gen_toks or 128) if a.suite == "ruler"
                else max(lengths) + max(lengths) // 8 + 512 if babilong else 4096 if a.suite == "extra" else 2048)
     lm = PerceiverARLMEval(pretrained=a.checkpoint, tokenizer=a.tokenizer, attn_backend=a.backend,
                            max_length=max_len, batch_size=a.batch, device=a.device)
@@ -176,20 +182,38 @@ def main() -> None:
         save()
         print(json.dumps(out["summary"], indent=1, default=str))
         return
-    run = lambda md: lm_eval.simple_evaluate(
-        model=lm, tasks=tasks, limit=a.limit if a.limit > 0 else None, log_samples=False,
-        task_manager=TaskManager(metadata=md) if md else None,
-        gen_kwargs=f"max_gen_toks={a.max_gen_toks}" if a.suite == "ruler" else None,
-        bootstrap_iters=0,
-    )["results"]
+    answers = a.suite == "ruler" and bool(a.answers_out)
+    if answers:
+        Path(a.answers_out).write_text("")
+
+    def run(md, L=None):
+        ev = lm_eval.simple_evaluate(
+            model=lm, tasks=tasks, limit=a.limit if a.limit > 0 else None, log_samples=answers,
+            task_manager=TaskManager(metadata=md) if md else None,
+            gen_kwargs=f"max_gen_toks={a.max_gen_toks}" if a.suite == "ruler" and a.max_gen_toks > 0 else None,
+            bootstrap_iters=0,
+        )
+        if answers:  # the reply and its references only: the haystack itself is up to 32k tokens per prompt
+            with open(a.answers_out, "a") as f:
+                for task, rows in ev.get("samples", {}).items():
+                    for r in rows:
+                        resp = r.get("filtered_resps") or r.get("resps")
+                        while isinstance(resp, list) and resp:
+                            resp = resp[0]
+                        f.write(json.dumps({"length": L, "task": task, "doc_id": r.get("doc_id"),
+                                            "target": r.get("target"), "reply": resp,
+                                            "score": r.get(f"{L}", r.get("score"))}, default=str) + "\n")
+        return ev["results"]
+
     out = {"checkpoint": a.checkpoint, "suite": a.suite, "lengths": lengths if a.suite == "ruler" else None,
-           "limit": a.limit, "notes_off": a.notes_off, "concept_sum_len": a.concept_sum_len}
+           "limit": a.limit, "notes_off": a.notes_off, "concept_sum_len": a.concept_sum_len,
+           "max_gen_toks": a.max_gen_toks or "task default"}
     if a.suite == "ruler":
         # One call per length: lm-eval concatenates the lengths into one dataset per task and `limit` takes its first
         # documents, so a single call with several lengths scored only the first length (found 2026-11-05).
         out["results"], out["mean"] = {}, {}
         for L in lengths:
-            r = run({"tokenizer": a.tokenizer, "max_seq_lengths": [L]})
+            r = run({"tokenizer": a.tokenizer, "max_seq_lengths": [L]}, L)
             out["results"][L] = r
             vals = [x.get(f"{L},none") for x in r.values() if isinstance(x, dict)]
             vals = [v for v in vals if isinstance(v, (int, float)) and v >= 0]
