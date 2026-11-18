@@ -72,9 +72,10 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
     held-out real documents of the same text for every model, plus a swapped-past control.
 11. **Keep what backers and replicators need:** training budget in tokens, wall time, hardware, cost; the data mix by
     stage with Hub links to every dataset and their licences; where the raw results are. Name hardware **generically**
-    ("one RTX 3090", "4 × NVIDIA L40S on AWS spot"): no server names (Odra, Polonez), hostnames, home or cache paths,
-    instance types or regions in anything that goes public, including script docstrings, figure captions and the
-    JSON files shipped with the card. *Why:* the author does not publish internal infrastructure (2026-11-18).
+    ("one RTX 3090", "4 × NVIDIA L40S on AWS spot"): no server names (Odra, Polonez), hostnames, absolute paths
+    (home folders, `/opt/...` build paths), instance types or regions in anything that goes public, including script
+    docstrings, figure captions, `config.json` and the JSON files shipped with the card. Relative checkout paths
+    inside raw result files (`Cache/...` model ids) may stay: raw results are shipped as produced. *Why:* the author does not publish internal infrastructure (2026-11-18).
 12. **How to use goes at the bottom, and only with code that runs for the reader.** If the weights do not load with
     `AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)`, say so in two lines, point to the repo, and
     keep the engineering task open (target: every release loads with `from_pretrained` and the release checklist
@@ -118,8 +119,8 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
 - [ ] Generation tasks: task-default answer lengths, replies saved, answer lengths checked in our tokenizer.
 - [ ] Samples: sampling settings stated, seed-0 reply shown unpicked, no greedy prose.
 - [ ] Training budget, cost, hardware, data mix with links and licences present.
-- [ ] No server names, hostnames, home/cache paths, instance types or regions in any uploaded file
-      (`grep -riE "odra|polonez|/home/|~/dev"` over the upload folder and the scripts copied into it).
+- [ ] No server names, hostnames, absolute paths, instance types or regions in any uploaded file
+      (`grep -riE "odra|polonez|/home/|/opt/|~/dev"` over the upload folder and the scripts copied into it).
 - [ ] How to use at the bottom; no code that fails for a reader; `from_pretrained` status stated.
 - [ ] BibTeX for the model and the project page; changelog line with the date.
 - [ ] Raw results, scripts and figures in the repo folder that gets uploaded.

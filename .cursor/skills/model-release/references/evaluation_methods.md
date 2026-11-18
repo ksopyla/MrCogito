@@ -116,6 +116,15 @@ SmolLM2-135M intermediate checkpoints: `HuggingFaceTB/SmolLM2-135M-intermediate-
 - Say whether the test is zero-shot: training on planted-fact lookups makes the needle tests "learned", not
   transfer.
 - Run lengths on separate GPUs (`--lengths 4096,8192`, `16384`, `32768`) with batch 8 / 4 / 2 on 24 GB cards.
+- **Reference models on RULER:** `--hf_model <id or folder> --tokenizer <same>` runs them through lm-eval's stock
+  `hf` model with the same tasks, lengths and answer lengths; each model's prompts are sized with its own tokenizer.
+  Give every model room for prompt + answer (`--max_length` 0 = length + 256): RULER's 8k prompts run slightly over
+  8,192 tokens (8,205 seen), and at an 8,192 cap lm-eval cuts the start of the prompt, which is the instruction.
+  A radar of RULER only makes sense with references on it; for our model alone across lengths use a heatmap.
+- **lm-eval and start tokens:** with `add_bos_token` unset, lm-eval encodes with the tokenizer's defaults, so models
+  whose tokenizer adds a start token (LFM2.5, Gemma) get it; on whole-document tasks (WikiText) such a model may see
+  it twice (prefix + encoding). Checked for LFM2.5-350M-Base on 2026-11-18: byte perplexity 2.1116 vs 2.1115 with a
+  single start token, no difference.
 
 ## 7. Text samples
 

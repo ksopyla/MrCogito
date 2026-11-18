@@ -261,10 +261,17 @@ test above is the one to trust.
 
 ## RULER
 
-13 tasks, 100 prompts per task and length, greedy cached decoding, each task's own answer length (lm-eval's RULER
-configs, up to 128 tokens), every reply saved (`ruler/*_answers.jsonl`). RTX 3090 cards, 2026-11-18 12:40–13:51 UTC (4k and 8k, 16k on one card each; 32k split by task over three cards).
-Score = share of the reference answers found in the reply (higher is better). **Not zero-shot:** training stages 2
-and 3 included planted-fact lookups of a similar shape (different wording).
+13 tasks, 100 prompts per task and length, greedy decoding, each task's own answer length (lm-eval's RULER configs,
+up to 128 tokens), every reply saved (`ruler/*_answers.jsonl`); `ruler/run_lsa_suite.py`. Score = share of the
+reference answers found in the reply (higher is better). **Not zero-shot for our model:** training stages 2 and 3
+included planted-fact lookups of a similar shape (different wording).
+
+**Our model at every length** (RTX 3090 cards, 2026-11-18 12:40–13:51 UTC; 4k and 8k, 16k on one card each; 32k split
+by task over three cards):
+
+<p align="center"><img src="figures/ruler_heat.png" width="520" alt="Heatmap of our 13 RULER tasks at 4k, 8k, 16k and 32k."></p>
+
+<details><summary>The same numbers as a table</summary>
 
 | RULER task | What it asks | 4k | 8k | 16k | 32k |
 |---|---|---:|---:|---:|---:|
@@ -282,6 +289,49 @@ and 3 included planted-fact lookups of a similar shape (different wording).
 | QA (SQuAD) | answer from one of many paragraphs | 0.33 | 0.20 | 0.21 | 0.20 |
 | QA (HotpotQA) | two-hop answer from many paragraphs | 0.15 | 0.15 | 0.19 | 0.15 |
 | **Mean of 13** | | **0.49** | **0.44** | **0.37** | **0.32** |
+
+</details>
+
+**Against reference models at 8k and 4k** (2026-11-18 14:34–15:22 UTC). The references run through lm-eval's stock
+`hf` model (`--hf_model`), each in bf16, its prompts sized with its own tokenizer, its start token as its tokenizer
+adds it. Every model gets room for prompt and answer (length + 256 positions): RULER's 8k prompts run slightly past
+8,192 tokens, and at an 8,192 cap lm-eval would cut the start of the prompt, which holds the instruction; for
+SmolLM2-135M (trained to 8,192) that means up to 3 % past its training length. Pythia-160M and SmolLM2-135M's 252B
+checkpoint read 2,048 tokens and cannot take RULER's shortest length. Best in each row in **bold**.
+
+| RULER task, 8k | **Ours** | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
+|---|---:|---:|---:|---:|---:|
+| single needle, noise filler | **1.00** | **1.00** | **1.00** | **1.00** | 0.99 |
+| single needle, essays | **1.00** | 0.97 | 0.51 | **1.00** | **1.00** |
+| single needle, UUID value | 0.27 | 0.18 | 0.15 | **1.00** | 0.51 |
+| multi-key 1 | **0.90** | 0.58 | 0.79 | 0.88 | 0.88 |
+| multi-key 2 | **0.84** | 0.00 | 0.22 | 0.33 | 0.15 |
+| multi-key 3 (UUIDs) | **0.11** | 0.01 | 0.01 | 0.06 | 0.05 |
+| multi-value | 0.34 | 0.36 | 0.22 | **0.69** | 0.41 |
+| multi-query | 0.32 | 0.21 | 0.36 | **0.71** | 0.62 |
+| variable tracking | 0.01 | 0.06 | 0.00 | **0.17** | 0.13 |
+| common words | **0.42** | 0.01 | 0.41 | 0.22 | 0.09 |
+| frequent words | 0.16 | 0.21 | 0.27 | **0.40** | 0.01 |
+| QA (SQuAD) | 0.20 | 0.08 | 0.10 | 0.26 | **0.37** |
+| QA (HotpotQA) | 0.15 | 0.22 | 0.19 | **0.27** | 0.25 |
+| **Mean of 13** | 0.44 | 0.30 | 0.33 | **0.54** | 0.42 |
+
+| RULER task, 4k | **Ours** | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
+|---|---:|---:|---:|---:|---:|
+| single needle, noise filler | **1.00** | **1.00** | **1.00** | **1.00** | 0.98 |
+| single needle, essays | **1.00** | 0.98 | 0.97 | **1.00** | **1.00** |
+| single needle, UUID value | 0.29 | 0.28 | 0.75 | **1.00** | 0.53 |
+| multi-key 1 | **0.99** | 0.70 | 0.85 | 0.96 | 0.90 |
+| multi-key 2 | **0.92** | 0.07 | 0.23 | 0.27 | 0.36 |
+| multi-key 3 (UUIDs) | **0.28** | 0.06 | 0.09 | 0.17 | 0.12 |
+| multi-value | 0.31 | 0.63 | 0.46 | **0.67** | 0.40 |
+| multi-query | 0.40 | 0.29 | 0.46 | **0.82** | 0.71 |
+| variable tracking | 0.01 | 0.15 | 0.00 | **0.28** | 0.00 |
+| common words | 0.52 | 0.15 | **0.67** | 0.41 | 0.16 |
+| frequent words | 0.15 | 0.38 | 0.33 | **0.53** | 0.03 |
+| QA (SQuAD) | 0.33 | 0.28 | 0.29 | 0.50 | **0.53** |
+| QA (HotpotQA) | 0.15 | 0.27 | 0.16 | **0.39** | 0.34 |
+| **Mean of 13** | 0.49 | 0.40 | 0.48 | **0.62** | 0.47 |
 
 **Why an earlier run scored lower.** Our first RULER run of this model (AWS, 2026-11-16) cut every answer at 32
 tokens. That cap held every answer for our earlier models' GPT-2 tokenizer but not for SmolLM2's,

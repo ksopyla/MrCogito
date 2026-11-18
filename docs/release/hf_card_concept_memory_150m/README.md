@@ -74,8 +74,9 @@ seed, not instruction-tuned.
   and than LFM2.5-350M-Base (80.17 %; 2.5× our size, 28T tokens), level with SmolLM2's final ≈2T-token model
   (80.15 %). Against Pythia-160M at our budget (10.5–12.6B tokens) it is ahead on every test; Pythia does not reach
   our grammar or science-quiz score at any checkpoint up to 300B tokens.
-- **Finds a planted fact far back.** RULER's needle in real essays: 1.00 up to 16k tokens and 0.98 at
-  32k (after training on similar lookups).
+- **Finds a planted fact far back.** RULER's needle in real essays: 1.00 up to 16k tokens and 0.98 at 32k (after
+  training on similar lookups). At 8k it is second of five small models on RULER's 13 tasks, and first on needles
+  hidden among similar keys (0.62; the others 0.20–0.42).
 - **Cheap and open.** ≈40 hours on one 4-GPU node (≈ $320). A whole 64k document is scored in one pass on a single
   24 GB RTX 3090. Every training source is a public Hugging Face dataset, every training stage is on public W&B,
   and every number on this card comes with its raw result file in this repository.
@@ -107,6 +108,7 @@ higher is better; best in each row in **bold**.
 | Wikipedia text (WikiText-2), bits per byte ↓ | — | 0.964 | **0.905** | 0.944 | 1.078 |
 | **Long documents**, bits per byte ↓ (most context the model reads) | — | **0.795** (61k) | 0.933 (2k) | 0.942 (2k) | 0.879 (4k, its best) |
 | **Gain from far context**, 1k → most, bits per byte ↑ | 0 | **0.051** | 0 (reads 2k) | 0 (reads 2k) | −0.035 (worse with more) |
+| RULER at 8k, mean of 13 tasks ↑ | 0 | **0.44** | — (reads 2k) | — (reads 2k) | 0.42 |
 | Tiny-ML Leaderboard place (of 101) ⁴ | | 24th | 9th | 44th (over the 150M cap) | 12th (over the 150M cap) |
 
 ¹ SmolLM2-135M's **earliest public training checkpoint** (step 240,000, ≈252B tokens, 22× ours), the closest to
@@ -216,19 +218,29 @@ with the same harness.
 ## RULER
 
 The standard long-context suite: 13 tasks, 100 prompts per task and length, greedy decoding, each task's own answer
-length; score = share of the expected answers found in the reply (higher is better). One RTX 3090 per run, 2026-11-18. The needle
-tasks are not zero-shot for this model: two training stages included planted-fact lookups of a similar shape.
+length; score = share of the expected answers found in the reply (0 to 1, higher is better). Every model runs
+through the same harness, its prompts sized in its own tokens; RTX 3090 cards, 2026-11-18. Our needle scores are
+not zero-shot: two training stages included planted-fact lookups of a similar shape.
 
-| RULER | 4k | 8k | 16k | 32k |
-|---|---:|---:|---:|---:|
-| One number hidden in real essays | 1.00 | 1.00 | 1.00 | 0.98 |
-| One number among distractor keys | 0.99 | 0.90 | 0.91 | 0.77 |
-| One 32-character ID (UUID) hidden in essays | 0.29 | 0.27 | 0.07 | 0.07 |
-| Several values of one key | 0.31 | 0.34 | 0.24 | 0.24 |
-| Several keys asked at once | 0.40 | 0.32 | 0.11 | 0.09 |
-| **Mean of the 13 tasks** | **0.49** | **0.44** | **0.37** | **0.32** |
+<p align="center"><img src="figures/ruler_radar.png" width="760" alt="Four small radar charts of RULER at 8k by task family, ours against SmolLM2-135M, Gemma 3 270M, Granite 4.0 350M and LFM2.5-350M-Base. Ours leads every reference on needles among distractor keys; Granite 4.0 350M leads on several values or keys at once and on the UUID needle."></p>
 
-All 13 tasks, and why an earlier run that cut answers at 32 tokens scored lower: [EVALUATION.md](EVALUATION.md#ruler).
+| RULER at 8k, by task family | **Ours** | SmolLM2-135M | Gemma 3 270M | Granite 4.0 350M | LFM2.5-350M-Base |
+|---|---:|---:|---:|---:|---:|
+| One needle | 0.76 | 0.72 | 0.55 | **1.00** | 0.83 |
+| Needle among distractor keys | **0.62** | 0.20 | 0.34 | 0.42 | 0.36 |
+| Several values or keys at once | 0.33 | 0.28 | 0.29 | **0.70** | 0.51 |
+| Count words | 0.29 | 0.11 | **0.34** | 0.31 | 0.05 |
+| Follow variables | 0.01 | 0.06 | 0.00 | **0.17** | 0.13 |
+| Answer questions | 0.17 | 0.15 | 0.15 | 0.27 | **0.31** |
+| **Mean of the 13 tasks, 8k** | 0.44 | 0.30 | 0.33 | **0.54** | 0.42 |
+| Mean of the 13 tasks, 4k | 0.49 | 0.40 | 0.48 | **0.62** | 0.47 |
+
+- **Second of five at 8k, first on needles hidden among similar keys** (0.62 against at most 0.42), the task where
+  the other models pick up a neighbouring key's value.
+- **Granite 4.0 350M** (2.5× our size, ≈1,300× our training text) leads overall; it also finds 32-character IDs
+  (1.00), which ours rarely writes out (0.27).
+- **Ours keeps going past 8k:** mean 0.37 at 16k and 0.32 at 32k, with the essay needle at 1.00 and 0.98 (the other
+  models were run at 4k and 8k only). Every task at every length: [EVALUATION.md](EVALUATION.md#ruler).
 
 ## What its text looks like
 
