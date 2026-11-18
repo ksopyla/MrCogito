@@ -13,7 +13,13 @@ Use this skill for Hugging Face Hub actions and Hub-specific discovery, not for 
 - **Community releases** go to the **`Meridian21Lab`** organisation (author's decision 2026-11-17: public, Apache-2.0
   for from-scratch models). Research-only uploads may stay under `ksopyla`. Agents never read, print or enter the
   HF token; uploads use the login already stored on the server, and its write rights are the author's to grant.
-- Token: `HF_TOKEN` / `HUGGINGFACE_TOKEN` / `HUGGINGFACE_HUB_TOKEN` in `.env`
+- Token: `HF_TOKEN` / `HUGGINGFACE_TOKEN` / `HUGGINGFACE_HUB_TOKEN` in `.env` (user-scoped: no write right on
+  Meridian21Lab). **Meridian21Lab writes:** the fine-grained token `HF_TOKEN_MERIDAIN21_ORG` in the main checkout's
+  `.env` on the Mac (not on Odra or Polonez, 2026-11-18): read it inside the upload script, never print or echo it;
+  the weights may need to come to the Mac first (tar over ssh from the server, then check the export manifest's
+  hashes). An expired cached login breaks even public reads (401): use `HfApi(token=False)` for those.
+- **Rename while private:** `HfApi.move_repo(from_id, to_id)` keeps the history and redirects the old id; do it
+  before the repo goes public (the author renamed `lsa-140m-11.5bt` to `topic-index-140m-11.5bt`, 2026-11-18).
 - MCP: `plugin-huggingface-skills-huggingface-skills` (`hf_whoami`, `hub_repo_search`, `hub_repo_details`, `hf_fs`, …)
 - CLI: `hf` (preferred) or `huggingface_hub` Python API
 
@@ -74,8 +80,12 @@ still incomplete.
 | `concept-ar` | from-scratch AR / prefix→suffix concept LM |
 | `perceiver` | Perceiver / BiXT MLM–style encoder |
 | `diffusion` | parked / revived diffusion concept models |
+| `concept-memory` | `perceiver_ar` with the concept-memory read (Meridian21Lab, 2026-11) |
+| `topic-index` | `perceiver_ar` with our port of Latent Sparse Attention (the method keeps its authors' name) |
 
-New lines need a one-word family name people can say aloud.
+New lines need a one-word family name people can say aloud, describing what the model does in plain words; a
+borrowed method keeps its authors' name for the method, not for our model (model-release rule 16). Elsewhere a
+model is referred to by its Hub id, never as a "sibling" or by an internal code.
 
 ### Concrete examples
 

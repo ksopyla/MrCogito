@@ -1,6 +1,6 @@
 ---
 name: model-release
-description: How to present a MrCogito / Meridian21 model to the public - the model card (README) and its evaluation page, which comparisons to run against which models, how to show results (one comparison table, the community leaderboard table, radar and long-context charts), how to explain units, how to show text samples, and the tone (lead with measured wins, report trade-offs without judging, honest about limits, written to attract collaborators and funding). Use this skill whenever a model is about to be published, a Hugging Face card is drafted, reworked or reviewed, results are being prepared "for the community", "for VCs" or "for a release", someone asks how our model compares with other small models, or asks whether we can claim something (data-efficient, long context, better than X) in public. Pair with huggingface-project for the Hub mechanics (naming, upload, licence gates) and experiment-evaluate for running the scripts. Not for internal run reports or the experiment registry (experiment-track).
+description: How to present a MrCogito / Meridian21 model to the public - the model card (README) and its evaluation page, which comparisons to run against which models, how to show results (one comparison table, the community leaderboard table, radar and long-context charts), how to explain units, how to show text samples, and the tone (lead with measured wins, report trade-offs without judging, honest about limits, written to attract collaborators and funding). Use this skill whenever a model is about to be published, a Hugging Face card is drafted, reworked or reviewed, results are being prepared "for the community", "for VCs" or "for a release", someone asks how our model compares with other small models, or asks whether we can claim something (data-efficient, long context, better than X) in public. Also when several of our models were trained on the same data and their cards must be aligned, cross-linked and updated together, or a new model needs a public name. Pair with huggingface-project for the Hub mechanics (naming, upload, licence gates) and experiment-evaluate for running the scripts. Not for internal run reports or the experiment registry (experiment-track).
 ---
 
 # Model release
@@ -87,6 +87,39 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
     running (controls, bigger runs, features switched off in this release). *Why:* the card should show potential,
     and the honest form of potential is the next experiments, not adjectives.
 
+## Added after the second release (topic index, 2026-11-18), with the reason for each
+
+15. **Name a model by its Hub id; never by its relation to another model.** In every card, table, figure legend and
+    evaluation section, another model is its Hub id (`concept-memory-140m-11.5bt`), and this card's model is "this
+    model" or its own id. No "sibling", "ours vs port", "the LSA model", private codes (`e37a`, `m120t`). *Why:* the
+    author, 2026-11-18: "do not refer models as siblings, use the HF model names, we will have a few other models".
+16. **A line name says what the model does, in plain words, and credits a borrowed method separately.** Pick the
+    `{line}` slot before the first upload: propose 3–4 names (with a Hub search for clashes), say which reads as
+    someone else's brand, and let the author choose. A method from a paper keeps its authors' name for the method
+    ("its read is Latent Sparse Attention (LSA), Kubicek et al."), the model gets ours ("topic index"). While the repo
+    is private, a rename is one `HfApi.move_repo` call. *Why:* "could we have a better name for our port … propose a
+    few model names" (2026-11-18); "LSA port" read as the paper's model and as unfinished work.
+17. **Models trained on the same data are one family, and their cards read alike.** Every Meridian21 model trained on
+    the same data, in the same order, for the same budget gets: a column in each family card's *Results at a glance*,
+    standard-benchmark, data-efficiency and RULER tables; a row in its long-document and leaderboard tables; a link in
+    the header and the intro; a *Models on the same data* section in `EVALUATION.md` (paired differences with
+    intervals). The cards share one section order and write their shared sections from **one template filled with
+    each model's numbers**; only Highlights, the samples, "How the … works", extra citations and the changelog
+    differ. Check it: normalise model ids and numbers and diff the two READMEs section by section (shared sections at
+    ≥ 0.85 similarity). *Why:* "align both of the model cards, lets cross link, update the results tables in both
+    cards" and "open both of the cards side by side … compare section by section, they should be similar".
+18. **One figure script, one colour per model, in every card.** `figures/make_figures.py` is the same file in each
+    family card except its `CARD = "…"` line; each model keeps its dataviz slot on every chart of every card (concept
+    memory blue, topic index orange, SmolLM2-135M aqua, other references grey); this model is drawn solid, the other
+    family models dashed. A family model's raw results ship in each card's folder under a prefix (`cm_`, `ti_`), so
+    every figure and table can be redrawn from that repo alone. *Why:* with colours tied to "ours", the same model
+    changed colour between the two pages and the author could not compare them side by side.
+19. **Same protocol, same loading, before any number is written.** A new model is exported for `from_pretrained`
+    first (export, CUDA tests, clean-environment smoke test), then scored with `scripts/release_evals.sh` exactly as
+    the earlier family models were, including the board tests through lm-eval's stock `hf` model on the export (they
+    must equal our adapter's numbers). *Why:* "start with making the AutoModel and from_pretrained available as we
+    did in 150M concept model … I want the evaluations run the same template, methodology" (2026-11-18).
+
 ## Workflow
 
 1. **Collect the facts** from the run report and the spec: parameters (with and without the token table), token
@@ -94,20 +127,31 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
 2. **Choose the references** (rule 4) and write them down before running anything. Search the Hub
    (`hub_repo_search`, base models, sort by downloads and by date); check each one's config for its context length
    and whether it is a base model; check gated access from the server that will run it.
-3. **Run the comparisons** with `experiment-evaluate` scripts on one machine, one harness: lm-eval core tasks +
-   the leaderboard's tests for every model; `evaluation/long_context_compare.py` (same text, bits per byte, swapped
-   past) for every model; our own diagnostic tests (context cut, memory off) for ours; RULER with task-default answer
-   lengths and saved replies; `evaluation/sample_text.py` for text. Details and known gotchas:
-   [references/evaluation_methods.md](references/evaluation_methods.md).
-4. **Draw the figures** with a script next to the card (`figures/make_figures.py`) from the result files, following
-   the `dataviz` skill (validated palette, light background, one idea per chart).
+3. **Export, then run the protocol** (rule 19). Export the checkpoint (`scripts/export_hub_model.py`, step 6) so
+   the board tests can also run on the export; then `scripts/release_evals.sh <checkpoint> <out> <longdocs>
+   0,1,2 <memory switches> <tag>` with `HF_EXPORT=<export folder>` runs everything for our model on one machine, one
+   harness, over a shared GPU queue (≈1 h 15 on three RTX 3090): the leaderboard tier and the 7 core tasks, the
+   board tier through the stock `hf` model on the export, sampled text, the cross-model long-document test, our own
+   long-context tests at 16k / 64k / 128k and RULER 4k–32k with task-default answer lengths and saved replies.
+   Reference models run once per document set and are reused (their files are copied, not rerun). Details and known
+   gotchas: [references/evaluation_methods.md](references/evaluation_methods.md).
+4. **Draw the figures** with the family's shared `figures/make_figures.py` (rule 18), copied from the newest family
+   card with its `CARD` line changed, following the `dataviz` skill (validated palette, light background, one idea
+   per chart). Look at every PNG before using it (clipped labels, overlapping end labels, legend colours).
 5. **Write the card** from [references/card_template.md](references/card_template.md) and the long material into
-   `EVALUATION.md`. Reference filled card: `docs/release/hf_card_concept_memory_150m/` (150M concept memory).
+   `EVALUATION.md`; fill the shared sections from the same template as the family's other cards (rule 17) and add
+   this model to every other family card's tables in the same change. Reference cards:
+   `docs/release/hf_card_concept_memory_150m/` and `docs/release/hf_card_topic_index_150m/`.
 6. **Export and check:** `uv run python scripts/export_hub_model.py <checkpoint> <export_dir> --card README.md`
    (modeling code, `auto_map`, weights, tokenizer, `export_manifest.json`), run `tests/test_hub_export.py` with
    `HUB_EXPORT_CHECKPOINT=<checkpoint>` on a CUDA machine, go through the list below, then hand both folders to
-   `huggingface-project` for the upload (private first, Hub smoke test, rendered page, then public).
-7. **Record** the Hub URL in the run report and the result files' location on the ledger (append-only).
+   `huggingface-project` for the upload (private first, Hub smoke test, rendered page, then public). Re-export into
+   an **empty** folder after the last card edit: the manifest hashes the README, and an export into an old folder
+   lists files from the previous run.
+7. **Publish the family together.** A family card that links a private repo shows the public a 404: switch the new
+   repo public and push the updated family cards in one step, after the author has looked at the rendered pages.
+   Ask before changing any public card.
+8. **Record** the Hub URL in the run report and the result files' location on the ledger (append-only).
 
 ## Before publishing — checklist
 
@@ -133,4 +177,12 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
 - [ ] BibTeX for the model and the project page; changelog line with the date.
 - [ ] Raw results, scripts and figures in the repo folder that gets uploaded.
 - [ ] No `~` for "about" in the card: Hub markdown turns a pair of tildes into strikethrough; write ≈.
+- [ ] Models named by Hub id everywhere (cards, tables, legends, `summarise_compare.py` labels); no "sibling", "ours",
+      "port" or private codes (`grep -rniE "sibling|\(ours\)| port\b|e37a|m120t"` over the folder, the test data
+      excepted).
+- [ ] Family: this model added to every other family card's tables and links; the same section order; shared
+      sections from the template (section-by-section diff after normalising ids and numbers); figure script identical
+      but for `CARD`; each model in its own colour on every chart.
+- [ ] The private-name grep skips the weights (`find … ! -name model.safetensors`): grepping 560 MB of safetensors
+      for text stalls.
 - [ ] After upload: open the rendered page and scroll it once (figures, tables, strikethrough, links).

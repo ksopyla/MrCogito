@@ -1,8 +1,8 @@
 # Evaluation methods for a public release
 
 How the comparisons on a release card are produced, and the traps found so far. Every item here cost a wrong number
-once. Scripts are in `evaluation/`; the 150M concept-memory release (`docs/release/hf_card_concept_memory_150m/`) is
-the worked example, with every raw result file next to its card.
+once. Scripts are in `evaluation/`; the two 150M releases on the same data (`docs/release/hf_card_concept_memory_150m/`,
+`docs/release/hf_card_topic_index_150m/`) are the worked examples, with every raw result file next to its card.
 
 ## Contents
 1. Choosing references
@@ -14,6 +14,8 @@ the worked example, with every raw result file next to its card.
 7. Text samples
 8. Known traps, by model
 9. Running on the home servers
+10. Comparing our models trained on the same data
+11. Export, upload and the shell
 
 ## 1. Choosing references
 
@@ -121,6 +123,11 @@ SmolLM2-135M intermediate checkpoints: `HuggingFaceTB/SmolLM2-135M-intermediate-
   Give every model room for prompt + answer (`--max_length` 0 = length + 256): RULER's 8k prompts run slightly over
   8,192 tokens (8,205 seen), and at an 8,192 cap lm-eval cuts the start of the prompt, which is the instruction.
   A radar of RULER only makes sense with references on it; for our model alone across lengths use a heatmap.
+- **Comparing two of our models on RULER prompt by prompt:** check first that the saved expected answers match per
+  (length, task, prompt id). The needle tasks draw from Python's shared random state, and two runs with the same
+  settings and the same task groups drew different needles for 8 of 13 tasks at 32k (2026-11-18; 4k–16k matched);
+  the cause was not found. Pair where the answers match, compare the rest as two separate draws (unpaired bootstrap),
+  and say which is which.
 - **lm-eval and start tokens:** with `add_bos_token` unset, lm-eval encodes with the tokenizer's defaults, so models
   whose tokenizer adds a start token (LFM2.5, Gemma) get it; on whole-document tasks (WikiText) such a model may see
   it twice (prefix + encoding). Checked for LFM2.5-350M-Base on 2026-11-18: byte perplexity 2.1116 vs 2.1115 with a
@@ -150,6 +157,7 @@ the settings, ship the JSON. Point out factual errors in one sentence; do not hi
 | MobileLLM-R1-140M-base | gated (FAIR licence); the server's account had no access on 2026-11-18 | accept the licence on that account first, or leave it out and say so |
 | Mamba / hybrid SSMs | without `mamba_ssm` + `causal_conv1d` the 🤗 path scans token by token: too slow at 61k | install the kernels in a separate environment, or leave out |
 | Our perceiver_ar | not a stock 🤗 model; flex attention recompiles per new length | our lm-eval adapter for benchmarks; `attn_backend="sdpa"` for short sampling loops; the cached decoder for long generation |
+| Our perceiver_ar, a new read | a diagnostic switch written for one read is a silent no-op on another: `long_context_use.py`'s "memory off" only knew the concept read, so on the LSA read it scored the model as trained (fixed 2026-11-18: it sets `lsa_off` and refuses a switch the checkpoint lacks) | before a full run, score one document with the switch on and off and check the loss changes; make switches refuse what a checkpoint does not have |
 
 ## 9. Running on the home servers
 
@@ -162,3 +170,45 @@ the settings, ship the JSON. Point out factual errors in one sentence; do not hi
   the server's environment.
 - The Bash tool's shell is zsh: `set -- $var` does not split words; pass arguments separately.
 - Stamp every run with UTC start and end times; pull result files into the release folder as soon as they land.
+- **One command for the whole protocol:** `scripts/release_evals.sh <checkpoint> <out> <longdocs dir> 0,1,2
+  <memory switches> <tag>` (set `HF_EXPORT=<export folder>` for the board tests through the stock `hf` model, `LONGCTX`
+  to reuse a document cache, `ONLY="job …"` to rerun a subset). One shared queue: each card takes the next job when it
+  has no compute process, other sessions' jobs included, longest jobs first; every job stamped in UTC in
+  `logs/events.log`. The 150M models take ≈1 h 15 on three RTX 3090 once the cards are free. Launch it with
+  `setsid -f` so the ssh call returns at once.
+- **Check the cards before a long run:** `timeout 20 nvidia-smi` must answer. On 2026-11-18 a Polonez card hit Xid 62
+  (micro-controller halt) six seconds into a run; the driver hung, every job and `nvidia-smi` blocked in the kernel
+  (killed processes stay in D state), and the server needed a reboot. Look at `journalctl -k` for `Xid` when anything
+  hangs, stop only your own PIDs, and move the run.
+- **Shared servers:** another session's jobs may hold the cards; queue behind them (the script waits) and tell that
+  session which cards you will take.
+
+## 10. Comparing our models trained on the same data
+
+- Copy the other model's raw result files into this card's folder under a prefix (`cm_ruler_*`, `cm_real_docs_*`,
+  `compare_concept_memory.json`, `e38_mem150m_*` in `eval_results/`), so every comparison can be recomputed from one
+  Hub repo, and add this model's files to the other card the same way.
+- Our models share the SmolLM2 tokenizer, so nats per token compare directly between them, document by document:
+  report paired differences (bootstrap over documents) for the context cut, the full context, the swapped past and
+  the switches, plus the cross-model test in bits per byte. RULER: paired over prompts where the expected answers match
+  (section 6).
+- One table per card, "Models on the same data", with every test, both models, the difference with its interval and
+  a verdict (ahead / level / behind; "0.2 %" when a real difference is tiny). The training losses at the end of each
+  stage go in it too: two models on the same rows should land within a few thousandths unless the read matters there.
+- Generate every table from the result files with one script; never type a number by hand.
+
+## 11. Export, upload and the shell
+
+- **Export into an empty folder** after the last card edit: `export_manifest.json` records each file's hash, the
+  README included, and an export into a folder from an earlier run lists files from that run. Copy the card's other
+  files (EVALUATION.md, figures, results, LICENSE, NOTICE) in after the export.
+- **A borrowed method ships its licence notice:** the export keeps the original copyright header of a vendored module
+  (the LSA buckets: Apache-2.0, Prefrontal AI); add the licence text as `LICENSE` and a `NOTICE` naming their code.
+- **Private-name check:** `find <folder> -type f ! -name model.safetensors -print0 | xargs -0 grep -liE …`; grepping
+  the weights for text stalls.
+- **Hub reads with an expired login:** a cached token that has expired makes even public reads fail with 401; use
+  `HfApi(token=False)` for anonymous reads of public repos, and the organisation's write token (huggingface-project
+  skill) only for writes.
+- **Writing card text from the shell:** quote heredocs (`<<'EOF'`). An unquoted heredoc runs every backticked phrase
+  in the text (`hf`, `from_pretrained`, file names) as a command and pastes its output into the card; prefer writing
+  a script file for long edits.
