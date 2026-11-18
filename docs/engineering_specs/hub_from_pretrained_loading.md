@@ -1,9 +1,10 @@
 # Hub releases that load with `from_pretrained` — engineering spec
 
 - **Type:** engineering (packaging + interface). Not an experiment: no architecture, objective or metric change.
-- **Status:** steps 1–4 done 2026-11-18 (code commit `4964d695`, branch `claude/inspiring-nightingale-290565`, not
-  pushed; result below). Step 5, the backfill of the Hub repo, waits for the author. Asked for by the author
-  during the review of the first public release (150M concept memory, `Meridian21Lab/concept-memory-140m-11.5bt`).
+- **Status:** done 2026-11-18. Steps 1–4: code commit `4964d695`; step 5, the backfill: Hub pull request #1 on
+  `Meridian21Lab/concept-memory-140m-11.5bt`, merged 15:00 UTC (Hub main `23f3ccc2`), exported from commit `2e6b9573`
+  (branch `claude/inspiring-nightingale-290565`, pushed). Results below. Asked for by the author during the review of
+  the first public release.
 - **Owner:** Krzysztof Sopyła
 - **Serves:** every model we publish should be usable by a reader in one line, and every release should be checked
   that way before it goes public. Today the release card has to say "clone the repo at commit X and call our
@@ -146,8 +147,20 @@ print(tok.decode(out[0], skip_special_tokens=True))
 # long documents (up to 64k tokens): from_pretrained(..., attn_backend="flex")
 ```
 
-**Step 5, what is left:** push this branch, re-export from the pushed commit (the Odra export's manifest names
-`8ad24f8`, the same change applied by `git am` in Odra's scratch clone), upload the export folder next to the card,
-run `python -I scripts/hub_smoke_test.py Meridian21Lab/concept-memory-140m-11.5bt` in the clean venv
-(`~/dev/MrCogito-hubexport/Cache/hub_export/venv457` on Odra), then add `library_name: transformers`, the
-`custom_code` tag and the How to use text above.
+**Step 5, the backfill (done 2026-11-18, the author's go-ahead in the session):**
+- Re-exported on the GPU server from the pushed commit `2e6b9573` (manifest: checkpoint folder name only, old local
+  paths written as `<local path>`; server names in source comments become "our GPU server" in the generated files).
+  `tests/test_hub_export.py` 27/27 again, 14:54–14:55 UTC.
+- Card: `library_name: transformers`, the `custom_code` tag, How to use with `from_pretrained` (text above, plus notes
+  on `attn_backend="flex"`, padding, the generated code), the from_pretrained item left What's next, a changelog line.
+  `attn_backend="flex"` checked in the clean venv before it went in the card: 8k tokens, flex and sdpa losses agree
+  to 0.0001 nats; 32k tokens score in 19 s and take 20 sampled tokens in 11 s (first compile included), 8.6 GB peak.
+- Upload: only the six files that differ (code ×2, `config.json`, `generation_config.json`, `export_manifest.json`,
+  README; weights and tokenizer byte-identical, skipped) as Hub pull request #1 (14:59:57 UTC, `refs/pr/1`), from
+  the Mac with the org-scoped token variable in `.env` (the GPU server's stored login is read-only).
+- Hub smoke test (`scripts/hub_smoke_test.py`, clean venvs, anonymous): from `refs/pr/1` at 15:00 UTC and from main
+  after the merge at 15:01 UTC, Transformers 4.57.6 and 5.23.0: all checks pass, sentence loss 2.0551, the same
+  seed-0 sample. The Hub now lists `library_name: transformers`, `custom_code` and the `auto_map`; the rendered How to
+  use section was checked on the page.
+- The Hub's automatic "Use this model" menu now also offers vLLM, SGLang and Docker snippets; those engines do not
+  run custom `perceiver_ar` code, only the Transformers one works.

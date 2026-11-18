@@ -96,6 +96,10 @@ smoke test on a clean machine with Transformers 4.57.6 and 5.23.0. The export si
 solved by the export; 4 (CPU dense mask) and 6 (lm-eval's stock `hf` type) stand. Result and the remaining steps:
 the spec's "Result (2026-11-18)" section.
 
+**2026-11-18 15:01 UTC: backfilled.** Hub pull request #1 merged (main `23f3ccc2`): modeling code, `auto_map`, the
+card's How to use with `from_pretrained`, `library_name: transformers` + `custom_code`. The Hub smoke test passes from
+main with Transformers 4.57.6 and 5.23.0.
+
 Today a Hub user needs the MrCogito code (`evaluation/lm_eval_perceiver_ar.load_perceiver_ar_for_eval`). For
 `AutoModelForCausalLM.from_pretrained(repo, trust_remote_code=True)` the repository needs:
 
