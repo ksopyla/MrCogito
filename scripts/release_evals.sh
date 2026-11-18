@@ -12,6 +12,8 @@
 # "off" for the LSA read (it has no summaries). Progress: <out_dir>/logs/events.log (UTC stamps).
 # Every job waits until its GPU runs no compute process (other sessions' jobs included), checking once a minute.
 # LONGCTX=<dir> reuses an existing retokenised-document cache + spans (default Cache/e38_board/longctx).
+# HF_EXPORT=<dir> (a scripts/export_hub_model.py folder) adds the board tier through lm-eval's stock `hf` model on the
+# from_pretrained export: the same tests the way a reader (and every reference model) runs them.
 set -euo pipefail
 CK=$1; OUT=$2; DATA=$3; GPUS=${4:-0,1,2}; MODES=${5:-off}; TAG=${6:-model}
 IFS=, read -r G0 G1 G2 <<< "$GPUS"
@@ -59,6 +61,10 @@ lane0() {
   job "$G0" core7 - "${PY[@]}" evaluation/run_lm_eval_suite.py --checkpoint "$CK" --tag "${TAG}_core7" \
       --tasks arc_challenge,arc_easy,hellaswag,lambada_openai,piqa,sciq,winogrande,wikitext \
       --out_dir "$OUT/eval_results"
+  if [[ -n ${HF_EXPORT:-} ]]; then
+    job "$G0" board_hf - "${PY[@]}" evaluation/run_lm_eval_suite.py --hf_model "$HF_EXPORT" --dtype bfloat16 \
+        --tag "${TAG}_final_hf" --tier leaderboard --out_dir "$OUT/eval_results"
+  fi
   job "$G0" samples - "${PY[@]}" evaluation/sample_text.py --model "$CK" --out "$OUT/samples/samples_ours.json"
   job "$G0" compare "$OUT/long_context/compare_ours.json" "${PY[@]}" evaluation/long_context_compare.py score \
       --spans "$SPANS" --swap --model "$CK"
