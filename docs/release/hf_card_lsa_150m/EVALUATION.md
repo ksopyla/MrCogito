@@ -45,8 +45,8 @@ head-to-head can be recomputed from this repository alone.
 
 The two 150M models read the same shards in the same order (identical data manifests in all three stages), with the
 same seed, budget, optimizer, schedule and layers; only the reading layer differs. Differences are LSA minus concept
-memory; intervals are 95 % bootstrap over the test items (documents for long text, prompts for RULER, paired, since
-both models saw the same ones).
+memory; intervals are 95 % bootstrap over the test items (documents for long text, prompts for RULER), paired wherever both
+models saw the same items (all documents; RULER from 4k to 16k).
 
 | Test | Unit, direction | LSA | Concept memory | LSA − concept memory [95 %] | Verdict |
 |---|---|---:|---:|---:|---|
@@ -66,9 +66,12 @@ both models saw the same ones).
 | WikiText-2 | byte perplexity ↓ | 1.950 | 1.950 | 0.000 | tie |
 | Held-out training loss, end of stages 1 / 2 / 3 | nats per token ↓ | 2.137 / 1.999 / 1.941 | 2.134 / 1.996 / 1.936 | +0.003 / +0.003 / +0.005 | tie |
 
-¹ At 32k the two runs drew different needles for 8 of the 13 tasks (RULER generates them from one random state per
-lm-eval call, and the 32k runs split the tasks over calls differently); those tasks are compared unpaired (each model's
-prompts resampled on their own). All other lengths and tasks are paired: the expected answers match prompt by prompt.
+¹ At 32k the two runs drew different needles for 8 of the 13 tasks (the seven needle tasks other than the UUID
+multi-key, and variable tracking): none of their 100 expected answers match between the runs. Both runs used the same
+three task groups; the needle generator draws from Python's shared random state, and something in the runtime changed
+that state between the runs (cause not found). Those 8 tasks are two separate 100-prompt draws, compared unpaired (each
+model's prompts resampled on their own); the other 5 tasks at 32k, and every task at 4k, 8k and 16k, match prompt by
+prompt and are paired.
 
 **Reading it.** The two reads tie on everything that is prediction of ordinary text, with a consistent 0.2 % edge to
 the concept memory up to the training length, and LSA degrades less past it. On retrieval LSA is clearly ahead, and

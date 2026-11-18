@@ -51,12 +51,12 @@ in place of their Triton kernel). Optional: tell the authors before the public s
 
 ## 3. Notes for the record
 
-- **RULER at 32k, 8 of 13 tasks drew different needles** for this model and the sibling (RULER generates them from one
-  random state per lm-eval call; the 32k runs split the tasks over calls differently). Those tasks are compared
-  unpaired; every other length and task matches prompt by prompt (checked on the saved expected answers). A rerun of
-  either model's 32k with the other's task grouping would make 32k fully paired; not needed for the conclusion
-  (+0.072 [0.052, 0.092] either way).
-
+- **RULER at 32k, 8 of 13 tasks drew different needles** for this model and the sibling: none of their 100 expected
+  answers match. Both 32k runs used the same three task groups (checked by the sibling session, 2026-11-18, which
+  corrected my first guess); the needle tasks draw from Python's shared global random state and something in the
+  runtime changed it; cause not found. Those tasks are two separate 100-prompt draws, compared unpaired; the other 5
+  tasks at 32k and every task at 4k–16k match prompt by prompt. Finding the cause would let a rerun make 32k fully
+  paired; not needed for the conclusion (+0.072 [0.052, 0.092] either way).
 - **Polonez, 2026-11-18 14:39 UTC:** the first launch of this protocol on Polonez hit an NVIDIA Xid 62 (internal
   micro-controller halt) on the card at PCI 0000:49:00 six seconds after start; the driver hung (nvidia-smi and the
   three jobs blocked in the kernel). Polonez needs a reboot; the run moved to Odra. No result from Polonez is used.

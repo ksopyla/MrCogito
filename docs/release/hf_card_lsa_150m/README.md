@@ -72,7 +72,7 @@ concepts and reason over them. A research release: base model, one training seed
   level with Granite 4.0 350M (0.54; ≈15T training tokens; it leads at 4k, 0.62 against 0.54) and ahead of
   LFM2.5-350M-Base (0.42; 28T), Gemma 3 270M (0.33; 6T) and SmolLM2-135M (0.30; ≈2T), all scored by us with the same
   harness.
-- **Ahead of its sibling at every length, on the same prompts.** 0.54 / 0.54 / 0.44 / 0.39 at 4k / 8k / 16k / 32k
+- **Ahead of its sibling at every length.** 0.54 / 0.54 / 0.44 / 0.39 at 4k / 8k / 16k / 32k
   tokens against the concept memory's 0.49 / 0.44 / 0.37 / 0.32: +0.05 to +0.10, with 95 % intervals above zero
   at every length. The gain is where several facts are asked at once (+0.12 to +0.34) and in counting words across
   the text (+0.11 to +0.25); on single hidden facts the two tie.
@@ -90,7 +90,7 @@ concepts and reason over them. A research release: base model, one training seed
 
 <p align="center"><img src="figures/ruler_siblings.png" width="860" alt="Six small charts, one per RULER task family, share of answers found against context length from 4k to 32k tokens for the 150M LSA and the 150M concept memory. The lines overlap for single needles, distractor keys, variable tracking and questions; LSA is clearly higher for several values or keys at once and for counting words."></p>
 
-*RULER by task family, 4k to 32k tokens: this model (blue) and its sibling, the concept memory (orange, dashed), same harness and prompts, 100 prompts per task and length. Both trained on planted-fact lookups, so the needle tasks are not zero-shot for either.*
+*RULER by task family, 4k to 32k tokens: this model (blue) and its sibling, the concept memory (orange, dashed), same harness and settings, 100 prompts per task and length (the same prompts for both models from 4k to 16k). Both trained on planted-fact lookups, so the needle tasks are not zero-shot for either.*
 
 ## Results at a glance
 
@@ -160,7 +160,8 @@ tokenizer. Not zero-shot for our two models: their training included planted-fac
   270M 0.33, SmolLM2-135M 0.30. At 4k: Granite 0.62, this model 0.54, Gemma 0.48, LFM2.5 0.47, SmolLM2 0.40.
   Granite leads on the UUID needle, multi-value and multi-query; this model leads on distractor keys and word counts.
 - **Against its sibling:** +0.05 [0.03, 0.07], +0.10 [0.08, 0.12], +0.07 [0.05, 0.08] and +0.07 [0.05, 0.09] at 4k,
-  8k, 16k and 32k (95 % bootstrap over prompts; paired where both drew the same prompts). Every task, against every
+  8k, 16k and 32k (95 % bootstrap over prompts; paired from 4k to 16k, where both models saw the same prompts; at 32k eight of the 13
+  tasks are two separate 100-prompt draws, compared unpaired). Every task, against every
   reference: [EVALUATION.md](EVALUATION.md#ruler).
 
 ## Long documents
