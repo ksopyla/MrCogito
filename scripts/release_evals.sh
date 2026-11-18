@@ -47,7 +47,7 @@ job() {  # job <gpu> <name> <stdout file or -> <command...>
 }
 
 stamp "start: $TAG, checkpoint $CK, GPUs $GPUS, memory modes $MODES"
-# Spans first (CPU; it builds the retokenised cache once, so the lanes never race on writing it).
+# Spans first (CPU; it builds the retokenised cache once, so the workers never race on writing it).
 if [[ ! -f $SPANS ]]; then
   stamp "spans_prepare start"
   CUDA_VISIBLE_DEVICES= "${PY[@]}" evaluation/long_context_compare.py prepare --tokenizer "$CK" --data "$DATA" \
@@ -55,45 +55,64 @@ if [[ ! -f $SPANS ]]; then
       && stamp "spans_prepare done" || { stamp "spans_prepare FAILED: no spans, stopping"; exit 1; }
 fi
 
-lane0() {
-  job "$G0" board - "${PY[@]}" evaluation/run_lm_eval_suite.py --checkpoint "$CK" --tag "${TAG}_final" \
-      --tier leaderboard --out_dir "$OUT/eval_results"
-  job "$G0" core7 - "${PY[@]}" evaluation/run_lm_eval_suite.py --checkpoint "$CK" --tag "${TAG}_core7" \
-      --tasks arc_challenge,arc_easy,hellaswag,lambada_openai,piqa,sciq,winogrande,wikitext \
-      --out_dir "$OUT/eval_results"
-  if [[ -n ${HF_EXPORT:-} ]]; then
-    job "$G0" board_hf - "${PY[@]}" evaluation/run_lm_eval_suite.py --hf_model "$HF_EXPORT" --dtype bfloat16 \
-        --tag "${TAG}_final_hf" --tier leaderboard --out_dir "$OUT/eval_results"
-  fi
-  job "$G0" samples - "${PY[@]}" evaluation/sample_text.py --model "$CK" --out "$OUT/samples/samples_ours.json"
-  job "$G0" compare "$OUT/long_context/compare_ours.json" "${PY[@]}" evaluation/long_context_compare.py score \
-      --spans "$SPANS" --swap --model "$CK"
-  job "$G0" ruler_32k_c - "${RULER[@]}" --lengths 32768 --batch 2 --tasks ruler_cwe,ruler_fwe,ruler_qa_hotpot,ruler_qa_squad \
-      --answers_out "$OUT/ruler/ruler_32k_c_answers.jsonl" --out "$OUT/ruler/ruler_32k_c.json"
-  job "$G0" ruler_32k_a - "${RULER[@]}" --lengths 32768 --batch 2 \
-      --tasks niah_multikey_1,niah_multikey_2,niah_single_1,niah_single_2,niah_single_3 \
-      --answers_out "$OUT/ruler/ruler_32k_a_answers.jsonl" --out "$OUT/ruler/ruler_32k_a.json"
+# One shared queue: each GPU's worker takes the next job when its card is idle; longest jobs first so the cards
+# finish together (minutes on one RTX 3090 for the 150M models in brackets). ONLY="name ..." runs just those jobs.
+USE=("${PY[@]}" evaluation/long_context_use.py --checkpoint "$CK" --data "$DATA" --cache "$LONGCTX" --swap --modes "$MODES")
+run_real_docs_64k() { job "$1" real_docs_64k "$OUT/long_context/real_docs_64k.json" "${USE[@]}" --sources "$SOURCES" \
+                          --span 65536 --contexts 1024,4096,16384 --docs 16; }
+run_real_docs_16k() { job "$1" real_docs_16k "$OUT/long_context/real_docs_16k.json" "${USE[@]}" --sources "$SOURCES" \
+                          --span 16384 --contexts 1024,4096 --docs 24; }
+run_real_docs_128k() { job "$1" real_docs_128k "$OUT/long_context/real_docs_128k.json" "${USE[@]}" --sources "$SOURCES" \
+                           --span 131072 --contexts 4096,16384,61440 --docs 8; }
+run_ruler_4k_8k() { job "$1" ruler_4k_8k - "${RULER[@]}" --lengths 4096,8192 --batch 8 \
+                        --answers_out "$OUT/ruler/ruler_4k_8k_answers.jsonl" --out "$OUT/ruler/ruler_4k_8k.json"; }
+run_ruler_16k() { job "$1" ruler_16k - "${RULER[@]}" --lengths 16384 --batch 4 \
+                      --answers_out "$OUT/ruler/ruler_16k_answers.jsonl" --out "$OUT/ruler/ruler_16k.json"; }
+run_ruler_32k_a() { job "$1" ruler_32k_a - "${RULER[@]}" --lengths 32768 --batch 2 \
+                        --tasks niah_multikey_1,niah_multikey_2,niah_single_1,niah_single_2,niah_single_3 \
+                        --answers_out "$OUT/ruler/ruler_32k_a_answers.jsonl" --out "$OUT/ruler/ruler_32k_a.json"; }
+run_ruler_32k_b() { job "$1" ruler_32k_b - "${RULER[@]}" --lengths 32768 --batch 2 \
+                        --tasks niah_multikey_3,niah_multiquery,niah_multivalue,ruler_vt \
+                        --answers_out "$OUT/ruler/ruler_32k_b_answers.jsonl" --out "$OUT/ruler/ruler_32k_b.json"; }
+run_ruler_32k_c() { job "$1" ruler_32k_c - "${RULER[@]}" --lengths 32768 --batch 2 \
+                        --tasks ruler_cwe,ruler_fwe,ruler_qa_hotpot,ruler_qa_squad \
+                        --answers_out "$OUT/ruler/ruler_32k_c_answers.jsonl" --out "$OUT/ruler/ruler_32k_c.json"; }
+run_compare() { job "$1" compare "$OUT/long_context/compare_ours.json" "${PY[@]}" evaluation/long_context_compare.py \
+                    score --spans "$SPANS" --swap --model "$CK"; }
+run_core7() { job "$1" core7 - "${PY[@]}" evaluation/run_lm_eval_suite.py --checkpoint "$CK" --tag "${TAG}_core7" \
+                  --tasks arc_challenge,arc_easy,hellaswag,lambada_openai,piqa,sciq,winogrande,wikitext \
+                  --out_dir "$OUT/eval_results"; }
+run_board() { job "$1" board - "${PY[@]}" evaluation/run_lm_eval_suite.py --checkpoint "$CK" --tag "${TAG}_final" \
+                  --tier leaderboard --out_dir "$OUT/eval_results"; }
+run_board_hf() { job "$1" board_hf - "${PY[@]}" evaluation/run_lm_eval_suite.py --hf_model "$HF_EXPORT" \
+                     --dtype bfloat16 --tag "${TAG}_final_hf" --tier leaderboard --out_dir "$OUT/eval_results"; }
+run_samples() { job "$1" samples - "${PY[@]}" evaluation/sample_text.py --model "$CK" \
+                    --out "$OUT/samples/samples_ours.json"; }
+
+# the real-document test first (it checks the memory switch early), then by length: RULER 16k (40), 32k a (37),
+# 4k+8k (31), 32k b (28), 32k c (27), 128k, 64k-span compare, 16k, core 7 (4), board (6), samples (2)
+QUEUE=(real_docs_64k ruler_16k ruler_32k_a ruler_4k_8k ruler_32k_b ruler_32k_c real_docs_128k compare real_docs_16k
+       core7 board samples)
+[[ -n ${HF_EXPORT:-} ]] && QUEUE+=(board_hf)
+[[ -n ${ONLY:-} ]] && read -r -a QUEUE <<< "$ONLY"
+rm -f "$OUT/logs/.next"
+next_job() {  # the next queued job's name (empty when the queue is done), under a lock shared by the workers
+  ( flock 9
+    local i; i=$(cat "$OUT/logs/.next" 2>/dev/null || echo 0)
+    if (( i < ${#QUEUE[@]} )); then echo "${QUEUE[$i]}"; echo $((i + 1)) > "$OUT/logs/.next"; fi
+  ) 9> "$OUT/logs/.lock"
 }
-lane1() {
-  local use=("${PY[@]}" evaluation/long_context_use.py --checkpoint "$CK" --data "$DATA" --cache "$LONGCTX" --swap
-             --modes "$MODES")
-  job "$G1" real_docs_64k "$OUT/long_context/real_docs_64k.json" "${use[@]}" --sources "$SOURCES" --span 65536 \
-      --contexts 1024,4096,16384 --docs 16
-  job "$G1" real_docs_16k "$OUT/long_context/real_docs_16k.json" "${use[@]}" --sources "$SOURCES" --span 16384 \
-      --contexts 1024,4096 --docs 24
-  job "$G1" real_docs_128k "$OUT/long_context/real_docs_128k.json" "${use[@]}" --sources "$SOURCES" --span 131072 \
-      --contexts 4096,16384,61440 --docs 8
-  job "$G1" ruler_32k_b - "${RULER[@]}" --lengths 32768 --batch 2 \
-      --tasks niah_multikey_3,niah_multiquery,niah_multivalue,ruler_vt \
-      --answers_out "$OUT/ruler/ruler_32k_b_answers.jsonl" --out "$OUT/ruler/ruler_32k_b.json"
-}
-lane2() {
-  job "$G2" ruler_4k_8k - "${RULER[@]}" --lengths 4096,8192 --batch 8 \
-      --answers_out "$OUT/ruler/ruler_4k_8k_answers.jsonl" --out "$OUT/ruler/ruler_4k_8k.json"
-  job "$G2" ruler_16k - "${RULER[@]}" --lengths 16384 --batch 4 \
-      --answers_out "$OUT/ruler/ruler_16k_answers.jsonl" --out "$OUT/ruler/ruler_16k.json"
+worker() {
+  local g=$1 n
+  while :; do
+    wait_gpu "$g"
+    n=$(next_job)
+    [[ -z $n ]] && break
+    "run_$n" "$g"
+  done
 }
 
-lane0 & lane1 & lane2 &
+stamp "queue: ${QUEUE[*]}"
+for g in $G0 $G1 $G2; do worker "$g" & done
 wait
-stamp "all lanes done"
+stamp "all jobs done"
