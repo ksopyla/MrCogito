@@ -226,7 +226,7 @@ def data_efficiency() -> None:
             ax.invert_yaxis()  # up is better on every panel
     h, l = axs[1].get_legend_handles_labels()
     fig.legend(h, l, loc="upper center", ncol=3, frameon=False, fontsize=9, bbox_to_anchor=(0.5, 1.0))
-    fig.text(0.01, 0.005, "Up is better on every panel. Every point scored by us on Odra, same harness, 0-shot. "
+    fig.text(0.01, 0.005, "Up is better on every panel. Every point scored by us on one RTX 3090, same harness, 0-shot. "
              "Checkpoints: Pythia-160M (EleutherAI, scored in fp32), SmolLM2-135M (Hugging Face, from ~250B tokens).", fontsize=8,
              color=MUTED)
     fig.tight_layout(rect=(0, 0.04, 1, 0.92))

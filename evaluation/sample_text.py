@@ -12,7 +12,7 @@ Works for our perceiver_ar checkpoints (loaded with `load_perceiver_ar_for_eval`
 short, and flex attention would recompile for every new length) and for any 🤗 causal LM (`--hf`). Every step re-runs
 the whole row (no cache): fine for prompts and replies of a few hundred tokens.
 
-    uv run python evaluation/sample_text.py --model Cache/e38_board/e37a_m120t_final --out samples.json
+    uv run python evaluation/sample_text.py --model <our checkpoint folder> --out samples.json
     uv run python evaluation/sample_text.py --model HuggingFaceTB/SmolLM2-135M --hf --out smollm2_samples.json
 """
 from __future__ import annotations

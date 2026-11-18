@@ -19,8 +19,8 @@ figures from those files.
 
 ## Harness and settings
 
-- **Machine:** Odra, one NVIDIA RTX 3090 (24 GB) per job; runs between 2026-11-17 19:58 UTC and 2026-11-18
-  13:51 UTC. The AWS tests quoted at the end of section 6 ran on the training node on 2026-11-16.
+- **Machine:** one NVIDIA RTX 3090 (24 GB) per job; runs between 2026-11-17 19:58 UTC and 2026-11-18
+  13:51 UTC. The AWS tests quoted at the end of section 6 ran on the training machine (4 × NVIDIA L40S) on 2026-11-16.
 - **Benchmarks:** EleutherAI lm-evaluation-harness 0.4.11, 0-shot, all test items, max length 2,048, `acc` for
   every task. Our model through our adapter (`evaluation/lm_eval_perceiver_ar.py`, `--model perceiver_ar`), the
   others through lm-eval's stock `hf` model (`evaluation/run_lm_eval_suite.py`).
@@ -44,13 +44,13 @@ Accuracy in %, higher is better, ± standard error from the harness. In brackets
 zero-shot results for Pythia-160M (step 143000, `evals/pythia-v1/pythia-160m` in their GitHub repository, quoted;
 the remaining gaps of 1–2.5 points fit the change of harness version).
 
-| Benchmark | Chance | **Ours** · 11.5B | SmolLM2-135M · 252B | SmolLM2-135M · ~2T (final) | Pythia-160M · 300B | LFM2.5-350M-Base · 28T |
+| Benchmark | Chance | **Ours** · 11.5B | SmolLM2-135M · 252B | SmolLM2-135M · ≈2T (final) | Pythia-160M · 300B | LFM2.5-350M-Base · 28T |
 |---|---:|---:|---:|---:|---:|---:|
 | BLiMP, 67 sets | 50 | **80.56** ± 0.14 | 79.72 ± 0.14 | 80.15 ± 0.14 | 77.48 | 80.17 |
 | ARC-Easy | 25 | 48.95 ± 1.03 | 61.62 ± 1.0 | 64.27 ± 0.98 | 43.64 ± 1.0 (43.52) | **70.03** ± 0.9 |
 | ARC-Challenge | 25 | 21.2 ± 1.2 | 27.1 ± 1.3 | 28.0 ± 1.3 | 19.5 ± 1.2 (18.8) | **38.2** ± 1.4 |
 | HellaSwag | 25 | 29.9 ± 0.5 | 32.6 ± 0.5 | 35.5 ± 0.5 | 28.4 ± 0.4 | **37.1** ± 0.5 |
-| LAMBADA (OpenAI) | ~0 | 33.2 ± 0.7 | 35.0 ± 0.7 | **43.0** ± 0.7 | 35.4 ± 0.7 (32.8) | 35.8 ± 0.7 |
+| LAMBADA (OpenAI) | ≈0 | 33.2 ± 0.7 | 35.0 ± 0.7 | **43.0** ± 0.7 | 35.4 ± 0.7 (32.8) | 35.8 ± 0.7 |
 | PIQA | 50 | 62.8 ± 1.1 | 65.9 ± 1.1 | **68.6** ± 1.1 | 62.3 ± 1.1 (62.7) | 66.6 ± 1.1 |
 | SciQ | 25 | 77.0 ± 1.3 | 80.4 ± 1.3 | 84.1 ± 1.2 | 75.4 ± 1.4 (74.1) | **90.1** ± 0.9 |
 | WinoGrande | 50 | 50.4 ± 1.4 | 50.9 ± 1.4 | 53.6 ± 1.4 | 51.2 ± 1.4 (53.1) | **55.6** ± 1.4 |
@@ -77,13 +77,13 @@ reproduces the formula from the board's page (five entries match to two decimals
 | 2 | Tiny Chick 10M V2.1 | kurcontko.dev | 9.6M | 16.3B | 76.79 | 53.79 | 2.342 | 75.5 | 85.2 |
 | 3 | Tiny Chick 10M V2 | kurcontko.dev | 9.6M | 16.3B | 76.99 | 50.21 | 2.364 | 74.3 | 83.8 |
 | 4 | Slayer139 1.02 | Fabryka AI | 139.3M | 24.0B | 79.22 | 65.91 | 1.862 | 81.7 | 83.4 |
-| (4) | *SmolLM2-135M, final (our run)* |  | 134.5M | ~2T | 80.15 | 64.27 | 1.799 | 81.5 | 83.2 |
+| (4) | *SmolLM2-135M, final (our run)* |  | 134.5M | ≈2T | 80.15 | 64.27 | 1.799 | 81.5 | 83.2 |
 | 5 | Boris-2-Think | opencerebral | 143.7M | 200B | 82.09 | 63.93 | 1.967 | 81.7 | 83.2 |
 | 6 | Slayer149-ARC | Fabryka AI | 149.3M | 31B | 78.38 | 66.58 | 1.907 | 81.5 | 82.9 |
 | 7 | Tiny Chick 10M | kurcontko.dev | 9.6M | 8.3B | 75.12 | 48.53 | 2.287 | 73.3 | 82.7 |
 | 8 | Slayer139 1.01 | Fabryka AI | 139.3M | 23.7B | 79.13 | 63.09 | 1.878 | 80.7 | 82.3 |
 | (9) | *SmolLM2-135M, 252B checkpoint (our run)* |  | 134.5M | 252B | 79.72 | 61.62 | 1.873 | 80.4 | 82.1 |
-| 9 | Glint-2 | glintresearch | 1.1M | ~300B | 74.54 | 36.20 | 3.127 | 67.2 | 81.7 |
+| 9 | Glint-2 | glintresearch | 1.1M | ≈300B | 74.54 | 36.20 | 3.127 | 67.2 | 81.7 |
 | 10 | Boris-2 | opencerebral | 143.7M | 200B | 81.13 | 59.76 | 1.895 | 80.2 | 81.7 |
 | (11) | *SmolLM2-135M, 503B checkpoint (our run)* |  | 134.5M | 503B | 79.62 | 59.97 | 1.861 | 79.9 | 81.6 |
 | 11 | JugnuLM-110M-R2+ | altslate | 110.0M | 25B | 82.52 | 55.13 | 1.873 | 79.2 | 81.5 |
@@ -96,15 +96,15 @@ reproduces the formula from the board's page (five entries match to two decimals
 | 18 | Supra-50M-Instruct | supralabs | 51.8M | 20B | 76.30 | 52.20 | 2.560 | 74.3 | 78.7 |
 | 19 | GoLLeM-v5 128M | Fabryka AI | 122.8M | 24.9B | 79.09 | 53.24 | 2.254 | 76.3 | 78.2 |
 | 20 | Glint-1.3 (merged) | glintresearch | 1.0M | 100B | 68.70 | 32.50 | 3.080 | 64.1 | 78.2 |
-| 21 | Ivme-Conversate-v3-Base | ivmelabs | 24.8M | ~15B | 78.49 | 39.02 | 2.136 | 71.7 | 78.1 |
+| 21 | Ivme-Conversate-v3-Base | ivmelabs | 24.8M | ≈15B | 78.49 | 39.02 | 2.136 | 71.7 | 78.1 |
 | 22 | Supra-50M-Base | supralabs | 51.8M | 20B | 76.30 | 46.00 | 2.040 | 73.5 | 78.0 |
 | 23 | GPT-S-5M | axiomiclabs | 5.2M | 25B | 72.27 | 35.69 | 2.570 | 67.4 | 77.7 |
 | 24 | **150M concept memory (ours)** | Meridian21 Lab | 141.5M | 11.5B | 80.56 | 48.95 | 1.950 | 76.2 | 77.7 |
 | 25 | Glint-2.3 | glintresearch | 1.7M | 10B | 67.30 | 36.00 | 3.051 | 64.8 | 77.6 |
 | 26 | Zedev-134M-Fudas | meridianmrm | 134.0M | 20.7b | 81.69 | 46.38 | 1.880 | 76.0 | 77.6 |
-| 27 | Hydrion-v1-Base | opengcm | 114.1M | ~2.5B | 80.08 | 47.26 | 2.040 | 75.2 | 77.4 |
+| 27 | Hydrion-v1-Base | opengcm | 114.1M | ≈2.5B | 80.08 | 47.26 | 2.040 | 75.2 | 77.4 |
 | 28 | GoLLeM-v5 64M | Fabryka AI | 62.9M | 24.9B | 76.16 | 48.19 | 2.347 | 73.4 | 77.2 |
-| 29 | Ivme-Conversate-v2-Base | ivmelabs | 23.9M | ~12.85B | 75.09 | 39.98 | 2.225 | 70.6 | 77.1 |
+| 29 | Ivme-Conversate-v2-Base | ivmelabs | 23.9M | ≈12.85B | 75.09 | 39.98 | 2.225 | 70.6 | 77.1 |
 | 30 | GoLLeM-v5 64M (v1 recipe) | Fabryka AI | 62.9M | 13.1B | 75.83 | 47.94 | 2.372 | 73.1 | 77.0 |
 | 31 | Pollock 1.5 Mini LM 128M | Fabryka AI | 127.4M | 21.50B | 78.50 | 47.73 | 1.944 | 75.1 | 76.9 |
 | 32 | Glint-2.3-Mini | glintresearch | 1.1M | 10B | 62.27 | 36.20 | 3.122 | 63.1 | 76.8 |
@@ -121,7 +121,7 @@ reproduces the formula from the board's page (five entries match to two decimals
 | 43 | GoLLeM-v5 16M | Fabryka AI | 17.4M | 16B | 70.08 | 40.91 | 2.675 | 68.2 | 75.3 |
 | 44 | Cagliari-114M | meridianmrm | 114.0M | 5.24B | 80.22 | 38.30 | 1.960 | 72.5 | 74.6 |
 | (44) | *Pythia-160M, final (our run, fp32; over the 150M cap)* |  | 162.3M | 300B | 77.48 | 43.64 | 1.924 | 73.5 | 74.5 |
-| 45 | KeyLM-75M-Instruct | minimalabs | 75.0M | ~18B | 76.02 | 39.10 | 2.170 | 70.8 | 74.0 |
+| 45 | KeyLM-75M-Instruct | minimalabs | 75.0M | ≈18B | 76.02 | 39.10 | 2.170 | 70.8 | 74.0 |
 
 The first 45 places of 101 shown; the full snapshot is in the file above.
 
@@ -131,7 +131,7 @@ at 51.4 % the model would place 19th, at 60 % 12th.
 
 ## Data efficiency
 
-| Test | **Ours** at 11.5B | Pythia-160M at 10.5B | at 12.6B | at 300B (final) | SmolLM2-135M at 252B | at 503B | at ~2T (final) |
+| Test | **Ours** at 11.5B | Pythia-160M at 10.5B | at 12.6B | at 300B (final) | SmolLM2-135M at 252B | at 503B | at ≈2T (final) |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | Grammar (BLiMP) % ↑ | **80.56** | 77.94 | 78.28 | 77.48 | 79.72 | 79.62 | 80.15 |
 | Science quiz (ARC-Easy) % ↑ | 48.95 | 42.59 | 42.80 | 43.64 | 61.62 | — | **64.27** |
@@ -155,10 +155,10 @@ branches `step-240000` and `step-480000` (1,048,576 tokens per step) and the fin
 
 ## Long documents across models
 
-`evaluation/long_context_compare.py` (a copy is in `long_context/`), Odra, 2026-11-18. **Documents:** held-out
+`evaluation/long_context_compare.py` (a copy is in `long_context/`), one RTX 3090, 2026-11-18. **Documents:** held-out
 LongDocs-lite validation documents from five Common Pile sources (Gutenberg books, arXiv papers, DOAB open-access
 books, US GPO publications, UK Hansard debates), up to 16 per source at 64k tokens, 55 in all. **Target:** the last
-~16 KB of each span (its last 4,096 tokens in our tokenizer), 0.94 MB in all; the context before it is cut to each
+≈16 KB of each span (its last 4,096 tokens in our tokenizer), 0.94 MB in all; the context before it is cut to each
 budget, counted in our tokens, so every model reads the same characters. **Unit:** bits per byte of the target
 (nats ÷ ln 2 ÷ UTF-8 bytes). A model that cannot take a budget is scored with sliding windows of its own maximum
 length ("limit").
@@ -202,7 +202,7 @@ whole span; + = ours better, 95 % bootstrap interval over documents:
 ## Our own long-context tests
 
 The same 64k documents in our own tokens, with switches no other model has (`long_context/long_context_use.py`,
-Odra, 2026-11-17 19:58–20:35 UTC). Always the same target, the **last 4,096 tokens** of a 16k, 64k or 128k span.
+one RTX 3090, 2026-11-17 19:58–20:35 UTC). Always the same target, the **last 4,096 tokens** of a 16k, 64k or 128k span.
 Loss in nats per token (lower is better; nats per token depend on the tokenizer, so these compare the model only
 with itself); 95 % intervals by bootstrap over documents.
 
@@ -262,7 +262,7 @@ test above is the one to trust.
 ## RULER
 
 13 tasks, 100 prompts per task and length, greedy cached decoding, each task's own answer length (lm-eval's RULER
-configs, up to 128 tokens), every reply saved (`ruler/*_answers.jsonl`). Odra, 2026-11-18 12:40–13:51 UTC (4k and 8k, 16k on one card each; 32k split by task over three cards).
+configs, up to 128 tokens), every reply saved (`ruler/*_answers.jsonl`). RTX 3090 cards, 2026-11-18 12:40–13:51 UTC (4k and 8k, 16k on one card each; 32k split by task over three cards).
 Score = share of the reference answers found in the reply (higher is better). **Not zero-shot:** training stages 2
 and 3 included planted-fact lookups of a similar shape (different wording).
 
@@ -292,7 +292,7 @@ training, capped run, unaffected): mean 0.185 at 4k and 0.136 at 16k; the essay 
 
 ## Text samples
 
-`evaluation/sample_text.py` (a copy is in `samples/`), Odra, 2026-11-18 12:49 UTC; prompts start with
+`evaluation/sample_text.py` (a copy is in `samples/`), one RTX 3090, 2026-11-18 12:49 UTC; prompts start with
 `<|endoftext|>` as in training. Nucleus sampling: temperature 0.7, top-p 0.9, repetition penalty 1.1 over prompt
 and reply, seeds 0, 1 and 2. Beam search: 4 beams, no repeated 3-gram, best by mean log-probability. 60 new tokens.
 All outputs, unedited: `samples/samples_ours.json`. The card shows seed 0 for each prompt.
@@ -317,7 +317,7 @@ All outputs, unedited: `samples/samples_ours.json`. The card shows seed 0 for ea
 | Learning rate | Muon peak 0.01, constant after 1 % warm-up | fresh optimizer, 3 % warm-up, 1 − √ decay to 0.1 × | a tenth of the peak, decaying |
 | Held-out loss (nats per token, lower is better) | 2.732 → 2.134 (4k web rows) | 2.295 → 1.996 (16k long-document rows) | 1.960 → 1.936 (64k rows) |
 | Speed | 105.6k tokens/s | 69.7k tokens/s | 21.6k tokens/s (activations recomputed) |
-| Wall time | 21.2 h | 12.2 h | 6.5 h (+ ~1 h lost to a spot interruption) |
+| Wall time | 21.2 h | 12.2 h | 6.5 h (+ ≈1 h lost to a spot interruption) |
 
 Muon updates the weight matrices; norms, embeddings and other vector parameters use AdamW (betas 0.9 / 0.95, weight
 decay 0.1). Gradient clipping at 1.0, bf16, flex attention. A paid two-arm test (2,000 steps each, $15) chose Muon
@@ -343,5 +343,5 @@ sources keep a held-out set (the LongDocs-lite validation documents), which the 
   recipe `data/mix_recipes/m21_mix_v2.json` and builders `scripts/build_m21_mix.py`, `scripts/build_reasoning_rows.py`;
   training `scripts/run_e33n.py` (size `m120t`, arm `e37a`) and job `infra/aws/jobs/e38_board.sh`; architecture
   `nn/perceiver_ar_lm.py`, `nn/concept_memory.py`. The fixed RULER runner and the sampling script are newer than
-  that commit: `evaluation/run_lsa_suite.py` and `evaluation/sample_text.py` on the `dev` branch.
+  that commit; this repository has them as `ruler/run_lsa_suite.py` and `samples/sample_text.py`.
 - **Intermediate checkpoints** of this model are not published yet.

@@ -1,5 +1,5 @@
 {
-  "model": "Cache/e38_board/e37a_m120t_final",
+  "model": "Meridian21Lab/concept-memory-140m-11.5bt (final weights)",
   "new_tokens": 60,
   "start_tokens": [
     0
@@ -48,5 +48,5 @@
       "beam": "\n    if n == 0:\n        return 0\n    return fib(n-1) + fib(2*n-2)\n\nThe Fibonacci sequence is a series of numbers in which each number is the sum of the two preceding numbers. The first number is 0, the"
     }
   ],
-  "note": "evaluation/sample_text.py on Odra (RTX 3090), 2026-11-18 12:49 UTC; prompt start <|endoftext|> as in training"
+  "note": "evaluation/sample_text.py on one RTX 3090, 2026-11-18 12:49 UTC; prompts start with <|endoftext|> as in training"
 }

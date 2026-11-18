@@ -159,6 +159,6 @@ STANDARD RULES v3 (checked before every upload; reasons in ../SKILL.md)
 7. Figures by a script in the repo from the result files, light PNG, one idea per chart, numbers also in a table.
 8. Text samples sampled (settings stated, seed 0 unpicked), never greedy prose.
 9. Generation benchmarks with task-default answer lengths and saved replies.
-10. Budget, cost, machines, data mix with links, licences always present.
+10. Budget, cost, hardware (generic GPU names, no server names or paths), data mix with links, licences always present.
 11. How to use at the bottom; no failing code. BibTeX for model + project page.
 -->

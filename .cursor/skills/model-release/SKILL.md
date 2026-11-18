@@ -70,8 +70,11 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
     from the same tokens, measured as same-budget checkpoint, tokens-to-match, or against the field; always say that
     data and architecture are not separated without a same-data control. "Long context" = gain from far context on
     held-out real documents of the same text for every model, plus a swapped-past control.
-11. **Keep what backers and replicators need:** training budget in tokens, wall time, machines, cost; the data mix by
-    stage with Hub links to every dataset and their licences; where the raw results are.
+11. **Keep what backers and replicators need:** training budget in tokens, wall time, hardware, cost; the data mix by
+    stage with Hub links to every dataset and their licences; where the raw results are. Name hardware **generically**
+    ("one RTX 3090", "4 × NVIDIA L40S on AWS spot"): no server names (Odra, Polonez), hostnames, home or cache paths,
+    instance types or regions in anything that goes public, including script docstrings, figure captions and the
+    JSON files shipped with the card. *Why:* the author does not publish internal infrastructure (2026-11-18).
 12. **How to use goes at the bottom, and only with code that runs for the reader.** If the weights do not load with
     `AutoModelForCausalLM.from_pretrained(..., trust_remote_code=True)`, say so in two lines, point to the repo, and
     keep the engineering task open (target: every release loads with `from_pretrained` and the release checklist
@@ -114,7 +117,11 @@ and upload steps live in `huggingface-project`; running the evaluation scripts l
       table (harness version, shots, precision per model, machine, date).
 - [ ] Generation tasks: task-default answer lengths, replies saved, answer lengths checked in our tokenizer.
 - [ ] Samples: sampling settings stated, seed-0 reply shown unpicked, no greedy prose.
-- [ ] Training budget, cost, machines, data mix with links and licences present.
+- [ ] Training budget, cost, hardware, data mix with links and licences present.
+- [ ] No server names, hostnames, home/cache paths, instance types or regions in any uploaded file
+      (`grep -riE "odra|polonez|/home/|~/dev"` over the upload folder and the scripts copied into it).
 - [ ] How to use at the bottom; no code that fails for a reader; `from_pretrained` status stated.
 - [ ] BibTeX for the model and the project page; changelog line with the date.
 - [ ] Raw results, scripts and figures in the repo folder that gets uploaded.
+- [ ] No `~` for "about" in the card: Hub markdown turns a pair of tildes into strikethrough; write ≈.
+- [ ] After upload: open the rendered page and scroll it once (figures, tables, strikethrough, links).
