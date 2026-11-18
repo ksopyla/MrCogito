@@ -11,8 +11,12 @@ this read are "topic index"; "LSA" names the method and stays credited to its au
 **2026-11-18 ≈17:03 UTC: uploaded PRIVATE** (author: "Yes, upload private") as `lsa-140m-11.5bt`, renamed as above;
 now <https://huggingface.co/Meridian21Lab/topic-index-140m-11.5bt> (renamed card uploaded as Hub commit `5426f519`; first commit `8066f778`), 99 files (export from MrCogito commit
 `e380a125`, the card folder, `LICENSE`, `NOTICE`), uploaded from the Mac with the `.env` variable
-`HF_TOKEN_MERIDAIN21_ORG`. Hub smoke test from the repo id passed (`hub_smoke_test.json`). Still private: the public
-switch waits for the author's look at the rendered page and a yes.
+`HF_TOKEN_MERIDAIN21_ORG`. Hub smoke test from the repo id passed (`hub_smoke_test.json`).
+
+**2026-11-18 ≈19:00 UTC: switched PUBLIC** (author: "Yes, publish both") at Hub commit `df7a426e` (the aligned card,
+100 files), together with the aligned `concept-memory-140m-11.5bt` card (its Hub commit `f826294b`, weights and export
+unchanged). Checked logged out: both pages render with all five figures, the cross-links answer 200, and the Hub
+smoke test from the public id passes in a clean venv (sentence loss 2.3029, CPU fp32, 20 sampled tokens).
 
 ## 1. Decisions for the author (each with a recommendation)
 
@@ -57,8 +61,9 @@ in place of their Triton kernel). Optional: tell the authors before the public s
 - [x] Upload **private** (author's yes, 2026-11-18) and `python -I scripts/hub_smoke_test.py Meridian21Lab/<id>`
       in a clean venv (torch 2.11 + Transformers 4.57.6 only): passed at revision `8066f778` and again from the new id
       at `5426f519` (`hub_smoke_test.json`), sentence loss 2.3029 (CPU, fp32), 20 sampled tokens.
-- [ ] The author looks at the rendered page (figures, tables, links; no strikethrough), then switches it public.
-- [ ] After the public switch: the sibling card's back-link (the sibling session adds it), `library_name` stays.
+- [x] The author looked at the rendered page and said publish (2026-11-18); switched public at `df7a426e`.
+- [x] `concept-memory-140m-11.5bt` links back (header, intro, every results table), pushed public in the same step
+      (`f826294b`); `library_name` stays.
 - [ ] W&B: the three training runs carry the stale default tags `JeanKaddour/minipile` and `minipile` (the model
       never read MiniPile) and a machine-name tag (`ip-…`); fix before the card links them.
 - [ ] Tiny-ML Leaderboard: the topic index may be submitted next to the concept memory; disclose the planted-fact

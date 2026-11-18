@@ -1,5 +1,10 @@
 # 150M concept memory: open questions before the Hugging Face release
 
+**2026-11-18 ≈19:00 UTC:** the card aligned with `Meridian21Lab/topic-index-140m-11.5bt` (same data, other read:
+one section order, both models in every table and chart, cross-links, "Models on the same data" in EVALUATION.md,
+its raw results under `ti_`) pushed to the public repo as Hub commit `f826294b` (author: "Yes, publish both"); weights,
+export and manifest unchanged (the manifest lists files, not hashes). Topic index switched public in the same step.
+
 **Decided 2026-11-17, ~20:40 UTC (author: "post as meridian21 organization, as public with Apache-2.0"):**
 organisation `Meridian21Lab` (the account's only meridian21 organisation, full name "Meridian21 Lab"), public,
 Apache-2.0 for the weights and the card; the card describes the mechanism at the level of the public code.
