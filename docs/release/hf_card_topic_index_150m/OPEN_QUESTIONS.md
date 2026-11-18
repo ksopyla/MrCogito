@@ -9,7 +9,7 @@ this read are "topic index"; "LSA" names the method and stays credited to its au
 `Meridian21Lab/lsa-140m-11.5bt` → `Meridian21Lab/topic-index-140m-11.5bt` (the old id redirects while it exists).
 
 **2026-11-18 ≈17:03 UTC: uploaded PRIVATE** (author: "Yes, upload private") as `lsa-140m-11.5bt`, renamed as above;
-now <https://huggingface.co/Meridian21Lab/topic-index-140m-11.5bt>, first Hub commit `8066f778`, 99 files (export from MrCogito commit
+now <https://huggingface.co/Meridian21Lab/topic-index-140m-11.5bt> (renamed card uploaded as Hub commit `5426f519`; first commit `8066f778`), 99 files (export from MrCogito commit
 `e380a125`, the card folder, `LICENSE`, `NOTICE`), uploaded from the Mac with the `.env` variable
 `HF_TOKEN_MERIDAIN21_ORG`. Hub smoke test from the repo id passed (`hub_smoke_test.json`). Still private: the public
 switch waits for the author's look at the rendered page and a yes.
@@ -55,8 +55,8 @@ in place of their Triton kernel). Optional: tell the authors before the public s
       the author wants it shorter: the leaderboard rows 5–10, the data-efficiency bullets, the long-document table's
       reference rows.
 - [x] Upload **private** (author's yes, 2026-11-18) and `python -I scripts/hub_smoke_test.py Meridian21Lab/<id>`
-      in a clean venv (torch 2.11 + Transformers 4.57.6 only): passed, revision `8066f778`, sentence loss 2.3029 (CPU,
-      fp32), 20 sampled tokens.
+      in a clean venv (torch 2.11 + Transformers 4.57.6 only): passed at revision `8066f778` and again from the new id
+      at `5426f519` (`hub_smoke_test.json`), sentence loss 2.3029 (CPU, fp32), 20 sampled tokens.
 - [ ] The author looks at the rendered page (figures, tables, links; no strikethrough), then switches it public.
 - [ ] After the public switch: the sibling card's back-link (the sibling session adds it), `library_name` stays.
 - [ ] W&B: the three training runs carry the stale default tags `JeanKaddour/minipile` and `minipile` (the model
