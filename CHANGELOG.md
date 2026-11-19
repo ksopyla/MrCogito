@@ -15,6 +15,13 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-19] - Closed read: room for many documents per row
+
+- `nn/perceiver_ar_lm.make_message_mask_pred` packs the closed read's slot code as doc · 2¹⁷ + close for rows of
+  ≤ 131,072 tokens (≤ 16,383 documents per row) and keeps doc · 2²² (≤ 511 documents) for longer rows. The E38
+  catalogue run crashed in its 16k phase on 2026-11-19 on a row of 2,637 tiny documents. Masks are unchanged
+  wherever the old code ran (close ≤ S − 1 < stride). Test: `tests/test_text_memory.py::test_closed_mask_many_documents_per_row`.
+
 ## [2026-11-14] - Plain W&B names for the AWS long runs
 
 - `training/utils_training.init_wandb` reads `MC_WANDB_NAME` (display name), `MC_WANDB_TAGS` (extra comma-separated
