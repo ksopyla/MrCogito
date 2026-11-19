@@ -42,14 +42,16 @@ def _pair(name):
 
 
 @pytest.mark.parametrize("name", sorted(CASES))
-@pytest.mark.parametrize("packed", [False, True])
+@pytest.mark.parametrize("packed", [False, True, "many"])
 def test_flex_equals_sdpa_forward_and_backward(name, packed):
     flex, ref = _pair(name)
-    S = 640
+    S = 1280 if packed == "many" else 640
     g = torch.Generator().manual_seed(3)
     ids = torch.randint(3, 80, (2, S), generator=g).cuda()
     doc = None
-    if packed:
+    if packed == "many":  # 640 two-token documents per row: past the 511 the closed read's packing allowed until 2026-11-19
+        doc = (torch.arange(S, device="cuda") // 2)[None].expand(2, S).contiguous()
+    elif packed:
         doc = torch.zeros(2, S, dtype=torch.long, device="cuda")
         doc[1, 300:] = 1
     torch.manual_seed(11)  # the E33t index loss samples negatives: the same draws for both backends
