@@ -586,6 +586,22 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     **Reading:** the seed-to-seed swing on RULER (+0.12 / +0.14) is larger than the seed-42 gaps between arms (LSA port
     0.255 / 0.209, catalogue 0.231 / 0.183, e37a 0.185 / 0.136), so one seed per arm cannot rank them on needles; the
     loss and core numbers are seed-stable to ≤ 0.007. Needles at 64k / 128k were not run for seed 7.
+  - **lsa seed 7, the LSA port (full m100 protocol; `e37-b-l40s-lsa-s7` i-0c6c34b1511c4a452, launched 03:53, trunk
+    03:56–13:21, decay 13:21–15:03, evals 15:03–16:08 UTC Nov 20; 12.3 node-hours ≈ $97):** raw loss on positions
+    ≥ 2k, pooled: 4k 2.323, 16k 2.168, 32k 2.250, 64k 2.234, 128k 1.965 (seed 42: 2.322, 2.169, 2.254, 2.245, 1.994);
+    positions < 512 at 16k 2.391 (2.384); read off, ≥ 2k: 2.500 / 2.391 / 2.490 / 2.431 / 2.122 (2.505 / 2.389 / 2.492
+    / 2.435 / 2.126). Core mean 0.405 (0.416; lambada 0.192 vs 0.212, sciq 0.576 vs 0.596, winogrande 0.497 vs 0.522).
+    **RULER mean of 13 tasks 0.266 at 4k, 0.254 at 16k (seed 42: 0.255 / 0.209)**, same files, settings and split:
+    essay number 0.98 / 0.98 (0.88 / 0.84), essay UUID 0.73 / 0.47 (0.55 / 0.27), multi-query 0.21 / 0.20 (0.05 /
+    0.04), multi-value 0.20 / 0.20 (0.12 / 0.14), multi-key-1 0.25 / 0.33 (0.26 / 0.27), filler single needle 0.93 /
+    0.95 (0.96 / 0.95); the word-frequency tasks drop to 0.00 (common words 0.06 / 0.01, frequent words 0.27 / 0.09).
+    **Two-seed reading (e37a vs the LSA port, means of seeds 42 and 7):** RULER 0.243 / 0.206 vs 0.261 / 0.232 at
+    4k / 16k — the LSA port ahead by 0.02–0.03, inside e37a's own seed spread (0.185–0.300 at 4k), so still no
+    ranking on needles. Loss ≥ 2k ties to 32k (≤ 0.004 apart); the LSA port is lower at 64k on both seeds (by 0.005 /
+    0.017) and at 128k by 0.014 on the mean (seed 42: e37a lower by 0.004; seed 7: the LSA port by 0.032). Core 0.417
+    vs 0.411, both within a point of dense 0.422. The LSA port's seed swing (core 1.1 points, 128k loss 0.029) is
+    larger than e37a's (≤ 0.007), so seed stability of loss and core holds for e37a, not in general. Neither seed-7
+    run had needles at 64k / 128k. AWS ledger after both seeds ≈ $3,089 of the $4,000 budget.
   - **64k stage at 100M (the "10M context architecture analysis" session's request, author: "Yes, run it"; recipe
     of e33n-lsa-testbed a729ca7, branch e37-long = it + the jobs + cached decoding): 0.1B LongDocs-lite tokens in
     rows of 65,536 from the stage-B decay final, 191 steps of 8 rows (micro 1 × accum 2 × 4 GPUs), lr 6.4e-5 →
