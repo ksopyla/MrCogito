@@ -568,7 +568,24 @@ what each read opens; copy-source hit rate; attention by distance), tokens per s
     restart. **Stopped 05:13 UTC Nov 15** at trunk checkpoint-4004 of 5722 (70 %), the checkpoint verified complete in
     S3 first (4 of 4 key files, 0 pending); node terminated, ≈ 7.4 h on the slot. The Muon test passed (lower by 0.040
     at step 2000, pass mark 0.03), so the leaderboard runs use Muon at lr 0.01; the seeds wait for the dense_rope
-    leaderboard run's `eval_core_long.json`.
+    leaderboard run's `eval_core_long.json`. **Resumed Nov 19** (author, Nov 19 ~20:45 UTC: "Yes, start now", the
+    seeds beside the catalogue leaderboard rerun; the G spot quota is 96 vCPU since ~Nov 18 = two 4-GPU nodes):
+    `e37-b-l40s-e37a-s7` i-055772041a91263f8 up 20:47 UTC, "trunk restarts from checkpoint-4004" 20:49, the same
+    speed (~80k tokens/s) and the eval loss continuing smoothly (3.171 at step 4000 → 3.149 at 4500); trunk done
+    23:59, decay 00:00–02:06, evals 02:06–03:43 UTC Nov 20. lsa seed 7 launched 03:53 UTC Nov 20
+    (`e37-b-l40s-lsa-s7` i-0c6c34b1511c4a452). Launch queue and helpers in the worktree's gitignored `Cache/ops/`
+    (the scratchpad copies in /private/tmp were deleted by macOS's cleanup on ~Nov 18, which stalled the gate).
+  - **e37a seed 7 (full m100 protocol; ≈ 7.4 + 7.0 node-hours ≈ $115):** everything but the needles repeats seed 42.
+    Raw loss on positions ≥ 2k, 5 sources (4 at 128k), pooled over tokens: 4k 2.318, 16k 2.165, 32k 2.251, 64k 2.251,
+    128k 1.997 (seed 42: 2.320, 2.166, 2.254, 2.250, 1.990); positions < 512 at 16k 2.393 (2.388); core mean of 7
+    accuracy tasks 0.417 (0.416). With the length scale off it loses more past 16k: 64k 2.422 (seed 42 2.317), 128k
+    2.610 (2.156). **RULER mean of 13 tasks 0.300 at 4k, 0.276 at 16k (seed 42: 0.185 / 0.136)** — same files, settings
+    and task split per harness call as seed 42. The gain is the essay-haystack needles: essay number 0.99 / 0.99 (0.58
+    / 0.14), essay UUID 0.83 / 0.64 (0.13 / 0.03); also multi-query 0.20 / 0.23 (0.08 / 0.06), multi-value 0.21 / 0.20
+    (0.12 / 0.15), multi-key-1 0.36 / 0.36 (0.29 / 0.26); the filler single needle 0.88 / 0.91 (0.96 / 0.96).
+    **Reading:** the seed-to-seed swing on RULER (+0.12 / +0.14) is larger than the seed-42 gaps between arms (LSA port
+    0.255 / 0.209, catalogue 0.231 / 0.183, e37a 0.185 / 0.136), so one seed per arm cannot rank them on needles; the
+    loss and core numbers are seed-stable to ≤ 0.007. Needles at 64k / 128k were not run for seed 7.
   - **64k stage at 100M (the "10M context architecture analysis" session's request, author: "Yes, run it"; recipe
     of e33n-lsa-testbed a729ca7, branch e37-long = it + the jobs + cached decoding): 0.1B LongDocs-lite tokens in
     rows of 65,536 from the stage-B decay final, 191 steps of 8 rows (micro 1 × accum 2 × 4 GPUs), lr 6.4e-5 →
