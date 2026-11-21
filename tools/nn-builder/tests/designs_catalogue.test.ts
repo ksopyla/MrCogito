@@ -45,6 +45,13 @@ const EXPECTED: Record<string, { total: number; core: number }> = {
   e37_notes_open_m100: { total: 166_375_003, core: 100_554_203 },
   e37a_m100: { total: 162_356_379, core: 96_535_579 },
   e37b_m100: { total: 169_141_915, core: 103_321_115 },
+  // E38 leaderboard size (m120t, dev 99d808a7; counted 21 Nov with the trainer's factory on the meta device, SmolLM2
+  // vocabulary 49,152): the output is tied to the input table through one 896 → 384 projection (core = total − input
+  // embedding 20,366,208 − that projection 344,064 = count()'s non-embedding number)
+  e38_concept_memory_150m: { total: 141_506_208, core: 120_795_936 },
+  e38_topic_index_150m: { total: 141_506_208, core: 120_795_936 },
+  e38_catalogue_150m: { total: 145_607_265, core: 124_896_993 },
+  e38_full_attention_150m: { total: 141_506_208, core: 120_795_936 },
   // the champion and the references
   e31_li_m1_cap30m: { total: 35_129_900, core: 33_947_436 },
   lsa_paper_native_0p8b: { total: 752_393_024, core: 498_113_344 },

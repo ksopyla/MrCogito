@@ -168,17 +168,25 @@ export function cellCost(cell: Cell, ctx: CellCtx): CellCost {
       const P = ctx.seq.P;
       const emb = ctx.embedding?.cell;
       const issues: string[] = [];
+      // factorized (with tied): logits = (P·x)·Eᵀ, P [table width × stream width], E the stack's table counted once
+      const fact = Boolean(cell.tied && cell.factorized);
+      const e = fact && emb ? emb.dim : d;
+      if (cell.factorized && !cell.tied) issues.push("a factorized head reuses the token table: turn on tied");
       if (cell.tied && !emb) issues.push("tied head without an embedding in this stack");
-      if (cell.tied && emb && (emb.dim !== d || emb.vocab !== cell.vocab)) issues.push("tied head needs the embedding table to be vocab × width");
+      if (cell.tied && !fact && emb && (emb.dim !== d || emb.vocab !== cell.vocab)) issues.push("tied head needs the embedding table to be vocab × width (or factorized: through a projection)");
+      if (fact && emb && emb.vocab !== cell.vocab) issues.push("a factorized tied head needs the embedding's vocabulary");
       return cost({
         widthOut: d,
         parts: [
           { name: "final norm", params: normParams(cell.final_norm, d) },
+          { name: "projection to the table (width → table width)", params: fact ? d * e : 0 },
           { name: "output matrix", params: cell.tied ? 0 : cell.vocab * d },
           { name: "bias", params: cell.bias ? cell.vocab : 0 },
         ],
-        flops: [{ name: "logits", fwd: 2 * d * cell.vocab * P, bwd: 2 }],
-        act: (normActs(cell.final_norm, d, ctx.bytes) + (cell.chunked ? 0 : 8 * cell.vocab)) * P,
+        flops: fact
+          ? [{ name: "projection to the table", fwd: 2 * d * e * P, bwd: 2 }, { name: "logits", fwd: 2 * e * cell.vocab * P, bwd: 2 }]
+          : [{ name: "logits", fwd: 2 * d * cell.vocab * P, bwd: 2 }],
+        act: (normActs(cell.final_norm, d, ctx.bytes) + (fact ? ctx.bytes.act * e : 0) + (cell.chunked ? 0 : 8 * cell.vocab)) * P,
         workspace: (cell.chunked ? Math.min(P, 1024) * 3 : P) * cell.vocab * 4,
         issues,
       });

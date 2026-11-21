@@ -13,10 +13,12 @@ design when a spec, the arm table (`ARMS` in `scripts/run_e33n.py`), `nn/` or a 
   `<experiment> · <plain name> · <total> (<core> core)`.
 - **core** = the total without the word tables (the input embedding with its input MLP, and the output layer).
   This is the Kaplan et al. convention. The testbed is *called* "30M" after the notebook arms' 30.2M core. Their
-  total is 72.7M, because the GPT-2 vocabulary puts 42.4M weights into the two word tables.
+  total is 72.7M, because the GPT-2 vocabulary puts 42.4M weights into the two word tables. The E38 models (150M
+  leaderboard size) tie the output to the input table through one projection, so their output layer is that
+  projection alone (344,064 weights) and the shared table is counted once, in the input embedding.
 - **Exact against the trainer.** For the testbed arms: `evaluation/text_checks.count_params` on
   `scripts/run_e33n.py model_args(arm, size, ffn)`, with the FFN width the trainer really uses (`fit()`: 1472 at
-  s30, 2624 at m100; not the `model_args()` default of 1536). For the champion: `evaluation/bapo_models.build_model`
+  s30, 2624 at m100, 2816 as set at m120t; not the `model_args()` default of 1536). For the champion: `evaluation/bapo_models.build_model`
   as the exam runner calls it. The LSA session checked the testbed arms against the stored weights of the trained
   checkpoints on 7 Nov: LSA port seed 42, notes_open and catalogue seed 1, all equal.
 - **⚑ in the table** = the arm has a mechanism with no builder field, usually because it has no weights: a top-k
@@ -36,8 +38,9 @@ node scripts/designs.mjs --check                          # print counts and has
 npm test && npm run typecheck
 ```
 
-`scripts/designs.mjs` starts from the as-trained E33n designs (`e33n_s30`, `e33n_m100`). It applies one change per
-arm and builds the E37 and champion designs in code. Then it writes each file's name, description and `derived`
+`scripts/designs.mjs` starts from the as-trained E33n designs (`e33n_s30`, `e33n_m100`; the 150M leaderboard trunk
+`m120t` is built in code from `e33n_m100`). It applies one change per arm and builds the E37 and champion designs in
+code. Then it writes each file's name, description and `derived`
 block, and this table between the markers. Edit the table through the script, not by hand.
 
 ## Designs
@@ -70,6 +73,10 @@ block, and this table between the markers. Edit the table through the script, no
 | `e37_notes_open_m100` | **E37** · notes open their tokens (`notes_open`) | E33p's notes_open at 100M (the best E33-family read on natural text; the catalogue may replace it) ⚑ | queued | arch-10m @ `7f64a09` · E37_concept_memory.md | 166,375,003 | 100,554,203 | 2026-11-07 |
 | `e37a_m100` | **E37** · concept memory (`e37a`) | e37a at 100M ⚑ | queued | arch-10m @ `95ee75d` · E37_concept_memory.md | 162,356,379 | 96,535,579 | 2026-11-07 |
 | `e37b_m100` | **E37** · concept memory + reasoner (`e37b`) | e37b at 100M (the reasoner's input map is 896 → 512) ⚑ | queued | arch-10m @ `95ee75d` · E37_concept_memory.md | 169,141,915 | 103,321,115 | 2026-11-07 |
+| `e38_concept_memory_150m` | **E38** · concept memory (`e37a`) | e37a at the 150M leaderboard size (m120t): 13 layers (2 more stacked), FFN 2,816, the SmolLM2 vocabulary (49,152), the output tied to the input table through one 896 → 384 projection ⚑ | released | dev @ `99d808a7` · E38_long_budget_mix.md | 141,506,208 | 120,795,936 | 2026-11-21 |
+| `e38_topic_index_150m` | **E38** · topic index (`lsa`) | Latent Sparse Attention (Kubicek et al.; our port, as in E33p and E37) at the 150M leaderboard size (m120t): 13 layers (2 more stacked), FFN 2,816, the SmolLM2 vocabulary (49,152), the output tied to the input table through one 896 → 384 projection ⚑ | released | dev @ `99d808a7` · E38_long_budget_mix.md | 141,506,208 | 120,795,936 | 2026-11-21 |
+| `e38_catalogue_150m` | **E38** · catalogue (`catalogue_reuse_n4`) | the catalogue with re-opening, 64 notes per 256-token page (4 tokens per note), at the 150M leaderboard size (m120t): 13 layers (2 more stacked), FFN 2,816, the SmolLM2 vocabulary (49,152), the output tied to the input table through one 896 → 384 projection; no m100 catalogue was drawn, so the parent is the same arm at 30M ⚑ | done | dev @ `99d808a7` · E38_long_budget_mix.md | 145,607,265 | 124,896,993 | 2026-11-21 |
+| `e38_full_attention_150m` | **E38** · full attention (`dense_rope`) | the full-attention ceiling, with RoPE θ 500k on the reading layer too (the fair control; e37_dense_m100 reads without a position code), at the 150M leaderboard size (m120t): 13 layers (2 more stacked), FFN 2,816, the SmolLM2 vocabulary (49,152), the output tied to the input table through one 896 → 384 projection ⚑ | done | dev @ `99d808a7` · E38_long_budget_mix.md | 141,506,208 | 120,795,936 | 2026-11-21 |
 | `e31_li_m1_cap30m` | **E31** · latent-memory champion (capability checks) (`e31_li_m1`) | the capability-check champion: E31's sliding-window latent memory on the DNA tasks — width 960, 4 layers (pre-encoder, global read, 2 stack layers), the E31 page writer (256-token pages every 192, 32 notes per page, one key and value per note), reads after QUERY go to the notes only ⚑ | done | dev @ `9253d7a` · E31_sliding_window_latent_memory.md | 35,129,900 | 33,947,436 | 2026-09-27 |
 | `lsa_paper_native_0p8b` | **LSA** · LSA as published (Qwen3.5-0.8B) | the outside reference: Gated DeltaNet hybrid, 24 layers of width 1024, the LSA read on every fourth layer ⚑ | done | e33n-lsa-testbed @ `1769cf9` · 1_Strategy_and_Plans (architectures review); arXiv 2610.42147 | 752,393,024 | 498,113,344 | 2026-10-30 |
 | `e33m_plain_30m` | **E33** · notebook (text checks) | E33's notebook on the text checks (4,096-token vocabulary): the E31c writer plus a 4-round loop over the read layer and the next, the order term and count heads | done | dev @ `edb1c00` · E33_iterative_concept_reads.md | 29,946,402 | 25,911,266 | 2026-10-24 |
@@ -142,6 +149,16 @@ or the older capability-probe arches). The first pass did not draw them; any one
   three stage-A catalogue designs are unchanged (same hashes). Stage A's scores (`a372da3`) go into their notes:
   catalogue 71 % of the gap at 16k, two-level 68 %, re-opening 91 % (now `done`, the winner). Stage C (`0227838`)
   is a proposal awaiting approval with no new arm yet. arch-10m `3833ca1`/`07ca3a5` change only eval scripts.
+- **2026-11-21 · dev `99d808a7`:** the four ~150M models of E38's leaderboard recipe (size `m120t`, 11.5B tokens of
+  `m21mix_v2` each): `e38_concept_memory_150m` (`e37a`, Meridian21Lab/concept-memory-140m-11.5bt) and
+  `e38_topic_index_150m` (`lsa`, Meridian21Lab/topic-index-140m-11.5bt), both public since 18 Nov;
+  `e38_catalogue_150m` (`catalogue_reuse_n4`, trained, not released); `e38_full_attention_150m` (`dense_rope`,
+  RoPE on the reading layer too; trained and scored, not released). Totals 141,506,208 (catalogue 145,607,265),
+  core 120,795,936 (124,896,993), equal to the trainer's factory on the meta device. New engine option:
+  `lm_head.factorized` (with `tied`), the output tied to the input table through one projection (the trainer's
+  `TiedFactorizedHead`): its weights are the projection alone, its FLOPs the projection plus logits against the
+  table. Every earlier design is unchanged (same totals and hashes). The m120t trunk is built in code from
+  `e33n_m100` (13 layers, the U-net over 13, no RoPE on L7 and L11, FFN 2,816, SmolLM2 vocabulary).
 
 ## Branches last seen
 

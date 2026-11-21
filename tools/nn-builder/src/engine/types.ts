@@ -131,7 +131,10 @@ export interface PoolCell {
 export interface LmHeadCell {
   type: "lm_head";
   vocab: number;
-  tied: boolean; // reuse the stack's embedding table (needs dim = width)
+  tied: boolean; // reuse the stack's embedding table (needs dim = width, unless factorized)
+  // with tied: reach the table through one projection, logits = (P·x)·Eᵀ with P [dim × width] the only new weights,
+  // so the table may be narrower than the stream (MrCogito's TiedFactorizedHead)
+  factorized?: boolean;
   bias: boolean;
   final_norm: NormKind;
   z_loss: number;

@@ -431,7 +431,8 @@ export function analyze(g: Graph, opts: { S?: number } = {}): Analysis {
           if (!embCell || !headCell) issues.push({ where: grp.id, msg: "soft feedback needs an embedding and an LM head in the same stack" });
           else {
             const V = headCell.vocab, e = embCell.dim;
-            lensFwd = (2 * w * V + 2 * V * e + embeddingProjFlops(embCell, w)) * seq.P * (grp.count - 1);
+            const readFwd = headCell.tied && headCell.factorized ? 2 * w * e + 2 * e * V : 2 * w * V; // factorized: through P
+            lensFwd = (readFwd + 2 * V * e + embeddingProjFlops(embCell, w)) * seq.P * (grp.count - 1);
             lensAct = (8 * V + bytes.act * (e + 2 * w) + bytes.resid * w) * seq.P * (grp.count - 1);
           }
         }

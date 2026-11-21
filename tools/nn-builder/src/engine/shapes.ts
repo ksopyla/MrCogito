@@ -119,12 +119,16 @@ export function cellTensorSteps(g: Graph, a: Analysis, cellId: string, b: number
       push("one vector per page", X(out));
       break;
     }
-    case "lm_head":
+    case "lm_head": {
       push("input", X(d));
       if (c.final_norm !== "none") push("final norm", X(d));
+      const table = home.stack.rows.flatMap((r) => r.cells).find((x) => x.type === "embedding");
+      if (c.tied && c.factorized && table?.type === "embedding")
+        push("projection to the token table's width", [B, ...pos, dim("e", table.dim)], "then logits against the shared table [V, e]");
       push("logits", [B, ...pos, dim("V", c.vocab)], c.chunked ? "computed in chunks; never kept whole" : undefined);
       push("loss", [], "one number: mean cross-entropy against the next token");
       break;
+    }
     case "custom":
       push("input", X(d));
       push(c.note || "custom", X(out));

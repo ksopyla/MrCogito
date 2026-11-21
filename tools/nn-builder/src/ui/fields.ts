@@ -99,6 +99,7 @@ export const CELL_FIELDS: Record<CellType, Field[]> = {
   lm_head: [
     { key: "vocab", label: "Vocabulary", kind: "int", min: 2, max: 262144, log: true },
     { key: "tied", label: "Tie to the token table", kind: "bool" },
+    { key: "factorized", label: "Through a projection to the table's width (the table may be narrower)", kind: "bool", show: (c) => Boolean(c.tied) },
     { key: "bias", label: "Bias", kind: "bool" },
     { key: "final_norm", label: "Final norm", kind: "select", options: NORM },
     { key: "chunked", label: "Chunked loss (no full logits kept)", kind: "bool" },

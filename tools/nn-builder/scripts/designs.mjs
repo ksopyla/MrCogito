@@ -8,8 +8,9 @@
 //
 // Truth for every count: the trainer's own factory (scripts/run_e33n.py model_args(arm, size, ffn) through
 // training/concept_pretraining_factories, = evaluation/text_checks.count_params; FFN from fit(): 1472 at s30, 2624
-// at m100) or, for the champion, evaluation/bapo_models.build_model as the exam runner calls it. The numbers are
-// pinned in tests/designs_catalogue.test.ts; this script only draws.
+// at m100, 2816 as set at m120t, the E38 leaderboard size built in code by m120tBase()) or, for the champion,
+// evaluation/bapo_models.build_model as the exam runner calls it. The numbers are pinned in
+// tests/designs_catalogue.test.ts; this script only draws.
 import { createServer } from "vite";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
@@ -42,9 +43,54 @@ const attnCell = (id, o) => ({
 const SIZE = {
   s30: { base: "e33n_s30", pre: 2, width: 576, heads: 9, ffn: 1472, emb: 13_493_056, out: 28_948_032 },
   m100: { base: "e33n_m100", pre: 3, width: 896, heads: 14, ffn: 2624, emb: 20_790_528, out: 45_030_272 },
+  // the E38 Tiny-ML leaderboard size (SIZES["m120t"]): built in code from e33n_m100, see m120tBase()
+  m120t: { build: () => m120tBase(), pre: 3, width: 896, heads: 14, ffn: 2816, emb: 20_366_208, out: 344_064 },
 };
 const readRow = (z) => `main.L${SIZE[z].pre}`;
-const base = (z) => load(SIZE[z].base);
+const base = (z) => (SIZE[z].build ? SIZE[z].build() : load(SIZE[z].base));
+
+/** The 150M leaderboard trunk (scripts/run_e33n.py SIZES["m120t"], 2026-11-14): e33n_m100 with 9 stacked layers
+ *  instead of 7 (13 in all), FFN 2,816 (fixed, not fitted), the SmolLM2 vocabulary (49,152) and the output tied to
+ *  the input table through one projection (nn/perceiver_ar_lm.TiedFactorizedHead). The writer and the notebook read
+ *  stay as in e33n_m100; the arms replace the reading layer as at the other sizes. Never written as a file. */
+function m120tBase() {
+  const g = load("e33n_m100");
+  const V = 49_152, F = 2816;
+  const main = g.stacks.find((s) => s.id === "main");
+  Object.assign(rowOf(g, "main.input").cells.find((c) => c.type === "embedding"),
+    { vocab: V, label: "SmolLM2 token table 49,152 × 384 (shared with the output) + input MLP" });
+  rowOf(g, "main.input").cells.find((c) => c.type === "positional").label = "RoPE θ 500k (not on the reading layer or on L7 and L11)";
+  const head = main.rows.pop();
+  for (const i of [11, 12]) {
+    const r = clone(rowOf(g, "main.L10"));
+    r.id = `main.L${i}`;
+    for (const c of r.cells) c.id = c.id.replace("main.L10.", `main.L${i}.`);
+    main.rows.push(r);
+  }
+  main.rows.push(head);
+  for (const r of main.rows) {
+    const m = /^main\.L(\d+)$/.exec(r.id);
+    if (!m) continue;
+    const i = Number(m[1]);
+    for (const c of r.cells) if (c.type === "ffn") Object.assign(c, { hidden: F, label: `SwiGLU ${F}` });
+    if (i < SIZE.m120t.pre + 1) continue;
+    // nope_every 4 over the stack layers L4–L12 (PerceiverARLM: every 4th stack layer has no RoPE): L7 and L11
+    const nope = i === 7 || i === 11;
+    if (i > 4) r.label = `stack ${i - 4}${i === 5 ? " (the coda's first)" : ""} · local 128${nope ? " · no RoPE" : ""}`;
+    if (nope) Object.assign(r.cells.find((c) => c.type === "attention"), { nope: true, label: "local window 128, no RoPE" });
+  }
+  // U-net over 13 layers (n_skip 6): L0–L5 push, L7–L12 pop in reverse; a scalar weight each, zero at the start
+  const pairs = [[5, 7], [4, 8], [3, 9], [2, 10], [1, 11], [0, 12]];
+  g.edges = [
+    ...pairs.map(([a, b], k) => ({ id: `main.skip${k}`, kind: "skip", from: { stack: "main", row: `main.L${a}` }, to: { stack: "main", row: `main.L${b}` }, weight: "scalar" })),
+    ...g.edges.filter((e) => e.kind !== "skip"),
+  ];
+  Object.assign(head.cells.find((c) => c.type === "lm_head"), { vocab: V, tied: true, factorized: true,
+    label: "tied output: 896 → 384 projection, then logits against the shared SmolLM2 table (TiedFactorizedHead)" });
+  // E38 leaderboard run: 128 rows of 4k per step, 4 rows per pass, Muon; the builder has no L40S preset (H100 shown)
+  Object.assign(g.run, { row_length: 4096, rows_per_step: 128, micro_batch: 4, optimizer: "muon", token_budget: 11.5e9, gpu: "h100_80", gpu_count: 4 });
+  return g;
+}
 
 /** The read layer of a size and its attention cell. */
 function readLayer(g, z) {
@@ -70,11 +116,15 @@ const ARM = {
     rowOf(g, "notes.out").label = "notes (built, never read)";
     return g;
   },
-  dense(z) {
+  /** `rope`: the fair full-attention control (arm dense_rope, par_global_nope false): RoPE θ 500k on the read too. */
+  dense(z, { rope = false } = {}) {
     const g = trunkOnly(base(z));
     const { r, a } = readLayer(g, z);
-    Object.assign(a, { window: 0, memory: false, dual_key: false, nope: true, label: "full causal read of every earlier token, no RoPE" });
-    r.label = "reading layer · full read";
+    Object.assign(a, { window: 0, memory: false, dual_key: false, nope: !rope,
+      label: `full causal read of every earlier token, ${rope ? "with RoPE θ 500k (as the local layers)" : "no RoPE"}` });
+    r.label = `reading layer · full read${rope ? " with RoPE" : ""}`;
+    if (rope) rowOf(g, "main.input").cells.find((c) => c.type === "positional").label =
+      z === "m120t" ? "RoPE θ 500k (the reading layer too; not on L7 and L11)" : "RoPE θ 500k (every layer, the reading layer too)";
     return g;
   },
   full(z) {
@@ -248,6 +298,7 @@ const SPEC = {
   E31: "docs/experiments_specs/ahead/E31_sliding_window_latent_memory.md",
   LSA: "docs/1_Strategy_and_Plans (architectures review); arXiv 2610.42147",
   E33: "docs/experiments_specs/ahead/E33_iterative_concept_reads.md",
+  E38: "docs/experiments_specs/ahead/E38_long_budget_mix.md",
 };
 
 const UX = {
@@ -261,6 +312,11 @@ const STAGE_A = "Stage A has the author's go-ahead (8 Nov, ≈ $360): one 4-GPU 
 UX.e37b = `${UX.e37} The reasoner's attention over earlier blocks' concepts is counted for its own block only.`;
 UX.catalogueB = "As the catalogue with re-opening: balanced filing, the index loss and the re-opening switch have no weights or builder field. The slot count changes the writer's learned slots and its position prior (slots × 8 heads × page length).";
 const STAGE_B = "Stage B (approved 8 Nov ~17:30 UTC; e33n-lsa-testbed 34eff60): seed 1, the stage-A recipe against the same seed-1 controls; one on-demand H100 per model from ~18:00 UTC (b13a77b; the 4-GPU spot node was refused), about 8–10 h each. Winner: the best 16k share whose 64k share does not fall below it. Not scored yet.";
+// E38: the four ~150M models of the Tiny-ML leaderboard recipe (size m120t), all on the same 11.5B-token mix
+const TRAIN150 = "Protocol (E38 leaderboard recipe): 11.5B tokens of m21mix_v2 (SmolLM2 tokens): 8.0B in rows of 4,096, then 3.0B at 16,384, then 0.5B at 65,536; 128 rows of 4k per step (32 of 16k, 8 of 64k); Muon from one peak (0.01; the 64k phase at a tenth) with AdamW; one 4 × L40S AWS node per model.";
+const M120T = "the 150M leaderboard size (m120t): 13 layers (2 more stacked), FFN 2,816, the SmolLM2 vocabulary (49,152), the output tied to the input table through one 896 → 384 projection";
+const TRUNK150 = "Trunk (as the trainer builds m120t): L0–L2 local (window 128), L3 the reading layer, L4 local; [L3, L4] run 4 times with shared weights and a per-round embedding; then L5–L12 local; RoPE θ 500k except on L7 and L11 (every 4th stacked layer); U-net skips L5→L7, L4→L8, L3→L9, L2→L10, L1→L11, L0→L12 (one scalar each, zero at the start); 14 query heads × 64, 1 key/value head, QK norm; SwiGLU 2,816; logits = (h·Pᵀ)·Eᵀ with P [384 × 896] the head's only weights (0.34M instead of an untied head's 44M), softcap 30, z-loss 1e-4.";
+UX.m120t = "The run setup shows 4 × H100 (the builder has no L40S preset) and one optimizer, Muon (the trainer pairs Muon with AdamW). The phase lengths 16k and 64k are not part of the run setup (it shows the 4k phase).";
 
 const ENTRIES = [
   // ---- the 30M LSA testbed: what is training or being decided now
@@ -370,6 +426,31 @@ const ENTRIES = [
   { file: "e37b_m100", id: "E37", plain: "concept memory + reasoner", size: "m100", arm: "e37b", build: () => ARM.e37("m100", 64, true),
     parent: "e37b_s30", what: "e37b at 100M (the reasoner's input map is 896 → 512)", status: "queued", branch: A10, commit: "95ee75d", spec: "E37", date: "2026-11-07", train: TRAIN100,
     extra: `${STAGE_A} Last in the order: the 30M screen shelved the reasoner for stage B (S3 missed, K2 met), but the launch list still includes it. Trains with the length scale on.`, unexpressed: UX.e37b },
+  // ---- E38: the four ~150M models of the Tiny-ML leaderboard recipe (m120t, m21mix_v2, 11.5B tokens each)
+  { file: "e38_concept_memory_150m", id: "E38", plain: "concept memory", size: "m120t", arm: "e37a", build: () => ARM.e37("m120t", 64),
+    parent: "e37a_m100", what: `e37a at ${M120T}`,
+    status: "released", branch: "dev", commit: "99d808a7", spec: "E38", date: "2026-11-21", asOf: "2026-11-21", train: `${TRAIN150} ${TRUNK150}`,
+    hub: "Meridian21Lab/concept-memory-140m-11.5bt",
+    extra: "Public on the Hugging Face Hub since 2026-11-18. Concept settings: 64 concepts of 8 keys per 512-key block, 4 sinks, 512 opened tokens, one summary per other concept; 3 grouping iterations, temperature 0.05, key variance on; the summaries' length scale at 16,384 (concept_sum_len: past it their total weight is held at that length's level, so it acts in the 64k phase).",
+    unexpressed: `${UX.e37.split(" The summaries' length scale")[0]} The summaries' length scale has no weights and no builder field. ${UX.m120t}` },
+  { file: "e38_topic_index_150m", id: "E38", plain: "topic index", size: "m120t", arm: "lsa", build: () => ARM.lsa("m120t"),
+    parent: "e37_lsa_m100", what: `Latent Sparse Attention (Kubicek et al.; our port, as in E33p and E37) at ${M120T}`,
+    status: "released", branch: "dev", commit: "99d808a7", spec: "E38", date: "2026-11-21", asOf: "2026-11-21", train: `${TRAIN150} ${TRUNK150}`,
+    hub: "Meridian21Lab/topic-index-140m-11.5bt",
+    extra: "Public on the Hugging Face Hub since 2026-11-18. Read: buckets of ~8 similar keys per closed 512-key block, a query opens the best buckets (512 keys) + 4 sinks + its last 512 tokens.",
+    unexpressed: `${UX.lsa} ${UX.m120t}` },
+  { file: "e38_catalogue_150m", id: "E38", plain: "catalogue", size: "m120t", arm: "catalogue_reuse_n4", build: () => ARM.catalogue("m120t", { reuse: true, notes: 64 }),
+    parent: "e33t_catalogue_reuse_n4_s30", what: `the catalogue with re-opening, 64 notes per 256-token page (4 tokens per note), at ${M120T}; no m100 catalogue was drawn, so the parent is the same arm at 30M`,
+    status: "done", branch: "dev", commit: "99d808a7", spec: "E38", date: "2026-11-21", asOf: "2026-11-21", train: `${TRAIN150} ${TRUNK150}`,
+    hub: "catalogue-150m-11.5bt (planned; not released)",
+    extra: "Finished training 2026-11-20 05:47 UTC; its model card is being written; not released yet. Writer: 256-token pages without overlap, 64 notes per page, width 256, 2 page layers, notes 512 wide with 8 heads, 2 rounds; 4,100,544 weights (memory_writer) + 513 in the reading layer (4 empty slots and the index temperature).",
+    unexpressed: `${UX.catalogueB} ${UX.m120t}` },
+  { file: "e38_full_attention_150m", id: "E38", plain: "full attention", size: "m120t", arm: "dense_rope", build: () => ARM.dense("m120t", { rope: true }),
+    parent: "e37_dense_m100", what: `the full-attention ceiling, with RoPE θ 500k on the reading layer too (the fair control; e37_dense_m100 reads without a position code), at ${M120T}`,
+    status: "done", branch: "dev", commit: "99d808a7", spec: "E38", date: "2026-11-21", asOf: "2026-11-21", train: `${TRAIN150} ${TRUNK150}`,
+    hub: "full-attention-140m-11.5bt (not released)",
+    extra: "Trained and scored; not released. The ceiling inside 64k: the memory models are checked against it for no harm there; their goal is the context full attention cannot reach.",
+    unexpressed: UX.m120t },
   // ---- the champion and the references
   { file: "e31_li_m1_cap30m", id: "E31", plain: "latent-memory champion (capability checks)", size: "cap30m", arm: "e31_li_m1", build: champion,
     parent: "e31c_plain_30m (preset)", what: "the capability-check champion: E31's sliding-window latent memory on the DNA tasks — width 960, 4 layers (pre-encoder, global read, 2 stack layers), the E31 page writer (256-token pages every 192, 32 notes per page, one key and value per note), reads after QUERY go to the notes only",
@@ -403,19 +484,21 @@ const results = [];
 for (const e of ENTRIES) {
   const g = e.static ? load(e.file) : e.build();
   const c = counts(g);
-  const sizeName = { s30: "30M testbed", m100: "100M testbed", cap30m: "capability-check 30M", "0p8b": "0.8B", "30m": "30M text checks" }[e.size] ?? e.size;
+  const sizeName = { s30: "30M testbed", m100: "100M testbed", m120t: "150M leaderboard size (m120t)", cap30m: "capability-check 30M", "0p8b": "0.8B", "30m": "30M text checks" }[e.size] ?? e.size;
   g.name = `${e.id} · ${e.plain} · ${M(c.total)} (${M(c.core)} core)`;
   if (!e.static || e.file.startsWith("e33n_")) {
+    const truth = e.size === "cap30m" ? " (evaluation/bapo_models.build_model as the exam runner calls it, = the ledger's stored count)."
+      : e.size === "m120t" ? ` (scripts/run_e33n.py count() on fit("${e.arm}", "m120t") — FFN 2816 as set, the trainer's factory on the meta device with the SmolLM2 vocabulary of 49,152: the total with non_embedding=False, the core is count()'s default; the tied table is counted once, in the input embedding).`
+      : " (evaluation/text_checks.count_params on " + (e.size === "m100" ? m100(e.arm) : s30(e.arm)) + ").";
     const params = `Parameters: ${c.total.toLocaleString("en-US")} in total, ${c.core.toLocaleString("en-US")} without the word tables ` +
-      `(input embedding ${c.emb.toLocaleString("en-US")} + output layer ${c.out.toLocaleString("en-US")}); exact against the trainer's own count` +
-      (e.size === "cap30m" ? " (evaluation/bapo_models.build_model as the exam runner calls it, = the ledger's stored count)." : " (evaluation/text_checks.count_params on " + (e.size === "m100" ? m100(e.arm) : s30(e.arm)) + ").") +
+      `(input embedding ${c.emb.toLocaleString("en-US")} + output layer ${c.out.toLocaleString("en-US")}); exact against the trainer's own count` + truth +
       (e.size.startsWith("s30") || e.size === "s30" ? " The testbed is called “30M” after the notebook arms' 30.2M without word tables (Kaplan et al.'s convention)." : "");
     g.description = [
-      `${e.id} ${e.arm !== "—" ? `arm ${e.arm}` : ""} — ${e.plain}, ${sizeName}.`.replace("  ", " "),
+      `${e.id} ${e.arm !== "—" ? `arm ${e.arm}` : ""} — ${e.plain}, ${sizeName}${e.hub ? `; Hub id ${e.hub}` : ""}.`.replace("  ", " "),
       e.alias ? `Alias of ${e.alias}: identical architecture.` : "",
       `New against ${e.parent}: ${e.what}.`,
       e.train ?? (e.size === "s30" ? TRAIN30 : ""),
-      `Built ${e.date}; status ${e.status} (as of 2026-11-08). ${e.extra ?? ""}`.trim(),
+      `Built ${e.date}; status ${e.status} (as of ${e.asOf ?? "2026-11-08"}). ${e.extra ?? ""}`.trim(),
       `Spec: ${SPEC[e.spec] ?? e.spec}. Source: origin/${e.branch} @ ${e.commit}.`,
       e.unexpressed ? `Not a builder field: ${e.unexpressed}` : "",
       params,

@@ -780,6 +780,10 @@
         "tied": {
           "type": "boolean"
         },
+        "factorized": {
+          "type": "boolean",
+          "description": "with tied: reach the token table through one projection, logits = (P·x)·Eᵀ with P [table dim × width] (the table may be narrower than the stream)"
+        },
         "bias": {
           "type": "boolean"
         },

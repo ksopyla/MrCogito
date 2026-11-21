@@ -86,7 +86,7 @@ export function cellSub(c: Cell, widthIn: number): string {
     case "pool":
       return c.mode === "mean" ? "page → 1 vector" : `${c.heads} queries per page`;
     case "lm_head":
-      return `${k(c.vocab)}${c.tied ? " · tied" : ""}${c.z_loss ? " · z-loss" : ""}`;
+      return `${k(c.vocab)}${c.tied ? (c.factorized ? " · tied via projection" : " · tied") : ""}${c.z_loss ? " · z-loss" : ""}`;
     case "custom":
       return "";
   }
