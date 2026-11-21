@@ -397,8 +397,12 @@ The release folder is written by `scripts/export_hub_model.py` (modeling code ge
 - 🤗 `generate` runs over the cached decoder for the catalogue read (`decode_kind` = catalogue); greedy outputs with
   and without the cache are identical token for token (CPU, fp32, 20 new tokens).
 - Clean environments with only torch 2.11 and Transformers (`python -I scripts/hub_smoke_test.py <folder> --local`):
-  passed on Transformers 4.57.6 and 5.23.0, the same sentence loss (2.3409 nats per token) and the same seed-0
-  sample on both.
+  passed on Transformers 4.57.6 and 5.23.0, the same sentence loss (2.3409 nats per token, bf16 on CUDA) and the same
+  seed-0 sample on both.
+- From the Hub id, in the same clean environments (`python -I scripts/hub_smoke_test.py
+  Meridian21Lab/catalogue-150m-11.5bt`, the repository still private, 2026-11-21, CPU, fp32): passed on Transformers
+  4.57.6 and 5.23.0, the same sentence loss (2.3307 nats per token) and the same seed-0 sample on both
+  (`hub_smoke_test.json`).
 - A whole 64k-token text through `from_pretrained` with `attn_backend="flex"`, `labels` and `logits_to_keep=1`: one
   pass, 10 s and 4.0 GB peak GPU memory on an RTX 3090 (bf16); without `logits_to_keep` the logits of all 64k
   positions need 12 GB more.
