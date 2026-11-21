@@ -56,8 +56,8 @@ A 145.6M-parameter English base language model, trained from scratch on 11.5B to
 $360. Its long-range read is a **catalogue**, our own design: as it reads, a small learned writer files every
 256-token page under 64 index cards, about four tokens per card; for every next word the model compares itself with
 the cards of all earlier pages, pulls the best ones and rereads their tokens word for word. The cards only decide
-what to reread; the model never reads a summary in their place. A second training signal teaches the cards to point
-where the model's attention actually lands.
+what to reread; the model never reads a summary in their place. A separate training signal, the only one the writer
+receives, teaches the cards to point where the model's attention actually lands.
 
 It is a public model of [MrCogito](https://ai.ksopyla.com/projects/concept-reasoning/), a project building models that
 compress long text into concepts and reason over them. A research release: base model, one training seed, not
@@ -67,9 +67,9 @@ Meridian21 trains several models on the same data, in the same order, for the sa
 and changes only the reading layer, so each card compares them on the same tests. Released so far:
 [concept-memory-140m-11.5bt](https://huggingface.co/Meridian21Lab/concept-memory-140m-11.5bt) (a concept memory),
 [topic-index-140m-11.5bt](https://huggingface.co/Meridian21Lab/topic-index-140m-11.5bt) (Latent Sparse Attention),
-this model, and [full-attention-140m-11.5bt](https://huggingface.co/Meridian21Lab/full-attention-140m-11.5bt), a
-standard transformer that rereads every earlier token: the ceiling inside its 64k training length, which the three
-memory reads are built to go past. The three memory models tie on the seven standard tasks (mean 46.5, 46.5 and
+this model, and [full-attention-140m-11.5bt](https://huggingface.co/Meridian21Lab/full-attention-140m-11.5bt), the
+same layers with a reading layer that rereads every earlier token (full attention): the reference inside its 64k
+training length, which the three memory reads are built to go past. The three memory models tie on the seven standard tasks (mean 46.5, 46.5 and
 46.2 %); this model places highest of the three on the Tiny-ML Leaderboard (21st of 101), the other two read long
 documents slightly better (0.795–0.797 against 0.808 bits per byte) and find more facts far back (RULER at 8k
 0.44–0.54 against 0.41). Inside 64k, where full-attention-140m-11.5bt still fits, the catalogue costs little against
@@ -130,9 +130,9 @@ in fp32). Long documents: our cross-model test (below). Accuracy in %, higher is
 | Tiny-ML Leaderboard place (of 101) ⁵ | | 21st | 23rd | 9th | 44th (over the 150M cap) | 12th (over the 150M cap) |
 
 ¹ [full-attention-140m-11.5bt](https://huggingface.co/Meridian21Lab/full-attention-140m-11.5bt), Meridian21's
-standard transformer on the same data: same data, order, budget and layers, with a reading layer that rereads every
-earlier token (full attention). Inside its 64k training length it is the ceiling for the memory reads, which are
-built for the lengths beyond it; differences inside 64k show what the read costs, not a contest.
+full-attention model on the same data: same data, order, budget and layers, with a reading layer that rereads every
+earlier token (full attention, rotary positions). Inside its 64k training length it is the reference for the memory
+reads, which are built for the lengths beyond it; differences inside 64k show what a read costs, not a contest.
 ² SmolLM2-135M's **earliest public training checkpoint** (step 240,000, ≈252B tokens, 22× ours), the closest to our
 budget a reader can check; its final ≈2T-token model is in the leaderboard table below. These early checkpoints read
 2,048 tokens; SmolLM2's 8k context came in its last training phase.
@@ -158,7 +158,7 @@ topic-index-140m-11.5bt and concept-memory-140m-11.5bt on the seven standard tas
 science quiz is 1.5–2.0 points higher (50.42 % against 48.40 % and 48.95 %, about 1.5 standard errors); long
 documents 0.012–0.014 bits per byte behind (0.808 against 0.797 and 0.795; the other two better on 96–98 % of
 documents); RULER 0.02–0.06 below concept-memory-140m-11.5bt and 0.08–0.13 below topic-index-140m-11.5bt. Against
-full-attention-140m-11.5bt, the ceiling inside 64k: level on the seven standard tasks (46.5 % against 46.2 %),
+full-attention-140m-11.5bt, the reference inside 64k: level on the seven standard tasks (46.5 % against 46.2 %),
 WikiText (0.966 against 0.967 bits per byte), long documents (0.808 against 0.812) and RULER at 8k (0.41 each);
 grammar 0.51 points higher (80.64 % against 80.13 %); RULER 0.03 lower at 4k, and at 16k and 32k full attention's
 score falls further (0.25 and 0.20 against 0.36 and 0.29). Paired differences with intervals:
@@ -199,7 +199,7 @@ far past": the own last 4k tokens kept, everything older taken from a different 
   0.835), and worse than the real past on all 55 documents.
 - **Next to the other models on the same data:** 0.012 bits per byte behind topic-index-140m-11.5bt and 0.014 behind
   concept-memory-140m-11.5bt (they are better on 96 % and 98 % of documents), with a slightly smaller gain from far
-  context (0.042 against 0.049–0.051). Level with full-attention-140m-11.5bt, the ceiling inside 64k (0.808 against
+  context (0.042 against 0.049–0.051). Level with full-attention-140m-11.5bt, the reference inside 64k (0.808 against
   0.812, difference [−0.009, +0.001]), which gains 0.034 from 1k to 28k and 0.003 more from 28k to 61k.
 
 Our own tests of the read (context cut in our tokens, the far read switched off, 16k and 128k documents) are in
@@ -349,8 +349,9 @@ for each new question the student flips through the cards, pulls the best ones a
 
 A query scores every card of the pages before its own by cosine similarity (its best-matching head counts), keeps
 the 128 best and takes their tokens, best card first, until it holds 512; each of the four passes chooses again. The
-writer learns the filing through the next-token loss and an **index loss** that asks each card's score to predict
-how much of the read's attention its tokens receive once opened. The design differences from the two other memory
+writer learns the filing only through an **index loss** that asks each card's score to predict how much of the
+read's attention its tokens receive once opened: choosing which cards to open passes no gradient, so the next-token
+loss does not reach the writer. The design differences from the two other memory
 reads on the same data: concept-memory-140m-11.5bt also reads a one-line summary of every group it did not open, and
 topic-index-140m-11.5bt builds its groups without gradients from the keys alone (Latent Sparse Attention, Kubicek et
 al.); this model learns its filing. Per token, the read sees at most 1,028 positions word for word, plus one key per
@@ -396,12 +397,12 @@ HotpotQA, SQuAD, the held-out long documents) are not in the training data. Stag
 - **Next to the other memory models on the same data:** level on the standard tests; long documents 0.012–0.014 bits
   per byte behind; RULER 0.02–0.13 lower, mostly on needles among distractor keys and several facts at once; past
   64k it loses the least of the three.
-- **Next to full-attention-140m-11.5bt** (inside 64k, where full attention is the ceiling): level on 64k documents
+- **Next to full-attention-140m-11.5bt** (inside 64k, where full attention is the reference): level on 64k documents
   and on RULER at 8k; 0.03 lower on RULER at 4k; 0.009 nats per token behind on 16k documents (0.4 %). At 128k,
   past both models' training length, full attention is 0.021 nats per token ahead on the whole document.
-- **Training speed of the read:** the 64k stage (0.5B tokens) took 7.5 hours, against 1.7 hours for
-  full-attention-140m-11.5bt on the same tokens; the read scores one card per four earlier tokens, so its search
-  still grows with length.
+- **Speed of the read:** the 64k training stage (0.5B tokens) took 7.5 hours, against 1.7 hours for
+  full-attention-140m-11.5bt on the same tokens, and scoring one 64k-token text takes about 10 s against 1.2 s (one
+  RTX 3090); the read scores one card per four earlier tokens, so its search still grows with length.
 - **Context:** trained and tested to 64k tokens. Past 64k, extra context no longer improves predictions (at 128k, the
   whole document is 0.020 nats per token worse than its last 61k, on 14 of 15 documents); feed the last ≈64k.
 - **Hard RULER tasks:** variable tracking stays at 0.03–0.08 at every length, the UUID tasks at 0.00–0.57, and most

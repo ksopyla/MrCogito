@@ -1,0 +1,140 @@
+{
+  "tag": "ref_smollm2_135m_core7",
+  "model_kind": "hf",
+  "model": "HuggingFaceTB/SmolLM2-135M",
+  "tasks": [
+    "arc_challenge",
+    "arc_easy",
+    "hellaswag",
+    "lambada_openai",
+    "piqa",
+    "sciq",
+    "winogrande",
+    "wikitext"
+  ],
+  "num_fewshot": 0,
+  "limit": null,
+  "max_length": 2048,
+  "elapsed_s": 224.88214778900146,
+  "results": {
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.27986348122866894,
+      "acc_stderr,none": 0.013119040897726017,
+      "acc_norm,none": 0.295221843003413,
+      "acc_norm_stderr,none": 0.01332975029338244
+    },
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.6430976430976431,
+      "acc_stderr,none": 0.009830630210347111,
+      "acc_norm,none": 0.585016835016835,
+      "acc_norm_stderr,none": 0.010110383151961213
+    },
+    "hellaswag": {
+      "alias": "hellaswag",
+      "acc,none": 0.35540728938458477,
+      "acc_stderr,none": 0.004776583530909397,
+      "acc_norm,none": 0.4312885879306911,
+      "acc_norm_stderr,none": 0.004942440746328397
+    },
+    "lambada_openai": {
+      "alias": "lambada_openai",
+      "perplexity,none": 19.040731960162407,
+      "perplexity_stderr,none": 0.6289885653219254,
+      "acc,none": 0.4300407529594411,
+      "acc_stderr,none": 0.00689745350538808
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.6855277475516867,
+      "acc_stderr,none": 0.010833009065106529,
+      "acc_norm,none": 0.6828073993471164,
+      "acc_norm_stderr,none": 0.010858155454380783
+    },
+    "sciq": {
+      "alias": "sciq",
+      "acc,none": 0.841,
+      "acc_stderr,none": 0.011569479368271195,
+      "acc_norm,none": 0.784,
+      "acc_norm_stderr,none": 0.013019735539307761
+    },
+    "wikitext": {
+      "alias": "wikitext",
+      "word_perplexity,none": 23.137119896482947,
+      "word_perplexity_stderr,none": "N/A",
+      "byte_perplexity,none": 1.7994204771283775,
+      "byte_perplexity_stderr,none": "N/A",
+      "bits_per_byte,none": 0.8475323457816208,
+      "bits_per_byte_stderr,none": "N/A"
+    },
+    "winogrande": {
+      "alias": "winogrande",
+      "acc,none": 0.5359116022099447,
+      "acc_stderr,none": 0.014016193433958156
+    }
+  },
+  "versions": {
+    "arc_challenge": 1.0,
+    "arc_easy": 1.0,
+    "hellaswag": 1.0,
+    "lambada_openai": 1.0,
+    "piqa": 1.0,
+    "sciq": 1.0,
+    "wikitext": 2.0,
+    "winogrande": 1.0
+  },
+  "n_samples": {
+    "wikitext": {
+      "original": 62,
+      "effective": 62
+    },
+    "winogrande": {
+      "original": 1267,
+      "effective": 1267
+    },
+    "sciq": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "piqa": {
+      "original": 1838,
+      "effective": 1838
+    },
+    "lambada_openai": {
+      "original": 5153,
+      "effective": 5153
+    },
+    "hellaswag": {
+      "original": 10042,
+      "effective": 10042
+    },
+    "arc_easy": {
+      "original": 2376,
+      "effective": 2376
+    },
+    "arc_challenge": {
+      "original": 1172,
+      "effective": 1172
+    }
+  },
+  "lm_eval_config": {
+    "model": "HuggingFaceTB/SmolLM2-135M",
+    "model_args": null,
+    "model_num_parameters": 134515008,
+    "model_dtype": "torch.bfloat16",
+    "model_revision": "main",
+    "model_sha": "93efa2f097d58c2a74874c7e644dbc9b0cee75a2",
+    "batch_size": null,
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": null,
+    "random_seed": 1234,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  }
+}

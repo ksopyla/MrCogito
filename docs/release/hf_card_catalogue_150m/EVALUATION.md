@@ -48,9 +48,9 @@ Meridian21 trains several models on the same data, in the same order, for the sa
 and changes only the reading layer; every model released from this set gets a column here. The four read the same
 shards in the same order (identical data manifests in all three stages), with the same seed, budget, optimizer,
 schedule and layer stack; only the reading layer differs (this model: 145.6M parameters, 4.1M of them the card
-writer; the other three 141.5M). full-attention-140m-11.5bt rereads every earlier token, so inside its 64k training
-length it is the ceiling: the comparison with it measures what each memory read costs where full attention still
-fits, not a contest.
+writer; the other three 141.5M). full-attention-140m-11.5bt rereads every earlier token (full attention with rotary
+positions; the memory reads use no position code), so inside its 64k training length it is the reference: the
+comparison with it measures what each memory read costs where full attention still fits, not a contest.
 
 | Test | Unit, direction | **catalogue-150m-11.5bt** | full-attention-140m-11.5bt | topic-index-140m-11.5bt | concept-memory-140m-11.5bt |
 |---|---|---:|---:|---:|---:|
@@ -96,7 +96,7 @@ topic-index-140m-11.5bt, but needles among distractor keys (multi-key 1 and 2: 0
 decides which tokens share a card, and balanced filing puts about four tokens on every card, so the card that holds
 the right needle can hold a look-alike distractor too and both are opened; the LSA read groups tokens by the reading
 layer's own keys, and the concept memory also reads a summary of every group, which may help it tell look-alikes
-apart. Against full-attention-140m-11.5bt, the ceiling inside 64k, this model is level on the short tests and on
+apart. Against full-attention-140m-11.5bt, the reference inside 64k, this model is level on the short tests and on
 64k documents, slightly behind on 16k documents (0.4 %) and on RULER at 4k (0.03), level at 8k; full attention's
 RULER score falls faster from 16k on (0.25 and 0.20 at 16k and 32k, against 0.36 and 0.29), most on distractor keys
 and word counting. Inside 64k the catalogue's read costs little; the lengths it is built for lie past 64k, where this
@@ -404,8 +404,8 @@ The release folder is written by `scripts/export_hub_model.py` (modeling code ge
   4.57.6 and 5.23.0, the same sentence loss (2.3307 nats per token) and the same seed-0 sample on both
   (`hub_smoke_test.json`).
 - A whole 64k-token text through `from_pretrained` with `attn_backend="flex"`, `labels` and `logits_to_keep=1`: one
-  pass, 10 s and 4.0 GB peak GPU memory on an RTX 3090 (bf16); without `logits_to_keep` the logits of all 64k
-  positions need 12 GB more.
+  pass, 10 s and 4.0 GB peak GPU memory on an RTX 3090 (bf16; full-attention-140m-11.5bt 1.2 s and 2.5 GB); without
+  `logits_to_keep` the logits of all 64k positions need 12 GB more.
 - The board tests through lm-eval's stock `hf` model on the release folder (`from_pretrained`, bf16,
   2026-11-21 16:14–16:21 UTC): BLiMP 80.64 %, ARC-Easy 50.42 %, WikiText-2 byte perplexity 1.95373; through our
   adapter 80.64 %, 50.42 %, 1.95377 (`eval_results/e38_cat150m_final_hf.json`). A reader running lm-eval on the Hub id
@@ -425,8 +425,8 @@ search: 4 beams, no repeated 3-gram, best by mean log-probability. 60 new tokens
 - **A second seed.** Every number here is seed 42; differences of a point or two between the models on the same data
   are within what a second seed could move.
 - **Long-document benchmarks with real questions** (LongBench, BABILong) and needle tests past 32k.
-- **Speed at inference.** The read runs as masks over PyTorch flex attention; we report training throughput below,
-  not inference speed.
+- **Speed at inference** beyond one measurement (section 9). The read runs as masks over PyTorch flex attention;
+  training throughput is below.
 - **Energy use.**
 
 ## Training procedure
