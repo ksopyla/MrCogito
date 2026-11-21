@@ -14,7 +14,7 @@ import sys
 import numpy as np
 
 LN2 = math.log(2)
-NAMES = {"lsa_m120t_final": "topic-index-140m-11.5bt (this model)", "e37a_m120t_final": "concept-memory-140m-11.5bt",
+NAMES = {"rope_m120t_final": "full-attention-140m-11.5bt", "cat_m120t_final": "catalogue-150m-11.5bt", "lsa_m120t_final": "topic-index-140m-11.5bt (this model)", "e37a_m120t_final": "concept-memory-140m-11.5bt",
          "SmolLM2-135M": "SmolLM2-135M", "pythia-160m": "Pythia-160M",
          "gemma-3-270m": "Gemma 3 270M", "granite-4.0-350m-base": "Granite 4.0 350M base",
          "smollm2_135m_step240k": "SmolLM2-135M at 252B tokens (step 240,000)", "lfm25_350m_base": "LFM2.5-350M-Base"}
