@@ -36,6 +36,9 @@ and (c) find exact facts in real text past 16k — while concept memory keeps it
   reading layer), size `m100` (width 896, 3 prelude layers, reading layer + 1 local layer looped 4 times, one KV
   head of 64, local windows 128). FFN width fitted as before; only the word tables change with the vocabulary
   (49,152 instead of 50,257).
+- **Architecture page (2026-11-21):** `docs/3_Evaluations_and_Baselines/e38_150m_architectures.html` walks the four
+  `m120t` leaderboard models (concept memory, topic index, catalogue, full attention) step by step, with shapes and
+  trainer-exact weights; their NN Builder designs are `tools/nn-builder/designs/e38_*_150m.json`.
 - **Baselines to beat:** E37 stage B, seed 42 — `e33n_m100_e37a_tok3.0e9_seed42` and `e33n_m100_lsa_tok3.0e9_seed42`
   (S3 `runs/e37/`), and their seed-7 repeats (queued 2026-11-13).
 - **What is materially new:** the data and the protocol — tokenizer, mix, three length stages, 11.5B tokens — and

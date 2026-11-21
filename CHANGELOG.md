@@ -15,6 +15,27 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-21] - The 150M family drawn: architecture page and NN Builder designs
+
+**Why:**
+- The author asked for a deep, step-by-step walkthrough of the four ~150M models (concept memory, topic index,
+  catalogue, full attention), refreshed HTML reports and NN Builder designs; none of the `m120t` models had either.
+
+**What changed:**
+- [added] `docs/3_Evaluations_and_Baselines/e38_150m_architectures.html` - one page for the four `m120t` models: a
+  model switch, the network step by step (what each step does, why, shapes at a 16k row, weights), what one reader
+  sees in the reading layer, the four reads side by side, trainer-exact weight tables and the training stages.
+- [added] `tools/nn-builder/designs/e38_*_150m.json` - the four designs, totals pinned to the trainer (141,506,208 ×3;
+  catalogue 145,607,265), with the tied factorised head (output through a 896 → 384 projection onto the shared table).
+- [changed] `docs/experiments_specs/ahead/E38_long_budget_mix.md` - Builds-on points to the page and the designs.
+
+**Found while reading the code:** in the catalogue model the page writer is trained by the index loss only. The cards
+choose what opens but are not in the read (`_attend_catalogue`), so the next-token loss never reaches the writer. The
+writer's parts that only feed its own note keys and values, or the unused page-start address, stay in the graph through
+0× terms and get zero gradient: `addr`, `to_k`, `to_k_read`, `to_v`, `to_v_state`, `k_out_norm`, `out_norm`,
+`read_norm` (164,928 of its 4,100,544 weights). The catalogue card's line "learns the filing through the next-token
+loss and an index loss" overstates the first.
+
 ## [2026-11-14] - E37c follow-up: no-cut control mode, same-document re-exam
 
 **Why:**

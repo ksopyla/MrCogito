@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>150M Model Family</title>
+<style>
+:root{--bg:#fbfaf7;--card:#fff;--ink:#1d1d1b;--mute:#6b6a65;--line:#dedbd2;--a:#2f6f9f;--a2:#d9e8f3;--b:#b8612a;--b2:#f6e3d3;
+  --ok:#2e7d5b;--ok2:#dcefe6;--new:#8a4fbf;--new2:#ece1f6;--bad:#b3403a;--sum:#a08a2a;--sum2:#f3ecc9;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171715;--card:#20201d;--ink:#eceae3;--mute:#a09e96;--line:#3a3934;
+  --a:#7db6de;--a2:#1f3545;--b:#e39a63;--b2:#46301f;--ok:#6cc79c;--ok2:#1d3a2d;--new:#c29be8;--new2:#34264a;--bad:#e2756e;--sum:#d8c26a;--sum2:#3b341a}}
+:root[data-theme="dark"]{--bg:#171715;--card:#20201d;--ink:#eceae3;--mute:#a09e96;--line:#3a3934;--a:#7db6de;--a2:#1f3545;--b:#e39a63;
+  --b2:#46301f;--ok:#6cc79c;--ok2:#1d3a2d;--new:#c29be8;--new2:#34264a;--bad:#e2756e;--sum:#d8c26a;--sum2:#3b341a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+main{max-width:1060px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:24px;margin:6px 0 4px}h2{font-size:18px;margin:34px 0 8px;padding-top:14px;border-top:1px solid var(--line)}
+h3{font-size:13px;margin:0 0 6px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+p{margin:6px 0}.lead{font-size:16px;max-width:860px}.note{color:var(--mute);font-size:13px}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:10px 0}
+.grid2{display:grid;grid-template-columns:1.15fr 1fr;gap:12px}@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.bar{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--ink);padding:7px 11px;font:inherit;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}.seg button.on{background:var(--ink);color:var(--bg)}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 11px;font:inherit;cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--bg)}
+.pipe{display:flex;gap:6px;overflow-x:auto;padding:2px 0 8px}
+.node{flex:1 0 112px;border:1px solid var(--line);border-radius:9px;padding:8px;background:var(--card);cursor:pointer;font-size:12.5px;min-height:76px}
+.node b{display:block;font-size:13px}.node.on{outline:2px solid var(--ink)}
+.node.read{border-color:var(--new);background:var(--new2)}.node.loop{border-style:dashed}.node.side{border-color:var(--b);background:var(--b2)}
+.shape{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;line-height:1.5}
+.tag{display:inline-block;font-size:11px;font-weight:600;border-radius:20px;padding:1px 8px;margin-left:6px;vertical-align:1px}
+.tag.ng{background:var(--b2);color:var(--b)}.tag.gr{background:var(--ok2);color:var(--ok)}.tag.lw{background:var(--new2);color:var(--new)}
+ol.sub{margin:6px 0 0;padding-left:20px}ol.sub li{margin:4px 0}
+.legend span{display:inline-flex;align-items:center;gap:5px;margin-right:14px;font-size:13px}
+.sw{display:inline-block;width:14px;height:10px;border-radius:2px}
+svg text{fill:var(--ink);font:11px -apple-system,Helvetica,Arial,sans-serif}
+table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600;font-size:12.5px}td.num{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.tblwrap{overflow-x:auto}
+.flow{font-family:var(--mono);font-size:12.5px;white-space:pre;overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;line-height:1.45}
+input[type=range]{width:260px;max-width:100%}
+</style>
+</head>
+<body><main>
+<div class="note">E38 · architecture page · written 21 Nov 2026 · code: origin/dev @ 99d808a7 (<code>nn/perceiver_ar_lm.py</code>,
+<code>nn/concept_memory.py</code>, <code>nn/lsa_buckets.py</code>, <code>nn/exact_read.py</code>, <code>nn/latent_memory.py</code>) ·
+spec: <code>docs/experiments_specs/ahead/E38_long_budget_mix.md</code> · NN Builder designs: <code>tools/nn-builder/designs/e38_*_150m.json</code></div>
+<h1>The 150M family: one body, four ways to read the past</h1>
+<p class="lead">Four models trained on the same 11.5B tokens, in the same order, with the same 13 layers. Twelve of the layers only ever
+see the last 128 tokens. One layer, the <b>reading layer</b>, is allowed to look further back, and it is the only thing that differs
+between the four. Three of them read the past through a different kind of <b>notebook</b>; the fourth rereads every earlier word and is
+the ceiling inside the 64k-token training length.</p>
+
+<div class="bar">
+  <span class="seg" id="model"></span>
+  <span class="note" id="modelnote"></span>
+</div>
+
+<h2>1 · The whole network at a glance</h2>
+<div class="flow" id="flow"></div>
+<p class="note">One row of 16,384 tokens in training; width 896 everywhere in the body. "local" = sliding-window attention over the last 128
+tokens. The loop runs the same two layers four times with the same weights; only a small learned "pass number" vector is added before each
+pass.</p>
+
+<h2>2 · The network, one step at a time</h2>
+<p class="note">Click a step, or use the buttons. Violet steps are the reading layer (the part that differs); orange is the catalogue's page
+writer, which runs beside the body. Tags: <span class="tag gr">learned</span> has weights trained by the loss,
+<span class="tag ng">no gradient</span> is a fixed rule recomputed every pass, <span class="tag lw">extra loss</span> is trained by its own loss.</p>
+<div class="pipe" id="pipe"></div>
+<p><button class="btn" id="prev">◀ prev</button> <button class="btn primary" id="next">next step ▶</button> <span class="note" id="stepno"></span></p>
+<div class="grid2">
+  <div class="card"><h3>What happens here</h3><div id="what"></div><h3 style="margin-top:12px">Why it is there</h3><div id="why"></div></div>
+  <div class="card"><h3>Shapes (one 16k row)</h3><div class="shape" id="shape"></div><h3 style="margin-top:12px">Weights</h3><div id="params"></div></div>
+</div>
+
+<h2>3 · What one word can see in the reading layer</h2>
+<p>The bar is one document of 16,384 tokens, cut into 32 blocks of 512. The reader is the word at the slider. Everything coloured is in
+its one softmax; grey it cannot see at all. The opened groups are an <b>illustration</b> (the real choice depends on the text).</p>
+<div class="card">
+  <p><label>reader at token <b id="qpos">12,000</b> <input type="range" id="qslider" min="600" max="16383" value="12000"></label></p>
+  <svg id="vis" viewBox="0 0 1000 150" width="100%" role="img" aria-label="what the reading layer sees"></svg>
+  <div class="legend" id="legend"></div>
+  <p id="viscount" class="note"></p>
+</div>
+
+<h2>4 · The four reading layers side by side</h2>
+<div class="tblwrap"><table id="cmp"></table></div>
+
+<h2>5 · Where the weights are</h2>
+<p class="note">Exact against the trainer's own factory (built on the meta device, 21 Nov). The input and output share one token table,
+counted once. "Core" = without the word table, the input MLP and the output projection.</p>
+<div class="tblwrap"><table id="ptab"></table></div>
+
+<h2>6 · Training, in one table</h2>
+<div class="tblwrap"><table>
+<tr><th>stage</th><th>row length</th><th>tokens</th><th>what it reads</th><th>learning rate</th></tr>
+<tr><td>1 · main</td><td class="num">4,096</td><td class="num">8.0B</td><td>web, educational and Q&amp;A rewrites, code, maths; documents packed, a word never attends across a document boundary</td><td>warm-up, then flat at the peak</td></tr>
+<tr><td>2 · decay</td><td class="num">16,384</td><td class="num">3.0B</td><td>60 % long documents (science PDFs, books, code repositories, arXiv), 20 % web replay, multi-hop "libraries" 6 %, planted-fact lookups 3 %; one document per row</td><td>1 − √ decay to 10 % of the peak</td></tr>
+<tr><td>3 · long</td><td class="num">65,536</td><td class="num">0.5B</td><td>long documents only (PDFs, books, repositories, libraries, lookups)</td><td>from 10 % down to 1 %</td></tr>
+</table></div>
+<p class="note">Optimizer: Muon (peak 0.01) on the weight matrices, AdamW on the rest; bf16; seed 42; 4 × L40S. Loss: next-token cross-entropy
+with the logits soft-capped at 30 and a small z-loss (10⁻⁴); the catalogue adds its index loss (weight 0.1).</p>
+
+<script>
+const MODELS = {
+  cm: {name: "concept memory", hub: "Meridian21Lab/concept-memory-140m-11.5bt", status: "public since 18 Nov", total: 141506208, core: 120795936,
+       design: "e38_concept_memory_150m"},
+  ti: {name: "topic index (LSA)", hub: "Meridian21Lab/topic-index-140m-11.5bt", status: "public since 18 Nov", total: 141506208, core: 120795936,
+       design: "e38_topic_index_150m"},
+  ca: {name: "catalogue", hub: "catalogue-150m-11.5bt", status: "trained (done 20 Nov 05:47 UTC); card being written", total: 145607265, core: 124896993,
+       design: "e38_catalogue_150m"},
+  fa: {name: "full attention", hub: "full-attention-140m-11.5bt", status: "trained and scored; not released", total: 141506208, core: 120795936,
+       design: "e38_full_attention_150m"},
+};
+const fmt = (n) => n.toLocaleString("en-US");
+let M = "cm", step = 0;
+
+const LOCAL = "RMSNorm → attention over the last 128 tokens (14 query heads × 64, one shared key/value head, RMSNorm on queries and keys, " +
+  "rotary position code θ 500k) → add to the stream; RMSNorm → SwiGLU feed-forward 896 → 2,816 → 896 → add. Before the layer, the stream " +
+  "is mixed with the input: α·x + β·x₀ (α = 1, β = 0 at the start).";
+const LOCAL_SHAPE = "x            [16,384, 896]\nq            [16,384, 14, 64]   RMSNorm per head\nk, v         [16,384, 1, 64]    one head shared by all 14\n" +
+  "scores/token 128 keys (the window)\nFFN          896 → 2,816 → 896 (SwiGLU)";
+
+const common = {
+  tokens: {t: "Tokens", s: "ids, doc ids", cls: "",
+    what: "The text becomes SmolLM2 tokens (a vocabulary of 49,152). Every document starts with <code>&lt;|endoftext|&gt;</code>. In the 4k stage several documents are packed into one row; each token carries its document's id, and no layer ever attends across a document boundary.",
+    why: "A modern small-model tokenizer packs more text per token than GPT-2's, so 64k tokens are about 50,000 words. Document ids keep packing from leaking one text into another.",
+    shape: "ids        [16,384]   int\ndoc_ids    [16,384]   which document each token is in\npositions  0 … 16,383 within the document", params: "none"},
+  embed: {t: "Input layer", s: "table 384 → 896", cls: "",
+    what: "Look up each token in a small table of 384 numbers per word, widen it with a gated MLP to the model's width (x₀ = U₀e + U₂·silu(U₁e)), then RMSNorm. No position code here: positions enter later, inside attention.",
+    why: "A narrow table (384) keeps the word list cheap: 18.9M weights instead of 44M at full width. The same table is reused by the output layer, so the board's 150M cap is met by a bigger body, not a bigger vocabulary.",
+    shape: "table   [49,152, 384]   shared with the output\ne       [16,384, 384]\nx₀      [16,384, 896]   kept: every block can mix it back in", params: "20,366,208 (table 18,874,368 + MLP 1,491,840)"},
+  pre: {t: "3 local layers", s: "L0–L2 · last 128", cls: "",
+    what: LOCAL + " Three of these run once. Each layer's output is also saved for the U-net skips (L0, L1, L2 are later added back into L12, L11, L10).",
+    why: "They build local meaning (the phrase, the sentence) so that the reading layer's questions and keys describe content, not bare word identities. Three windows of 128 reach about 380 tokens back.",
+    shape: LOCAL_SHAPE, params: "3 × 9,291,650"},
+  pass: {t: "Pass marker", s: "+ e_r (r = 1…4)", cls: "loop",
+    what: "Before each of the four passes a learned vector e_r (896 numbers, one per pass, zero at the start) is added to the stream. The U-net skip list is reset to the prelude's at every pass.",
+    why: "The two loop layers share their weights; the marker lets them behave a little differently on pass 1 (first look) and pass 4 (last look) at almost no cost.",
+    shape: "e_r   [4, 896]   one per pass\nx     [16,384, 896] + e_r", params: "3,584"},
+  l4: {t: "1 local layer", s: "L4 · in the loop", cls: "loop",
+    what: LOCAL + " It runs right after the reading layer, inside the loop.",
+    why: "It digests what the reading layer just brought in, mixes it with the neighbours, and so prepares a sharper question for the next pass. Read → think → read again.",
+    shape: LOCAL_SHAPE, params: "9,291,650"},
+  coda: {t: "8 local layers", s: "L5–L12", cls: "",
+    what: LOCAL + " Eight run once after the loop. L7–L12 also add a weighted skip (σ·skip, σ = 0 at the start) from L5, L4, L3, L2, L1, L0 (the U-net: early ↔ late). L7 and L11 drop the rotary code (every fourth stack layer).",
+    why: "They turn what was read into the next-word prediction. The skips hand early, exact token detail straight to the last layers; the two layers without a position code see content only.",
+    shape: LOCAL_SHAPE + "\nskips   L5→L7, L4→L8, L3→L9, L2→L10, L1→L11, L0→L12", params: "8 × 9,291,650 + 6 skip weights"},
+  head: {t: "Output + loss", s: "896 → 384 → 49,152", cls: "",
+    what: "RMSNorm, then project 896 → 384 and score against the same word table: logits = (h·Pᵀ)·Eᵀ. Soft-cap the logits at 30 (30·tanh(z/30)), cross-entropy on the next token, plus a z-loss of 10⁻⁴ that keeps the logits' log-sum-exp near zero.",
+    why: "Sharing the table saves 44M weights. The soft cap and z-loss keep training stable at long rows.",
+    shape: "h       [16,384, 896]\nh·Pᵀ    [16,384, 384]\nlogits  [16,384, 49,152]   (computed in chunks, never all at once)", params: "344,064 (P) + 896 (final norm)"},
+};
+
+const READ = {
+  cm: [
+    {t: "Questions & keys", s: "q, k, v · no position", cls: "read",
+     what: "The reading layer makes 14 questions per token and one key and value per token, as a local layer does, but with no rotary position code: a key says what a token is about, not where it is.",
+     why: "Content-only keys can be grouped by topic and compared across 16k–64k tokens; a position code would make far keys look different from near ones.",
+     shape: "q      [16,384, 14, 64]\nk, v   [16,384, 1, 64]   no RoPE", params: "the layer's 9,291,650 (as a local layer)"},
+    {t: "Group into concepts", s: "64 per 512-block", cls: "read", tag: "ng",
+     what: "Every closed block of 512 keys is split into 64 <b>concepts</b> of about 8 keys each: a balanced soft k-means on the unit keys. 64 seeds by farthest-point sampling, then 3 rounds of: similarity / 0.05, a Sinkhorn plan that gives every concept an equal share of the block, centres moved to their members. Each key is filed under its best concept.",
+     why: "Grouping by meaning puts the words about one thing together, so one summary can stand for them. The balance stops one concept from swallowing the block.",
+     shape: "closed blocks  30 (a block becomes a concept block 2 blocks after it closes)\nconcepts C     30 × 64 = 1,920\nlabels         [30, 512]", params: "none (a fixed rule, rebuilt on every pass)"},
+    {t: "Concept statistics", s: "n, μk, σ², μv", cls: "read", tag: "gr",
+     what: "Each concept keeps its count n, mean key μk, key spread σ² (mean per-dimension variance) and mean value μv. These are sums of the members' keys and values, so the loss reaches the members through them.",
+     why: "Count, mean and spread are enough to estimate how much attention the whole group would get, without reading its members: a far field by moments.",
+     shape: "n, σ²     [1,920]\nμk, μv    [1,920, 64]", params: "none (gradient flows through to the member keys and values)"},
+    {t: "Choose what to open", s: "≤ 512 tokens", cls: "read", tag: "ng",
+     what: "For every token, each concept's estimated attention mass = log n + q·μk/8 + |q|²σ²/128 (the best of the 14 heads). Open the concepts with the largest estimate, best first, until 512 member tokens (at most 128 concepts).",
+     why: "The same estimate that summarises a concept also says when a summary is not good enough: the largest contributions are read word for word, the rest coarsely.",
+     shape: "scores   [16,384, 1,920] (in chunks)\nopened   ≤ 512 tokens per reader", params: "none"},
+    {t: "One softmax", s: "near ‖ opened ‖ summaries", cls: "read", tag: "gr",
+     what: "Each reader attends, in one softmax, to: the document's first 4 tokens; its own and the previous 512-block word for word (512–1,023 tokens); its 512 opened tokens; and one summary entry (key μk, value μv, logit bias log n + spread term) for every concept it did not open. Past 16k tokens the summaries' total weight is held at its 16k level (the length scale). Output → 896 → stream.",
+     why: "Every earlier token of the document counts exactly once: in the window, opened, or inside one summary. Nothing is invisible, which is the difference from the topic index.",
+     shape: "keys per reader  4 + 512…1,023 + 512 + up to 1,920 summaries\nout              [16,384, 14, 64] → wo → [16,384, 896]", params: "wo is the layer's own"},
+  ],
+  ti: [
+    {t: "Questions & keys", s: "q, k, v · no position", cls: "read",
+     what: "As in a local layer, but with no rotary position code: keys describe content only.",
+     why: "Buckets are built by comparing keys across the whole document; a position code would split them by distance.",
+     shape: "q      [16,384, 14, 64]\nk, v   [16,384, 1, 64]   no RoPE", params: "the layer's 9,291,650"},
+    {t: "Sort into buckets", s: "64 per 512-block", cls: "read", tag: "ng",
+     what: "Every closed 512-key block: unit keys summed in runs of 4 (128 pools), then merged pairwise by Ward rounds (each bucket's cheapest partner, cost |a| + |b| − |a + b|; pairs that are each other's cheapest merge) into 64 buckets of at most 16 keys. A bucket's label is the direction of its summed keys.",
+     why: "The library index by topic (Kubicek et al.'s Latent Sparse Attention, ported unchanged except per-document reading). No weights: the model learns what to look up only through its keys and questions.",
+     shape: "closed blocks  31 (all blocks before the reader's own)\nbuckets        31 × 64 = 1,984\nlabel          [1,984, 64] unit", params: "none (rebuilt every pass)"},
+    {t: "Choose buckets", s: "≤ 512 tokens", cls: "read", tag: "ng",
+     what: "Score every bucket label against the reader's question by cosine (best of 14 heads); keep the 128 best; take their keys best bucket first, skipping the sinks and the window, until 512.",
+     why: "A cheap, coarse search over ~2,000 labels picks a few hundred exact tokens to reread.",
+     shape: "scores   [16,384, 1,984] (in chunks)\nopened   ≤ 512 tokens", params: "none"},
+    {t: "One softmax", s: "sinks ‖ window ‖ opened", cls: "read", tag: "gr",
+     what: "Each reader attends to the document's first 4 tokens, its last 512 tokens and its 512 opened tokens, word for word. The rest of the past is not in the softmax at all.",
+     why: "Exact reads only: no summary can blur a fact. The price: a fact in an unchosen bucket is simply not seen on this pass.",
+     shape: "keys per reader  4 + 512 + 512 = 1,028\nout              → wo → [16,384, 896]", params: "wo is the layer's own"},
+  ],
+  ca: [
+    {t: "Questions & keys", s: "q, k, v · no position", cls: "read",
+     what: "As in a local layer, but with no rotary position code.",
+     why: "The cards' keys are averages of these keys, so they must describe content only.",
+     shape: "q      [16,384, 14, 64]\nk, v   [16,384, 1, 64]   no RoPE", params: "the layer's 9,291,650 + 4 empty slots (513)"},
+    {t: "Card keys", s: "κ = Â-weighted mean of k", cls: "read", tag: "lw",
+     what: "Each card's key κ is the average of the reading layer's own keys of the tokens filed under it (weighted by the balanced filing Â). Recomputed every pass, from that pass's keys.",
+     why: "The writer decides <i>which</i> tokens go together; the reading layer's own keys decide what the card looks like, so card and question live in the same space.",
+     shape: "cards    64 pages × 64 = 4,096\nκ        [4,096, 64]", params: "none (gradient from the index loss)"},
+    {t: "Choose cards", s: "≤ 512 tokens", cls: "read", tag: "ng",
+     what: "Score every card of every closed page by cosine with the question (best of 14 heads); a card is eligible if one of its tokens is older than the 512-token window. Keep the 128 best and take their tokens, best card first, until 512. Every pass chooses again and may reopen a card.",
+     why: "The catalogue: flip through ~4,000 cards, pull the best, reread exactly what they point to.",
+     shape: "scores   [16,384, 4,096] (in chunks)\nopened   ≤ 512 tokens", params: "none"},
+    {t: "One softmax", s: "slots ‖ window ‖ opened", cls: "read", tag: "gr",
+     what: "Each reader attends to 4 learned empty slots (learned keys, zero values), its last 512 tokens and its opened tokens. The cards themselves are not read: they only chose.",
+     why: "The empty slots give the softmax somewhere to put mass when nothing opened is useful (instead of the document's first tokens).",
+     shape: "keys per reader  4 + 512 + 512 = 1,028\nout              → wo → [16,384, 896]", params: "sink keys and values 4 × 64 each"},
+    {t: "Index loss", s: "cards learn where attention lands", cls: "read", tag: "lw",
+     what: "In training, for 256 sampled readers per row and pass: the target is how much of the read's attention actually landed on each opened card's tokens (plus 32 sampled unopened cards, by the mass their tokens would get). The prediction is a softmax of τ·cosine(question, κ). Loss = KL(target ‖ prediction), weight 0.1.",
+     why: "This is the only gradient that reaches the page writer: the cards are not in the read, so the next-word loss cannot train them directly. It teaches the cards to point where the reader wants to look.",
+     shape: "readers sampled   256 per row\nnegatives         32 per reader", params: "the temperature τ (1)"},
+  ],
+  fa: [
+    {t: "Questions & keys", s: "q, k, v · with RoPE", cls: "read",
+     what: "As in a local layer, with the rotary position code (θ 500k) kept: this is the fair full-attention control.",
+     why: "Without a position code a full read spreads thin far past its training length; with it, the control is the strongest plain transformer at this size.",
+     shape: "q      [16,384, 14, 64]\nk, v   [16,384, 1, 64]   RoPE θ 500k", params: "the layer's 9,291,650"},
+    {t: "Full causal read", s: "every earlier token", cls: "read", tag: "gr",
+     what: "Each reader attends to every earlier token of its document, word for word.",
+     why: "Nothing is lost, but the cost of this one layer grows with the square of the length: the ceiling the memory reads are judged against inside 64k, and what they are built to go past.",
+     shape: "keys per reader  up to 16,384 (64k in the long stage)\nout              → wo → [16,384, 896]", params: "wo is the layer's own"},
+  ],
+};
+
+const WRITER = {t: "Page writer", s: "64 cards per 256-token page", cls: "side", tag: "lw",
+  what: "Runs once per row, beside the body, on the word table only (not on the body's states). Pages of 256 tokens, no overlap: table 384 → 256, RMSNorm, 2 bidirectional attention layers inside the page; then 64 learned latents (512 wide, plus a learned page-position prior) read the page twice, <b>competing</b> for tokens (a softmax over the latents for every token and head). That competition is each token's filing: Sinkhorn-balanced so every card gets about 4 tokens, then each token filed under exactly one card, at most 16 per card.",
+  why: "A small learned network decides how a page is split into index cards. It never writes content the reader sees; it only sorts.",
+  shape: "pages        64 × 256 tokens\nencoder      [64, 256, 256] × 2 layers\nlatents      [64, 64, 512]\nfiling Â     [64 pages, 64 cards, 256 tokens]", params: "4,100,544"};
+
+function steps(m) {
+  const s = [common.tokens, common.embed];
+  if (m === "ca") s.push(WRITER);
+  s.push(common.pre, common.pass, ...READ[m], common.l4, common.coda, common.head);
+  return s;
+}
+
+const FLOW = {
+  cm: "concept read: 4 first tokens + own & previous 512-block + 512 opened concept tokens + 1 summary per other concept",
+  ti: "topic-index read: 4 first tokens + last 512 tokens + 512 tokens from the best buckets (nothing else)",
+  ca: "catalogue read: 4 empty slots + last 512 tokens + 512 tokens from the best cards (cards from the page writer)",
+  fa: "full read: every earlier token of the document, with RoPE",
+};
+function drawFlow() {
+  const w = M === "ca" ? "\n  token table ──► page writer (2 enc. layers + 64 competing latents) ──► cards ─┐\n" : "\n";
+  const W = Math.max(...Object.values(FLOW).map((s) => s.length)) + 22;
+  const title = " pass r = 1…4, shared weights, + e_r ";
+  const side = Math.floor((W - title.length) / 2);
+  const line = (s) => `          │ ${s.padEnd(W - 1)}│\n`;
+  document.getElementById("flow").textContent =
+`tokens ─► input layer (table 384 → 896) ─► L0 L1 L2 (local 128)${w}` +
+`          ┌${"─".repeat(side)}${title}${"─".repeat(W - side - title.length)}┐\n` +
+    line(`L3 reading layer · ${FLOW[M]}`) + line("L4 local 128") +
+`          └${"─".repeat(W)}┘
+       ─► L5 … L12 (local 128, U-net skips L5→L7 … L0→L12) ─► norm ─► 896→384 ─► · tableᵀ ─► next token`;
+}
+
+function drawModels() {
+  const el = document.getElementById("model");
+  el.innerHTML = Object.entries(MODELS).map(([k, v]) => `<button data-v="${k}" class="${k === M ? "on" : ""}">${v.name}</button>`).join("");
+  el.querySelectorAll("button").forEach((b) => b.onclick = () => { M = b.dataset.v; step = 0; render(); });
+  const v = MODELS[M];
+  document.getElementById("modelnote").textContent = `${v.hub} · ${fmt(v.total)} weights · ${v.status}`;
+}
+
+function render() {
+  drawModels(); drawFlow();
+  const S = steps(M);
+  step = Math.max(0, Math.min(step, S.length - 1));
+  const pipe = document.getElementById("pipe");
+  pipe.innerHTML = S.map((x, i) => `<div class="node ${x.cls || ""} ${i === step ? "on" : ""}" data-i="${i}"><b>${x.t}</b>${x.s}</div>`).join("");
+  pipe.querySelectorAll(".node").forEach((n) => n.onclick = () => { step = +n.dataset.i; render(); });
+  const x = S[step];
+  const tag = x.tag ? ` <span class="tag ${x.tag}">${{ng: "no gradient", gr: "learned", lw: "extra loss"}[x.tag]}</span>` : "";
+  document.getElementById("what").innerHTML = x.what + tag;
+  document.getElementById("why").innerHTML = x.why;
+  document.getElementById("shape").textContent = x.shape;
+  document.getElementById("params").textContent = x.params;
+  document.getElementById("stepno").textContent = `step ${step + 1} of ${S.length}`;
+  drawVis(); drawCmp(); drawParams();
+}
+document.getElementById("prev").onclick = () => { step--; render(); };
+document.getElementById("next").onclick = () => { step++; render(); };
+
+// ---------------------------------------------------------------- section 3: what one word sees
+const N = 16384, BLK = 512;
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function rng(seed) { let s = seed >>> 0; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296); }
+function drawVis() {
+  const q = +document.getElementById("qslider").value;
+  document.getElementById("qpos").textContent = fmt(q);
+  const X = (t) => 10 + (t / N) * 980;
+  const parts = [];
+  const add = (a, b, color, y = 40, h = 50, op = 1) => parts.push(`<rect x="${X(a)}" y="${y}" width="${Math.max(1, X(b) - X(a))}" height="${h}" fill="${color}" opacity="${op}"/>`);
+  add(0, N, css("--line"));
+  add(q, N, css("--bg"));
+  let near = 0, opened = 0, summaries = 0, sinks = 4;
+  const r = rng(q * 7 + M.length);
+  const qb = Math.floor(q / BLK);
+  if (M === "fa") { add(0, q + 1, css("--a")); near = q + 1; sinks = 0; }
+  else {
+    const lo = M === "cm" ? Math.max(0, (qb - 1) * BLK) : Math.max(0, q - 511);
+    near = q + 1 - lo;
+    if (M !== "ca" && lo < 4) sinks = 0;  // the first 4 tokens are already inside the near field
+    // the far field the read can choose from
+    const farEnd = M === "cm" ? Math.max(0, (qb - 1) * BLK) : (M === "ti" ? Math.min(lo, qb * BLK) : Math.min(lo, Math.floor((q + 1) / 256) * 256));
+    const unit = M === "ca" ? 256 / 64 : 8; // tokens per group
+    const groups = Math.floor(farEnd / unit);
+    if (M === "cm" && groups > 0) { add(0, farEnd, css("--sum2")); }
+    let left = 512, picks = 0;
+    const chosen = new Set();
+    while (left > 0 && chosen.size < groups && picks < 128) {
+      const gpos = Math.floor(r() * groups);
+      if (chosen.has(gpos)) continue;
+      chosen.add(gpos); picks++;
+      // cluster a few picks near "topics": bias toward three hot spots
+      const take = Math.min(unit, left); left -= take; opened += take;
+    }
+    const hot = [0.12, 0.37, 0.71].map((f) => Math.floor(f * farEnd));
+    let k = 0;
+    for (const g of chosen) {
+      const base = (k % 3 < 2) ? hot[k % 3] + Math.floor((r() - 0.5) * 900) : g * unit;
+      const a = Math.max(0, Math.min(farEnd - unit, base));
+      add(a, a + unit * 2, css("--ok"), 40, 50);
+      k++;
+    }
+    if (M === "cm") summaries = Math.max(0, (Math.max(0, qb - 1)) * 64 - chosen.size);
+    add(lo, q + 1, css("--a"));
+    add(0, 4 * 12, M === "ca" ? css("--line") : css("--b"));
+  }
+  parts.push(`<line x1="${X(q)}" x2="${X(q)}" y1="30" y2="100" stroke="${css("--ink")}" stroke-width="2"/>`);
+  parts.push(`<text x="${X(q)}" y="24" text-anchor="middle">reader</text>`);
+  for (let b = 0; b <= 32; b += 4) parts.push(`<text x="${X(b * BLK)}" y="118" text-anchor="middle">${fmt(b * BLK)}</text>`);
+  for (let b = 0; b <= 32; b++) parts.push(`<line x1="${X(b * BLK)}" x2="${X(b * BLK)}" y1="90" y2="95" stroke="${css("--mute")}"/>`);
+  if (M === "ca") parts.push(`<rect x="10" y="40" width="10" height="50" fill="${css("--new")}"/><text x="12" y="140">4 empty slots (not tokens)</text>`);
+  document.getElementById("vis").innerHTML = parts.join("");
+  const L = [["--a", M === "fa" ? "every earlier token" : (M === "cm" ? "own + previous block, word for word" : "last 512 tokens, word for word")]];
+  if (M !== "fa") L.push(["--ok", "opened groups, word for word (illustrative)"]);
+  if (M === "cm") L.push(["--sum2", "read as one summary per concept"]);
+  if (M === "cm" || M === "ti") L.push(["--b", "first 4 tokens of the document"]);
+  if (M === "ca") L.push(["--new", "4 learned empty slots"]);
+  if (M !== "fa") L.push(["--line", "not in the softmax at all"]);
+  document.getElementById("legend").innerHTML = L.map(([c, t]) => `<span><i class="sw" style="background:var(${c})"></i>${t}</span>`).join("");
+  const tot = M === "fa" ? q + 1 : sinks + near + Math.min(512, opened) + summaries;
+  document.getElementById("viscount").textContent = M === "fa"
+    ? `${fmt(q + 1)} keys in this reader's softmax; the cost of the layer grows with the square of the length.`
+    : `${fmt(tot)} entries in this reader's softmax: ${sinks} ${M === "ca" ? "empty slots" : "first tokens"} + ${fmt(near)} near tokens + ${fmt(Math.min(512, opened))} opened` +
+      (M === "cm" ? ` + ${fmt(summaries)} summaries (every other concept of the blocks before the previous one).` : `; the other ${fmt(Math.max(0, q + 1 - near - Math.min(512, opened) - 4))} earlier tokens are not seen on this pass.`);
+}
+document.getElementById("qslider").oninput = drawVis;
+
+// ---------------------------------------------------------------- section 4: comparison
+function drawCmp() {
+  const rows = [
+    ["", "concept memory", "topic index (LSA)", "catalogue", "full attention"],
+    ["the analogy", "a notebook: a summary line per group, reread the few groups that matter", "a library index by topic: reread the best piles", "a card catalogue: flip cards, reread what they point to", "reread the whole book every time"],
+    ["groups", "64 concepts per 512-token block (~8 tokens)", "64 buckets per 512-token block (≤ 16 tokens)", "64 cards per 256-token page (~4 tokens, ≤ 16)", "none"],
+    ["who forms them", "balanced k-means on the reading layer's keys (no gradient)", "Ward merging of the reading layer's keys (no gradient)", "a learned page writer on the word table (index loss)", "—"],
+    ["how a reader chooses", "estimated attention mass (log n + q·μk + spread term)", "cosine to the bucket's label", "cosine to the card's key", "—"],
+    ["near field, word for word", "first 4 tokens + own and previous 512-block", "first 4 tokens + last 512 tokens", "4 learned empty slots + last 512 tokens", "every earlier token"],
+    ["opened, word for word", "≤ 512 tokens", "≤ 512 tokens", "≤ 512 tokens", "—"],
+    ["the rest of the past", "one summary entry per concept", "not seen", "not seen", "—"],
+    ["position code in the read", "none", "none", "none", "RoPE θ 500k"],
+    ["extra weights", "0", "0", "4,101,057 (writer + slots + temperature)", "0"],
+    ["total weights", fmt(141506208), fmt(141506208), fmt(145607265), fmt(141506208)],
+  ];
+  const col = {cm: 1, ti: 2, ca: 3, fa: 4}[M];
+  document.getElementById("cmp").innerHTML = rows.map((r, i) => "<tr>" + r.map((c, j) =>
+    i === 0 ? `<th style="${j === col ? "color:var(--ink)" : ""}">${c}</th>` : `<td style="${j === col ? "background:var(--new2)" : ""}">${c}</td>`).join("") + "</tr>").join("");
+}
+
+// ---------------------------------------------------------------- section 5: parameters
+function drawParams() {
+  const L = 9291650;
+  const rows = [
+    ["word table 49,152 × 384 (shared by input and output)", 18874368],
+    ["input MLP 384 → 896 + norm", 1491840],
+    ["3 local layers before the loop (L0–L2)", 3 * L],
+    ["reading layer L3 (its own weights; the read rule has none)", L + (M === "ca" ? 513 : 0)],
+    ["local layer in the loop (L4)", L],
+    ["8 local layers after the loop (L5–L12) + 6 skip weights", 8 * L + 6],
+    ["pass markers e₁…e₄", 3584],
+    ["final norm + output projection 896 → 384", 896 + 344064],
+  ];
+  if (M === "ca") rows.splice(4, 0, ["page writer (encoder, 64 latents, position prior, cross-attention, projections)", 4100544]);
+  const tot = rows.reduce((a, r) => a + r[1], 0);
+  document.getElementById("ptab").innerHTML = `<tr><th>part (${MODELS[M].name})</th><th style="text-align:right">weights</th></tr>` +
+    rows.map(([a, b]) => `<tr><td>${a}</td><td class="num">${fmt(b)}</td></tr>`).join("") +
+    `<tr><td><b>total</b> (trainer: ${fmt(MODELS[M].total)})</td><td class="num"><b>${fmt(tot)}</b></td></tr>` +
+    `<tr><td class="note">each local layer: attention 1,720,448 (queries 802,816 · key 57,344 · value 57,344 · output 802,816 · 2 norms 128) + SwiGLU 7,569,408 + 2 norms 1,792 + α, β</td><td></td></tr>`;
+}
+
+render();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawVis);
+</script>
+</main></body>
+</html>
