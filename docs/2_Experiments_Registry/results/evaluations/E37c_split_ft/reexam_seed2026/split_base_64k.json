@@ -1,0 +1,474 @@
+{
+ "checkpoint": "/opt/dlami/nvme/ck/base",
+ "kind": "concept",
+ "vocab": 50257,
+ "hidden": 896,
+ "query_heads": 14,
+ "head_dim": 64,
+ "new": 12,
+ "bits": [
+  8,
+  4
+ ],
+ "tails": [
+  16,
+  32,
+  64
+ ],
+ "warm_tokens": 148,
+ "dtype": "bfloat16",
+ "seed": 2026,
+ "local_window": 128,
+ "cells": [
+  {
+   "task": "niah_single_1",
+   "length": 65536,
+   "docs_seconds": 11.7,
+   "n": 20,
+   "same_tokens_as_one_row": 20,
+   "score": {
+    "joint": 0.9,
+    "relay": 0.9,
+    "split": 0.25,
+    "tail16": 0.5,
+    "tail32": 0.85,
+    "tail64": 0.85,
+    "warm": 0.05,
+    "bits8": 0.0,
+    "bits4": 0.0,
+    "alone": 0.0,
+    "swap": 0.0
+   },
+   "n_scored": {
+    "joint": 20,
+    "relay": 20,
+    "split": 20,
+    "tail16": 20,
+    "tail32": 20,
+    "tail64": 20,
+    "warm": 20,
+    "bits8": 15,
+    "bits4": 15,
+    "alone": 20,
+    "swap": 19
+   },
+   "swap_reports_other_needle": 0.15789473684210525,
+   "seconds": {
+    "read_A": 4.444616913795471,
+    "B_with_memory": 0.9726473093032837,
+    "one_agent": 4.653079152107239
+   },
+   "seconds_first": {
+    "read_A": 65.51028251647949,
+    "B_with_memory": 0.8848791122436523,
+    "one_agent": 66.53195643424988
+   },
+   "sizes": {
+    "answer_tokens": 12.0,
+    "fetch_summaries": 13967.6,
+    "fetch_tokens": 25584.75,
+    "keys_per_read": 1049.8,
+    "memory_numbers": 33303449.6,
+    "model_bits": 1510.6436242252737,
+    "remote_down_per_token": 3640.0,
+    "remote_up_per_token": 3584.0,
+    "tokens_A": 65045.8,
+    "tokens_B": 34.3,
+    "utf8": 234195.25,
+    "zlib9": 1036.35,
+    "zstd19": 227.25
+   },
+   "rows": [
+    {
+     "index": 0,
+     "tokens_A": 65044,
+     "tokens_B": 31,
+     "ref": [
+      "4142878"
+     ],
+     "joint": ": 4142878.\nThe special magic number for hungry",
+     "relay": ": 4142878.\nThe special magic number for hungry",
+     "split": ":\n\nThe grass is green.\nThe sky is",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "tail32": ": 4142878.\nThe special magic number for hungry",
+     "tail64": ": 4142878.\nThe special magic number for hungry",
+     "warm": ":\n\"The food is not good for the person who",
+     "bits8": ":\n\"The food is not good for the person who",
+     "bits4": ":\n\"The food is not good for the person who",
+     "alone": " the number of times that the patient is hungry.\nThe"
+    },
+    {
+     "index": 1,
+     "tokens_A": 65046,
+     "tokens_B": 35,
+     "ref": [
+      "4922548"
+     ],
+     "joint": ": 4922548.\nThe grass is green. The",
+     "relay": ": 4922548.\nThe grass is green. The",
+     "split": ":\n\nThe grass is green.\nThe sky is",
+     "answer_tokens": 12,
+     "tail16": ": 4922548.\nThe special magic number for fe",
+     "tail32": ": 4922548.\nThe grass is green. The",
+     "tail64": ": 4922548.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ":\n\"The grass is green.\"\nThe grass is"
+    },
+    {
+     "index": 2,
+     "tokens_A": 65047,
+     "tokens_B": 37,
+     "ref": [
+      "4435187"
+     ],
+     "joint": ": 4435187.\nThe special magic number for water",
+     "relay": ": 4435187.\nThe special magic number for water",
+     "split": ":\n\nThe grass is green. The sky is blue",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "tail32": ": 4435187.\nThe special magic number for water",
+     "tail64": ": 4435187.\nThe special magic number for water",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 3,
+     "tokens_A": 65045,
+     "tokens_B": 33,
+     "ref": [
+      "1241075"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " hidden within the following text.\nThe grass is green.",
+     "answer_tokens": 12,
+     "tail16": " the number of the number of the number of the number of",
+     "tail32": ":\nThe grass is green. The sky is blue.",
+     "tail64": ":\nThe grass is green. The sky is blue.",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 4,
+     "tokens_A": 65045,
+     "tokens_B": 33,
+     "ref": [
+      "5308556"
+     ],
+     "joint": ": 5308556.\nThe grass is green. The",
+     "relay": ": 5308556.\nThe grass is green. The",
+     "split": " the magic number for the person who is ashamed-utilised",
+     "answer_tokens": 12,
+     "tail16": ": 5308556.\nThe grass is green. The",
+     "tail32": ": 5308556.\nThe grass is green. The",
+     "tail64": ": 5308556.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of times the person is ashamed-utilised.",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 5,
+     "tokens_A": 65046,
+     "tokens_B": 35,
+     "ref": [
+      "3875676"
+     ],
+     "joint": ": 3875676.\nThe grass is green. The",
+     "relay": ": 3875676.\nThe grass is green. The",
+     "split": ": 3875676.\nThe grass is green. The",
+     "answer_tokens": 12,
+     "tail16": ": 3875676.\nThe grass is green. The",
+     "tail32": ": 3875676.\nThe grass is green. The",
+     "tail64": ": 3875676.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the first syllable of the word.\n",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 6,
+     "tokens_A": 65046,
+     "tokens_B": 33,
+     "ref": [
+      "9757345"
+     ],
+     "joint": ": 9757345.\nThe grass is green.",
+     "relay": ": 9757345.\nThe grass is green.",
+     "split": ":\n\"The grass is green.\"\nThe grass is",
+     "answer_tokens": 12,
+     "tail16": ": 9757345.\nThe special magic number for",
+     "tail32": ": 9757345.\nThe grass is green.",
+     "tail64": ": 9757345.\nThe grass is green.",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of times the water is used in the ceremony.",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 7,
+     "tokens_A": 65045,
+     "tokens_B": 33,
+     "ref": [
+      "6827264"
+     ],
+     "joint": ": 6827264.\nThe grass is green. The",
+     "relay": ": 6827264.\nThe grass is green. The",
+     "split": ": 6827264.\nThe grass is green. The",
+     "answer_tokens": 12,
+     "tail16": ": 6827264.\nThe grass is green. The",
+     "tail32": ": 6827264.\nThe grass is green. The",
+     "tail64": ": 6827264.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " $1.00.00.00.00.00",
+     "swap": ": 9757345.\nThe special magic number for"
+    },
+    {
+     "index": 8,
+     "tokens_A": 65045,
+     "tokens_B": 33,
+     "ref": [
+      "3500877"
+     ],
+     "joint": ": 3500877.\nThe grass is green. The",
+     "relay": ": 3500877.\nThe grass is green. The",
+     "split": " hidden within the following text.\nThe grass is green.",
+     "answer_tokens": 12,
+     "tail16": ":\n\n$$\\mathbf{x}\\_{\\",
+     "tail32": ": 3500877.\nThe grass is green. The",
+     "tail64": ": 3500877.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 6827264.\nThe special magic number for crazy"
+    },
+    {
+     "index": 9,
+     "tokens_A": 65045,
+     "tokens_B": 33,
+     "ref": [
+      "5710654"
+     ],
+     "joint": ": 5710654.\nThe grass is green. The",
+     "relay": ": 5710654.\nThe grass is green. The",
+     "split": ": 5710654.\nThe grass is green. The",
+     "answer_tokens": 12,
+     "tail16": ": 5710654.\nThe grass is green. The",
+     "tail32": ": 5710654.\nThe grass is green. The",
+     "tail64": ": 5710654.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of times that the number of times that the number",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 10,
+     "tokens_A": 65047,
+     "tokens_B": 37,
+     "ref": [
+      "4824429"
+     ],
+     "joint": ": 4824429.\nThe grass is green. The",
+     "relay": ": 4824429.\nThe grass is green. The",
+     "split": ": 4824429.\nThe special magic number for p",
+     "answer_tokens": 12,
+     "tail16": ": 4824429.\nThe special magic number for p",
+     "tail32": ": 4824429.\nThe grass is green. The",
+     "tail64": ": 4824429.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of piquants.\n\nThe following is",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 11,
+     "tokens_A": 65047,
+     "tokens_B": 37,
+     "ref": [
+      "1368180"
+     ],
+     "joint": ": 1368180.\nThe grass is green. The",
+     "relay": ": 1368180.\nThe grass is green. The",
+     "split": " the magic number for the grass.\nThe grass is green",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "tail32": ": 1368180.\nThe special magic number for lux",
+     "tail64": ": 1368180.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 12,
+     "tokens_A": 65045,
+     "tokens_B": 33,
+     "ref": [
+      "9540303"
+     ],
+     "joint": ": 9540303.\nThe grass is green. The",
+     "relay": ": 9540303.\nThe grass is green. The",
+     "split": " the magic number for pastoral-earring.\nThe magic",
+     "answer_tokens": 12,
+     "tail16": " the magic number for the pastoral-earning.\nThe",
+     "tail32": ":\nThe grass is green. The sky is blue.",
+     "tail64": ":\nThe grass is green. The sky is blue.",
+     "warm": " the number of days that the pastoral-earning woman is",
+     "bits8": " the number of days in the year. The number of days",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of days in the month of the month.\n",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 13,
+     "tokens_A": 65048,
+     "tokens_B": 37,
+     "ref": [
+      "8352800"
+     ],
+     "joint": ": 8352800.\nThe grass is green.",
+     "relay": ": 8352800.\nThe grass is green.",
+     "split": " the magic number for the image of the moon.\nThe",
+     "answer_tokens": 12,
+     "tail16": ":\n\t\t\t\t\t\t\t\t\t\t",
+     "tail32": ": 8352800.\nThe grass is green.",
+     "tail64": ": 8352800.\nThe grass is green.",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of days that the person is in the country.",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 14,
+     "tokens_A": 65047,
+     "tokens_B": 35,
+     "ref": [
+      "9771856"
+     ],
+     "joint": ": 9771856.\nThe grass is green.",
+     "relay": ": 9771856.\nThe grass is green.",
+     "split": ":\n\n$$\\mathbf{x}\\_{\\",
+     "answer_tokens": 12,
+     "tail16": ": 9771856.\nThe special magic number for",
+     "tail32": ": 9771856.\nThe grass is green.",
+     "tail64": ": 9771856.\nThe grass is green.",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 15,
+     "tokens_A": 65046,
+     "tokens_B": 35,
+     "ref": [
+      "2472726"
+     ],
+     "joint": ": 2472726.\nThe grass is green. The",
+     "relay": ": 2472726.\nThe grass is green. The",
+     "split": " hidden within the following text.\nThe grass is green.",
+     "answer_tokens": 12,
+     "tail16": " the number of the number of the number of the number of",
+     "tail32": ": 2472726.\nThe grass is green. The",
+     "tail64": ": 2472726.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 16,
+     "tokens_A": 65044,
+     "tokens_B": 31,
+     "ref": [
+      "4214356"
+     ],
+     "joint": ": 4214356.\nThe grass is green. The",
+     "relay": ": 4214356.\nThe grass is green. The",
+     "split": ": 4214356.\nThe grass is green. The",
+     "answer_tokens": 12,
+     "tail16": ": 4214356.\nThe special magic number for miniature",
+     "tail32": ": 4214356.\nThe grass is green. The",
+     "tail64": ": 4214356.\nThe grass is green. The",
+     "warm": ": 4214356.\nThe special magic number for miniature",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 17,
+     "tokens_A": 65046,
+     "tokens_B": 35,
+     "ref": [
+      "7776379"
+     ],
+     "joint": ": 7776379.\nThe grass is green. The",
+     "relay": ": 7776379.\nThe grass is green. The",
+     "split": " the magic number for melodic-brood.\nThe",
+     "answer_tokens": 12,
+     "tail16": ": 7776379.\nThe special magic number for mel",
+     "tail32": ": 7776379.\nThe grass is green. The",
+     "tail64": ": 7776379.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of the melodic-melodic-melodic",
+     "swap": ": 4214356.\nThe special magic number for mel"
+    },
+    {
+     "index": 18,
+     "tokens_A": 65047,
+     "tokens_B": 37,
+     "ref": [
+      "4815102"
+     ],
+     "joint": ": 4815102.\nThe special magic number for mel",
+     "relay": ": 4815102.\nThe special magic number for mel",
+     "split": " the magic number for the melodic-predecessor.",
+     "answer_tokens": 12,
+     "tail16": " the number of the number of the number of the number of",
+     "tail32": ": 4815102.\nThe special magic number for mel",
+     "tail64": ": 4815102.\nThe special magic number for mel",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 19,
+     "tokens_A": 65045,
+     "tokens_B": 33,
+     "ref": [
+      "6018770"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " hidden within the following text.\nThe grass is green.",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "tail32": ":\nThe grass is green. The sky is blue.",
+     "tail64": ":\nThe grass is green. The sky is blue.",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    }
+   ]
+  }
+ ]
+}
