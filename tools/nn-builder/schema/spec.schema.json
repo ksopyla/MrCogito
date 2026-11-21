@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mrcogito.local/nn-builder/spec.schema.json",
+  "title": "nn-builder spec, version 1",
+  "description": "What an agent reads to implement a design: generated from the design file, read-only. Meaning of every field: docs/agent-spec.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "version", "design", "how_to_read", "block_types", "dims", "inputs", "outputs", "stacks", "wires", "execution_order", "parameters", "training", "validation"],
+  "properties": {
+    "format": { "const": "nn-builder/spec" },
+    "version": { "const": 1 },
+    "design": {
+      "type": "object", "additionalProperties": false, "required": ["name", "description", "hash"],
+      "properties": { "name": { "type": "string" }, "description": { "type": "string" }, "hash": { "type": "string", "pattern": "^nnb1-[0-9a-f]{28}$" } }
+    },
+    "how_to_read": { "type": "array", "items": { "type": "string" } },
+    "block_types": { "type": "object", "additionalProperties": { "type": "string" } },
+    "dims": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["name", "value", "meaning"],
+        "properties": { "name": { "type": "string" }, "value": { "type": ["integer", "null"] }, "meaning": { "type": "string" } }
+      }
+    },
+    "inputs": { "type": "array", "items": { "$ref": "#/$defs/io" } },
+    "outputs": { "type": "array", "items": { "$ref": "#/$defs/io" } },
+    "stacks": { "type": "array", "items": { "$ref": "#/$defs/stack" } },
+    "wires": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["id", "kind", "from", "to", "carries", "meaning"],
+        "properties": {
+          "id": { "type": "string" }, "kind": { "enum": ["skip", "source", "input"] }, "from": { "type": "string" }, "to": { "type": "string" },
+          "carries": { "$ref": "#/$defs/shape" }, "meaning": { "type": "string" }
+        }
+      }
+    },
+    "execution_order": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false, "required": ["kind", "stack", "rows", "note"],
+        "properties": {
+          "kind": { "enum": ["row", "loop", "repeat"] }, "stack": { "type": "string" }, "rows": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "count": { "type": "integer", "minimum": 1 }, "shared_weights": { "type": "boolean" }, "round_embedding": { "type": "boolean" },
+          "feedback": { "enum": ["none", "soft"] }, "note": { "type": "string" }
+        }
+      }
+    },
+    "parameters": {
+      "type": "object", "additionalProperties": false, "required": ["total", "trained", "used_per_token", "by_stack"],
+      "properties": {
+        "total": { "type": "number" }, "trained": { "type": "number" }, "used_per_token": { "type": "number" },
+        "by_stack": { "type": "object", "additionalProperties": { "type": "number" } }
+      }
+    },
+    "training": {
+      "type": "object", "additionalProperties": false, "required": ["row_length", "rows_per_step", "tokens", "precision", "optimizer", "weight_decay"],
+      "properties": {
+        "row_length": { "type": "integer" }, "rows_per_step": { "type": "integer" }, "tokens": { "type": "number" },
+        "precision": { "type": "string" }, "optimizer": { "type": "string" }, "weight_decay": { "type": "number" }
+      }
+    },
+    "validation": {
+      "type": "object", "additionalProperties": false, "required": ["errors", "warnings"],
+      "properties": { "errors": { "type": "array", "items": { "$ref": "#/$defs/problem" } }, "warnings": { "type": "array", "items": { "$ref": "#/$defs/problem" } } }
+    }
+  },
+  "$defs": {
+    "shape": { "type": "array", "items": { "type": ["string", "number"] } },
+    "tensor": {
+      "type": "object", "additionalProperties": false, "required": ["tensor", "shape"],
+      "properties": { "tensor": { "type": "string" }, "shape": { "$ref": "#/$defs/shape" } }
+    },
+    "io": {
+      "type": "object", "additionalProperties": false, "required": ["name", "shape", "meaning"],
+      "properties": { "name": { "type": "string" }, "shape": { "$ref": "#/$defs/shape" }, "dtype": { "type": "string" }, "meaning": { "type": "string" } }
+    },
+    "problem": {
+      "type": "object", "additionalProperties": false, "required": ["where", "message"],
+      "properties": { "where": { "type": "string" }, "message": { "type": "string" } }
+    },
+    "stack": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "role", "width", "frozen", "sequence", "starts_from", "rows", "blocks", "output"],
+      "properties": {
+        "id": { "type": "string" }, "name": { "type": "string" }, "role": { "type": "string" }, "width": { "type": "integer" }, "frozen": { "type": "boolean" },
+        "sequence": {
+          "type": "object", "additionalProperties": false, "required": ["kind", "shape", "description"],
+          "properties": { "kind": { "enum": ["tokens", "source", "pages", "slots", "latents"] }, "shape": { "$ref": "#/$defs/shape" }, "description": { "type": "string" } }
+        },
+        "starts_from": { "type": "string" },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["id", "label", "blocks", "before"],
+            "properties": {
+              "id": { "type": "string" }, "label": { "type": "string" }, "blocks": { "type": "array", "items": { "type": "string" } },
+              "before": {
+                "type": "object", "additionalProperties": false, "required": ["x0_mix", "skips_in"],
+                "properties": {
+                  "x0_mix": { "type": "boolean" },
+                  "skips_in": {
+                    "type": "array",
+                    "items": {
+                      "type": "object", "additionalProperties": false, "required": ["from_row", "weight"],
+                      "properties": { "from_row": { "type": "string" }, "weight": { "enum": ["scalar", "vector", "none"] } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "blocks": { "type": "array", "items": { "$ref": "#/$defs/block" } },
+        "output": {
+          "type": "object", "additionalProperties": false, "required": ["tensor", "shape", "goes_to"],
+          "properties": { "tensor": { "type": "string" }, "shape": { "$ref": "#/$defs/shape" }, "goes_to": { "type": "array", "items": { "type": "string" } } }
+        }
+      }
+    },
+    "block": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "type", "title", "what_it_does", "settings", "input", "output", "runs_per_row", "frozen", "parameters", "tensor_steps"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "enum": ["embedding", "positional", "attention", "ffn", "norm", "linear", "latent_init", "kv_out", "pool", "lm_head", "custom"] },
+        "title": { "type": "string" }, "label": { "type": "string" }, "what_it_does": { "type": "string" },
+        "settings": { "type": "object" },
+        "residual": { "enum": ["pre", "post", "none"] },
+        "input": { "$ref": "#/$defs/tensor" }, "output": { "$ref": "#/$defs/tensor" },
+        "reads": {
+          "type": "object", "additionalProperties": false, "required": ["wire", "from", "as", "shape"],
+          "properties": { "wire": { "type": "string" }, "from": { "type": "string" }, "as": { "enum": ["keys/values", "notes"] }, "shape": { "$ref": "#/$defs/shape" } }
+        },
+        "runs_per_row": { "type": "integer", "minimum": 1 }, "frozen": { "type": "boolean" },
+        "parameters": {
+          "type": "object", "additionalProperties": false, "required": ["count", "parts"],
+          "properties": {
+            "count": { "type": "number" },
+            "parts": {
+              "type": "array",
+              "items": { "type": "object", "additionalProperties": false, "required": ["name", "count"], "properties": { "name": { "type": "string" }, "count": { "type": "number" } } }
+            }
+          }
+        },
+        "tensor_steps": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["step", "shape"],
+            "properties": { "step": { "type": "string" }, "shape": { "$ref": "#/$defs/shape" }, "note": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

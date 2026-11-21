@@ -49,6 +49,7 @@ from training.concept_pretraining_factories import (
     load_pretraining_datasets,
 )
 from training.concept_pretraining_trainer import PerceiverDenoiseTrainer
+from training.wallclock_callback import StopAfterHoursCallback
 from training.utils_training import (
     init_wandb,
     is_main_process,
@@ -178,14 +179,36 @@ def main():
         is_causal_ar,
         tokenizer.eos_token_id,
     )
-    train_ds, test_ds = load_pretraining_datasets(
-        tokenizer,
-        data_args,
-        training_args,
-        append_eos_token_id,
-    )
+    if getattr(data_args, "bin_manifest", None):
+        # E33n: fixed rows straight from GPT-2 token shards (no HF datasets, no packing pass): each item already
+        # carries input_ids [S] and doc_ids [S], the PackedDataset contract the causal-LM collator reads
+        from data.bin_token_dataset import load_bin_manifest, manifest_has_masks
+
+        train_ds, test_ds, bin_meta = load_bin_manifest(data_args.bin_manifest)
+        if int(bin_meta["seq_len"]) != int(data_args.max_seq_length):
+            raise ValueError(f"bin_manifest seq_len {bin_meta['seq_len']} != max_seq_length {data_args.max_seq_length}")
+        if manifest_has_masks(bin_meta):
+            # E37 SFT: the items carry labels (loss mask applied, document starts ignored); the collator keeps them
+            # (and still ignores document starts) instead of mirroring input_ids. doc_ids flow on to the model.
+            if (getattr(data_args, "loss_span_markers", "") or "").strip():
+                raise ValueError("a bin_manifest with loss masks excludes loss_span_markers")
+            data_args.preserve_precomputed_labels = True
+            if is_main_process():
+                logger.info("bin_manifest has loss masks: training on the items' labels "
+                            "(preserve_precomputed_labels=True)")
+        if is_main_process():
+            logger.info("Token-shard rows: train=%s eval=%s seq=%s rule=%s per source %s", f"{len(train_ds):,}",
+                        f"{len(test_ds):,}" if test_ds is not None else "none", bin_meta["seq_len"],
+                        bin_meta.get("rule", "stream"), train_ds.rows_per_source)
+    else:
+        train_ds, test_ds = load_pretraining_datasets(
+            tokenizer,
+            data_args,
+            training_args,
+            append_eos_token_id,
+        )
     train_lengths = None
-    if data_args.batch_packing_mode in ("length_group", "pack"):
+    if data_args.batch_packing_mode in ("length_group", "pack") and not getattr(data_args, "bin_manifest", None):
         length_cache_num_proc = os.environ.get("LENGTH_CACHE_NUM_PROC")
         with training_args.main_process_first(desc="preparing sequence-length cache"):
             train_lengths = compute_or_load_interleaved_lengths(
@@ -217,7 +240,7 @@ def main():
     )
     freeze_all_but(model, getattr(model_args, "train_only_params", ""))
 
-    if data_args.batch_packing_mode == "pack":
+    if data_args.batch_packing_mode == "pack" and not getattr(data_args, "bin_manifest", None):
         import inspect
 
         if "doc_ids" not in inspect.signature(model.forward).parameters:
@@ -300,12 +323,20 @@ def main():
         finally:
             del query, key
 
-    if model_args.torch_compile_dynamic and torch.cuda.is_available():
+    if getattr(model_args, "concept_compile", False):
+        os.environ["CONCEPT_COMPILE"] = "1"
+    compile_mode = str(getattr(model_args, "model_compile", "off") or "off").lower()
+    if model_args.torch_compile_dynamic and compile_mode == "off":
+        compile_mode = "dynamic"
+    if compile_mode not in ("off", "static", "dynamic"):
+        raise ValueError(f"--model_compile must be off, static or dynamic, got {compile_mode!r}")
+    if compile_mode != "off" and torch.cuda.is_available():
         backend = getattr(training_args, "torch_compile_backend", None) or "inductor"
-        logger.info(f"torch.compile(dynamic=True, backend='{backend}')")
+        dynamic = compile_mode == "dynamic"
+        logger.info(f"torch.compile(dynamic={dynamic}, backend='{backend}')")
         model = torch.compile(
             model,
-            dynamic=True,
+            dynamic=dynamic,
             fullgraph=False,
             backend=backend,
         )
@@ -325,6 +356,10 @@ def main():
         is_backbone=is_backbone,
         concept_num=model_args.concept_num,
     )
+    # RUN_ID_SUFFIX (e.g. the arm): runs of one architecture started in the same second otherwise get the same id —
+    # E33n s30 window and e33n trunks (2026-11-05 00:33:23) wrote into one W&B run.
+    if os.environ.get("RUN_ID_SUFFIX"):
+        run_identifier = f"{run_identifier}_{os.environ['RUN_ID_SUFFIX']}"
     setup_run_dirs(training_args, run_identifier)
     training_args.use_cpu = False
 
@@ -455,6 +490,16 @@ def main():
     callbacks = []
     if loss_config.warmup_steps > 0:
         callbacks.append(ConceptLossStepCallback())
+    wallclock = StopAfterHoursCallback(data_args.max_train_hours) if data_args.max_train_hours > 0 else None
+    if wallclock is not None:
+        callbacks.append(wallclock)
+    if int(getattr(data_args, "flow_every", 0) or 0) > 0 or int(getattr(data_args, "snapshot_every", 0) or 0) > 0:
+        from training.flow_callback import FlowCallback, SnapshotCallback
+
+        if int(data_args.flow_every or 0) > 0:
+            callbacks.append(FlowCallback(int(data_args.flow_every)))
+        if int(data_args.snapshot_every or 0) > 0:
+            callbacks.append(SnapshotCallback(int(data_args.snapshot_every)))
 
     if is_backbone:
         special_token_changes = align_special_tokens_for_training(model, tokenizer)
@@ -487,9 +532,12 @@ def main():
         concept_memory_lr=optim_args.concept_memory_lr,
         muon_adamw_lr=optim_args.muon_adamw_lr,
         muon_momentum=optim_args.muon_momentum,
+        muon_follow_schedule=optim_args.muon_follow_schedule,
+        muon_decay_1d=optim_args.muon_decay_1d,
         batch_packing_mode=data_args.batch_packing_mode,
         train_lengths=train_lengths,
         length_group_mega_batch_mult=data_args.length_group_mega_batch_mult,
+        step_token_mean=optim_args.loss_step_token_mean,
     )
 
     if is_backbone:
@@ -576,6 +624,13 @@ def main():
         )
     logger.info("=" * 60)
     trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+    if wallclock is not None and wallclock.stopped:
+        logger.info(f"Wall-clock budget of {data_args.max_train_hours} h used at step {trainer.state.global_step}/"
+                    f"{trainer.state.max_steps}; checkpoint saved, no final model. Resume with "
+                    "--resume_from_checkpoint.")
+        if wandb.run and is_main_process():
+            wandb.finish()
+        sys.exit(3)
 
     final_path = os.path.join(training_args.output_dir, "final")
     trainer.save_model(final_path)

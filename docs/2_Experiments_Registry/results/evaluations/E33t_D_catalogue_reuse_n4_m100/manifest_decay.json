@@ -1,0 +1,80 @@
+{
+  "seq_len": 16384,
+  "rule": "doc",
+  "eot": 50256,
+  "seed": 1042,
+  "train": [
+    {
+      "name": "gutenberg",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/gutenberg_train_*.bin"
+      ],
+      "weight": 1.0
+    },
+    {
+      "name": "arxiv",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/arxiv_train_*.bin"
+      ],
+      "weight": 1.0
+    },
+    {
+      "name": "doab",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/doab_train_*.bin"
+      ],
+      "weight": 1.0
+    },
+    {
+      "name": "usgpo",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/usgpo_train_*.bin"
+      ],
+      "weight": 1.0
+    },
+    {
+      "name": "hansard",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/hansard_train_*.bin"
+      ],
+      "weight": 1.0
+    }
+  ],
+  "eval": [
+    {
+      "name": "gutenberg",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/gutenberg_val_*.bin"
+      ],
+      "rows": 16
+    },
+    {
+      "name": "arxiv",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/arxiv_val_*.bin"
+      ],
+      "rows": 16
+    },
+    {
+      "name": "doab",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/doab_val_*.bin"
+      ],
+      "rows": 16
+    },
+    {
+      "name": "usgpo",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/usgpo_val_*.bin"
+      ],
+      "rows": 16
+    },
+    {
+      "name": "hansard",
+      "files": [
+        "/opt/dlami/nvme/data/longdocs_lite_gpt2/hansard_val_*.bin"
+      ],
+      "rows": 16
+    }
+  ]
+}

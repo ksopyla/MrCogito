@@ -349,6 +349,74 @@ This is **trained sparse attention**, not a drop-in compressor.
 
 ---
 
+## Latent Sparse Attention (LSA)
+
+[arXiv:2610.42147](https://arxiv.org/abs/2610.42147) · Kubicek, Caciolai, Peng, Sumant, Hoover, Greenlee,
+Battleday, Urban, Hoefler, Whittington (Prefrontal AI, ETH Zürich), 30 Oct 2026.
+Code (Apache-2.0): [github.com/Prefrontal-AI/latent-sparse-attention](https://github.com/Prefrontal-AI/latent-sparse-attention)
+(read at `97b82d6`). Project fit:
+[`hierarchy_lessons_hnet_ncm_mai_20261030.md`](../4_Research_Notes/hierarchy_lessons_hnet_ncm_mai_20261030.md) §1.4.
+
+### TL;DR
+At 1M–10M tokens the cost of sparse attention is the *indexer* that scores every key (98 % of a sparse layer's
+prefill at 10M). LSA clusters each closed 512-key block by content (Ward merging of L2-normalised, 4-summed keys
+into buckets of ~8), and a query scores one centre per bucket, expands the best buckets into k keys and adds 4 sink
+keys and a 512-key window; a tree over buckets makes the search O(log T). **Distilled** into Qwen-3.8-27B /
+GLM-5.3-Flash it holds RULER, PaperTrail, knowledge and reasoning accuracy to 10M tokens (Qwen at 10M: RULER 63.9
+vs full attention 59.9) with one layer 72.4× / 22.7× faster to prefill. **Native** (0.5B, no new parameters,
+selection without gradient, next-token loss only) it matches full attention at 128k (validation 1.085 = 1.085;
+RULER 32.2 vs 34.7) where NSA, PISA and SWA trail. The KV cache is kept whole: it lowers the cost of finding keys,
+not of storing them.
+
+### The problem that authors want to solve
+Token-, block- and compressed-block indexers (DSA, NSA, MoBA, CSA, QSA) still scan every key or block per query:
+quadratic prefill, linear decode. Block summaries can hide a single relevant key; earlier semantic methods
+(Reformer, Routing Transformer, ClusterKV, Squeezed / Multipole Attention) are training-free or short-context.
+
+### The solution, main idea on the intuition level and strong points
+Organise keys like a library index by topic, not by shelf position: cluster once per closed block (buckets never
+change), store only a centre and the member positions, and let each query look up topics first. One index list per
+query is shared by all heads, so the attention kernel is unchanged (FlashAttention reads the list as a page table).
+
+### The detailed solution, training process, data preparation
+- **D-LSA:** 64-dimensional index projections of the position-free key/query dims (PCA initialisation; PCA alone =
+  training-free variant), temperature per layer; distilled by forward KL to the frozen layer's head-averaged
+  attention restricted to its top-2,048 keys; 352M tokens of 16k–1M "LongDocs" (books, arXiv, government,
+  parliament, code repositories, agent traces), weighted towards 512k–1M.
+- **N-LSA:** clusters the attention's own keys (one KV head, no position code), scores a bucket by its best query
+  head, stops the gradient through the selection; testbed 24 layers with every 4th attention and the rest Gated
+  DeltaNet, 100B FineWeb-Edu tokens at 4k then a 12B-token decay at 128k.
+- Parameters: k = 2,048–4,096 long-range keys, p = 512–1,024 buckets, buckets of 8 (max 16), tree branching 4.
+- **In the code, not the paper:** a "two-path" native read (`kind: multires`, the default) in which every unread
+  bucket enters the softmax as one term (mean value; logit `log n + s·q·μ + s²|q|²σ²/2`), so gradients reach
+  unread keys.
+
+### The evaluation procedure, evaluation datasets and results
+- MMLU-Pro, GPQA-Diamond, AIME25, MATH500, LongBench v2: inside the baselines' 95 % confidence intervals.
+- RULER (13 tasks, 4k → 10M): within 5 (Qwen) / 3 (GLM) points to 1M; single-needle ≥ 95 % to 5M; MultiKey 2/3 and
+  common-word extraction ≤ 5 % at 10M for every method including full attention.
+- Block-size ablation: positional blocks of 8 / 16 / 64 keys at equal budget fall earlier the larger the block.
+- **PaperTrail** (new): fabricated result trails (introduced → cited → revised and renamed, old value still quoted)
+  inserted into 1,246 unseen 2026 papers; tiers by number of papers linked; not-in-corpus questions; four controls
+  (question alone, hosts without insertions, insertions alone, background alone); 512k → 10M. Tier 3 ≤ 19 % at 10M.
+- Speed at 10M: prefill 22.7× (GLM) / 72.4× (Qwen), decode 4.6× / 42.5× per layer; time to first token 2.2× / 9.2×.
+- Native: 1.6× faster per layer at 128k, 1.24× end to end; peak memory 6.8 vs 5.8 GiB per layer.
+
+### Previous attempts to solve this problem
+DSA, MiniMax SA, SeerAttention, HashAttention (distilled indexers); NSA, MoBA, InfLLM-V2, SSA, HSA (native block
+selection); CSA / QSA / GLM SA (4:1 compressed scoring); HISA, LongCat LSA, IndexCache (cheaper scans); PISA, HiP,
+InfiniteHiP (trees over blocks); Reformer, Routing Transformer, Treeformer, ClusterKV, RetroInfer, Squeezed /
+Multipole Attention, IceCache (semantic grouping, short-context or training-free).
+
+### Max 5 top most relevant to the problem publications from bibliography
+- NSA: [arXiv 2502.11089](https://arxiv.org/abs/2502.11089)
+- Routing Transformer: [arXiv 2003.05997](https://arxiv.org/abs/2003.05997)
+- Reformer: [arXiv 2001.04451](https://arxiv.org/abs/2001.04451)
+- RULER: [arXiv 2404.06654](https://arxiv.org/abs/2404.06654)
+- StreamingLLM (sinks): [arXiv 2309.17453](https://arxiv.org/abs/2309.17453)
+
+---
+
 ## StreamingLLM (sink + window)
 
 [arXiv:2309.17453](https://arxiv.org/abs/2309.17453) · Xiao et al.

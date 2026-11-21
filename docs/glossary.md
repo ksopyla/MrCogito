@@ -44,6 +44,12 @@ never bother to use the notebook.**
 | **free-run / generation** | the model writes from its own output. Hard mode; where weak models fall apart. |
 | **warm start** | continuing from an existing checkpoint instead of from scratch. |
 | **pilot / main run** | small cheap version to decide; the full-budget version afterwards. |
+| **data mix `m21mix_v1`** (E38) | the training text for the long 100M runs, built on an AWS machine from public sources only and cut into the SmolLM2 tokenizer's tokens: web pages picked for teaching value, code, math, rewritten encyclopedia text, long documents (books, papers, PDFs, whole code repositories) and a few percent of constructed rows. Three stages by row length: 4k, 16k, 64k tokens. |
+| **multi-hop library** (E38) | a constructed training row: the source paragraphs of many two-step questions shuffled together like shelves of a library, with all the questions and answers at the end, so each answer needs paragraphs thousands of tokens back. Built from 2WikiMultihopQA's training split. |
+| **planted-fact lookup** (E38) | a constructed training row: a stretch of a real book with a handful of invented facts slipped in, asked for at the end. Some questions ask for a fact that was never stated (the right answer says so); some facts are corrected later (the right answer is the latest). The password test's cousin, used for training. |
+| **fast settings (`--fast`)** | the 2026-11-14 training speed switches: the loss computed by one fused routine instead of in chunks (the same number, a third less memory) and the notebook's grouping step compiled (the same groups), with more rows per card. 39–50 % more tokens per second on a home card. |
+| **read once, answer many** | the model reads a long document one time and keeps its working state; each question then costs only the question's and the answer's tokens, not the document again. Same answers as reading document + question from scratch. |
+| **frontier-shaped dense control** | a dense model laid out like current frontier models (MAI-Thinking-1, Gemma): five sliding-window layers (window 512, with position code) for every one full-attention layer (no position code). Proposed 2026-10-30 as the fair competitor: its global layers are exactly what our notebook replaces. |
 
 ---
 
@@ -51,6 +57,8 @@ never bother to use the notebook.**
 
 | metric | what it measures | good direction | scale |
 |---|---|---|---|
+| **far-context gap (G) and its share** | G = window control's loss − dense ceiling's loss on far positions of long documents (≥ 2k tokens in): how much reading the whole book is worth over the last pages. A model's *share* = how much of G it closes | share higher | in nats. E33n 30M at 16k: G 0.134; notes closed 6 % |
+| **copy split (near / far / no copy)** | sorts each scored word by whether its short phrase (4-gram) appeared earlier inside the local window (near), only further back (far), or never (no copy), then measures loss per group — shows whether far context is worth exact copying or meaning | — | E33n 30M: far-copy words are ~10 % of words and 97 % of G |
 | **loss / cross-entropy (CE), in nats** | how surprised the model is by the true next token | lower | 0 = certain. 0.69 = a coin flip. 1.39 = a blind guess among 4. Typical small-LM values: 2.5–4.5. A 0.05 difference is small; 0.5 is large. |
 | **perplexity (ppl)** | the same thing as "how many options is it choosing between" | lower | `exp(loss)`. ppl 50 ≈ picking among 50 words. |
 | **bits per byte (BPB)** | loss converted to a per-byte unit, so two models with different tokenizers can be compared | lower | ~1.5 = weak small model, ~1.0 = decent small model. The only fair ruler against public models. |
@@ -69,10 +77,18 @@ never bother to use the notebook.**
 | **RankMe** | how many genuinely different directions the notebook uses (`exp` of the entropy of the singular values) | higher | out of the slot count or width. Near 1 = **collapse**: every page says the same thing. 200 of 2048 = healthy. |
 | **passkey accuracy** | hide a password early in a long text, ask for it at the end | higher | 0.0 means the model cannot retrieve at all. |
 | **RULER / RULER-lite** | a small suite of long-context retrieval tasks: passkey, multi-key lookup, variable tracking, frequent-word counting | higher | |
+| **RULER (13 tasks)** | the full lm-eval version used for the 100M comparison: eight needle-in-a-haystack kinds, variable tracking, common- and frequent-word counting, SQuAD and HotpotQA questions; the model writes the answer, string-matched | higher | share of puzzles solved. 100M models at 16k: 8–21 %. |
+| **BLiMP** | grammar: 67 sets of sentence pairs, one grammatical and one not; right when the model finds the grammatical one more likely | higher | 50 % = guessing. Added 2026-11-12. |
+| **SWDE** | read a real web page and copy one field out of it (e.g. a film's director); the Based paper's recall test, where efficient-attention models fall behind full attention | higher | share of pages answered. Added 2026-11-12. |
+| **BABILong (tasks 1–3)** | one, two or three facts (who went where) scattered through book text at 2k–128k; answer the question about them | higher | share answered. Tests combining facts, where RULER tests finding them. Added 2026-11-12. |
+| **instruction tuning (SFT)** | a short extra training stage on question → answer conversations, with loss only on the answers, so the model learns the answer format | — | E37's run: about 200M tokens of smol-smoltalk, ~6 % of pretraining. |
 | **STS-B (zero-shot)** | do two sentences the model considers similar match human similarity ratings — our semantic-quality reference | higher | 0.714 is our best from-scratch result. |
 | **distinct-1** | share of the words the model generates that are different from each other — is it saying new things? | higher | our gate has been ≥0.20. Below that it is looping. |
 | **REP-3** | share of 3-word sequences it has already said — is it repeating itself? | lower | our gate has been ≤0.60. Quoted next to distinct-1, so a pair like `0.162/0.686` means "not diverse enough and repeating too much". |
 | **σ (sigma)** | how many standard errors away from zero a difference is | higher = more certain it is real | under 2 = noise. Over 10 = definitely real (but possibly tiny). |
+| **efficiency multiplier** | how much more training dense needs to reach a model's result: dense's tokens to pass ÷ the model's tokens to pass on a task, or the dense tokens needed to reach the model's final loss. MAI-Thinking-1 calls it Efficiency Gain. Proposed 2026-10-30. | higher | 1× = no saving; 2× = dense needs twice the data; below 1× = dense is cheaper. |
+| **rate–distortion curve (notebook)** | an exam's score when each page may be read through only its first 1, 2, 4 … 32 notes | higher at fewer notes | shows how many notes an answer really needs; a flat curve at few notes means the notes are not ordered by importance. Proposed 2026-10-30. |
+| **note budget curve** | an exam's score when each question may read only its top 16, 64, 256 … notes (by read score) | higher at smaller budgets | shows how selective a reader can be per task; single-fact lookup usually survives tiny budgets, many-key and counting tasks do not. Proposed 2026-11-04. |
 
 **Real and tiny are different things.** A difference can be 25σ and still be worth nothing. Always
 report both: is it real, and is it big enough to matter.
@@ -91,6 +107,20 @@ meaningless without knowing which slice it came from.
 |---|---|
 | **concepts / latents / slots** | the small set of vectors the long input is compressed into. The notebook pages. |
 | **cross-attention** | the mechanism for looking things up in the notebook; the "read". |
+| **indexed notebook / opened tokens (E33p)** | the notebook used as a table of contents: the reader picks its best notes, then rereads the original tokens those notes summarise ("opened tokens") — exact words, not a summary. Like LSA's buckets: the summary only says where to look. |
+| **tied address key** | a note's lookup key built as the average of the reader's own keys for the tokens it summarises, so a question that matches those tokens also matches the note. |
+| **per-query choice** | every token picks its own notes to open (not one pick shared by a block of 128 tokens, which would let a token see what later tokens wanted: a leak of the next word). |
+| **LSA-native arm** | our 30M model with LSA's released read in the reading layer: the reader's own keys grouped into buckets of about 8 by similarity, each token opens its best buckets' tokens. No notebook. |
+| **concept memory read (E37)** | each closed block of 512 tokens is grouped by content into concepts (64 of about 8 tokens). A query rereads the tokens of its best concepts exactly and reads every other concept as one summary entry weighted by its estimated share of attention. Opened tokens = the pages reread; summaries = the chapter summaries of the rest. |
+| **length scale (E37)** | past the training length, the summaries' total weight is shrunk in proportion to how much more text they stand for, so the far past claims as much of the read as it did at the training length. Without it the summaries swamp the read on long documents (the fade). |
+| **catalogue read (E33t)** | the notebook used only as a library catalogue: notes decide which original tokens a query opens, but their summaries are no longer read. Pages are drawers, notes are cards. |
+| **balanced filing** | every page token is filed under exactly one note, with each note holding about the same number of tokens (none empty, at most 16); done by balancing the writer's assignment (Sinkhorn iterations). E33p's unbalanced filing left 30 % of notes empty. |
+| **index loss** | a small extra loss that teaches each note's score to predict how much of the read's attention its tokens actually receive once opened, so the catalogue learns where queries look. LSA's index has no such training. |
+| **empty slots (sinks)** | a few extra keys in the read with no content, where attention can go when nothing fits. LSA uses the first 4 tokens of the document; E33t uses 4 learned slots. |
+| **a new place per pass** | in the reading loop, each pass may only open notes that the same query has not opened in earlier passes, so four passes are four lookups that can follow a chain of references. Its cost (2026-11-07): a planted password found on pass 1 cannot be reread on the last pass, where the LSA port and dense copy it; the `catalogue_reuse` arm trains without the rule. |
+| **planted-password probe** | the passkey test run through the reading probe: for each answer token, was the password's place among the tokens the read opened on each loop pass, how much of the read's attention it got, and was the answer right. Separates "never found it" from "found it but did not use it". |
+| **two-level search** | a query scores page keys first, keeps its best pages, then scores only those pages' notes: the work per query grows with the number of pages, not tokens (the route past 1M tokens). |
+| **update ratio / logit lens / CKA** | training probes: how much one optimizer step changes a layer's weights (relative); the next-word loss read straight from a layer's output (where in depth the prediction forms); a 0–1 similarity of two layers' outputs on the same tokens (do two models' layers do the same work). |
 | **self-attention** | tokens looking at each other. |
 | **sliding-window attention (SWA)** | each token can only see the last *K* tokens. Cheap; limits how far back a single layer sees. |
 | **reach** | how far back information can actually travel through a stack of windows: roughly `layers × window`. |
@@ -147,6 +177,13 @@ meaningless without knowing which slice it came from.
 | **hybrid key anchors** | identity raw keys on the *key* tokens plus pooled gist for the rest (BAPO `b` + `a`). |
 | **CogitoProbe** | four local synthetic families (`bits`, `bind`, `arith`, `props`) with Hub *names* `ksopyla/cogito-probe-*`. Not on the Hub until approved. Length ladder 1k→32k; `fixed` vs `scaled`. |
 | **subexpr / match / eval** | arith tasks: packed internal-node values (primary); Dyck-3 closer index (stack); root scalar (calculator shortcut — not a success metric). |
+| **ordered notes / nested dropout** | training trick from Next-Concept Modeling (arXiv 2610.14162): during training a page is sometimes read through only its first k notes, so the first notes learn to hold the gist and later ones add detail — like a progressive JPEG that is already a blurry picture after its first bytes. |
+| **coarse-to-fine notebook** | the 2026-10-30 proposed bet: ordered notes first, then notes placed by a learned boundary router (H-Net style: more notes where the facts are, fewer on filler), then (since 4 Nov) a clustered note index. One writer for every compression rate, read coarse-then-fine. |
+| **two-agent split (eval only)** | one trained model run as two agents with no retraining (13 Nov): agent A reads the document and keeps the reading layer's memory of it; agent B never sees the document, it reads only its own question plus A's memory. **Full-state handoff** = B also keeps A's short-range caches (the same answers as one agent). **Memory only / cold start** = B's short-range layers start empty at its first word — the case the models were never trained for, and where they fail. **Tail** = B is also given A's caches for its last 16–64 tokens. **Remote read** = B sends its lookups and A answers them from its memory, so the traffic does not grow with the document. Like a colleague who read the book handing you his notebook: with his last half page of working notes you can carry on; with the notebook alone you do not know where he was. `nn/agent_split.py`. |
+| **cut row / split training (E37c)** | a training row cut at random points (14 Nov): after a cut the nearby-words (local) layers see only their own side, while the reading layer still reads the whole document. One such row is agent A (before the cut) and agent B (after it) at once. Like a nurse starting mid-shift with only the chart. Switches `par_cut_gap_min` / `par_cut_gap_max`; spec `E37c_two_agent_split_training.md` |
+| **cold start** | agent B's first tokens: its local layers have nothing before them, and everything it knows of the document must come from A's memory. Untrained, this costs most of the needle score (43 % against 97 % at 16k) |
+| **cut loss** | how much more surprised the model is by the next word right after a cut than at the same place without the cut, by distance from the cut (0-7, 8-31, 32-127, 128+ tokens); lower is better, 0 = the cut costs nothing. Script `scripts/a2a_cut_loss.py` |
+| **clustered note index** | step 3 of the coarse-to-fine notebook (4 Nov), after Latent Sparse Attention (arXiv 2610.42147): finished notes are grouped by content into buckets of about eight; a question first scores one centre per bucket, then reads only the notes of the best buckets plus the recent raw text — like checking a library's subject index before pulling books off the shelf. |
 
 ---
 

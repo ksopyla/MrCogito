@@ -15,6 +15,298 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-14] - E37c follow-up: no-cut control mode, same-document re-exam
+
+**Why:**
+- E37c could not say whether its memory-only gain and its one-agent loss came from the cuts or from more long-document
+  training, and its two exams had drawn different documents. The author approved the control ("Yes, run it").
+
+**What changed:**
+- [changed] `scripts/run_e33n.py` - `--cut_max 0` drops the cut settings of the split phase (same rows, rate, seed).
+- [changed] `infra/aws/jobs/e37c_split_ft.sh` - words MODE (cut | nocut) and PROBE_SEED (a node job gets words, not
+  environment).
+- [added] `infra/aws/jobs/e37c_reexam.sh` - the untuned and cut-tuned models on probe documents from one seed.
+- [added] `scripts/a2a_paired_compare.py` - the three-model table on paired documents with McNemar tests.
+
+**Related:** `docs/2_Experiments_Registry/run_reports/e37c_two_agent_split_training_20261114.md` (follow-up section)
+
+---
+
+## [2026-11-14] - Two-agent probe: documents from a seed
+
+**Why:**
+- E37c's exam was meant to use the documents of 2026-11-13 and did not: lm-eval's needle generator draws needles,
+  keys and depths from the global random state, and the probe never seeded it. Two checkpoints were therefore
+  compared on different documents (found when the references of the two runs did not match).
+
+**What changed:**
+- [added] `scripts/a2a_split_probe.py` - `--seed N`: the documents of every (task, length) cell come from that seed
+  (checked: the same seed gives the same documents); -1 = unseeded, as the earlier runs were. Recorded in the output.
+
+**Related:** `docs/2_Experiments_Registry/run_reports/e37c_two_agent_split_training_20261114.md` (the run's result)
+
+## [2026-11-14] - E37c: cut rows, so a model can be trained as two agents (spec, code, job)
+
+**Why:**
+- The eval-only two-agent test of 13 Nov: agent B with only agent A's memory finds 43 % of the needles at 16k against
+  97 % for one agent, while the same memory plus A's last 16 tokens' local caches gives 93 %. The memory holds the
+  answer; B fails on its cold start, a state training never showed the model (an empty local window with a full
+  memory). The author approved a short fine-tune that trains on that state (14 Nov, "Yes, spec it").
+
+**Impact:**
+- Any arm without a notebook or message boundary (dense, LSA port, concept read) can now be trained with rows cut at
+  random points. A training row with a cut is the two-agent setting of `nn/agent_split.py` (unit-tested equal).
+- Off by default: no change to any existing run, checkpoint or eval.
+
+**What changed:**
+- [added] `nn/perceiver_ar_lm.py` - `par_cut_gap_min` / `par_cut_gap_max` / `par_cut_prob` (config), `draw_cuts`,
+  `cut_sides`, the `cut_ids` argument of `forward` and `hidden_states`. In a cut row the local (sliding-window) layers
+  get a side id per stretch between cuts; layers with the full pattern keep the document id. Cuts are drawn in
+  training mode only; refused with a notebook, a message boundary, n-gram input tables or the local sink.
+- [added] `training/concept_pretraining_args.py`, `training/concept_pretraining_factories.py` - the three switches.
+- [added] `scripts/run_e33n.py` - phase `split` (the decay's 16k rows in another order, the long phase's rate,
+  0.2B tokens at m100, `--cut_min` / `--cut_max`).
+- [added] `scripts/a2a_cut_loss.py` - the loss of the positions 0-7 / 8-31 / 32-127 / 128+ after a cut against the
+  same positions without cuts, and the loss on rows cut as training cuts them.
+- [added] `infra/aws/jobs/e37c_split_ft.sh` - pre-flight, training with checkpoints to S3, then the two-agent probe
+  with the settings of 13 Nov; writes only to its own folder `runs/e37c/`.
+- [added] `tests/test_cut_rows.py` - 17 tests (no cut = the plain forward; a cut row = the two-agent decoder for
+  dense, LSA and concept reads; local layers stop at a cut; chained cuts; the draw; refusals).
+- [added] `docs/experiments_specs/done_failed/E37c_two_agent_split_training.md`,
+  `docs/3_Evaluations_and_Baselines/e37c_architecture.html` (alignment page).
+
+**Checked:** 17 new tests and 278 existing model / trainer tests pass. Laptop pipeline checks only (no conclusions):
+12 training steps of the tiny size with cuts; the cut-loss script on the 100M checkpoint at 2,048 tokens.
+
+**Related:** `docs/experiments_specs/done_failed/E37c_two_agent_split_training.md`
+
+## [2026-11-13] - Two agents from one trained 100M model, eval only: the hand-over works with A's last tokens, not with the memory alone
+
+**Why:** can the 100M models already show agent-to-agent work through latents, with no training, and what does it
+cost in bytes and time against sending the text.
+
+- `nn/agent_split.py` (new, `SplitDecoder` on the cached decoding). Agent A = the prefill of the document; its memory
+  = the reading layer's key and value per token and loop pass. Agent B = the steps over its own text and its answer.
+  With the split on, B's local layers read B's own tokens only; the reading layer is unchanged, so A's memory is all
+  that crosses. Options: `tail` (B's local layers still read A's last N tokens), `bits` (A's memory on a coarse
+  grid, the read's index rebuilt from it), `blank` (no memory: the floor). Counts the traffic of handing the memory
+  over and of a remote read (B sends its queries, A returns the read vector and the log of its softmax mass).
+  Full attention, LSA's read and the concept read; the note reads and n-gram input tables are refused.
+  `nn/incremental.py`: an optional `trace` hook in the concept read (the keys and summaries a read opens).
+  `tests/test_agent_split.py` (14): split off = the tokens and hidden states of one row; split on = scrambling
+  every local layer's cache of A's tokens changes nothing for B; blank memory = B decoding alone.
+- `scripts/a2a_split_probe.py` (new): RULER needle documents cut at the question into A's document and B's text.
+  Conditions: one agent; full state (split off); memory only; memory + A's last N tokens; memory + a 148-token
+  preamble of B's own; 8 / 4-bit memory (on the preamble start); no memory; the previous document's memory. Records
+  seconds and sizes (text as UTF-8, zstd-19, bits under the model itself; memory; remote read; what the concept
+  read opened). `scripts/cramming_probe.py`: `--bin` (documents from a token shard).
+  `infra/aws/jobs/a2a_probe_node.sh` (new).
+- Run: 100M models (3.4B tokens), two spot g6e.xlarge in us-east-1, 13 Nov 21:34 UTC - 14 Nov 00:18 UTC, $8.15.
+  Node `a2a-e37a-short` ran four jobs on one card (12 answer tokens); node `a2a-dense` came up from a launch retry
+  and ran the first, heavier configuration (50 documents, 32 answer tokens, bits on every document) — it was noticed
+  only at 23:37 UTC. % of needles found; `number` = RULER niah_single_1 (repeated filler), `essays` = niah_single_2:
+
+  | model, task, length (n) | one agent | full state | memory only | + A's last 16 | + B's preamble | 8-bit | 4-bit | none / other doc |
+  |---|---|---|---|---|---|---|---|---|
+  | concept read, number, 4k (30) | 100 | 100 | 63 | 100 | 90 | 93 | 80 | 0 / 0 |
+  | concept read, number, 16k (30) | 97 | 97 | 43 | 93 | 40 | 33 | 33 | 0 / 0 |
+  | concept read, number, 32k (20) | 90 | 90 | 35 | 60 | 20 | 20 | 0 | 0 / 0 |
+  | concept read, number, 64k (12) | 83 | 83 | 17 | 58 | 8 | 17 | 17 | 0 / 0 |
+  | concept read, number, 64k (20, second run) | 100 | 100 | 40 | 95 (last 32), 100 (last 64) | 15 | – | – | 0 / 0 |
+  | concept read, essays, 4k / 16k / 32k (30 / 30 / 20) | 63 / 10 / 10 | 63 / 10 / 10 | 10 / 10 / 20 | 43 / 23 / 15 | 27 / 7 / 10 | 13 / 13 / 27 | 7 / 27 / 13 | 0 / 0 |
+  | LSA port, number, 4k / 16k / 32k (20 / 20 / 14) | 100 / 100 / 100 | 100 / 100 / 100 | 40 / 25 / 7 | 80 / 80 / 79 | 50 / 30 / 14 | 40 / 30 / 10 | 30 / 10 / 0 | 0 / 0 |
+  | LSA port, essays, 4k / 16k / 32k (20 / 20 / 14) | 95 / 50 / 57 | 95 / 50 / 57 | 80 / 45 / 43 | 90 / 45 / 57 | 85 / 70 / 57 | 80 / 60 / 50 | 80 / 70 / 40 | 0 / 0 |
+  | dense, number, 4k / 16k (30) | 77 / 70 | 77 / 70 | 17 / 43 | 60 / 57 | 53 / 57 | 40 / 47 | 27 / 27 | 0 / 0 |
+  | dense, essays, 4k / 16k (30) | 97 / 57 | 97 / 57 | 7 / 33 | 73 / 47 | 73 / 40 | 80 / 40 | 67 / 47 | 0 / 0 |
+  | dense, number, 4k / 16k (50, first configuration) | 70 / 72 | 70 / 74 | 20 / 52 | 44 / 38 (last 64: 62 / 60) | 40 / 54 | 40 / 56 | 28 / 40 | 0 / 0 |
+  | dense, essays, 4k / 16k (50, first configuration) | 88 / 54 | 88 / 54 | 12 / 38 | 70 / 54 (last 64: 86 / 48) | 74 / 38 | 72 / 38 | 56 / 36 | 0 / 0 |
+
+  The 8 / 4-bit columns of the 12-token runs cover the first 15 documents of a cell (10 for the LSA port, 6 at 64k).
+  In the 50-document run they cover all: 6 bits 36 / 52 / 72 / 36 and 3 bits 12 / 22 / 40 / 30 in the row order
+  above, so 8 and 6 bits equal 16 and 4 bits loses. UUID needles (niah_single_3, dense, 50): one agent 10 / 12 %.
+  - Full state = one agent: the same score in 23 of 24 cells and the same answer text in 680 of 720 documents. Most
+    of the 40 share a beginning and then differ (bf16; the one agent runs the question inside the prefill, the
+    hand-over steps through it). In float32 the tests are exact and the 100M concept model gave the same text in 33
+    of 33 documents of 2k (laptop pipeline check).
+  - With the previous document's memory B never reports its own needle; it reports the other document's, at a rate
+    within 20 points of its preamble score in every cell.
+  - Seconds, median, concept read, A reads / B answers / one agent: 0.56 / 1.95 / 1.01 at 4k, 1.45 / 1.98 / 1.76 at
+    16k, 4.9 / 2.0 / 5.1 at 32k, 8.6 / 1.8 / 9.1 at 64k (shared card). B's ~45 single-position steps cost ~2 s at
+    any length.
+  - Sizes: the memory is 512 numbers per document token (4 passes × (64 key + 64 value)) = 1 KB at 16 bits: 3.9 /
+    16 / 33 / 67 MB at 4k / 16k / 32k / 64k, against 17 / 75 / 152 KB of essay text as UTF-8 (zstd-19: 6.9 / 26 /
+    51 KB; 5.0-5.2 bits per token under the model itself: 2.4 / 10 / 20 KB). A remote read is 14.4 KB per token of
+    B's (3,584 numbers up, 3,640 down) at any length. The concept read opened 3.1 / 6.0 / 7.5 / 9.7 MB of keys,
+    values and summaries at 4k / 16k / 32k / 64k. A's local caches are 3.3 KB per token (13 local layer calls × 128
+    numbers): 53 / 106 / 213 KB for the last 16 / 32 / 64 tokens.
+- Capacity of input vectors for the dense 100M model as the receiver (`cramming_probe.py`, 8 FineWeb-Edu validation
+  texts, 2,000 steps; bits gained on the text, share of texts reproduced exactly):
+
+  | vectors | tokens → bits (exact) |
+  |---|---|
+  | 1 (two runs) | 16 → 85, 96 (75 %, 100 %) · 32 → 165, 165 (62 %, 50 %) · 64 → 265, 237 (0 %, 25 %) · 128 → 266, 301 (0 %) |
+  | 4 (two runs) | 64 → 288, 280 (12 %, 25 %) · 128 → 501, 524 · 256 → 585, 574 · 512 → 677, 720 (0 %) |
+  | 16 (two runs) | 256 → 1,054, 1,087 (12 %, 38 %; 96-97 % of tokens) · 512 → 1,538, 1,440 · 1,024 → 1,932, 1,899 (0 %) |
+
+  The two runs use the same texts and differ in the vectors' random start and in the card (shared / alone).
+
+- Results: `s3://mrcogito-train-<account>/runs/a2a_probe/a2a-e37a-short/` and `.../a2a-dense/`.
+- Not done: training with the split. The concept and LSA reads require the message boundary off in the config, so a
+  split fine-tune needs separate side ids for the local layers.
+
+## [2026-11-14] - Tiny-ML Leaderboard recipe: shared input/output table, a bigger body under 150M, board scoring
+
+Author, 2026-11-14: submit the 100M models to the Tiny-ML Leaderboard; then "SmolLM2, bigger body". Branch `eng-100m`.
+
+- **Shared table (`--lm_head_tied`):** `nn/perceiver_ar_lm.TiedFactorizedHead`, the output as (h·Pᵀ)·Eᵀ with the input
+  table E; every loss path (plain, chunked, Liger fused, softcap) takes the projected states and the table. Tests:
+  `tests/test_tied_head.py`, the CUDA fused-loss test over plain and tied heads.
+- **Size `m120t` in `scripts/run_e33n.py`:** 896 wide, 9 stacked layers, FFN 2,816, tied, SmolLM2 vocabulary:
+  141.5M total (catalogue 145.6M). `run_e33n.py sizes` prints each arm's total.
+- **`--muon_peak`:** a whole Muon run from one peak (64k phase at a tenth); `infra/aws/jobs/e38_full.sh` takes
+  `E38_SIZE`, `E38_OPT`; `infra/aws/jobs/e38_board.sh` is the leaderboard recipe on `m21mix_v2`; `E33N_TAG` names runs.
+- **Board scoring:** `evaluation/run_lm_eval_suite.py --tier leaderboard` and `evaluation/tiny_ml_board.py`
+  (reproduces the live board's score), board snapshot under `evaluation/leaderboards/`.
+- **Pipeline check by size:** `infra/aws/jobs/e38_pipeline_check.sh SCALE ARM SIZE`.
+
+## [2026-11-14] - Engineering pass for the 100M models: branches merged, faster training, read-once decoding, data mixes
+
+Author, 2026-11-14: "please implement the engineering improvements and merge to dev, inform other agents what have
+been done. Test it properly, and compare to past runs." Branch `eng-100m` (worktree `MrCogito-eng`).
+
+- **Merged into one line:** `e37-needles` (which holds `kv-cache` and `e37-long`), `arch-10m` and `e37-sft`, on top of
+  dev. `scripts/run_e33n.py` keeps both extra phases (`long`, 64k rows; `sft`). The NN Builder designs keep dev's
+  versions (the architecture tracker's, 8 Nov). With no new flag, the launcher's commands are byte-identical to the
+  source branches' (checked for e37a, lsa, catalogue_reuse_n4 at m100: trunk, decay, long, sft).
+- **Faster training, `scripts/run_e33n.py --fast`:** Liger's fused linear + cross-entropy instead of the chunked loss
+  (the same function: equal in fp32 with gradients to 1e-6; 7e-5 apart in bf16, gradients 0.3–0.5 %), and the
+  concept read's grouping compiled (`nn/concept_memory.concept_labels`, `CONCEPT_COMPILE=1`: the same labels, 12 ms →
+  4.5 ms a call). The fused loss frees a third of the memory, which pays for more rows per pass. One RTX 3090 (Odra),
+  m100, real trainer and shards, 100 steps, tokens per second:
+
+  | model, phase | old settings | fused loss, same rows | `--fast`, 4 rows per pass |
+  |---|---|---|---|
+  | e37a, trunk 4k | 13,076 (16.2 GB, 2 rows) | 14,400 (11.2 GB) | 19,674 (19.0 GB), +50 % |
+  | lsa, trunk 4k | 15,044 (15.8 GB, 2 rows) | 16,976 (10.8 GB) | 20,882 (18.1 GB), +39 % |
+  | e37a, decay 16k | 10,297 (21.5 GB, 1 row) | 11,115 (19.2 GB) | 11,665 (19.2 GB, 1 row), +13 % |
+
+  The bare step without the Trainer gives the old settings' speed (13,089 vs 13,076): the trainer and the dataloader
+  add nothing. 57 % of e37a's forward is the reading layer (four passes), and the step has a fixed cost per pass that
+  larger batches spread on the 3090.
+
+  One L40S, the card of every 100M run to date (`infra/aws/jobs/eng_check_node.sh`, spot g6e.xlarge in us-west-2,
+  07:17–08:30 UTC, ~$2; `s3://…/runs/eng_check/eng-check/`), 60 steps each, tokens per second (peak GB):
+
+  | model, phase | old settings | `--fast`, same rows per pass | `--fast`, more rows per pass |
+  |---|---|---|---|
+  | e37a, trunk 4k (4 rows) | 20,334 (29.4); with `--flow` 20,350 | 30,280 (19.2), +49 % | 6: 29,202 · 8: 30,523 (34.6) · 10: 30,399 (42.3) |
+  | e37a, decay 16k (1 row) | 15,218 (21.6) | 20,439 (19.3), +34 % | 2: 20,164 (35.1) · 3: out of memory |
+  | lsa, trunk 4k (4 rows) | 22,667 (28.7); with `--flow` 22,689 | 31,536 (18.3), +39 % | 6: 31,046 · 8: 32,495 (33.0) · 10: 32,724 (40.3) |
+  | lsa, decay 16k (1 row) | 17,566 (20.8) | 23,404 (18.5), +33 % | 2: 23,541 (33.4) · 3: out of memory |
+
+  The old settings reproduce the past runs (4 × 20.3k = 81k; stage B measured 79k on four cards). On the L40S more
+  rows per pass add nothing, so the long runs keep the E37 micro-batches and gain from the fused loss and the
+  compiled grouping alone.
+- **Same quality:** e37a m100 trunk, seed 42, 400 optimizer steps of 16 rows, one RTX 3090 each (Odra, 07:12–07:50
+  UTC). Held-out FineWeb-Edu loss at steps 100 / 200 / 300 / 400: old 6.2147 / 5.5052 / 5.1449 / 4.9117; `--fast` (4
+  rows per pass instead of 2) 6.1946 / 5.4920 / 5.1417 / 4.9122. Wall time 2,258 s vs 1,485 s (1.52×).
+- **Whole-model `torch.compile` is not usable** on these models with torch 2.11 (`--compile static`, kept as a switch):
+  after graph breaks on the forward's data-dependent branches the process aborts inside dynamo's guard code ("failed to
+  add version watcher to dict"). The earlier estimate of 1.5–2× from compiling was wrong.
+- **Read once, answer many:** `IncrementalDecoder.snapshot / restore / feed / ask` and `evaluation/doc_session.py`
+  (`DocumentSession`, with a CLI). A document is prefilled once; each question restores the snapshot, writes its
+  tokens as steps and decodes. Every read type (dense, dense + RoPE, LSA, catalogue, notes, concept, concept +
+  reasoner, concept + length scale) answers with the tokens of a fresh prefill over document + question
+  (`tests/test_incremental_decode.py`). `evaluation/bench_cached_decoding.py --questions N` times it. On one L40S,
+  100M stage-B models, a needle question with a 32-token answer, bf16, seconds:
+
+  | model | length | fresh prompt, cached (2026-11-13 path) | read once | then each question | same answer |
+  |---|---|---|---|---|---|
+  | e37a | 16k / 64k / 128k | 1.10 / 4.92 / 16.55 | 0.46 / 4.26 / 15.89 | 1.06 / 1.06 / 1.07 | yes |
+  | dense | 16k / 64k / 128k | 0.45 / 1.03 / 2.23 | 0.07 / 0.42 / 1.17 | 0.59 / 0.90 / 1.62 | yes |
+  | lsa | 16k / 64k / 128k | 1.01 / 3.38 / 10.92 | 0.27 / 2.66 / 10.09 | 1.16 / 1.17 / 1.19 | no at 16k, yes at 64k and 128k |
+
+  The LSA port's 16k prompt is the near-tie already seen on 2026-11-13: its first answer token is decided by 0.015
+  logits (":" then the number, against " the"), under bf16 rounding, so the uncached loop, the cached prefill and
+  the stepped question do not all land on the same side. The eight other cases agree token for token.
+
+  For the concept read a question costs about a second whatever the document's length (its step reads 512 opened
+  tokens and the summaries), so at 128k a question is 15× cheaper than a fresh prompt once the document is read;
+  full attention's step reads every key, so its saving is small. Peak memory with the snapshot: 4.5 GB at 64k and
+  10.8 GB at 128k for e37a.
+- **Data mixes:** `scripts/run_e33n.py --mix DIR` trains on a built mix (its tokenizer, sources, row lengths and
+  tokens per phase; a stream source read by several phases is split by shards); `evaluation/long_doc_loss.py
+  --sources / --eot / --tokenizer` (bits per byte, to compare tokenizers on the same documents); `E33N_MIX`,
+  `E33N_TOKENIZER`, `E33N_LONGDOCS` in the job scripts. Spec: `docs/experiments_specs/ahead/E38_long_budget_mix.md`.
+- **Operations:** `infra/aws/keep_running.sh` (relaunches a spot job until its done-marker is in S3; refuses a launch
+  that could pass the cap), `infra/aws/jobs/e38_full.sh`, `scripts/profile_train_step.py`; `MC_BUDGET_USD` default
+  4,000 (author, 2026-11-14: "Increase our budget to $4000").
+- **E38 data (`m21mix_v1`):** `scripts/build_m21_mix.py`, `scripts/build_reasoning_rows.py`, their node jobs and
+  `scripts/run_e33n.py mixinfo`. Built 07:23–07:58 UTC on two CPU nodes for $0.90: 13.76B train tokens, 20 public
+  sources, SmolLM2 tokens, 25.7 GiB in S3; no source short in any phase. Pipeline check on Odra
+  (`infra/aws/jobs/e38_pipeline_check.sh`): a 1 % build, a 30M e37a through trunk, decay and the 64k phase with
+  evaluations, resume, then the tests in quick form.
+- **Tests:** 1,599 passed after the changes (1,583 on the merged branch before them); the one failure
+  (`test_launcher_e05_profile_reaches_canonical_parser`) is the same on dev.
+
+---
+
+## [2026-11-13] - Cached decoding timed on one L40S: 25-28x at 64k, same answers
+
+- `infra/aws/jobs/bench_cache_node.sh` (new) on one spot g6e.xlarge (us-west-2c, 08:15-08:45 UTC, ~$1): the five
+  100M models through `evaluation/bench_cached_decoding.py`, RULER-like needle prompt, 32 answer tokens, bf16, flex.
+  Seconds per prompt, uncached → cached (speedup):
+
+  | model | 16k | 32k | 64k | 128k (cached only) |
+  |---|---|---|---|---|
+  | dense | 2.1 → 0.43 (4.9x) | 5.2 → 0.53 (9.8x) | 13.0 → 1.0 (12.8x) | 2.2 |
+  | LSA port | 7.7 → 1.0 (7.7x) | 23.5 → 1.5 (16x) | 82.0 → 3.3 (25x) | 10.5 |
+  | catalogue n4 | 12.3 → 1.1 (11x) | 43.1 → 2.1 (21x) | 170.3 → 6.0 (28x) | 15.4 |
+  | e37a (concept read) | 12.8 → 1.1 (11x) | 42.0 → 2.0 (21x) | 134.1 → 4.9 (28x) | 16.5 |
+  | notes_open | 19.4 → 2.1 (9x) | 63.4 → 3.5 (18x) | 198.5 → 7.8 (25x) | 24.8 |
+
+  Same tokens both ways at every length timed both ways. LSA 16k differed once (first job): the cached answer was
+  identical in the rerun, where the uncached one then matched, so the uncached bf16 path itself varied. Peak GPU
+  memory is the same both ways (±0.1 GB; the one pass over the row dominates; 128k peaks: 4.9-19.9 GB). Results:
+  `s3://mrcogito-train-<account>/runs/kvcache_bench/kvcache-bench/` (dense and LSA 16k from the rerun, `*_16k_v2`).
+- `evaluation/bench_cached_decoding.py`: untimed warm-up of each path per length that runs at least 3 tokens (the
+  first job's one-token warm-up ran no cached step, so dense 16k timed 7 s of first-step set-up); peak memory per
+  path; results written after every length; on a mismatch, the first differing position and the uncached path's
+  logit gap there.
+
+## [2026-11-13] - Cached decoding covers E37's concept read and E33p's notes read
+
+- Branch `kv-cache` merges `e37-catalogue-later` (the E37 concept read from `arch-10m`, the catalogue model, the later-pass
+  files), so one branch carries every 100M reading layer.
+- `nn/incremental.py`: E37's concept read (`decode_kind` → "concept"): concepts and the reasoner's updates rebuilt from
+  the cache when the answer crosses a block end; one query's choice (`choose`, the table row of t) and one fp32
+  softmax over sinks ‖ block-aligned window ‖ opened members ‖ summaries with their bias and the length scale.
+- `nn/incremental.py`: E33p's notes read (notes_open, "notes"): the pages holding the newest position are rewritten
+  every step (the writer on that page alone, tied keys redone per pass); the previous position is redone first,
+  since the page it read closes one position later once the next token is written. Answers up to raw window − page
+  (256 tokens for notes_open), as for the catalogue.
+- `nn/incremental.py`: a catalogue scored by a softmax over the visible notes is refused (the cached notebook lacks the
+  pages holding answer tokens; the cosine score used by every E33t arm does not depend on them).
+- Tests: concept arms (plain, reasoner, length scale) and the notes arm in `tests/test_incremental_decode.py`; the
+  step test's row is long enough for the answer's block to have concepts.
+
+## [2026-11-12] - Cached greedy decoding for the Perceiver AR family
+
+- `nn/incremental.py` (new): `IncrementalDecoder` reads the row once (the model's own forward over the fixed-length
+  row the harness decoding uses, with every attention call's keys and values kept) and then runs one position per
+  step through the layers. The harness loop re-ran the whole row for every answer token (E33t stage D, 64k on one
+  L40S: 5.2 s per forward, 32 forwards, ~180 s per RULER prompt). Covered: full attention, LSA's read (buckets rebuilt
+  when the answer crosses a block end) and the catalogue read (E33t, reuse arms; exact for answers shorter than
+  raw window − page, 256 tokens for n4, longer requests refused); local sliding-window layers, the tied loop, U-net
+  skips, n-gram embeddings. Other reads (E33p's gist read, E37's concept read) raise `NotImplementedError`.
+- `evaluation/lm_eval_perceiver_ar.py`: `_model_generate` takes the cached path when the model is covered
+  (`PERCEIVER_AR_GEN_CACHE=0` keeps the old loop); same row geometry, same stop rule.
+- The list read takes a query range (`attend_list(q_offset=)`, `ChoiceList(row0=, members=)`,
+  `note_open_table(q_offset=, members=)`, `lsa_open_table(q_offset=, members=)`); defaults unchanged.
+- Tests: `tests/test_incremental_decode.py` (tokens equal the uncached loop's; each step's hidden state equals the
+  full forward's at that position, fp32; the catalogue horizon; fallback for uncovered reads).
+  `tests/test_lm_eval_perceiver_ar.py`: the stale "generation unsupported" test now checks greedy decoding.
+
 ## [2026-10-23] - Server runs from the main checkout; e31 branches archived
 
 - `e31-latent-memory` and `e31-text-memory` are merged into `dev` and archived as tags `archive/e31-latent-memory`

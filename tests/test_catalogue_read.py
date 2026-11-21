@@ -1,0 +1,432 @@
+"""E33t — the catalogue read: the notes only choose what opens; balanced filing, max-head cosine choice, a new place per
+loop pass, a two-level page → note search, learned empty slots, the index loss.
+
+Spec: docs/experiments_specs/ahead/E33t_catalogue_read.md · plan: E33t_plan.md (§7).
+"""
+from __future__ import annotations
+
+import math
+
+import pytest
+import torch
+import torch.nn.functional as F
+
+from nn.exact_read import (
+    balance_assign,
+    counts,
+    file_capped,
+    index_loss,
+    note_open_table,
+    page_keys,
+    tied_note_keys,
+)
+from nn.perceiver_ar_lm import PerceiverARLM, _attend_catalogue
+from tests.test_latent_memory import lm_cfg
+from tests.test_note_open import RW, TIED, _future_leaks, packed_docs, row
+
+CAT = dict(**TIED, lm_stride=16, lm_open="notes", lm_open_k=8, lm_open_cap=24, lm_note_read="index",
+           lm_filing="balanced", lm_filing_cap=6, lm_open_score="max_cos", lm_open_new_per_pass=True, lm_sinks=2,
+           lm_index_loss=0.1, lm_index_queries=16, lm_index_negatives=3)
+CAT2 = dict(CAT, lm_open_levels=2, lm_open_pages=2)
+
+
+def make(seed=0, train=False, **kw):
+    torch.manual_seed(seed)
+    m = PerceiverARLM(lm_cfg(**kw))
+    for layer in m.layers:  # warm residuals so every path is visible at init
+        layer.attn.wo.weight.data.normal_(0, 0.2)
+        layer.mlp.down.weight.data.normal_(0, 0.2)
+    return m.train() if train else m.eval()
+
+
+def state(kw=CAT, S=160, doc=None, seed=0):
+    m = make(seed=seed, **kw)
+    ids = row(S)
+    with torch.no_grad():
+        m(ids, doc_ids=doc)
+    return m, ids, m._last_message_ctx
+
+
+# ------------------------------------------------------------------ config
+def test_config_validation():
+    with pytest.raises(ValueError):
+        lm_cfg(**dict(TIED, lm_open="notes", lm_open_k=4, lm_sinks=2))                   # slots need index read
+    with pytest.raises(ValueError):
+        lm_cfg(**dict(TIED, lm_note_read="index"))                                        # index read needs notes
+    with pytest.raises(ValueError):
+        lm_cfg(**dict(CAT, lm_filing_cap=3))                                              # 3 · 4 notes < 16 tokens
+    c = lm_cfg(**CAT)
+    assert c.lm_note_read == "index" and c.lm_filing == "balanced" and c.lm_open_new_per_pass
+
+
+def test_catalogue_adds_only_slots_and_temperature():
+    base = make(**dict(TIED, lm_stride=16, lm_open="notes", lm_open_k=8, lm_open_cap=24))
+    cat = make(**CAT)
+    extra = {n for n, _ in cat.named_parameters()} - {n for n, _ in base.named_parameters()}
+    assert extra and all(n.endswith(("sink_k", "sink_v", "index_log_tau")) for n in extra)
+    gi = cat.config.global_layer_index
+    assert torch.count_nonzero(cat.layers[gi].attn.sink_v) == 0
+
+
+# ------------------------------------------------------------------ filing
+def test_sinkhorn_balances_the_notes_and_keeps_tokens_normalised():
+    torch.manual_seed(1)
+    B, n_w, K, W = 2, 3, 4, 16
+    A = torch.softmax(torch.randn(B, n_w, K, W) * 3, dim=2)
+    valid = torch.ones(B, n_w, W, dtype=torch.bool)
+    valid[1, 2, 10:] = False
+    Ah = balance_assign(A, valid, iters=60)
+    assert torch.allclose(Ah.sum(2)[valid], torch.ones(int(valid.sum())), atol=1e-5)
+    assert torch.all(Ah.sum(2)[~valid] == 0)
+    col = Ah.sum(-1)                                                                      # [B, n_w, K]
+    target = valid.sum(-1, keepdim=True).float() / K
+    assert torch.allclose(col, target.expand_as(col), rtol=1e-3, atol=1e-3)
+    few = balance_assign(A, valid, iters=3).sum(-1)
+    raw = (A * valid[:, :, None]).sum(-1)
+    assert (few - target).abs().mean() < (raw - target).abs().mean()                     # 3 steps already balance more
+
+
+@pytest.mark.parametrize("adversarial", [False, True])
+def test_capped_filing_files_every_token_once_within_the_cap(adversarial):
+    torch.manual_seed(2)
+    B, n_w, K, W, cap = 2, 3, 4, 16, 5
+    if adversarial:  # every token prefers note 0
+        A = torch.full((B, n_w, K, W), 0.01)
+        A[:, :, 0] = 0.97
+    else:
+        A = torch.softmax(torch.randn(B, n_w, K, W) * 3, dim=2)
+    valid = torch.ones(B, n_w, W, dtype=torch.bool)
+    valid[0, 1, :5] = False
+    lab = file_capped(A, valid, cap=cap)
+    assert torch.all((lab >= 0) == valid)
+    cnt = F.one_hot(lab.clamp_min(0), K) * valid[..., None]
+    assert int(cnt.sum(2).max()) <= cap
+    if not adversarial:  # without pressure every token gets its best note when it has room
+        best = A.argmax(2)
+        assert (lab == best)[valid].float().mean() > 0.6
+
+
+def test_model_filing_is_balanced():
+    m, ids, ctx = state()
+    no = ctx.index
+    assert no.labels is not None and no.read == "index"
+    lab, pick = no.labels[0], no.pick[0]
+    full = pick.all(-1)
+    cnt = F.one_hot(lab[full], no.per_page).sum(1)
+    assert int(cnt.max()) <= m.config.lm_filing_cap and int(cnt.min()) >= 1
+
+
+# ------------------------------------------------------------------ choice
+def test_max_cos_choice_takes_the_best_notes_until_the_cap():
+    m, ids, ctx = state()
+    no = ctx.index
+    torch.manual_seed(3)
+    S = ids.shape[1]
+    q = torch.randn(1, S, m.config.num_attention_heads, m.config.head_dim)
+    k = torch.randn(1, S, 1, m.config.head_dim)
+    kappa = tied_note_keys(no.assign, k, no.page_tok)
+    tab = note_open_table(q, kappa, no, doc=ctx.doc, slot_close=ctx.slot_close, slot_doc=ctx.slot_doc, raw_window=RW)
+    gi = no.groups
+    G = gi.n_groups
+    s = torch.einsum("shd,gd->shg", F.normalize(q[0], dim=-1), F.normalize(kappa[0, :, 0], dim=-1)).amax(1)
+    ds = gi.doc_start[0]
+    for i in range(RW + 40, S, 17):
+        vis = (ctx.slot_doc[0] == ctx.doc[0, i]) & (ctx.slot_close[0] >= 0) & (ctx.slot_close[0] <= i)
+        gid = torch.arange(G)
+        cnt = counts(gi, gid[None], torch.full((1, G), int(ds[i])), torch.full((1, G), i - RW))[0]
+        elig = vis & (cnt > 0)
+        order = [int(g) for g in s[i].argsort(descending=True) if bool(elig[g])][: no.k]
+        want, used = set(), 0
+        for g in order:
+            if used >= no.cap:
+                break
+            want.add(g)
+            used += int(cnt[g])
+        got = set(int(g) for g in (tab.T[0, i] < no.cap).nonzero().flatten())
+        assert got == want, i
+
+
+def test_a_pass_never_reopens_a_note():
+    m, ids, ctx = state()
+    no = ctx.index
+    S = ids.shape[1]
+    seen = None
+    torch.manual_seed(4)
+    k = torch.randn(1, S, 1, m.config.head_dim)
+    kappa = tied_note_keys(no.assign, k, no.page_tok)
+    total = 0
+    for _ in range(4):
+        q = torch.randn(1, S, m.config.num_attention_heads, m.config.head_dim)
+        tab = note_open_table(q, kappa, no, doc=ctx.doc, slot_close=ctx.slot_close, slot_doc=ctx.slot_doc,
+                              raw_window=RW, exclude=seen)
+        chosen = tab.T < tab.cap
+        if seen is not None:
+            assert not bool((chosen & seen).any())
+        total += int(chosen.sum())
+        seen = chosen if seen is None else seen | chosen
+    assert total > 0 and int(seen.sum()) == total
+
+
+def test_two_levels_with_every_page_kept_equal_the_flat_search():
+    m, ids, ctx = state(kw=dict(CAT2, lm_open_pages=64))
+    no = ctx.index
+    S = ids.shape[1]
+    torch.manual_seed(5)
+    q = torch.randn(1, S, m.config.num_attention_heads, m.config.head_dim)
+    k = torch.randn(1, S, 1, m.config.head_dim)
+    kappa = tied_note_keys(no.assign, k, no.page_tok)
+    kw = dict(doc=ctx.doc, slot_close=ctx.slot_close, slot_doc=ctx.slot_doc, raw_window=RW)
+    two = note_open_table(q, kappa, no, page_key=page_keys(k, no.page_tok, no.pick), **kw)
+    no.levels = 1
+    flat = note_open_table(q, kappa, no, **kw)
+    assert torch.equal(two.T, flat.T)
+
+
+def test_two_levels_keep_only_the_best_pages():
+    m, ids, ctx = state(kw=CAT2)
+    no = ctx.index
+    S = ids.shape[1]
+    torch.manual_seed(6)
+    q = torch.randn(1, S, m.config.num_attention_heads, m.config.head_dim)
+    k = torch.randn(1, S, 1, m.config.head_dim)
+    kappa = tied_note_keys(no.assign, k, no.page_tok)
+    tab = note_open_table(q, kappa, no, doc=ctx.doc, slot_close=ctx.slot_close, slot_doc=ctx.slot_doc, raw_window=RW,
+                          page_key=page_keys(k, no.page_tok, no.pick))
+    pages = (tab.T[0] < tab.cap).view(S, -1, no.per_page).any(-1).sum(-1)
+    assert int(pages.max()) <= no.keep_pages and int(pages.max()) >= 1
+
+
+# ------------------------------------------------------------------ read
+def test_catalogue_read_matches_a_hand_built_softmax():
+    m, ids, ctx = state()
+    no = ctx.index
+    S = ids.shape[1]
+    h, dh = m.config.num_attention_heads, m.config.head_dim
+    torch.manual_seed(7)
+    q, k, v = torch.randn(1, S, h, dh), torch.randn(1, S, 1, dh), torch.randn(1, S, 1, dh)
+    sk, sv = torch.randn(2, dh), torch.randn(2, dh)
+    kappa = tied_note_keys(no.assign, k, no.page_tok)
+    tab = note_open_table(q, kappa, no, doc=ctx.doc, slot_close=ctx.slot_close, slot_doc=ctx.slot_doc, raw_window=RW)
+    out = _attend_catalogue(q, k, v, sk, sv, ctx=ctx, key_valid=None, backend="sdpa", opened=tab)
+    from nn.exact_read import dense_open
+    op = dense_open(tab.T, no.groups.codes, cap=tab.cap, raw_window=RW, doc=ctx.doc)[0]
+    for i in (5, RW + 7, 100, S - 1):
+        j = torch.arange(S)
+        ok = (j <= i) & (ctx.doc[0] == ctx.doc[0, i]) & (((i - j) < RW) | op[i])
+        keys = torch.cat([k[0, ok, 0], sk])
+        vals = torch.cat([v[0, ok, 0], sv])
+        p = torch.softmax(q[0, i] @ keys.T / math.sqrt(dh), dim=-1)
+        assert torch.allclose(out[0, i], p @ vals, atol=1e-5), i
+    assert bool(op.any())
+
+
+@pytest.mark.parametrize("kw", [CAT, CAT2], ids=["flat", "two_level"])
+@pytest.mark.parametrize("packed", [False, True])
+def test_no_future_leak(kw, packed):
+    m = make(**kw)
+    ids = row(160)
+    doc = packed_docs() if packed else None
+    assert _future_leaks(m, ids, doc) == []
+
+
+def test_eval_switches_change_the_read():
+    m = make(**CAT)
+    ids = row(160)
+    with torch.no_grad():
+        on = m(ids).logits
+        with m.open_override("off"):
+            off = m(ids).logits
+        with m.open_override("reuse"):
+            reuse = m(ids).logits
+    assert not torch.allclose(on, off) and not torch.allclose(on, reuse)
+
+
+# ------------------------------------------------------------------ index loss
+def test_index_loss_trains_the_catalogue_not_the_query():
+    m, ids, ctx = state()
+    no = ctx.index
+    S = ids.shape[1]
+    h, dh = m.config.num_attention_heads, m.config.head_dim
+    torch.manual_seed(8)
+    q = torch.randn(1, S, h, dh, requires_grad=True)
+    k = torch.randn(1, S, 1, dh, requires_grad=True)
+    A = no.assign.detach().clone().requires_grad_(True)
+    kappa = tied_note_keys(A, k, no.page_tok)
+    tab = note_open_table(q.detach(), kappa.detach(), no, doc=ctx.doc, slot_close=ctx.slot_close,
+                          slot_doc=ctx.slot_doc, raw_window=RW)
+    log_tau = torch.tensor(math.log(10.0), requires_grad=True)
+    loss, st = index_loss(q, k, torch.randn(2, dh), kappa, tab, doc=ctx.doc, raw_window=RW, n_queries=32, n_neg=3,
+                          log_tau=log_tau, generator=torch.Generator().manual_seed(0))
+    assert torch.isfinite(loss) and float(loss) > 0 and float(st["set"]) >= 2
+    loss.backward()
+    assert q.grad is None or float(q.grad.abs().sum()) == 0                               # the query is not trained
+    assert float(A.grad.abs().sum()) > 0 and float(log_tau.grad.abs()) > 0               # the catalogue and τ are
+    assert float(k.grad.abs().sum()) > 0                                                  # keys, through κ
+
+
+def test_training_forward_adds_the_index_loss_and_reaches_the_writer():
+    m = make(train=True, **CAT)
+    ids = row(160)
+    out = m(ids, labels=ids)
+    assert torch.isfinite(out.loss)
+    out.loss.backward()
+    gi = m.config.global_layer_index
+    att = m.layers[gi].attn
+    assert att.index_log_tau.grad is not None and float(att.index_log_tau.grad.abs()) > 0
+    assert att.sink_k.grad is not None and float(att.sink_v.grad.abs().sum()) > 0
+    writer_grads = [p.grad for n, p in m.named_parameters() if n.startswith("memory_writer") and p.grad is not None]
+    assert writer_grads and sum(float(g.abs().sum()) for g in writer_grads) > 0
+    m0 = make(train=True, **dict(CAT, lm_index_loss=0.0))
+    m0.load_state_dict({k_: v_ for k_, v_ in m.state_dict().items() if "index_log_tau" not in k_}, strict=False)
+    torch.manual_seed(0)
+    l1 = m(ids, labels=ids).loss
+    l0 = m0(ids, labels=ids).loss
+    assert not torch.allclose(l1, l0)
+
+
+def test_reuse_arm_trains_and_equals_the_reuse_switch():
+    """catalogue_reuse (scripts/run_e33n.py): the pass exclusion off in training. Same weights as the catalogue; its
+    forward equals the catalogue's under open_override("reuse"), and it trains (finite loss, gradient to the index)."""
+    cat = make(**CAT)
+    reuse = make(**dict(CAT, lm_open_new_per_pass=False))
+    reuse.load_state_dict(cat.state_dict())
+    ids = row(160)
+    with torch.no_grad():
+        h_reuse = reuse.hidden_states(ids)
+        with cat.open_override("reuse"):
+            h_switch = cat.hidden_states(ids)
+        h_cat = cat.hidden_states(ids)
+    assert torch.allclose(h_reuse, h_switch, atol=1e-5)
+    assert not torch.allclose(h_reuse, h_cat, atol=1e-5)                       # the exclusion changes what opens
+    m = make(train=True, **dict(CAT, lm_open_new_per_pass=False))
+    out = m(ids, labels=ids)
+    assert torch.isfinite(out.loss)
+    out.loss.backward()
+    att = m.layers[m.config.global_layer_index].attn
+    assert att.index_log_tau.grad is not None and float(att.index_log_tau.grad.abs()) > 0
+
+
+STAGE_B = {"catalogue_reuse_n4": (256, 4), "catalogue_reuse_n16": (256, 16), "catalogue_reuse_p512": (512, 8)}
+
+
+def test_stage_b_arms_change_only_the_note_and_page_sizes():
+    """E33t stage B (scripts/run_e33n.py): each arm is catalogue_reuse with only the page size and the notes per page
+    changed (at 30M and at tiny size); each builds through the trainer's factory (which checks that the filing cap
+    covers every token of a page) and differs from catalogue_reuse only by the writer's note slots."""
+    from scripts.run_e33n import count, model_args
+
+    base = model_args("catalogue_reuse", "s30", 1472)
+    n_base = count(base)
+    for arm, (page, per_note) in STAGE_B.items():
+        a = model_args(arm, "s30", 1472)
+        assert a["lm_window"] == a["lm_stride"] == page and page // a["lm_latents"] == per_note, arm
+        assert a["lm_open_new_per_pass"] is False and a["lm_open_cap"] == 512, arm
+        assert {k for k in a if a[k] != base.get(k)} <= {"lm_window", "lm_stride", "lm_latents"}, arm
+        t = model_args(arm, "tiny")
+        assert t["lm_window"] // t["lm_latents"] == per_note, arm
+        assert abs(count(a) - n_base) < 0.01 * n_base, arm                       # only the note slots differ
+
+
+@pytest.mark.parametrize("window,latents,cap", [(16, 8, 6), (16, 4, 4), (32, 8, 6)])
+def test_stage_b_shapes_train_with_reuse(window, latents, cap):
+    """The three stage-B shapes at test scale (finer notes, notes exactly at the filing cap, pages twice as long), pass
+    exclusion off: the filing stays within the cap and the model trains (finite loss, gradient to the index)."""
+    kw = dict(CAT, lm_window=window, lm_stride=window, lm_latents=latents, lm_filing_cap=cap,
+              lm_open_new_per_pass=False)
+    m = make(train=True, **kw)
+    ids = row(160)
+    out = m(ids, labels=ids)
+    assert torch.isfinite(out.loss)
+    out.loss.backward()
+    att = m.layers[m.config.global_layer_index].attn
+    assert att.index_log_tau.grad is not None and float(att.index_log_tau.grad.abs()) > 0
+
+
+def _grads_with_and_without_recompute(make_fn, ids, **kw):
+    out = []
+    for ck in (False, True):
+        m = make_fn(**kw).train()
+        if ck:
+            m.gradient_checkpointing_enable()
+        loss = m(ids, labels=ids).loss
+        loss.backward()
+        out.append((float(loss), {n: p.grad.clone() for n, p in m.named_parameters() if p.grad is not None}))
+    return out
+
+
+@pytest.mark.parametrize("excl", [False, True])
+def test_gradient_checkpointing_matches(excl):
+    """E33t stage C trains at 64k with each layer recomputed in the backward (24 GB cards). The recomputation runs
+    after the loss cleared the pass state (index-loss list, opened notes) and after later loop passes changed it, so
+    the reading layer replays the state its forward saw: same loss and the same gradient in every parameter, with
+    and without pass exclusion (before the fix: CheckpointError, 85 vs 68 saved tensors, Odra 2026-11-11)."""
+    kw = dict(CAT, lm_open_new_per_pass=excl, message_loop_rounds=4)
+    ids = row(256, B=2)
+    (l0, g0), (l1, g1) = _grads_with_and_without_recompute(make, ids, **kw)
+    assert l0 == pytest.approx(l1, rel=1e-6)
+    assert g0.keys() == g1.keys() and len(g0) > 10
+    for n in g0:
+        torch.testing.assert_close(g1[n], g0[n], rtol=1e-4, atol=1e-6, msg=n)
+
+
+def _logits_table_and_list(m, ids, doc):
+    m.eval()
+    with torch.no_grad():
+        a = m(ids, doc_ids=doc, return_logits=True).logits.float()
+        with m.open_impl("list"):
+            b = m(ids, doc_ids=doc, return_logits=True).logits.float()
+    return a, b
+
+
+@pytest.mark.parametrize("packed", [False, True])
+@pytest.mark.parametrize("shape", ["n8", "n4"])
+def test_list_read_matches_table(packed, shape):
+    """E33t stage C (plan §10.4): the list read (each query's choice as a list, one read per query chunk, no [B, S, G]
+    table) gives the table read's outputs, fp32, one document per row and two documents packed in a row. The test
+    shape files 4 notes per 16-token page with pass exclusion off (the reuse arms) and caps the opened tokens at 24,
+    so some queries fill the cap mid-note."""
+    kw = dict(CAT, lm_open_new_per_pass=False, **({"lm_latents": 8, "lm_filing_cap": 4} if shape == "n4" else {}))
+    m = make(seed=2, **kw)
+    S = 320
+    ids = row(S, B=2)
+    doc = torch.zeros(2, S, dtype=torch.long)
+    if packed:
+        doc[0, 150:] = 1
+        doc[1, 70:] = 1
+    a, b = _logits_table_and_list(m, ids, doc)
+    torch.testing.assert_close(b, a, rtol=1e-5, atol=1e-5)
+
+
+def test_list_read_counts_like_the_table():
+    """The list's opened positions are exactly the table's opened tokens (dense_open), query by query: random groups
+    on non-overlapping spans, two documents in one row, a cap that cuts groups."""
+    from nn.exact_read import ChoiceList, OpenTable, choose, dense_open, doc_starts, groups_from_spans
+
+    torch.manual_seed(0)
+    B, S, L, K, cap, rw = 2, 192, 32, 4, 10, 16
+    starts = list(range(0, S, L))
+    member = torch.randint(-1, K, (B, len(starts), L))
+    doc = torch.zeros(B, S, dtype=torch.long)
+    doc[1, 100:] = 1
+    ds = doc_starts(doc)
+    G = len(starts) * K
+    g_close = (torch.arange(len(starts)) * L + L).repeat_interleave(K)[None].expand(B, -1).contiguous()
+    gi = groups_from_spans(member, starts, S=S, per_span=K, doc_start=ds, g_close=g_close,
+                           g_doc=torch.zeros(B, G, dtype=torch.long), any_doc=True)
+    tab, cl = OpenTable(gi, B, S, cap=cap), ChoiceList(gi, B, S, cap=cap, m=5)
+    for s0 in range(0, S, 64):
+        qp = torch.arange(s0, s0 + 64)
+        score = torch.randn(B, 64, G)
+        cand = gi.g_close[:, None, :] <= qp[None, :, None]
+        ids_, off = choose(score, cand, gi, qp, m=5, cap=cap, raw_window=rw)
+        tab.add(s0, ids_, off)
+        cl.add(s0, ids_, off)
+    want = dense_open(tab.T, gi.codes, cap=cap, raw_window=rw, doc=doc)                     # [B, S, S]
+    assert int(want.sum()) > 100
+    for s0 in range(0, S, 48):
+        pos, ok = cl.opened(s0, min(S, s0 + 48), rw)
+        got = torch.zeros(B, pos.shape[1], S, dtype=torch.int32)
+        got.scatter_add_(2, pos, ok.to(torch.int32))
+        assert int(ok.sum(-1).max()) <= cap
+        assert int(got.max()) <= 1, "an opened position appears twice"
+        assert torch.equal(got.bool(), want[:, s0:s0 + pos.shape[1]]), s0

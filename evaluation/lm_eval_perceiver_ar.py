@@ -131,6 +131,8 @@ class PerceiverARLMEval(HFLM):
 
     # fp32 [rows, S, vocab] budget per forward chunk; the full-batch output is allocated once.
     LOGITS_CHUNK_BYTES = 2 * 1024**3
+    # generation: the row is padded to a multiple of this once, so every decoding step has the same shape
+    GEN_PAD = 256
 
     def _model_call(self, inps: torch.Tensor, attn_mask=None, labels=None) -> torch.Tensor:
         # Causal-only family: the harness right-pads and never passes an attention mask here.
@@ -151,10 +153,74 @@ class PerceiverARLMEval(HFLM):
             return out
 
     def _model_generate(self, context, max_length: int, stop, **generation_kwargs):
-        raise NotImplementedError(
-            "perceiver_ar has no HF-compatible generate() yet; use loglikelihood tasks "
-            "(the E18 main run's KV-cache decode will enable generate_until tasks)."
-        )
+        """Greedy decoding without a cache (E33n: RULER through `generate_until`).
+
+        Every new token re-runs the whole row: O(new × forward), fine for RULER's short answers at ≤ 64k. Left padding
+        from the harness becomes document id −1 (padding keys are never read; positions restart at the first real
+        token). Only the current position is projected through the output layer (`hidden_states`), so a 64k row never
+        materialises [S, V] logits. Stops when every row has produced one of `stop` or the length is reached.
+
+        One row length for the whole answer (`GEN_PAD` multiple): flex attention compiles one graph per shape, and a
+        row that grew by a token per step recompiled every step until dynamo's cache was full; it then fell back to
+        eager flex attention, whose dense scores need 72 GB at 16k (E33p RULER 16k out of memory on every arm, and
+        ~3 h for 4k, 2026-11-07). The slots after the current position hold document id −1; no position reads later
+        content (tests/test_note_open.py::test_no_future_leak), so full attention and LSA's read write exactly the
+        tokens the growing row wrote (tests/test_long_eval_fixes.py). Note models move by ~3 % with the row's
+        length (the page grid's last page is placed at [S − W, S)); here every answer position sits inside a longer
+        row, as in training.
+
+        Cached (2026-11-12, nn/incremental.py): the same row is read once and each step runs only the new position,
+        with the same tokens; full attention, LSA's read, the catalogue read and (2026-11-13) E37's concept read and
+        E33p's notes read. Models the cache does not cover yet (and `PERCEIVER_AR_GEN_CACHE=0`) keep the loop
+        below."""
+        ids = context
+        attn = generation_kwargs.get("attention_mask")
+        cfg = self.model.config
+        W = self.model.lm_head.weight
+        eos = self.tokenizer.eos_token_id
+        B, L0 = ids.shape
+        new = max(0, int(max_length) - L0)
+        Lb = -(-(L0 + new) // self.GEN_PAD) * self.GEN_PAD
+        buf = torch.full((B, Lb), eos, dtype=ids.dtype, device=ids.device)
+        buf[:, :L0] = ids
+        doc = torch.full((B, Lb), -1, dtype=torch.long, device=ids.device)
+        doc[:, :L0] = 0 if attn is None else torch.where(attn.bool(), 0, -1)
+        stops = [s for s in (stop or []) if s]
+
+        def check(out, t, done):
+            if stops:
+                for b in range(B):
+                    if not done[b]:
+                        text = self.tokenizer.decode(out[b, L0:t].tolist())
+                        done[b] = any(s in text for s in stops)
+            return done
+
+        if new and os.environ.get("PERCEIVER_AR_GEN_CACHE", "1") != "0":
+            from nn.incremental import IncrementalDecoder
+
+            try:
+                dec = IncrementalDecoder(self.model)
+                return dec.greedy(buf.clone(), doc.clone(), L0, new, eos=eos, check=check)
+            except NotImplementedError:
+                pass
+        done = torch.zeros(B, dtype=torch.bool, device=ids.device)
+        t = L0
+        with torch.no_grad():
+            for _ in range(new):
+                h = self.model.hidden_states(buf, doc_ids=doc)[:, t - 1]
+                logits = F.linear(h, W).float()
+                if cfg.logit_softcap:
+                    logits = cfg.logit_softcap * torch.tanh(logits / cfg.logit_softcap)
+                nxt = logits.argmax(-1)
+                nxt = torch.where(done, torch.full_like(nxt, eos), nxt)
+                buf[:, t] = nxt
+                doc[:, t] = 0
+                t += 1
+                done |= nxt == eos
+                done = check(buf, t, done)
+                if bool(done.all()):
+                    break
+        return buf[:, :t]
 
 
 __all__ = [

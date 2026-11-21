@@ -54,17 +54,20 @@ class Muon(Optimizer):
         adamw_betas, adamw_eps: AdamW params for the fallback.
         weight_decay: decoupled weight decay (applied to both branches).
         max_aspect: 2D params with max(rows,cols)/min(rows,cols) > this use AdamW.
+        follow_schedule: the AdamW fallback LR follows the LR schedule too (adamw_lr x lr / initial_lr; HF and
+            torch schedulers set initial_lr). Off: the fallback keeps adamw_lr constant, as before 2026-11-14.
+        decay_1d: weight decay on 1-D params (norm gains, biases). Off matches HF AdamW's default grouping.
     """
 
     def __init__(
         self, params, lr=0.02, momentum=0.95, nesterov=True, ns_steps=5,
         adamw_lr=3e-3, adamw_betas=(0.9, 0.95), adamw_eps=1e-8, weight_decay=0.0,
-        max_aspect=8.0,
+        max_aspect=8.0, follow_schedule=False, decay_1d=True,
     ):
         defaults = dict(
             lr=lr, momentum=momentum, nesterov=nesterov, ns_steps=ns_steps,
             adamw_lr=adamw_lr, adamw_betas=adamw_betas, adamw_eps=adamw_eps,
-            weight_decay=weight_decay, max_aspect=max_aspect,
+            weight_decay=weight_decay, max_aspect=max_aspect, follow_schedule=follow_schedule, decay_1d=decay_1d,
         )
         super().__init__(params, defaults)
 
@@ -78,6 +81,8 @@ class Muon(Optimizer):
             ns = group["ns_steps"]
             wd = group["weight_decay"]
             a_lr = group["adamw_lr"]
+            if group.get("follow_schedule") and group.get("initial_lr"):
+                a_lr = a_lr * mu_lr / group["initial_lr"]   # warm-up and decay reach the fallback params too
             b1, b2 = group["adamw_betas"]
             a_eps = group["adamw_eps"]
             max_aspect = group["max_aspect"]
@@ -107,11 +112,12 @@ class Muon(Optimizer):
                         state["v"] = torch.zeros_like(p)
                     state["step"] += 1
                     m, v = state["m"], state["v"]
+                    p_wd = wd if (group.get("decay_1d", True) or g.ndim >= 2) else 0.0
                     m.mul_(b1).add_(g, alpha=1 - b1)
                     v.mul_(b2).addcmul_(g, g, value=1 - b2)
                     bias = 1 - b2 ** state["step"]
                     vhat = (v / bias).sqrt_().add_(a_eps)
-                    if wd:
-                        p.mul_(1 - a_lr * wd)
+                    if p_wd:
+                        p.mul_(1 - a_lr * p_wd)
                     p.addcdiv_(m, vhat, value=-a_lr)
         return loss

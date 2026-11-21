@@ -1,0 +1,229 @@
+{
+  "checkpoint": "Cache/e33p_runs/e33n_s30_lsa/decay/perceiver_ar_perceiver_H576L2g1s5N128_20261107_033725_lsa_s30_decay/final",
+  "open_impl": "list",
+  "two_level": 0,
+  "lengths": {
+    "131072": {
+      "notes_on": {
+        "first_token": 0.1,
+        "exact": 0.05,
+        "rows": 20,
+        "documents": 17,
+        "seconds": 192.2,
+        "per_depth": [
+          {
+            "depth": 0.025,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.075,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.125,
+            "first": 1,
+            "exact": 1
+          },
+          {
+            "depth": 0.175,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.225,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.275,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.325,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.375,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.425,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.475,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.525,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.575,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.625,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.675,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.725,
+            "first": 1,
+            "exact": 0
+          },
+          {
+            "depth": 0.775,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.825,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.875,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.925,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.975,
+            "first": 0,
+            "exact": 0
+          }
+        ]
+      }
+    },
+    "1048576": {
+      "notes_on": {
+        "first_token": 0.05,
+        "exact": 0.0,
+        "rows": 20,
+        "documents": 1,
+        "seconds": 3051.3,
+        "per_depth": [
+          {
+            "depth": 0.025,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.075,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.125,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.175,
+            "first": 1,
+            "exact": 0
+          },
+          {
+            "depth": 0.225,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.275,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.325,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.375,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.425,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.475,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.525,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.575,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.625,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.675,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.725,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.775,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.825,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.875,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.925,
+            "first": 0,
+            "exact": 0
+          },
+          {
+            "depth": 0.975,
+            "first": 0,
+            "exact": 0
+          }
+        ]
+      }
+    }
+  }
+}

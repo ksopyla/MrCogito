@@ -1,0 +1,106 @@
+found / n on the same documents: untuned | cut-tuned | no-cut-tuned   (p: cut vs no-cut, McNemar exact)
+
+niah_single_1 4096
+  joint   29/30  | 28/30  | 29/30    p=1.000
+  split   12/30  | 20/30  | 14/30    p=0.109
+  tail16  29/30  | 24/30  | 28/30    p=0.125
+  tail32   0/0   |  0/0   |  0/0  
+  tail64   0/0   |  0/0   |  0/0  
+  warm    24/30  | 20/30  | 19/30    p=1.000
+  bits8   10/15  | 10/15  |  9/15    p=1.000
+  bits4    8/15  |  5/15  |  8/15    p=0.375
+  alone    0/30  |  0/30  |  0/30    p=1.000
+  swap     0/29  |  0/29  |  0/29    p=1.000
+
+niah_single_1 16384
+  joint   26/30  | 22/30  | 25/30    p=0.250
+  split   16/30  | 16/30  |  9/30    p=0.092
+  tail16  25/30  | 22/30  | 22/30    p=1.000
+  tail32   0/0   |  0/0   |  0/0  
+  tail64   0/0   |  0/0   |  0/0  
+  warm    12/30  | 18/30  |  6/30    p=0.000
+  bits8    3/15  |  8/15  |  2/15    p=0.031
+  bits4    2/15  |  5/15  |  0/15    p=0.062
+  alone    0/30  |  0/30  |  0/30    p=1.000
+  swap     0/29  |  0/29  |  0/29    p=1.000
+
+niah_single_1 32768
+  joint   19/20  | 12/20  | 14/20    p=0.625
+  split    7/20  |  9/20  |  5/20    p=0.219
+  tail16  10/20  | 11/20  |  8/20    p=0.453
+  tail32   0/0   |  0/0   |  0/0  
+  tail64   0/0   |  0/0   |  0/0  
+  warm     6/20  |  7/20  |  2/20    p=0.062
+  bits8    5/15  |  6/15  |  1/15    p=0.062
+  bits4    2/15  |  4/15  |  2/15    p=0.500
+  alone    0/20  |  0/20  |  0/20    p=1.000
+  swap     0/19  |  0/19  |  0/19    p=1.000
+
+niah_single_1 65536
+  joint   18/20  | 15/20  | 14/20    p=1.000
+  split    5/20  | 12/20  |  3/20    p=0.004
+  tail16  10/20  | 14/20  |  8/20    p=0.031
+  tail32  17/20  | 14/20  | 13/20    p=1.000
+  tail64  17/20  | 15/20  | 14/20    p=1.000
+  warm     1/20  |  6/20  |  1/20    p=0.062
+  bits8    0/15  |  6/15  |  0/15    p=0.031
+  bits4    0/15  |  5/15  |  0/15    p=0.062
+  alone    0/20  |  0/20  |  0/20    p=1.000
+  swap     0/19  |  0/19  |  0/19    p=1.000
+
+niah_single_2 4096
+  joint   22/30  | 28/30  | 25/30    p=0.375
+  split    1/30  | 18/30  |  3/30    p=0.000
+  tail16  16/30  | 28/30  | 19/30    p=0.004
+  tail32   0/0   |  0/0   |  0/0  
+  tail64   0/0   |  0/0   |  0/0  
+  warm    10/30  | 22/30  | 14/30    p=0.008
+  bits8    5/15  | 11/15  |  6/15    p=0.125
+  bits4    1/15  | 10/15  |  4/15    p=0.031
+  alone    0/30  |  0/30  |  0/30    p=1.000
+  swap     0/29  |  0/29  |  0/29    p=1.000
+
+niah_single_2 16384
+  joint    3/30  |  2/30  |  6/30    p=0.125
+  split    3/30  |  3/30  |  4/30    p=1.000
+  tail16   5/30  |  2/30  |  6/30    p=0.125
+  tail32   0/0   |  0/0   |  0/0  
+  tail64   0/0   |  0/0   |  0/0  
+  warm     3/30  |  1/30  |  4/30    p=0.250
+  bits8    3/15  |  1/15  |  3/15    p=0.500
+  bits4    1/15  |  1/15  |  2/15    p=1.000
+  alone    0/30  |  0/30  |  0/30    p=1.000
+  swap     0/29  |  0/29  |  0/29    p=1.000
+
+niah_single_2 32768
+  joint    1/20  |  0/20  |  2/20    p=0.500
+  split    1/20  |  1/20  |  3/20    p=0.500
+  tail16   2/20  |  1/20  |  2/20    p=1.000
+  tail32   0/0   |  0/0   |  0/0  
+  tail64   0/0   |  0/0   |  0/0  
+  warm     1/20  |  1/20  |  2/20    p=1.000
+  bits8    1/15  |  0/15  |  1/15    p=1.000
+  bits4    1/15  |  1/15  |  1/15    p=1.000
+  alone    0/20  |  0/20  |  0/20    p=1.000
+  swap     0/19  |  0/19  |  0/19    p=1.000
+R1 memory only 16k-64k, cut vs no-cut: cut 37/70 (53%) vs nocut 17/70 (24%), diff +29 points, p=0.0002
+R2 one agent 4k-64k, no-cut vs cut: nocut 82/100 (82%) vs cut 77/100 (77%), diff +5 points, p=0.2266
+   one agent 4k-64k, untuned vs cut: untuned 92/100 (92%) vs cut 77/100 (77%), diff +15 points, p=0.0001
+   one agent 4k-64k, untuned vs no-cut: untuned 92/100 (92%) vs nocut 82/100 (82%), diff +10 points, p=0.0020
+   memory only 16k-64k, cut vs untuned: cut 37/70 (53%) vs untuned 28/70 (40%), diff +13 points, p=0.0784
+   memory only 16k-64k, no-cut vs untuned: nocut 17/70 (24%) vs untuned 28/70 (40%), diff -16 points, p=0.0010
+
+memory only 4k-64k number haystack: cut 57/100 vs untuned 40/100, diff +17 points, p=0.0033
+memory only 4k essay haystack: cut 18/30 vs untuned 1/30, p=0.0000
+memory only 4k-64k number haystack: nocut 31/100 vs untuned 40/100, diff -9 points, p=0.0225
+memory only 4k essay haystack: nocut 3/30 vs untuned 1/30, p=0.5000
+memory only 4k-64k number haystack: cut 57/100 vs nocut 31/100, diff +26 points, p=0.0000
+memory only 4k essay haystack: cut 18/30 vs nocut 3/30, p=0.0001
+
+replies that open with a blank line (':' then newline(s)), number haystack 4k-64k:
+  untuned  joint    7/100 open blank; misses 8, of them blank-first 7
+  untuned  split   13/100 open blank; misses 60, of them blank-first 13
+  cut      joint   22/100 open blank; misses 23, of them blank-first 22
+  cut      split   35/100 open blank; misses 43, of them blank-first 35
+  nocut    joint   17/100 open blank; misses 18, of them blank-first 17
+  nocut    split   16/100 open blank; misses 69, of them blank-first 16

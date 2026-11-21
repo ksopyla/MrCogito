@@ -1,0 +1,890 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>E33 &amp; Dense Builder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: sticky control bar → impact cards (one per model) → model graph(s) | inspector → reach → budgets → losses → method.
+   Colour = component, the same everywhere: input c1, notebook writer c2, attention c3, feed-forward c4, loop & read extras c5, LM head c6. */
+:root{
+ --bg:#f4f3ef;--card:#fcfcfb;--card2:#efeee9;--line:#dcdad3;--fg:#0b0b0b;--fg2:#52514e;--muted:#7c7b76;
+ --good:#1a7f37;--good-bg:#e6f4ea;--warn:#b26b00;--warn-bg:#fff4e0;--bad:#c62828;--bad-bg:#fdecea;
+ --c1:#2a78d6;--c2:#eb6834;--c3:#1baf7a;--c4:#eda100;--c5:#e87ba4;--c6:#008300;
+ --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+ --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --good:#5cc47a;--good-bg:#16301f;--warn:#e0a040;--warn-bg:#35280f;--bad:#ef6b6b;--bad-bg:#3a1a1a;
+ --c1:#3987e5;--c2:#d95926;--c3:#199e70;--c4:#c98500;--c5:#d55181;--c6:#008300;color-scheme:dark}}
+:root[data-theme="dark"]{
+ --bg:#121211;--card:#1a1a19;--card2:#242422;--line:#3a3935;--fg:#f4f4f2;--fg2:#c3c2b7;--muted:#8f8e86;
+ --good:#5cc47a;--good-bg:#16301f;--warn:#e0a040;--warn-bg:#35280f;--bad:#ef6b6b;--bad-bg:#3a1a1a;
+ --c1:#3987e5;--c2:#d95926;--c3:#199e70;--c4:#c98500;--c5:#d55181;--c6:#008300;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 var(--font);
+ padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+.wrap{max-width:1500px;margin:0 auto;padding-block:18px 64px}
+h1{font-size:28px;line-height:1.15;margin:2px 0 6px;letter-spacing:-.01em;text-wrap:balance}
+h2{font-size:20px;line-height:1.25;margin:40px 0 4px;padding-top:14px;border-top:1px solid var(--line);text-wrap:balance}
+h3{font-size:15px;margin:0 0 6px}
+p{max-width:78ch;margin:6px 0}
+.lede{color:var(--fg2);max-width:92ch}
+.kick{font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650}
+code,.mono{font-family:var(--mono);font-size:.88em}
+code{background:var(--card2);padding:1px 5px;border-radius:4px}
+a{color:var(--c1)}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--c1);outline-offset:2px}
+
+/* control bar */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.grp{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lab{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:650}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card)}
+.seg button{border:0;background:transparent;color:var(--fg2);padding:6px 11px;font-size:13.5px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--fg);color:var(--bg)}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--fg2);border-radius:8px;padding:5px 11px;font-size:13.5px;cursor:pointer}
+.btn:hover{color:var(--fg);border-color:var(--fg2)}
+.btn:disabled{opacity:.45;cursor:default}
+.btn.sm{padding:3px 9px;font-size:12.5px}
+label.tg{font-size:13.5px;color:var(--fg2);display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+input[type=range]{accent-color:var(--fg2);width:100%;min-width:0}
+select{font:inherit;font-size:13.5px;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:3px 6px}
+
+/* impact cards */
+.impact{display:grid;gap:12px;margin-top:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,560px),1fr))}
+.mcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.mhead{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline;margin-bottom:8px}
+.mhead b{font-size:16px}
+.tiles{display:grid;gap:10px 16px;grid-template-columns:repeat(auto-fit,minmax(112px,1fr))}
+.tile{min-width:0}
+.tile .v{font-size:21px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
+.tile .u{font-size:13px;color:var(--fg2);font-weight:500}
+.tile .s{font-size:12.5px;color:var(--fg2);line-height:1.4}
+.dl{font-size:12.5px;font-weight:650;font-variant-numeric:tabular-nums}
+.up{color:var(--warn)}.dn{color:var(--good)}.eq{color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.p-good{background:var(--good-bg);color:var(--good)}.p-warn{background:var(--warn-bg);color:var(--warn)}.p-bad{background:var(--bad-bg);color:var(--bad)}
+.p-neu{background:var(--card2);color:var(--fg2)}
+
+/* workspace */
+.work{display:grid;gap:16px;margin-top:16px;align-items:start;grid-template-columns:minmax(0,2.5fr) minmax(320px,1fr)}
+.work.single{grid-template-columns:minmax(0,1.35fr) minmax(330px,1fr)}
+@media (max-width:1000px){.work,.work.single{grid-template-columns:minmax(0,1fr)}}
+.dgms{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,430px),1fr))}
+.dgm{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 6px 4px;min-width:0;overflow-x:auto}
+.dgm svg{display:block;width:100%;height:auto;min-width:430px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--fg2);margin:8px 2px 0}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.hint{font-size:12.5px;color:var(--muted)}
+
+/* graph */
+svg text{fill:var(--fg);font-family:var(--font)}
+.nd{cursor:pointer}
+.nd .bx{fill:var(--card);stroke:var(--line);stroke-width:1.2}
+.nd:hover .bx{stroke:var(--fg2)}
+.nd.sel .bx{stroke:var(--fg);stroke-width:2.4}
+.nd.dim{opacity:.28}
+.nd.tr .bx{stroke:var(--c5);stroke-width:2.2}
+.nd.at .bx{stroke:var(--fg);stroke-width:2.6;stroke-dasharray:5 3}
+.k-input{fill:color-mix(in srgb,var(--c1) 11%,var(--card))!important}
+.k-writer{fill:color-mix(in srgb,var(--c2) 12%,var(--card))!important}
+.k-layer{fill:color-mix(in srgb,var(--c3) 8%,var(--card))!important}
+.k-read{fill:color-mix(in srgb,var(--c3) 20%,var(--card))!important}
+.k-extra{fill:color-mix(in srgb,var(--c5) 12%,var(--card))!important}
+.k-head{fill:color-mix(in srgb,var(--c6) 11%,var(--card))!important}
+.k-plain{fill:var(--card2)!important}
+.k-info{fill:var(--card)!important;stroke-dasharray:4 3}
+.lb{font-size:13px;font-weight:700}
+.sb{font-size:11.5px;fill:var(--fg2)!important}
+.pv{font-size:11.5px;font-weight:650;fill:var(--fg2)!important;font-variant-numeric:tabular-nums}
+.sh{font-size:11px;font-family:var(--mono)!important;fill:var(--fg2)!important}
+.el{font-size:10px;font-family:var(--mono)!important;fill:var(--muted)!important}
+.ttl{font-size:15px;font-weight:750}
+.ttl2{font-size:11.5px;fill:var(--fg2)!important}
+.edge{stroke:var(--muted);stroke-width:1.3;fill:none}
+.edge.nt{stroke:var(--c2);stroke-width:2}
+.edge.fb{stroke:var(--c5);stroke-width:1.5;stroke-dasharray:4 3}
+.arc{stroke:var(--muted);stroke-width:1;fill:none;opacity:.55}
+.brk{fill:none;stroke:var(--c5);stroke-width:1.4;stroke-dasharray:6 4}
+.brl{font-size:11px;font-weight:700;fill:var(--c5)!important}
+.mb1{fill:var(--c1)}.mb2{fill:var(--c2)}.mb3{fill:var(--c3)}.mb4{fill:var(--c4)}.mb5{fill:var(--c5)}.mb6{fill:var(--c6)}
+@media (prefers-reduced-motion:no-preference){.nd.sel .bx{animation:pulse 1.6s ease-in-out 1}}
+@keyframes pulse{0%{stroke-width:5}100%{stroke-width:2.4}}
+
+/* inspector */
+.insp{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px 14px;min-width:0;position:sticky;top:calc(env(safe-area-inset-top,0px) + 66px);max-height:calc(100vh - 84px);overflow:auto}
+@media (max-width:1000px){.insp{position:static;max-height:none}}
+.stepnav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.stepnav .kick{margin-right:auto}
+.insp h3{font-size:18px;margin:2px 0 4px;text-wrap:balance}
+.insp .body p{font-size:14.5px;max-width:none}
+.insp .sec{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.insp .sec>.kick{display:block;margin-bottom:6px}
+table.nums{border-collapse:collapse;width:100%;font-size:13px}
+table.nums td{padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+table.nums td:first-child{color:var(--fg2);white-space:nowrap;padding-left:0}
+table.nums td.r{text-align:right;font-variant-numeric:tabular-nums}
+table.nums tr.hasfx td{border-bottom:0;padding-bottom:0}
+table.nums tr.fxr td{padding-top:0;white-space:normal}
+.fx{font-family:var(--mono);font-size:11.5px;color:var(--fg2);line-height:1.5;overflow-wrap:anywhere}
+.ctl{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.4fr) 62px;gap:4px 10px;align-items:center;margin:5px 0;font-size:13.5px}
+.ctl.ck{grid-template-columns:1fr auto}
+.ctl output{font-variant-numeric:tabular-nums;font-weight:650;text-align:right;font-size:13px}
+.ctl .nm{color:var(--fg2);line-height:1.3}
+.row-btns{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 2px}
+.lev{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 10px;align-items:start;padding:7px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+.lev:last-child{border-bottom:0}
+.lev .imp{font-size:12.5px;color:var(--fg2);font-variant-numeric:tabular-nums}
+.issues{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--fg2)}
+.tok{display:flex;flex-wrap:wrap;gap:3px;margin:8px 0;font-family:var(--mono);font-size:12px}
+.tk{background:var(--card2);border:1px solid var(--line);border-radius:4px;padding:1px 4px;white-space:pre}
+.tk.fa,.tk.fb,.tk.fc{border-color:var(--c5);border-style:dashed}
+.tk.dec{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.rn{font-family:var(--font);font-size:10.5px;font-weight:750;color:var(--c5);align-self:center;margin:0 1px 0 4px}
+pre.args{font:11.5px/1.5 var(--mono);background:var(--card2);border-radius:8px;padding:8px 10px;overflow-x:auto;margin:6px 0;white-space:pre}
+
+/* sections below */
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
+.scroll{overflow-x:auto}
+.scroll svg{display:block;width:100%;height:auto;min-width:640px}
+.reachctl{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:8px 0}
+.reachctl input[type=range]{width:min(420px,100%)}
+.r-tx{font-size:11.5px;fill:var(--fg2)!important}
+.r-lb{font-size:12px;font-weight:700}
+.grid2{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));margin-top:10px}
+.stack{display:grid;gap:12px;margin-top:10px}
+#scale .scroll svg{max-width:920px}
+.lossgrid{display:grid;gap:14px;grid-template-columns:minmax(280px,380px) minmax(0,1fr);align-items:start;margin-top:8px}
+.lossgraph{position:sticky;top:calc(env(safe-area-inset-top,0px) + 66px);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 6px 4px;max-height:calc(100vh - 84px);overflow:auto}
+.lossgraph svg{display:block;width:100%;height:auto}
+.lossgrid>*,.work>*{min-width:0}
+@media (max-width:900px){.lossgrid{grid-template-columns:minmax(0,1fr)}.lossgraph{position:static;max-height:none}}
+.axis{stroke:var(--line);stroke-width:1}
+.tick{font-size:10.5px;fill:var(--muted)!important;font-variant-numeric:tabular-nums}
+.gl{stroke:var(--line);stroke-width:1;stroke-dasharray:2 3}
+.chart-t{font-weight:700;margin:0}.chart-s{font-size:13px;color:var(--fg2);margin:0 0 6px}
+details.tbl{margin-top:8px;font-size:13px}
+details.tbl summary{cursor:pointer;color:var(--fg2)}
+table.data{border-collapse:collapse;width:100%;font-size:12.5px;margin-top:6px}
+table.data th,table.data td{padding:4px 7px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.data th:first-child,table.data td:first-child{text-align:left}
+table.data th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:650}
+
+/* losses */
+.eqn{font:14px/1.6 var(--mono);background:var(--card2);border-radius:8px;padding:9px 12px;overflow-x:auto;white-space:nowrap;margin:8px 0}
+.terms{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));margin-top:10px}
+.term{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-width:0;font-size:13.5px}
+.term.off{opacity:.62}
+.term:hover{border-color:var(--fg2)}
+.term .th{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.term .th b{font-size:14.5px;margin-right:auto}
+.term .f{font-family:var(--mono);font-size:11.5px;color:var(--fg2);margin:6px 0;line-height:1.5}
+.term dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;margin:6px 0 0}
+.term dt{color:var(--muted);font-size:12px}
+.term dd{margin:0;font-size:12.5px}
+.chips{display:flex;flex-wrap:wrap;gap:3px}
+.chip{font-size:11px;background:var(--card2);border-radius:999px;padding:0 7px;color:var(--fg2)}
+.assum{display:grid;grid-template-columns:minmax(0,1fr) 140px 34px;gap:4px 10px;align-items:center;font-size:13px;color:var(--fg2);margin-top:8px}
+.assum output{font-weight:650;text-align:right;font-variant-numeric:tabular-nums}
+
+#tip{position:fixed;pointer-events:none;z-index:40;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12.5px;line-height:1.4;box-shadow:0 4px 16px rgba(0,0,0,.18);opacity:0;transition:opacity .08s;max-width:320px}
+.method li{margin:3px 0;font-size:14px;color:var(--fg2)}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="kick">MrCogito · architecture sketchpad</div>
+  <h1>E33 &amp; Dense Builder</h1>
+  <p class="lede">The two text-check models as you can change them. Click any block to see what it does to a token, its shapes and numbers, and to edit it; every change updates parameters, compute, reach and the loss at once. Presets are the real <code>dense_plain</code> and <code>e33m_plain</code> at the 30M screen and 100M main tiers; their parameter counts match the trainer's own factory to the parameter.</p>
+</header>
+
+<div class="bar" id="bar">
+  <div class="grp"><span class="lab">Show</span><div class="seg" id="seg-view"><button data-v="dense">Dense</button><button data-v="e33">E33</button><button data-v="both">Side by side</button></div></div>
+  <div class="grp"><span class="lab">Preset</span><div class="seg" id="seg-size"><button data-v="30">30M screen</button><button data-v="100">100M main</button></div></div>
+  <label class="tg"><input type="checkbox" id="t-sizes" checked> tensor sizes</label>
+  <label class="tg"><input type="checkbox" id="t-nums" checked> parameters</label>
+  <div class="grp"><button class="btn" id="b-undo" disabled>Undo</button><button class="btn" id="b-reset">Reset to preset</button></div>
+</div>
+
+<section class="impact" id="impact" aria-live="polite"></section>
+
+<section class="work" id="work">
+  <div>
+    <div class="dgms" id="dgms"></div>
+    <div class="legend" id="legend"></div>
+    <p class="hint">Click a block to inspect it; use the step buttons to walk a question through the forward pass. Arcs on the left are the U-net skips (layer i's output joins layer n−1−i).</p>
+  </div>
+  <aside class="insp" id="insp" aria-live="polite"><div id="insp-top"></div><div id="insp-live"></div><div id="insp-ctl"></div><div id="insp-lev"></div></aside>
+</section>
+
+<h2>Reach: what one token can read, layer by layer</h2>
+<p>Each row is one layer in the order a token passes through it. The bar shows how far back its attention reaches on a log scale. In E33 only the notebook read looks past 256 tokens, and it sees far tokens only as notes.</p>
+<div class="reachctl"><span class="lab">Token position</span><input type="range" id="r-t" min="0" max="4095" value="4095"><output id="r-tv" class="mono">4,095</output>
+  <button class="btn sm" data-rt="0.05">near the start</button><button class="btn sm" data-rt="0.5">middle</button><button class="btn sm" data-rt="1">last token</button></div>
+<div id="reach" class="stack"></div>
+
+<h2>Where the parameters and the compute go</h2>
+<p>Stacked by component, the same colours as the graph. A faint bar under an edited model is its preset. Compute is the training cost per token (forward and backward); speed is scaled from measured throughput on one RTX 3090.</p>
+<div class="grid2" id="budget"></div>
+<div class="panel" style="margin-top:12px" id="scale"></div>
+
+<h2>The loss, term by term</h2>
+<div id="loss"></div>
+
+<h2>How the numbers are made</h2>
+<ul class="method">
+  <li><b>Parameters</b> are exact formulas of the modules in <code>nn/perceiver_ar_lm.py</code> and <code>nn/latent_memory.py</code>. Checked against <code>evaluation/text_checks.count_params</code> on 24 Oct: dense 30,293,140 and 100,966,686; E33 29,946,402 and 100,965,425. Edits outside today's code are still counted the same way.</li>
+  <li><b>Compute</b> counts multiply-adds (2 FLOP each) of every projection, attention score and value read, per token, averaged over the row; training = 3 × forward. Parts with frozen weights (the naming lens) count 2 ×, parts without gradient (the order term's rank count) 1 ×. Kernel overheads, masks and recomputation are not counted.</li>
+  <li><b>Speed</b> is anchored to measured rates on one RTX 3090 at 4k rows: <code>dense_plain</code> 30M ≈ 60k tokens/s, <code>e33m_plain</code> 30M ≈ 20k (19.8–22.2k, 19 Oct). A build is scaled by its FLOP count from its own family's anchor. E33 is about 3 × slower for about 1.2 × the FLOPs, so most of its extra time is overhead the count does not see (attention masks, the fp32 rank count, half the micro-batch). Treat new numbers as ±30 %.</li>
+  <li><b>Loss sizes at step 0</b> assume uniform predictions and uniform reads at initialization. They show how loud each term starts, not how it trains.</li>
+</ul>
+</div>
+<div id="tip" role="tooltip"></div>
+
+<script>
+"use strict";
+/* ---------------------------------------------------------------- data */
+// The end of a compose question from the text world, cut by the project's 4,096-piece tokenizer.
+const EX=[[45,"K"],[1948,"af"],[712,"ab"],[1980,"ury"],[296," was"],[825," where"],[1086," Mar"],[81,"o"],[559," made"],[261," a"],[609," home"],[16,"."],[1086," Mar"],[81,"o"],[296," was"],[263," the"],[1641," teacher"],[317," of"],[2348," Lila"],[16,"."],[2348," Lila"],[296," was"],[263," the"],[1641," teacher"],[317," of"],[657," R"],[3678,"oro"],[16,"."],[201,"\n"],[201,"\n"],[2392,"Question"],[28,":"],[2697," Where"],[1546," does"],[263," the"],[1641," teacher"],[317," of"],[263," the"],[1641," teacher"],[317," of"],[657," R"],[3678,"oro"],[2411," live"],[33,"?"],[201,"\n"],[2383,"Answer"],[28,":"],[659," K"],[1948,"af"],[712,"ab"],[1980,"ury"],[16,"."]];
+const FACTS=[[20,27,1],[12,19,2],[0,11,3]]; // [first, last, loop round that is trained to read it]
+const DEC=46; // the ':' after Answer predicts ' K'
+const CATS=[["input","Input layer","c1"],["writer","Notebook writer","c2"],["attn","Attention","c3"],["ffn","Feed-forward","c4"],["extra","Loop & read extras","c5"],["head","LM head","c6"]];
+const ANCHOR={dense:6e4,e33:2e4}; // measured tokens/s per RTX 3090 at 30M, 4k rows
+
+function preset(kind,size){
+  const big=size===100;
+  const b={kind,size,V:4096,e:256,d:big?896:576,dh:64,g:1,ngram:0,buckets:8192,S:4096,tokens:big?2e9:1.5e9,rows:96,target:big?100e6:30e6};
+  if(kind==="dense") return {...b,F:big?2304:1472,layers:Array.from({length:big?12:8},()=>({t:"full",w:0})),
+    loss:{ce:{on:true,w:1},z:{on:true,w:1e-4}}};
+  const pre=big?3:2,post=big?8:5,loc=()=>({t:"local",w:16});
+  return {...b,F:big?2176:1152,layers:[...Array.from({length:pre},loc),{t:"read",w:0},...Array.from({length:post},loc)],
+    rawWin:256,rounds:4,span:1,feedback:true,order:true,count:2,kmax:10,
+    wr:{W:256,stride:192,K:32,D:512,hl:8,dw:256,enc:2,rounds:2,m:1},
+    loss:{ce:{on:true,w:1},z:{on:true,w:1e-4},read:{on:true,w:.5},name:{on:true,w:.3},count:{on:true,w:1},exit:{on:false,w:.3},readback:{on:false,w:.1}}};
+}
+const clone=o=>JSON.parse(JSON.stringify(o));
+
+/* ---------------------------------------------------------------- state */
+const ST={view:"both",size:30,sizes:true,nums:true,sel:{m:"e33",id:"tokens"},hl:null,t:null,q:12,kc:5,lossM:"e33",
+  models:{dense:preset("dense",30),e33:preset("e33",30)},base:{dense:preset("dense",30),e33:preset("e33",30)},hist:[],playing:null};
+
+/* ---------------------------------------------------------------- helpers */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const int=n=>Math.round(n).toLocaleString("en-US");
+function fP(n){n=Math.round(n);const a=Math.abs(n);if(a>=1e8)return (n/1e6).toFixed(1)+"M";if(a>=1e6)return (n/1e6).toFixed(2)+"M";if(a>=1e4)return (n/1e3).toFixed(1)+"k";if(a>=1e3)return (n/1e3).toFixed(2)+"k";return String(n)}
+function fF(f){if(f>=1e9)return (f/1e9).toFixed(f>=1e10?1:2)+" GFLOP";if(f>=1e6)return (f/1e6).toFixed(f>=1e7?0:1)+" MFLOP";return (f/1e3).toFixed(0)+" kFLOP"}
+function fT(n){return n>=1e9?(n/1e9).toFixed(n%1e9?1:0)+"B":(n/1e6).toFixed(0)+"M"}
+function fS(v){return v>=1e4?(v/1e3).toFixed(1)+"k":v>=1e3?(v/1e3).toFixed(2)+"k":v.toFixed(0)}
+function fK(S){if(S>=1048576&&S%262144===0)return (S/1048576)+"M";return S>=1024&&S%512===0?(S/1024)+"k":int(S)}
+function pct(a,b){return b?((a-b)/b*100):0}
+function dl(a,b,f,lowGood){ // delta label
+  if(Math.abs(a-b)<1e-9*Math.max(1,Math.abs(b)))return `<span class="dl eq">as preset</span>`;
+  const p=pct(a,b),up=a>b,cls=lowGood?(up?"up":"dn"):"eq";
+  return `<span class="dl ${cls}">${up?"+":"−"}${f(Math.abs(a-b))} (${up?"+":"−"}${Math.abs(p).toFixed(Math.abs(p)<10?1:0)} %)</span>`}
+const getP=(o,p)=>p.split(".").reduce((x,k)=>x[k],o);
+function setP(o,p,v){const ks=p.split(".");const last=ks.pop();ks.reduce((x,k)=>x[k],o)[last]=v}
+
+/* ---------------------------------------------------------------- model math */
+const H=s=>Math.max(1,Math.floor(s.d/s.dh));
+const gi=s=>s.kind==="e33"?s.layers.findIndex(l=>l.t==="read"):-1;
+const hasNotes=s=>gi(s)>=0;
+const loopOn=s=>hasNotes(s)&&s.rounds>1;
+function coreR(s){if(!loopOn(s))return null;const g=gi(s);return [g,Math.min(s.layers.length-1,g+s.span)]}
+function pages(s){const S=s.S,W=Math.min(Math.max(s.wr.W,1),S),st=Math.max(1,Math.min(s.wr.stride,W));
+  if(S<=W)return {W,st,starts:[0]};const a=[];for(let x=0;x<=S-W;x+=st)a.push(x);if(a[a.length-1]!==S-W)a.push(S-W);return {W,st,starts:a}}
+function geo(s){const p=pages(s),per=s.wr.K*s.wr.m,C=p.starts.length*per;return {...p,n:p.starts.length,per,C,tpn:s.S/C}}
+function avgWin(S,w){if(w>=S)return (S+1)/2;return (w*(w+1)/2+(S-w)*w)/S}
+function avgNotes(s,G){let sum=0;for(const st of G.starts){const c=st+G.W-1;if(c<=s.S-1)sum+=s.S-c}return sum*G.per/s.S}
+function notesAt(G,t){let n=0,last=-1;for(const st of G.starts){const c=st+G.W-1;if(c<=t){n++;last=Math.max(last,c)}}return {n:n*G.per,pages:n,last}}
+const nskip=s=>Math.floor(s.layers.length/2);
+function role(s,i){ // prelude / core / coda for E33
+  if(s.kind!=="e33")return "stack";const g=gi(s),c=coreR(s);
+  if(g<0||i<g)return "pre";if(c&&i<=c[1])return "core";if(!c&&i===g)return "core";return "coda"}
+
+function params(s){
+  const h=H(s),{d,dh,g,F,V,e}=s,n=s.layers.length,ns=nskip(s);
+  const P={input:0,writer:0,attn:0,ffn:0,extra:0,head:0},N={};
+  N.table=V*e+s.ngram*s.buckets*e;N.mlp=2*e*d+d*d+d;P.input=N.table+N.mlp;
+  s.layers.forEach((L,i)=>{
+    const a=2+(i>=n-ns?1:0)+d+d*h*dh+2*d*g*dh+h*dh*d+2*dh, f=d+3*d*F;let x=0;
+    if(L.t==="read"&&hasNotes(s)){if(s.order)x+=h+d+1;if(s.count>0)x+=2*s.count+d*s.count*dh+dh+s.count*(s.kmax+2)*d}
+    N["L"+i]={a,f,x,t:a+f+x};P.attn+=a;P.ffn+=f;P.extra+=x});
+  if(loopOn(s)){N.loop=s.rounds*d+(s.feedback?d:0);P.extra+=N.loop;N.lens=s.feedback?d:0}
+  N.head=d+V*d;P.head=N.head;
+  if(hasNotes(s)){const w=s.wr,{D,dw,K,hl,W}=w,out=w.m*g*dh;
+    N.w_pages=e*dw+dw;
+    N.w_enc=w.enc*(2*dw+3*dw*dw+128+dw*dw+6*dw*dw);
+    N.w_lat=K*D+K*hl*W+64*D+2*D+dw+2*D*D+2*dw*D+2*(D/hl)+D+6*D*D;
+    N.w_notes=2*D+4*D*out+dh;
+    P.writer=N.w_pages+N.w_enc+N.w_lat+N.w_notes}
+  const total=Object.values(P).reduce((a,b)=>a+b,0);
+  return {P,N,total}}
+
+function flops(s){
+  const h=H(s),{d,dh,g,F,V,e,S}=s;const T={input:0,writer:0,attn:0,ffn:0,extra:0,head:0},N={};let scores=0,lensF=0;
+  const add=(cat,f,mult,id)=>{T[cat]+=f*mult;if(id)N[id]=(N[id]||0)+f*mult};
+  add("input",2*(2*e*d+d*d),3,"mlp");
+  const G=hasNotes(s)?geo(s):null,c=coreR(s),R=loopOn(s)?s.rounds:1;
+  s.layers.forEach((L,i)=>{
+    const reps=c&&i>=c[0]&&i<=c[1]?R:1, proj=2*(2*d*h*dh+2*d*g*dh), ff=6*d*F;let sc=0,ex=0,ex1=0;
+    if(L.t==="full")sc=4*h*dh*avgWin(S,S);
+    else if(L.t==="local")sc=4*h*dh*avgWin(S,Math.max(1,L.w));
+    else {const raw=avgWin(S,s.rawWin),nv=G?avgNotes(s,G):0;sc=(G?6:4)*h*dh*(raw+nv);
+      if(G&&s.order)ex1+=2*h*dh*G.C;if(G&&s.count>0)ex+=2*s.count*dh*(G.C+s.rawWin)}
+    add("attn",(proj+sc)*reps,3,"L"+i);add("ffn",ff*reps,3,"L"+i);add("extra",ex*reps,3,"L"+i);add("extra",ex1*reps,1,"L"+i);
+    scores+=sc*reps*3});
+  if(loopOn(s)&&s.feedback){lensF=(2*d*V+2*V*e+2*(2*e*d+d*d))*(R-1)*2;add("extra",lensF/2,2,"lens")}
+  add("head",2*d*V,3,"head");
+  if(G){const w=s.wr,cov=G.n*G.W/S,perPage=w.rounds*(16*w.D*w.D*w.K+4*w.dw*w.D*G.W+4*w.K*G.W*w.D)+8*w.D*w.m*g*dh*w.K;
+    add("writer",2*e*w.dw,3,"w_pages");add("writer",cov*w.enc*(20*w.dw*w.dw+4*w.dw*G.W),3,"w_enc");add("writer",perPage*G.n/S,3,"w_lat")}
+  const total=Object.values(T).reduce((a,b)=>a+b,0);
+  return {T,N,total,scores,lensF}}
+
+const ANCH={};
+function anchorFlops(fam){if(!ANCH[fam])ANCH[fam]=flops(preset(fam,30)).total;return ANCH[fam]}
+function speed(s){const fam=hasNotes(s)?"e33":"dense";return ANCHOR[fam]*anchorFlops(fam)/flops(s).total}
+function fitF(s){const t=clone(s);t.F=64;const a=params(t).total;t.F=128;const b=params(t).total;const per=(b-a)/64;
+  const F=Math.round(((s.target-(a-64*per))/per)/64)*64;return Math.max(64,F)}
+function band(s,n){const p=pct(n,s.target);return {p,ok:Math.abs(p)<=5}}
+
+function fix(s){
+  s.dh=[32,64,128].includes(s.dh)?s.dh:64;s.d=Math.max(s.dh,Math.round(s.d/s.dh)*s.dh);
+  if(H(s)%s.g)s.g=1;
+  s.layers.forEach(L=>{if(L.t==="local")L.w=Math.max(1,Math.round(L.w))});
+  if(s.kind==="e33"){const w=s.wr;w.W=Math.min(Math.max(16,w.W),s.S);w.stride=Math.max(8,Math.min(w.stride,w.W));
+    if(w.D%w.hl)w.hl=[16,8,4,2,1].find(x=>w.D%x===0&&x<=w.hl)||1;s.rawWin=Math.max(16,s.rawWin);
+    const g=gi(s);if(g>=0)s.span=Math.max(0,Math.min(s.span,s.layers.length-1-g));s.rounds=Math.max(1,s.rounds)}
+  return s}
+
+function support(s){
+  const o=[],L=s.layers;
+  if(s.kind==="dense"){if(L.some(l=>l.t!=="full"))o.push("Local layers in the dense model: dense mode builds full layers only (perceiver mode adds local layers, but with a global read).");
+    if(L.length<3)o.push("Fewer than 3 layers: the trainer shape is 2 pre + 1 global + a stack.");}
+  else{const g=gi(s);
+    if(g<0)o.push("No notebook read: the notes have no layer that reads them.");
+    if(L.some(l=>l.t==="full"))o.push("A full-row layer inside E33: with the notebook on, a full layer is a notebook read.");
+    const pre=L.slice(0,Math.max(g,0)).filter(l=>l.t==="local"),rest=L.filter((l,i)=>l.t==="local"&&i>g);
+    if(new Set(pre.map(l=>l.w)).size>1)o.push("Local layers before the read use different windows; the code has one pre-layer window.");
+    if(new Set(rest.map(l=>l.w)).size>1)o.push("Local layers after the read use different windows; the code has one stack window.");
+    if(loopOn(s)&&s.span!==1)o.push("Loop span ≠ 1 is not a trainer argument yet (E33s Phase 0, fix 3).");
+    if(loopOn(s)&&L.filter(l=>l.t==="read").length>1)o.push("Several reads: the loop repeats the first read only.");
+    if(s.loss.exit.on&&!loopOn(s))o.push("Exit losses need the loop (rounds > 1).");}
+  if(s.d%s.dh)o.push("Width d must be a multiple of the head size.");
+  return o}
+
+function trainerArgs(s){
+  const a={hidden_size:s.d,intermediate_size:s.F,token_embedding_dim:s.e,head_dim:s.dh,num_attention_heads:H(s),num_kv_heads:s.g,vocab:s.V,
+    par_ngram_orders:s.ngram?[2,3].slice(0,s.ngram).join(","):"",par_value_embed_layers:""};
+  if(s.kind==="dense"){Object.assign(a,{par_mode:"dense",par_pre_layers:2,par_global_layers:1,num_hidden_layers:Math.max(0,s.layers.length-3),z_loss:s.loss.z.on?s.loss.z.w:0});return a}
+  const g=gi(s),L=s.layers,reads=L.map((l,i)=>l.t==="read"?i:-1).filter(i=>i>=0);
+  const pre=L.slice(0,g).filter(l=>l.t==="local");const stack=L.filter((l,i)=>l.t==="local"&&i>g);
+  Object.assign(a,{par_mode:"perceiver",message_write:"latent_memory",lm_read:"closed",lm_slot_pos:"reader",lm_context:"page_bidir",
+    par_pre_layers:g,par_pre_window:pre[0]?pre[0].w:16,par_global_layers:reads.length,num_hidden_layers:L.length-g-reads.length,par_block:stack[0]?stack[0].w:16,
+    message_raw_window:s.rawWin,lm_window:s.wr.W,lm_stride:s.wr.stride,lm_latents:s.wr.K,lm_latent_dim:s.wr.D,lm_heads:s.wr.hl,lm_writer_dim:s.wr.dw,
+    lm_enc_layers:s.wr.enc,lm_rounds:s.wr.rounds,lm_reader_tokens:s.wr.m,message_loop_rounds:s.rounds,
+    message_loop_feedback:s.feedback?"soft":"none",
+    lm_note_age:s.order?"rank":"none",...(s.order?{lm_note_rank_margin:2.0,lm_note_rank_sharp:2.0,lm_note_age_init:"4",lm_note_age_learn:"false",lm_note_order_gate:"true"}:{}),
+    lm_count_heads:s.count,lm_count_aux:s.loss.count.on?s.loss.count.w:0,
+    message_loop_read_aux:s.loss.read.on?s.loss.read.w:0,message_loop_name_lens:s.loss.name.on?s.loss.name.w:0,
+    message_loop_exit_aux:s.loss.exit.on?s.loss.exit.w:0,lm_readback_aux:s.loss.readback.on?s.loss.readback.w:0,z_loss:s.loss.z.on?s.loss.z.w:0});
+  const contiguous=reads.every((r,k)=>r===g+k);if(!contiguous)a.par_global_positions=reads.join(",");
+  if(s.span!==1)a["message_loop_span (not yet an argument)"]=s.span;
+  return a}
+
+/* ---------------------------------------------------------------- nodes: labels, shapes, explanations */
+function kindOf(id){if(/^L\d+$/.test(id))return "layer";return id}
+function layerLabel(s,i){const L=s.layers[i];
+  if(L.t==="read")return {lb:`L${i} · notebook read`,sb:`last ${int(s.rawWin)} tokens + closed notes`};
+  if(L.t==="full")return {lb:`L${i} · full attention`,sb:`sees all earlier tokens`};
+  return {lb:`L${i} · local`,sb:`sees the last ${int(L.w)} tokens`}}
+function shapeOf(s,id){const S=fK(s.S),G=hasNotes(s)?geo(s):null;
+  switch(kindOf(id)){
+    case "tokens":return `[${S}] ids`;case "table":return `[${S}, ${s.e}]`;case "mlp":return `[${S}, ${s.d}]`;
+    case "layer":return `[${S}, ${s.d}] · ${H(s)}×${s.dh} q, ${s.g}×${s.dh} kv`;
+    case "head":return `[${S}, ${int(s.V)}] logits`;case "loss":return "";
+    case "w_pages":return `[${G.n}·${G.W}, ${s.wr.dw}]`;case "w_enc":return `[${G.n}, ${G.W}, ${s.wr.dw}]`;
+    case "w_lat":return `[${G.n}, ${s.wr.K}, ${s.wr.D}]`;case "w_notes":return `k̄, v̄ [${int(G.C)}, ${s.g*s.dh}]`;
+    case "lens":return `[${S}, ${int(s.V)}] → [${S}, ${s.d}]`;case "kv":return `[${S}, ${2*s.g*s.dh}] per layer`;
+    default:return ""}}
+
+function steps(m){const s=ST.models[m],ids=["tokens","table","mlp"],c=coreR(s),g=gi(s);
+  s.layers.forEach((L,i)=>{if(i===g&&hasNotes(s))ids.push("w_pages","w_enc","w_lat","w_notes");ids.push("L"+i);
+    if(c&&i===c[1]&&(s.feedback||s.loss.name.on))ids.push("lens");if(s.kind==="dense"&&i===0)ids.push("kv")});
+  ids.push("head","loss");return ids}
+
+function chipsHTML(){let out="";EX.forEach(([id,tx],i)=>{const f=FACTS.find(([a,b])=>i>=a&&i<=b);
+  if(f&&i===f[0])out+=`<span class="rn">r${f[2]}</span>`;
+  const shown=tx==="\n"?"↵":tx.replace(/^ /,"·");out+=`<span class="tk${f?" f"+"abc"[f[2]-1]:""}${i===DEC?" dec":""}" data-tip="${esc(`id ${id} · “${tx.replace("\n","\\n")}”`)}">${esc(shown)}</span>`});return out}
+
+function explain(m,id){
+  const s=ST.models[m],P=params(s),Fl=flops(s),e33=hasNotes(s),G=e33?geo(s):null,h=H(s),k=kindOf(id),R=loopOn(s)?s.rounds:1;
+  const tot=Fl.total,share=x=>(x/tot*100).toFixed(x/tot<.1?1:0)+" %";let t="",b="",rows=[];
+  const prow=(name,val,fx)=>rows.push([name,val,fx||""]);
+  if(k==="model"){t=s.kind==="dense"?"The dense model, whole":"The E33 model, whole";
+    b=`<p>${s.layers.length} layers of width ${s.d}, ${h} query heads of ${s.dh} with ${s.g} shared key/value head${s.g>1?"s":""}, feed-forward ${s.F}. ${e33?`A notebook writer turns every ${G.W}-token page into ${s.wr.K} notes; one read layer looks at them${loopOn(s)?`, looped ${s.rounds} times`:""}.`:"Every layer attends over the whole row."}</p>`;
+    prow("parameters",int(P.total));prow("training compute / token",fF(tot));prow("speed, one 3090",`≈ ${fS(speed(s))} tokens/s`);
+    prow("budget",`${fT(s.tokens)} tokens ≈ ${(s.tokens/speed(s)/3600).toFixed(0)} GPU-h`)}
+  else if(k==="tokens"){t="Tokens in";
+    b=`<p>A training row is ${int(s.S)} token ids from a ${int(s.V)}-piece vocabulary. Below is the end of a compose question from the text world, cut into the model's real pieces. Every position predicts the next piece in one pass; the exam reads the prediction at the decision position (the dark “:” after Answer), which must be “ K” of Kafabury.</p>
+    <div class="tok">${chipsHTML()}</div>
+    <p>${e33?`The marked facts are the ones loop rounds 1, 2 and 3 are trained to read: who teaches Roro (Lila), who teaches Lila (Maro), where Maro lives. `:"The marked facts are the three the answer needs. "}In a real ${fK(s.S)} exam they sit hundreds to thousands of tokens apart, among about 50 other facts.</p>`;
+    prow("row length",int(s.S)+" tokens");prow("vocabulary",int(s.V))}
+  else if(k==="table"){t="Token table";
+    b=`<p>Each id selects one row of a ${int(s.V)} × ${s.e} table. “ teacher” (id 1641) becomes a vector of ${s.e} numbers.${s.ngram?` Hashed word-pair${s.ngram>1?" and word-triple":""} tables (${int(s.buckets)} rows each) are added to it.`:""}</p>
+    ${e33?`<p>The notebook writer reads these same ${s.e}-number rows, not the ${s.d}-wide input layer below, so a word enters the notes at ${s.e} numbers.</p>`:""}`;
+    prow("parameters",int(P.N.table),`V·e = ${int(s.V)}·${s.e}${s.ngram?` + ${s.ngram}·${int(s.buckets)}·${s.e}`:""}`)}
+  else if(k==="mlp"){t="Input layer";
+    b=`<p>x0 = RMSNorm(up0·x + up2·silu(up1·x)) lifts the ${s.e} numbers to the model width ${s.d}. x0 starts the residual stream, and every layer mixes a learned share of it back in (α·x + β·x0, β starts at 0).</p>`;
+    prow("parameters",int(P.N.mlp),`2·e·d + d² + d = 2·${s.e}·${s.d} + ${s.d}² + ${s.d}`);prow("compute / token",fF(Fl.N.mlp||0))}
+  else if(k==="layer"){const i=+id.slice(1),L=s.layers[i],n=P.N[id],r=role(s,i),reps=(coreR(s)&&r==="core")?R:1;
+    t=layerLabel(s,i).lb;
+    const att=`${h} query heads of ${s.dh} share ${s.g} key/value head${s.g>1?"s":""} (${s.g*s.dh} numbers per token)`;
+    if(L.t==="full")b=`<p>Attention sees every earlier token of the row: ${att}. Its keys and values for every token stay readable by every later token, so this layer's memory is exact but grows with the row: ${int(s.S)} × ${2*s.g*s.dh} numbers.</p><p>Then a SwiGLU feed-forward ${s.d} → ${s.F} → ${s.d}.</p>`;
+    else if(L.t==="local")b=`<p>Attention sees the last ${int(L.w)} tokens, itself included: ${att}. Then a SwiGLU feed-forward ${s.d} → ${s.F} → ${s.d}.</p>${r==="pre"?`<p>Before the read these layers turn pieces into words and relations (“ R” + “oro” into a name, “teacher of” into a relation) for the read's query.</p>`:r==="coda"?`<p>After the read nothing far away is visible. Everything the answer needs from the document must already be in this position's ${s.d} numbers.</p>`:r==="core"?`<p>Inside the loop: it runs ${R} times, once after each read.</p>`:""}`;
+    else{const na=notesAt(G,s.S-1);
+      b=`<p>The only place long-range information enters. One softmax over two kinds of keys: the last ${int(s.rawWin)} raw tokens (with rotary positions) and the notes of every page that has closed (up to ${int(na.n)} at the last token). Notes carry no position: they meet an un-rotated copy of the query.</p>
+      ${s.order?`<p>Order on demand: a learned per-position switch can lower the older of several notes that match about as well as the best one (rank among matches, strength 4). Latest needs it; lookup must not use it.</p>`:""}
+      ${s.count>0?`<p>${s.count} count heads add up matches instead of averaging them (a soft count 0–${s.kmax}) and feed the sum in through a projection that starts at zero.</p>`:""}
+      ${loopOn(s)?`<p>This layer${s.span?` and the next ${s.span}`:""} run ${R} times with shared weights; a round vector tells the rounds apart.</p>`:""}`;
+      prow("keys per query, average",`${int(avgWin(s.S,s.rawWin))} raw + ${int(avgNotes(s,G))} notes`);
+      if(s.order||s.count)prow("order + count parameters",int(n.x))}
+    prow("attention parameters",int(n.a),`d·h·dh + 2·d·g·dh + h·dh·d = ${s.d}·${h*s.dh} + 2·${s.d}·${s.g*s.dh} + ${h*s.dh}·${s.d}`);
+    prow("feed-forward parameters",int(n.f),`3·d·F = 3·${s.d}·${s.F}`);
+    prow("runs",reps>1?`${reps} × (loop)`:"once");
+    prow("compute / token",`${fF(Fl.N[id]||0)} (${share(Fl.N[id]||0)})`)}
+  else if(k==="kv"){t="Dense memory: keys and values";
+    b=`<p>Every layer keeps a key and a value for every token, ${2*s.g*s.dh} numbers per token. At ${int(s.S)} tokens that is ${int(s.S*2*s.g*s.dh)} numbers per layer, and every query scores all earlier keys: ${fF(4*h*s.dh*avgWin(s.S,s.S))} per token per layer, growing with the row.</p><p>The dense recipe has no length method. Past the training length it reads nothing useful: at 16k dense scored 0 % on every task (11 Oct).</p>`;
+    prow("numbers kept, all layers",int(s.S*2*s.g*s.dh*s.layers.length));prow("attention scores, all layers",`${fF(Fl.scores)} (${share(Fl.scores)})`)}
+  else if(k==="w_pages"){t="Pages";
+    b=`<p>The row is cut into pages of ${G.W} tokens, a new one every ${G.st} (${G.n} pages at ${fK(s.S)}; neighbours share ${G.W-G.st} tokens). Tokens enter as rows of the model's one token table, the same table the input layer reads, so there is no second embedding. The only new weights here project them ${s.e} → ${s.wr.dw} and norm them. A page never mixes documents.</p>`;
+    prow("pages per row",G.n);prow("parameters",int(P.N.w_pages),`e·dw + dw`)}
+  else if(k==="w_enc"){t=`Page encoder × ${s.wr.enc}`;
+    b=`<p>${s.wr.enc} two-way attention layers inside each page (width ${s.wr.dw}, ${s.wr.dw/64} heads). Every token sees its whole page in both directions, so “ Mar”“o” already knows it is the one who made a home in Kafabury before any latent reads it.</p>`;
+    prow("parameters",int(P.N.w_enc),`enc·(10·dw² + 2·dw + 128)`);prow("compute / token",`${fF(Fl.N.w_enc||0)} (${share(Fl.N.w_enc||0)})`)}
+  else if(k==="w_lat"){t=`${s.wr.K} latents read the page`;
+    b=`<p>${s.wr.K} latent vectors of ${s.wr.D} numbers read the page ${s.wr.rounds} time${s.wr.rounds>1?"s":""}: cross-attention with ${s.wr.hl} heads, then a feed-forward. Each latent starts with its own identity and a soft position prior on its 1/${s.wr.K} slice of the page, then learns what to keep. Each head writes its own slice of the latent.</p>`;
+    prow("parameters",int(P.N.w_lat),`K·D + K·hl·W + 8·D² + 2·dw·D + …`);prow("compute / token",`${fF(Fl.N.w_lat||0)} (${share(Fl.N.w_lat||0)})`)}
+  else if(k==="w_notes"){t="Notes";const nn=2*s.g*s.dh;
+    b=`<p>Each latent leaves ${s.wr.m>1?s.wr.m+" notes":"one note"}: a key (${s.g*s.dh} numbers) from its state and what it read, and a value (${s.g*s.dh}) of what it read. ${int(s.S)} tokens become ${int(G.C)} notes, ${G.tpn.toFixed(1)} tokens per note.</p>
+    <p>A note becomes readable once its page has closed (its last token has passed). Everything a page says must fit in ${G.per} × ${nn} = ${int(G.per*nn)} numbers; the raw keys and values of the same page at one layer are ${int(G.W*nn)}.</p>`;
+    prow("notes per row",int(G.C));prow("tokens per note",G.tpn.toFixed(1));prow("notebook size",`${int(G.C*nn)} numbers (raw K/V at one layer: ${int(s.S*nn)})`);
+    prow("parameters",int(P.N.w_notes),`4·D·(m·g·dh) + 2·D + dh`)}
+  else if(k==="loop"){t=`The loop: ${R} rounds`;
+    b=`<p>Round r adds a learned round vector and runs the core again on the previous round's output. Rounds share weights, so a round costs compute but almost no parameters (${s.d} per round). Training pushes round r to read fact r of a chain.</p>`;
+    prow("parameters",int(P.N.loop||0),`R·d${s.feedback?" + d (gate)":""}`)}
+  else if(k==="lens"){t="Hop naming through the LM head";
+    b=`<p>Between rounds the state passes through the final norm and LM head with their weights frozen for this path. ${s.loss.name.on?"During training, at the decision position, round r must name hop r's word (“ Lila”, then “ Mar”“o”).":"The naming loss is off."} ${s.feedback?`The softmax over ${int(s.V)} words is re-embedded with the token table and input layer and added to the next round's input through a per-channel gate that starts at 0.`:"Feedback is off: the name is trained but not passed on."}</p>
+    ${s.feedback?`<p>Cost: the full LM head over every position, each round. Only the decision positions need the name.</p>`:""}`;
+    prow("compute / token",`${fF(Fl.N.lens||0)} (${share(Fl.N.lens||0)})`);prow("parameters",int(P.N.lens||0),"the gate")}
+  else if(k==="head"){t="Final norm and LM head";
+    b=`<p>RMS norm, then the LM head ${s.d} → ${int(s.V)} (not tied to the ${s.e}-wide token table). Logits are soft-capped at 30·tanh(z/30). The loss is computed in chunks, so the [${fK(s.S)}, ${int(s.V)}] logits never exist all at once.</p>`;
+    prow("parameters",int(P.N.head),`V·d + d = ${int(s.V)}·${s.d} + ${s.d}`);prow("compute / token",`${fF(Fl.N.head||0)} (${share(Fl.N.head||0)})`)}
+  else if(k==="loss"){t="The loss";const on=Object.entries(s.loss).filter(([k,v])=>v.on&&termActive(s,k));
+    b=`<p>${on.length} term${on.length>1?"s":""} are added into one number per micro-batch. Next-token loss covers every token; the others act only at the positions they mark.</p><div class="eqn">${eqn(s)}</div><p><a href="#loss">Edit the terms below</a>.</p>`}
+  return {t,b,rows}}
+
+/* ---------------------------------------------------------------- levers (what-if buttons) */
+function lev(label,apply){return {label,apply}}
+function levers(m,id){const s=ST.models[m],k=kindOf(id),L=[];
+  if(k==="model"){L.push(lev("Fit the feed-forward width to the "+(s.target/1e6)+"M target",x=>{x.F=fitF(x)}));
+    L.push(lev("One more layer at the end",x=>{x.layers.push(clone(x.layers[x.layers.length-1]))}));
+    L.push(lev("Width +128 (every layer)",x=>{x.d+=128}));L.push(lev("Width −128 (every layer)",x=>{x.d=Math.max(128,x.d-128)}))}
+  if(k==="tokens"){if(s.S<1048576)L.push(lev(`Train on ${fK(Math.min(1048576,s.S*2))} rows instead of ${fK(s.S)}`,x=>{x.S=Math.min(1048576,x.S*2)}));L.push(lev("Train on rows half as long",x=>{x.S=Math.max(1024,x.S/2)}))}
+  if(k==="table"){L.push(lev("Halve the table width e",x=>{x.e=Math.max(64,x.e/2)}));if(!s.ngram)L.push(lev("Add word-pair and word-triple tables",x=>{x.ngram=2}))}
+  if(k==="mlp"){L.push(lev("Width +128",x=>{x.d+=128}));L.push(lev("Width −128",x=>{x.d=Math.max(128,x.d-128)}))}
+  if(k==="layer"){const i=+id.slice(1),Ly=s.layers[i];
+    if(Ly.t==="local"){L.push(lev("Window × 4 for this layer",x=>{x.layers[i].w*=4}));L.push(lev("Window × 4 for every local layer",x=>{x.layers.forEach(l=>{if(l.t==="local")l.w*=4})}))}
+    if(Ly.t==="full")L.push(lev("Make this layer local (window 256)",x=>{x.layers[i]={t:"local",w:256}}));
+    if(Ly.t==="read"){L.push(lev("Raw window × 2",x=>{x.rawWin*=2}));L.push(lev(s.order?"Order term off":"Order term on",x=>{x.order=!x.order}));
+      L.push(lev(s.count?"No count heads":"Two count heads",x=>{x.count=x.count?0:2}));
+      L.push(lev("Add a second read right after the loop",x=>{const c=coreR(x)||[i,i];x.layers.splice(c[1]+1,0,{t:"read",w:0})}))}
+    L.push(lev("Remove this layer",x=>{x.layers.splice(i,1)}))}
+  if(k==="loop"||(k==="layer"&&s.layers[+id.slice(1)].t==="read"&&loopOn(s))){L.push(lev("One more round",x=>{x.rounds++}));L.push(lev("One round fewer",x=>{x.rounds=Math.max(1,x.rounds-1)}));L.push(lev("Loop span +1",x=>{x.span++}))}
+  if(k==="lens"){L.push(lev(s.feedback?"Feedback off (naming only)":"Feedback on",x=>{x.feedback=!x.feedback}))}
+  if(k==="w_pages"){L.push(lev("Pages twice as long (window and stride × 2)",x=>{x.wr.W*=2;x.wr.stride*=2}));L.push(lev("No overlap (stride = window)",x=>{x.wr.stride=x.wr.W}))}
+  if(k==="w_enc"){L.push(lev("One encoder layer fewer",x=>{x.wr.enc=Math.max(0,x.wr.enc-1)}));L.push(lev("Writer width × 2",x=>{x.wr.dw*=2}))}
+  if(k==="w_lat"){L.push(lev("Twice the latents per page",x=>{x.wr.K*=2}));L.push(lev("Half the latent width",x=>{x.wr.D=Math.max(64,x.wr.D/2)}));L.push(lev("One writer round",x=>{x.wr.rounds=1}))}
+  if(k==="w_notes"){const ng=divs(H(s)).find(x=>x>s.g);if(ng)L.push(lev(`${ng} key/value heads instead of ${s.g} (wider notes and raw keys)`,x=>{x.g=ng}));L.push(lev("Two notes per latent",x=>{x.wr.m=2}))}
+  if(k==="head"){L.push(lev("Vocabulary 8,192",x=>{x.V=8192}))}
+  if(k==="kv"&&s.S<1048576){L.push(lev(`Train dense on ${fK(s.S*2)} rows`,x=>{x.S*=2}))}
+  return L}
+function impactOf(m,apply){const s=ST.models[m],t=fix(apply&&(()=>{const c=clone(s);apply(c);return c})());
+  const p0=params(s).total,p1=params(t).total,f0=flops(s).total,f1=flops(t).total;
+  const pd=p1-p0,fd=pct(f1,f0);
+  return `${pd>=0?"+":"−"}${fP(Math.abs(pd))} params · compute ${fd>=0?"+":"−"}${Math.abs(fd).toFixed(Math.abs(fd)<10?1:0)} % · ≈ ${fS(speed(t))} tokens/s`}
+
+/* ---------------------------------------------------------------- controls per node */
+function C(k,label,min,max,step,fmt){return {k,label,min,max,step,fmt:fmt||(v=>int(v))}}
+// a slider that steps through a list of values (×1.5 ladders for row length and vocabulary)
+function CV(k,label,vals,fmt){return {k,label,vals,fmt:fmt||(v=>int(v))}}
+const LADDER=(lo,hi)=>{const a=[];for(let v=lo;v<=hi;v*=2){a.push(v);if(v*1.5<=hi)a.push(v*1.5)}return a};
+const S_VALS=LADDER(1024,1048576),V_VALS=LADDER(1024,131072);
+const SC=()=>CV("S","row length",S_VALS,v=>fK(v)),VC=()=>CV("V","vocabulary",V_VALS,v=>fK(v)),EC=()=>C("e","token embedding e",32,2048,32),FC=(l)=>C("F",l||"feed-forward F",64,8192,64);
+const nearest=(vals,v)=>vals.reduce((bi,x,i)=>Math.abs(x-v)<Math.abs(vals[bi]-v)?i:bi,0);
+const divs=h=>[1,2,3,4,6,7,8,9,12,14,16].filter(x=>x<=h&&h%x===0);
+const GSEL=s=>({k:"g",label:"key/value heads",sel:divs(H(s)).map(x=>[x,`${x} (${x*s.dh} numbers)`])});
+const DHSEL={k:"dh",label:"head size",sel:[[32,"32"],[64,"64"],[128,"128"]]};
+function controls(m,id){const s=ST.models[m],k=kindOf(id),c=[];
+  if(k==="model"){c.push(C("d","width d",128,1536,64),EC(),FC(),DHSEL,GSEL(s),
+    C("tokens","training tokens",1e8,6e9,1e8,v=>fT(v)),C("target","parameter target",10e6,500e6,5e6,v=>(v/1e6)+"M"))}
+  if(k==="tokens")c.push(SC(),VC(),EC(),FC("feed-forward F (all layers)"));
+  if(k==="table")c.push(EC(),{k:"ngram",label:"word-pair / triple tables",sel:[[0,"off"],[1,"pairs"],[2,"pairs + triples"]]});
+  if(k==="mlp")c.push(EC(),C("d","width d",128,1536,64));
+  if(k==="layer"){const i=+id.slice(1),L=s.layers[i];
+    if(L.t==="local")c.push(C(`layers.${i}.w`,"window",1,4096,1));
+    if(L.t==="read")c.push(C("rawWin","raw window",16,4096,16),{k:"order",label:"order on demand",ck:1},C("count","count heads",0,4,1));
+    if(L.t==="read"&&hasNotes(s))c.push(C("rounds","loop rounds",1,8,1),C("span","layers looped after the read",0,4,1));
+    c.push(FC("feed-forward F (all layers)"))}
+  if(k==="loop")c.push(C("rounds","loop rounds",1,8,1),C("span","layers looped after the read",0,4,1),{k:"feedback",label:"pass the named word on",ck:1});
+  if(k==="lens")c.push({k:"feedback",label:"pass the named word on",ck:1});
+  if(k==="w_pages")c.push(C("wr.W","page window",32,2048,32),C("wr.stride","new page every",16,2048,16));
+  if(k==="w_enc")c.push(C("wr.enc","encoder layers",0,4,1),C("wr.dw","writer width",64,1024,64));
+  if(k==="w_lat")c.push(C("wr.K","latents per page",4,256,4),C("wr.D","latent width",64,2048,64),C("wr.hl","latent heads",1,16,1),C("wr.rounds","writer rounds",1,4,1));
+  if(k==="w_notes")c.push(C("wr.m","notes per latent",1,4,1),GSEL(s),DHSEL);
+  if(k==="head")c.push(VC());
+  if(k==="kv")c.push(SC(),GSEL(s));
+  return c}
+
+/* ---------------------------------------------------------------- losses */
+const TERMS={
+  ce:{name:"Next-token loss",f:"mean over labelled tokens of −log p(next token); logits soft-capped at 30",at:"head",needs:"the text itself",per:"every token",
+    s0:s=>Math.log(s.V)},
+  z:{name:"z-loss",f:"mean of (log Σ exp logits)² — keeps the logit scale from drifting",at:"head",needs:"nothing extra",per:"every token",
+    s0:s=>Math.log(s.V)**2},
+  read:{name:"Read target",f:"−log(share of round r’s read that lands on fact r: its raw tokens, or the notes of the pages covering it), mean over heads",at:"read",
+    needs:"which fact each round should read — read off the written reasoning by a rule, or from the generator",per:"decision",
+    s0:s=>{const G=geo(s),t=Math.round(.9*s.S),vis=Math.min(s.rawWin,t+1)+notesAt(G,t).n,tgt=G.per*G.W/G.st;return -Math.log(Math.min(1,tgt/Math.max(vis,1)))}},
+  name:{name:"Hop naming",f:"−mean log p(hop r’s word) from round r’s state through the frozen LM head, at the decision position",at:"lens",
+    needs:"the word each hop finds (spans of the written reasoning, ≤ 4 pieces)",per:"decision",s0:s=>Math.log(s.V)},
+  count:{name:"Count",f:"Huber(count heads’ sum − true number of matching facts) at each count question",at:"read",needs:"the number of visits per count question",per:"decision",
+    s0:s=>Math.max(0,ST.kc-.5)},
+  exit:{name:"Loop exits",f:"Σ over rounds 1…R−1 of the next-token loss of that round’s state run through the rest of the network",at:"head",needs:"the text itself",per:"every token",
+    s0:s=>(s.rounds-1)*Math.log(s.V)},
+  readback:{name:"Note read-back",f:"CE of naming, from each note’s value, the tokens it read (−1, 0, +1); training-only head",at:"w_notes",needs:"nothing extra",per:"note",
+    s0:s=>Math.log(s.V)}};
+function termActive(s,k){if(k==="ce"||k==="z")return true;if(!hasNotes(s))return false;
+  if(k==="name"||k==="exit")return loopOn(s);if(k==="count")return s.count>0;return true}
+function termNeeds(s,k){if(termActive(s,k))return "";if(!hasNotes(s))return "needs the notebook";if(k==="count")return "needs count heads";return "needs the loop (rounds > 1)"}
+function trains(s,k){const ids=new Set(),all=steps(ST.models===s?"e33":"e33");
+  const L=s.layers.map((_,i)=>"L"+i),g=gi(s),c=coreR(s)||[g,g];const writer=["w_pages","w_enc","w_lat","w_notes"];
+  const pre=L.slice(0,Math.max(g,0)),core=L.slice(g,c[1]+1);
+  if(k==="ce"||k==="z"||k==="exit"){["tokens","table","mlp",...L,"head","kv","lens",...(hasNotes(s)?writer:[]),"loop"].forEach(x=>ids.add(x))}
+  if(k==="read"){["table","mlp",...pre,L[g],...writer,"loop"].forEach(x=>ids.add(x))}
+  if(k==="name"){["table","mlp",...pre,...core,...writer,"loop","lens"].forEach(x=>ids.add(x))}
+  if(k==="count"){["table","mlp",...pre,L[g],...writer].forEach(x=>ids.add(x))}
+  if(k==="readback"){["table","w_pages","w_enc","w_lat","w_notes"].forEach(x=>ids.add(x))}
+  ids.delete(undefined);return ids}
+function termAt(s,k){const t=TERMS[k].at;return t==="read"?"L"+gi(s):t}
+function trainsText(s,k){
+  return {ce:"every weight",z:"every weight (pushes logits toward a small scale)",exit:"every weight; each round is pushed to have the answer already",
+    read:"the read's query and raw keys, the notes' keys and the whole writer, the layers before the read; not the read's values, the layers after it or the LM head",
+    name:"the loop's state: the writer, the layers before and inside the loop; not the LM head or the token table it reads through",
+    count:"the count heads, the notes' keys and the read's raw keys, the layers before the read",
+    readback:"the notes' values and the writer"}[k]}
+function eqn(s){const on=Object.entries(s.loss).filter(([k,v])=>v.on&&termActive(s,k));
+  return "L = "+on.map(([k,v],i)=>`${k==="ce"?"":(+v.w).toPrecision(v.w<.01?1:2).replace(/\.?0+$/,"")+"·"}${{ce:"CE",z:"Z",read:"READ",name:"NAME",count:"COUNT",exit:"EXITS",readback:"READBACK"}[k]}`).join(" + ")}
+
+/* ---------------------------------------------------------------- graph layout + drawing */
+const VW=600,X0=44,MW=300,RX=372,RW=220;
+function layout(m,O){
+  const s=ST.models[m],P=params(s),e33=hasNotes(s),gap=O.sizes?22:12,nodes=[],edges=[],arcs=[];
+  let y=10;const put=(n)=>{nodes.push(n);return n};
+  const H0=44,HL=40,HW=O.sizes?56:46;
+  put({id:"model",x:X0,y,w:MW,h:44,cat:"plain",title:true});y+=44+14;
+  const tok=put({id:"tokens",x:X0,y,w:MW,h:H0,cat:"plain",lb:"Tokens",sb:`${fK(s.S)} ids from ${int(s.V)} pieces`,p:0});y+=H0+gap;
+  const tab=put({id:"table",x:X0,y,w:MW,h:H0,cat:"input",lb:"Token table",sb:`${int(s.V)} × ${s.e}${s.ngram?" + n-gram tables":""}`,p:P.N.table});y+=H0+gap;
+  const mlp=put({id:"mlp",x:X0,y,w:MW,h:H0,cat:"input",lb:"Input layer",sb:`${s.e} → ${s.d}, RMS norm = x0`,p:P.N.mlp});y+=H0+gap;
+  const g=gi(s),c=coreR(s);let brk=null,lastCore=null,firstCore=null,readN=null;
+  const wrStart=tab.y;const needRead=wrStart+3*(HW+gap);
+  s.layers.forEach((L,i)=>{
+    if(e33&&c&&i===c[0]){y=Math.max(y,needRead);brk={y:y-8};y+=4}
+    else if(e33&&i===g&&!c)y=Math.max(y,needRead);
+    const ll=layerLabel(s,i),n=P.N["L"+i];
+    const nd=put({id:"L"+i,x:X0,y,w:MW,h:HL,cat:L.t==="read"?"read":"layer",lb:ll.lb,sb:ll.sb,p:n.t,parts:[["attn",n.a],["ffn",n.f],["extra",n.x]]});
+    if(L.t==="read"&&!readN)readN=nd;
+    if(c&&i===c[0])firstCore=nd;
+    if(c&&i===c[1]){lastCore=nd;brk.h=y+HL+8-brk.y;y+=8}
+    y+=HL+gap});
+  const head=put({id:"head",x:X0,y,w:MW,h:H0,cat:"head",lb:"Final norm + LM head",sb:`${s.d} → ${int(s.V)}, soft-cap 30`,p:P.N.head});y+=H0+gap;
+  const loss=put({id:"loss",x:X0,y,w:MW,h:H0,cat:"plain",lb:"Loss",sb:eqn(s).replace("L = ",""),p:0});y+=H0+10;
+  // main edges
+  const main=nodes.filter(n=>!n.title);
+  for(let k=0;k<main.length-1;k++){const a=main[k],b=main[k+1];
+    const lab=k===0?"ids":a.id==="table"?`[S, ${s.e}]`:a.id==="mlp"?`x0 [S, ${s.d}]`:b.id==="loss"?`[S, ${fK(s.V)}]`:`[S, ${s.d}]`;
+    edges.push({d:`M${X0+MW/2},${a.y+a.h} L${X0+MW/2},${b.y-1}`,lab,lx:X0+MW/2+6,ly:(a.y+a.h+b.y)/2+3.5,arrow:true})}
+  // skips
+  const n=s.layers.length,ns=nskip(s);
+  for(let i=0;i<ns;i++){const a=nodes.find(z=>z.id==="L"+i),b=nodes.find(z=>z.id==="L"+(n-1-i));if(!a||!b||a===b)continue;
+    const off=8+(ns-1-i)*(30/Math.max(ns-1,1));arcs.push(`M${X0},${a.y+a.h-8} C${X0-off},${a.y+a.h-8} ${X0-off},${b.y+8} ${X0},${b.y+8}`)}
+  // writer
+  if(e33){const G=geo(s);const wn=[["w_pages","Pages · same token table",`${G.n} × ${G.W} tokens, every ${G.st}`],["w_enc",`Page encoder × ${s.wr.enc}`,`two-way, width ${s.wr.dw}`],
+      ["w_lat",`${s.wr.K} latents × ${s.wr.rounds} reads`,`width ${s.wr.D}, ${s.wr.hl} heads`],["w_notes","Notes",`${int(G.C)} = ${G.tpn.toFixed(1)} tokens each`]];
+    const notesY=readN.y+readN.h/2-HW/2,span=(notesY-wrStart)/3;
+    wn.forEach(([id,lb,sb],k)=>put({id,x:RX,y:k<3?wrStart+k*span:notesY,w:RW,h:HW,cat:"writer",lb,sb,p:P.N[id],narrow:true}));
+    const W=nodes.filter(z=>z.cat==="writer");
+    edges.push({d:`M${X0+MW},${tab.y+tab.h/2} L${RX-2},${tab.y+tab.h/2}`,arrow:true});
+    for(let k=0;k<3;k++){const a=W[k],b=W[k+1];edges.push({d:`M${RX+RW/2},${a.y+a.h} L${RX+RW/2},${b.y-1}`,arrow:true})}
+    edges.push({d:`M${RX},${W[3].y+W[3].h/2} L${X0+MW+2},${readN.y+readN.h/2}`,cls:"nt",lab:O.sizes?"k̄, v̄":"",lx:X0+MW+5,ly:readN.y+readN.h/2-6,arrow:true});
+    if(c&&(s.feedback||s.loss.name.on)){const ly=Math.max(lastCore.y+lastCore.h/2-HW/2,W[3].y+HW+gap);
+      const lens=put({id:"lens",x:RX,y:ly,w:RW,h:HW,cat:"extra",lb:"Naming lens",sb:s.feedback?"name the hop, pass it on":"name the hop",p:P.N.lens||0,narrow:true});
+      edges.push({d:`M${X0+MW},${lastCore.y+lastCore.h/2+6} L${RX-2},${lens.y+lens.h/2}`,cls:"fb",arrow:true});
+      if(s.feedback)edges.push({d:`M${RX},${lens.y+lens.h-10} L${X0+MW+16},${lens.y+lens.h-10} L${X0+MW+16},${firstCore.y+10} L${X0+MW+2},${firstCore.y+10}`,cls:"fb",arrow:true})}}
+  else if(s.kind==="dense"){const L0=nodes.find(z=>z.id==="L0");if(L0)put({id:"kv",x:RX,y:L0.y,w:RW,h:HW,cat:"info",lb:"Keys + values kept",sb:`every token, every layer`,p:0,narrow:true});
+    if(L0)edges.push({d:`M${RX},${L0.y+HW/2} L${X0+MW+2},${L0.y+L0.h/2}`,cls:"",arrow:true})}
+  const maxP=Math.max(...nodes.filter(z=>z.p).map(z=>z.p),1);
+  return {s,nodes,edges,arcs,brk,height:Math.max(y,...nodes.map(z=>z.y+z.h+10)),maxP}}
+
+function drawGraph(m,O){
+  O=O||{sizes:ST.sizes,nums:ST.nums,id:m};
+  const Lo=layout(m,O),s=Lo.s,P=params(s),hl=ST.hl&&ST.hl.m===m?ST.hl:null;
+  const trSet=hl?trains(s,hl.k):null,atId=hl?termAt(s,hl.k):null;
+  let o=`<svg viewBox="0 0 ${VW} ${Lo.height}" role="img" aria-label="${s.kind==="dense"?"Dense":"E33"} model graph"><defs><marker id="ar-${O.id}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" fill="var(--muted)"/></marker></defs>`;
+  Lo.arcs.forEach(a=>o+=`<path class="arc" d="${a}"/>`);
+  if(Lo.brk)o+=`<g class="nd${ST.sel.m===m&&ST.sel.id==="loop"?" sel":""}" data-m="${m}" data-id="loop" tabindex="0" role="button" aria-label="loop"><rect class="brk" x="${X0-6}" y="${Lo.brk.y}" width="${MW+12}" height="${Lo.brk.h}" rx="10"/><rect x="${X0+6}" y="${Lo.brk.y-9}" width="128" height="17" rx="8" fill="var(--card)" stroke="var(--c5)"/><text class="brl" x="${X0+70}" y="${Lo.brk.y+3.5}" text-anchor="middle">loop × ${s.rounds} · shared</text></g>`;
+  Lo.edges.forEach(e=>{o+=`<path class="edge ${e.cls||""}" d="${e.d}" ${e.arrow?`marker-end="url(#ar-${O.id})"`:""}/>`;if(O.sizes&&e.lab)o+=`<text class="el" x="${e.lx}" y="${e.ly}">${esc(e.lab)}</text>`});
+  Lo.nodes.forEach(n=>{
+    if(n.title){const sup=support(s);o+=`<g class="nd${ST.sel.m===m&&ST.sel.id==="model"?" sel":""}" data-m="${m}" data-id="model" tabindex="0" role="button" aria-label="whole model"><rect class="bx k-plain" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="9"/>
+      <text class="ttl" x="${n.x+10}" y="${n.y+19}">${s.kind==="dense"?"Dense":"E33 notebook"} · ${fP(P.total)} parameters</text><text class="ttl2" x="${n.x+10}" y="${n.y+35}">${sup.length?"⚠ needs code · ":"runs on today's code · "}click for the whole model</text></g>`;return}
+    let cls="nd";if(ST.sel.m===m&&ST.sel.id===n.id)cls+=" sel";if(hl){if(atId===n.id)cls+=" at";else if(trSet.has(n.id))cls+=" tr";else cls+=" dim"}
+    o+=`<g class="${cls}" data-m="${m}" data-id="${n.id}" tabindex="0" role="button" aria-label="${esc(n.lb)}"><rect class="bx k-${n.cat}" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="8"/>`;
+    o+=`<text class="lb" x="${n.x+10}" y="${n.y+16}">${esc(n.lb)}</text><text class="sb" x="${n.x+10}" y="${n.y+30}">${esc(n.sb)}</text>`;
+    if(O.nums&&n.p)o+=`<text class="pv" x="${n.x+n.w-9}" y="${n.y+16}" text-anchor="end">${fP(n.p)}</text>`;
+    const sh=shapeOf(s,n.id);
+    if(O.sizes&&sh){if(n.narrow)o+=`<text class="sh" x="${n.x+10}" y="${n.y+45}">${esc(sh)}</text>`;else if(n.id.startsWith("L"))o+=`<text class="sh" x="${n.x+n.w-9}" y="${n.y+30}" text-anchor="end">${esc(sh.split(" · ")[1])}</text>`;else o+=`<text class="sh" x="${n.x+n.w-9}" y="${n.y+30}" text-anchor="end">${esc(sh)}</text>`}
+    if(O.nums&&n.p){const bw=(n.w-20)*n.p/Lo.maxP;let bx=n.x+10;const by=n.y+n.h-5;
+      const parts=n.parts||[[n.cat==="input"?"input":n.cat==="writer"?"writer":n.cat==="head"?"head":"extra",n.p]];
+      parts.forEach(([c,v])=>{if(!v)return;const w=bw*v/n.p;if(w<.4)return;o+=`<rect class="mb${CATS.findIndex(z=>z[0]===c)+1}" x="${bx}" y="${by}" width="${Math.max(w-1,.5)}" height="3" rx="1.5"/>`;bx+=w})}
+    o+="</g>"});
+  return o+"</svg>"}
+
+/* ---------------------------------------------------------------- impact cards */
+function impactCard(m){
+  const s=ST.models[m],b=ST.base[m],P=params(s),Pb=params(b),F=flops(s),Fb=flops(b),sp=speed(s),spb=speed(b),bd=band(s,P.total),sup=support(s);
+  const G=hasNotes(s)?geo(s):null,nn=2*s.g*s.dh;
+  const gh=s.tokens/sp/3600,ghb=b.tokens/spb/3600;
+  let vsDense="";if(m==="e33"&&ST.view==="both"){const d=ST.models.dense,Fd=flops(d).total,sd=speed(d);vsDense=`<span class="pill p-neu">vs dense: ${(F.total/Fd).toFixed(2)} × compute, ${(sd/sp).toFixed(1)} × slower</span>`}
+  const coda=s.kind==="e33"&&gi(s)>=0?s.layers.slice(gi(s)+1).filter(l=>l.t==="local"):[];
+  return `<div class="mcard"><div class="mhead"><b>${s.kind==="dense"?"Dense":"E33 notebook"}</b><span class="hint">${s.kind==="dense"?"dense_plain":"e33m_plain"} at ${s.size}M, ${JSON.stringify(s)===JSON.stringify(b)?"preset":"edited"}</span>
+    <span class="pill ${bd.ok?"p-good":"p-warn"}">${bd.ok?"in":"outside"} the ${s.target/1e6}M band (${bd.p>=0?"+":""}${bd.p.toFixed(1)} %)</span>
+    <span class="pill ${sup.length?"p-warn":"p-good"}" ${sup.length?`data-tip="${esc(sup.join(" · "))}"`:""}>${sup.length?`needs code: ${sup.length} change${sup.length>1?"s":""}`:"runs on today's code"}</span>${vsDense}</div>
+   <div class="tiles">
+    <div class="tile"><div class="kick">Parameters</div><div class="v">${fP(P.total)}</div><div class="s">${dl(P.total,Pb.total,fP,true)}</div></div>
+    <div class="tile"><div class="kick">Compute</div><div class="v">${(F.total/1e9).toFixed(2)}<span class="u"> GFLOP / token</span></div><div class="s">${dl(F.total,Fb.total,x=>(x/1e9).toFixed(2),true)}</div></div>
+    <div class="tile"><div class="kick">Speed (3090)</div><div class="v">≈ ${fS(sp)}<span class="u"> tokens/s</span></div><div class="s">${fT(s.tokens)} tokens ≈ ${gh.toFixed(0)} GPU-h ${Math.abs(gh-ghb)>.5?`<span class="dl ${gh>ghb?"up":"dn"}">(${gh>ghb?"+":"−"}${Math.abs(gh-ghb).toFixed(0)})</span>`:""}</div></div>
+    <div class="tile"><div class="kick">Memory read</div>${G?`<div class="v">${int(G.C)}<span class="u"> notes / row</span></div><div class="s">${G.tpn.toFixed(1)} tokens per note · ${nn} numbers each · plus the last ${int(s.rawWin)} raw tokens</div>`
+      :`<div class="v">${fK(s.S)}<span class="u"> keys / layer</span></div><div class="s">every earlier token, ${nn} numbers each, in all ${s.layers.length} layers</div>`}</div>
+    <div class="tile"><div class="kick">After the read</div>${s.kind==="dense"?`<div class="v">${fK(s.S)}<span class="u"> tokens</span></div><div class="s">every layer reads the whole row; nothing past it</div>`
+      :`<div class="v">${coda.length?int(Math.max(...coda.map(l=>l.w))):"—"}<span class="u"> tokens</span></div><div class="s">${coda.length} layer${coda.length!==1?"s":""} after the ${loopOn(s)?"loop":"read"}; far facts must already be in the token's vector</div>`}</div>
+   </div></div>`}
+
+/* ---------------------------------------------------------------- inspector */
+function renderInspector(full){
+  const m=ST.sel.m,s=ST.models[m],id=ST.sel.id,ids=steps(m),pos=ids.indexOf(id),ex=explain(m,id);
+  $("#insp-top").innerHTML=`<div class="stepnav"><span class="kick">${pos>=0?`Step ${pos+1} of ${ids.length} · ${s.kind==="dense"?"Dense":"E33"}`:`${s.kind==="dense"?"Dense":"E33"} · ${id==="loop"?"loop":"whole model"}`}</span>
+    <button class="btn sm" id="st-prev" ${pos<=0?"disabled":""}>◀ Back</button><button class="btn sm" id="st-next" ${pos>=ids.length-1?"disabled":""}>Next ▶</button><button class="btn sm" id="st-play">${ST.playing?"Pause":"Play"}</button></div><h3>${esc(ex.t)}</h3>`;
+  $("#insp-live").innerHTML=`<div class="body">${ex.b}</div>${ex.rows.length?`<div class="sec"><span class="kick">Numbers</span><table class="nums">${ex.rows.map(([a,b,f])=>`<tr${f?' class="hasfx"':""}><td>${a}</td><td class="r">${b}</td></tr>${f?`<tr class="fxr"><td colspan="2"><div class="fx">${esc(f)}</div></td></tr>`:""}`).join("")}</table></div>`:""}
+    ${id==="model"?modelExtras(m):""}`;
+  if(full){const cs=controls(m,id);const isLayer=kindOf(id)==="layer";
+    let h="";if(cs.length||isLayer){h+=`<div class="sec"><span class="kick">Change it</span>`;
+      if(isLayer){const i=+id.slice(1),L=s.layers[i];const types=s.kind==="dense"?[["full","full attention"],["local","local window"]]:[["local","local window"],["read","notebook read"]];
+        h+=`<div class="ctl ck"><span class="nm">layer type</span><select id="c-type" data-type="${i}">${types.map(([v,l])=>`<option value="${v}"${L.t===v?" selected":""}>${l}</option>`).join("")}</select></div>`}
+      cs.forEach(c=>{const v=getP(s,c.k),cid=`c-${m}-${c.k.replace(/\./g,"_")}`;
+        if(c.ck)h+=`<label class="ctl ck" for="${cid}"><span class="nm">${c.label}</span><input type="checkbox" id="${cid}" data-k="${c.k}" ${v?"checked":""}></label>`;
+        else if(c.sel)h+=`<div class="ctl ck"><span class="nm">${c.label}</span><select id="${cid}" data-k="${c.k}">${c.sel.map(([a,l])=>`<option value="${a}"${+v===a?" selected":""}>${l}</option>`).join("")}</select></div>`;
+        else if(c.vals)h+=`<label class="ctl" for="${cid}"><span class="nm">${c.label}</span><input type="range" id="${cid}" data-k="${c.k}" data-vals="${c.vals.join(",")}" min="0" max="${c.vals.length-1}" step="1" value="${nearest(c.vals,v)}"><output data-o="${c.k}">${c.fmt(v)}</output></label>`;
+        else h+=`<label class="ctl" for="${cid}"><span class="nm">${c.label}</span><input type="range" id="${cid}" data-k="${c.k}" min="${c.min}" max="${c.max}" step="${c.step}" value="${v}"><output data-o="${c.k}">${c.fmt(v)}</output></label>`});
+      if(isLayer){const i=+id.slice(1);h+=`<div class="row-btns"><button class="btn sm" data-act="dup" data-i="${i}">Duplicate</button><button class="btn sm" data-act="up" data-i="${i}" ${i===0?"disabled":""}>Move up</button><button class="btn sm" data-act="down" data-i="${i}" ${i===s.layers.length-1?"disabled":""}>Move down</button><button class="btn sm" data-act="del" data-i="${i}" ${s.layers.length<=1?"disabled":""}>Remove</button></div>`}
+      if(id==="model")h+=`<div class="row-btns"><button class="btn sm" data-act="fit">Fit F to ${s.target/1e6}M</button></div>`;
+      h+="</div>"}
+    $("#insp-ctl").innerHTML=h}
+  else{document.querySelectorAll("#insp-ctl output[data-o]").forEach(o=>{const c=controls(m,id).find(c=>c.k===o.dataset.o);if(c)o.textContent=c.fmt(getP(s,c.k))})}
+  const lv=levers(m,id);
+  $("#insp-lev").innerHTML=lv.length?`<div class="sec"><span class="kick">Try it</span>${lv.map((l,k)=>`<div class="lev"><button class="btn sm" data-lev="${k}">Apply</button><div>${esc(l.label)}<div class="imp">${impactOf(m,l.apply)}</div></div></div>`).join("")}</div>`:""}
+
+function modelExtras(m){const s=ST.models[m],sup=support(s),a=trainerArgs(s),other=ST.base[m].size===30?preset(m,100):preset(m,30);
+  const p=params(s),q=params(other);const lo=ST.base[m].size===30?[s,other,p,q]:[other,s,q,p];
+  const rows=[["width d",x=>x.d],["layers",x=>x.layers.length],["feed-forward F",x=>x.F],["query heads",x=>H(x)],["parameters",(x,P)=>fP(P.total)],["of which notebook writer",(x,P)=>P.P.writer?fP(P.P.writer):"—"],["training compute / token",x=>fF(flops(x).total)]];
+  return `<div class="sec"><span class="kick">${sup.length?"Needs code":"Runs on today's code"}</span>${sup.length?`<ul class="issues">${sup.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:`<p class="hint">Every part of this build is a trainer argument today.</p>`}
+   <pre class="args">${Object.entries(a).map(([k,v])=>`${k}=${v}`).join("\n")}</pre><button class="btn sm" id="copy-args">Copy arguments</button></div>
+   <div class="sec"><span class="kick">30M → 100M presets (current build in the ${s.size}M column)</span><table class="nums"><tr><td></td><td class="r"><b>30M</b></td><td class="r"><b>100M</b></td></tr>${rows.map(([n,f])=>`<tr><td>${n}</td><td class="r">${f(lo[0],lo[2])}</td><td class="r">${f(lo[1],lo[3])}</td></tr>`).join("")}</table>
+   ${m==="e33"?`<p class="hint">The writer does not grow with width: its ${fP(params(preset("e33",30)).P.writer)} and its ${2*s.g*s.dh}-number notes are the same at both sizes.</p>`:""}</div>`}
+
+/* ---------------------------------------------------------------- reach view */
+function reachSVG(m){
+  const s=ST.models[m],S=s.S,t=Math.min(ST.t==null?S-1:ST.t,S-1),G=hasNotes(s)?geo(s):null,c=coreR(s),R=loopOn(s)?s.rounds:1;
+  const XL=210,XR=985,lx=d=>XL+Math.log(Math.max(1,Math.min(d,S)))/Math.log(S)*(XR-XL),px=p=>XL+p/S*(XR-XL);
+  const rows=[];s.layers.forEach((L,i)=>{const r=role(s,i);rows.push({i,L,reps:(c&&r==="core")?R:1})});
+  const top=74,rh=28,h=top+rows.length*rh+44;
+  let o=`<svg viewBox="0 0 1000 ${h}" role="img" aria-label="reach per layer, ${m}">`;
+  o+=`<text class="r-lb" x="8" y="18">${s.kind==="dense"?"Dense":"E33"} · token ${int(t)}</text><text class="r-tx" x="8" y="34">the row (${fK(S)} tokens)${G?` · ${G.n} pages`:""}</text>`;
+  if(G&&G.n<=240){G.starts.forEach((st,k)=>{const closed=st+G.W-1<=t,y=8+(k%2)*13;o+=`<rect x="${px(st)}" y="${y}" width="${Math.max(1,px(st+G.W)-px(st)-1)}" height="10" rx="3" fill="${closed?"color-mix(in srgb,var(--c2) 55%,var(--card))":"var(--card)"}" stroke="var(--c2)" stroke-width="1" ${closed?"":`stroke-dasharray="3 2"`}/>`});}
+  else if(G){const lc=notesAt(G,t).last;if(lc>=0)o+=`<rect x="${px(0)}" y="8" width="${Math.max(1,px(lc+1)-px(0))}" height="23" rx="3" fill="color-mix(in srgb,var(--c2) 55%,var(--card))" stroke="var(--c2)"/>`;
+    if(lc<S-1)o+=`<rect x="${px(lc+1)}" y="8" width="${Math.max(1,px(S)-px(lc+1))}" height="23" rx="3" fill="var(--card)" stroke="var(--c2)" stroke-dasharray="3 2"/>`}
+  o+=`<line x1="${XL}" x2="${XR}" y1="44" y2="44" class="axis"/>`;
+  const lo=s.kind==="dense"?0:Math.max(0,t-s.rawWin+1);
+  o+=`<rect x="${px(lo)}" y="40" width="${Math.max(2,px(t+1)-px(lo))}" height="8" rx="3" fill="var(--c3)"/><line x1="${px(t+1)}" x2="${px(t+1)}" y1="4" y2="54" stroke="var(--fg)" stroke-width="1.5"/>`;
+  o+=`<text class="r-tx" x="${XL}" y="64">${s.kind==="dense"?"green: every earlier token is readable at every layer":`green: the raw window of the read · orange: pages (filled = closed, its notes readable)`}</text>`;
+  [1,4,16,64,256,1024,4096,16384,65536,262144,1048576].filter(d=>d<=S).concat(S&(S-1)?[S]:[]).forEach(d=>{o+=`<line class="gl" x1="${lx(d)}" x2="${lx(d)}" y1="${top-4}" y2="${top+rows.length*rh}"/><text class="tick" x="${lx(d)}" y="${top+rows.length*rh+14}" text-anchor="middle">${d===1?"1":fK(d)}</text>`});
+  o+=`<text class="tick" x="${(XL+XR)/2}" y="${top+rows.length*rh+32}" text-anchor="middle">how far back the layer reads, in tokens (log scale; 1 = the token itself)</text>`;
+  rows.forEach((r,k)=>{const y=top+k*rh,L=r.L;let txt="",reach=1,notes=null;
+    if(L.t==="full"){reach=t+1;txt=`all ${int(t+1)} earlier tokens`}
+    else if(L.t==="local"){reach=Math.min(L.w,t+1);txt=`last ${int(reach)} tokens`}
+    else{reach=Math.min(s.rawWin,t+1);const na=G?notesAt(G,t):{n:0,last:-1};txt=`last ${int(reach)} raw${na.n?` + ${int(na.n)} notes`:""}`;if(na.n)notes=[t-na.last+1,t+1]}
+    const sel=ST.sel.m===m&&ST.sel.id==="L"+r.i;
+    o+=`<g class="nd" data-m="${m}" data-id="L${r.i}"><rect x="0" y="${y}" width="1000" height="${rh-3}" fill="${sel?"var(--card2)":"transparent"}" rx="4"/>`;
+    o+=`<text class="r-lb" x="8" y="${y+11}">L${r.i} ${L.t==="read"?"read":L.t}${r.reps>1?` × ${r.reps}`:""}</text><text class="r-tx" x="8" y="${y+23}">${txt}</text>`;
+    if(notes)o+=`<rect x="${lx(notes[0])}" y="${y+4}" width="${Math.max(2,lx(notes[1])-lx(notes[0]))}" height="${rh-12}" rx="3" fill="color-mix(in srgb,var(--c2) 45%,var(--card))" stroke="var(--c2)"/>`;
+    o+=`<rect x="${XL}" y="${y+4}" width="${Math.max(3,lx(reach)-XL)}" height="${rh-12}" rx="3" fill="var(--c3)"/></g>`});
+  return o+"</svg>"}
+
+/* ---------------------------------------------------------------- budget charts */
+function stackChart(kind){
+  const ms=vis(),rows=[];ms.forEach(m=>{const s=ST.models[m],b=ST.base[m];
+    const val=x=>kind==="p"?params(x).P:flops(x).T;rows.push({label:s.kind==="dense"?"Dense":"E33",v:val(s),faint:false,m});
+    if(JSON.stringify(s)!==JSON.stringify(b))rows.push({label:"preset",v:val(b),faint:true,m})});
+  const tot=r=>Object.values(r.v).reduce((a,b)=>a+b,0),max=Math.max(...rows.map(tot));
+  const XL=80,XR=640,rh=30,h=rows.length*rh+34;const fmt=kind==="p"?fP:(x=>(x/1e9).toFixed(2)+" GF");
+  let o=`<svg viewBox="0 0 760 ${h}" role="img" aria-label="${kind==="p"?"parameters":"compute"} by component">`;
+  [0,.25,.5,.75,1].forEach(f=>{const x=XL+f*(XR-XL);o+=`<line class="gl" x1="${x}" x2="${x}" y1="4" y2="${rows.length*rh+4}"/><text class="tick" x="${x}" y="${rows.length*rh+18}" text-anchor="middle">${fmt(f*max)}</text>`});
+  rows.forEach((r,k)=>{const y=6+k*rh,T=tot(r);let x=XL;
+    o+=`<text class="${r.faint?"tick":"r-lb"}" x="${XL-8}" y="${y+(r.faint?12:14)}" text-anchor="end">${r.label}</text>`;
+    CATS.forEach(([c,name],ci)=>{const v=r.v[c];if(!v)return;const w=v/max*(XR-XL);
+      o+=`<rect class="mb${ci+1}" x="${x}" y="${y+(r.faint?4:0)}" width="${Math.max(w-2,.8)}" height="${r.faint?10:20}" rx="${w>8?4:1}" opacity="${r.faint?.4:1}" data-tip="${esc(`${r.label} · ${name}: ${kind==="p"?int(v):fF(v)} (${(v/T*100).toFixed(1)} %)`)}"/>`;x+=w});
+    o+=`<text class="pv" x="${x+6}" y="${y+14}">${kind==="p"?fP(T):fF(T)}</text>`});
+  const tbl=`<details class="tbl"><summary>Table</summary><div class="scroll"><table class="data"><tr><th>component</th>${rows.map(r=>`<th>${r.label}${r.faint?"":""}</th>`).join("")}</tr>${CATS.map(([c,name])=>`<tr><td>${name}</td>${rows.map(r=>`<td>${kind==="p"?int(r.v[c]):fF(r.v[c])}</td>`).join("")}</tr>`).join("")}<tr><td><b>total</b></td>${rows.map(r=>`<td><b>${kind==="p"?int(tot(r)):fF(tot(r))}</b></td>`).join("")}</tr></table></div></details>`;
+  return `<div class="panel"><p class="chart-t">${kind==="p"?"Parameters":"Training compute per token"}</p><p class="chart-s">${kind==="p"?"Where the weights sit.":"Forward + backward, averaged over the row ("+vis().map(m=>`${m==="dense"?"Dense":"E33"} ${fK(ST.models[m].S)}`).join(", ")+")."}</p><div class="scroll">${o}</svg></div>${tbl}</div>`}
+
+function scaleChart(){
+  const Ss=[1024,2048,4096,8192,16384,32768,65536,131072,262144,524288,1048576],ser=[["dense","Dense","var(--fg2)"],["e33","E33","var(--c2)"]];
+  const vals=ser.map(([m])=>Ss.map(S=>{const x=clone(ST.models[m]);x.S=S;return flops(fix(x)).total/1e9}));
+  const lo=Math.pow(10,Math.floor(Math.log10(Math.min(...vals.flat())))),hi=Math.pow(10,Math.ceil(Math.log10(Math.max(...vals.flat()))));
+  const XL=60,XR=680,YT=14,YB=210,lx=S=>XL+Math.log2(S/1024)/10*(XR-XL),ly=v=>YB-Math.log10(v/lo)/Math.log10(hi/lo)*(YB-YT);
+  let o=`<svg viewBox="0 0 760 248" role="img" aria-label="compute per token against row length" id="scale-svg">`;
+  for(let v=lo;v<=hi*1.001;v*=10)o+=`<line class="gl" x1="${XL}" x2="${XR}" y1="${ly(v)}" y2="${ly(v)}"/><text class="tick" x="${XL-6}" y="${ly(v)+3.5}" text-anchor="end">${v>=1?int(v):v.toPrecision(1)}</text>`;
+  Ss.forEach(S=>o+=`<text class="tick" x="${lx(S)}" y="${YB+16}" text-anchor="middle">${fK(S)}</text>`);
+  o+=`<line x1="${lx(4096)}" x2="${lx(4096)}" y1="${YT}" y2="${YB}" stroke="var(--muted)" stroke-dasharray="4 3"/><text class="tick" x="${lx(4096)+4}" y="${YT+10}">trained at 4k</text>`;
+  o+=`<text class="tick" x="${(XL+XR)/2}" y="${YB+34}" text-anchor="middle">row length (tokens, log scale) · y: training GFLOP per token (log scale)</text>`;
+  ser.forEach(([m,name,col],k)=>{const v=vals[k];o+=`<path d="${v.map((y,i)=>`${i?"L":"M"}${lx(Ss[i])},${ly(y)}`).join(" ")}" fill="none" stroke="${col}" stroke-width="2"/>`;
+    v.forEach((y,i)=>o+=`<circle cx="${lx(Ss[i])}" cy="${ly(y)}" r="4" fill="${col}" stroke="var(--card)" stroke-width="2"/>`);
+    o+=`<text class="r-lb" x="${XR+8}" y="${ly(v[v.length-1])+4}">${name}</text>`});
+  o+=`<line id="xh" x1="0" x2="0" y1="${YT}" y2="${YB}" stroke="var(--fg2)" opacity="0"/><rect id="xhit" x="${XL}" y="${YT}" width="${XR-XL}" height="${YB-YT}" fill="transparent"/></svg>`;
+  $("#scale").innerHTML=`<p class="chart-t">How compute per token grows with the row</p><p class="chart-s">Both current builds, everything else fixed. Dense attention reads every earlier token, so its cost per token rises with the row; E33's raw window stays ${int(ST.models.e33.rawWin)} and only the notes grow.</p><div class="scroll">${o}</div>
+   <div class="legend"><span><i style="background:var(--fg2)"></i>Dense</span><span><i style="background:var(--c2)"></i>E33</span></div>
+   <details class="tbl"><summary>Table</summary><div class="scroll"><table class="data"><tr><th>row</th>${Ss.map(S=>`<th>${fK(S)}</th>`).join("")}</tr>${ser.map(([m,n],k)=>`<tr><td>${n}</td>${vals[k].map(v=>`<td>${v.toFixed(2)}</td>`).join("")}</tr>`).join("")}</table></div></details>`;
+  const svg=$("#scale-svg"),hit=$("#xhit"),xh=$("#xh");
+  hit.addEventListener("mousemove",ev=>{const r=svg.getBoundingClientRect(),x=(ev.clientX-r.left)/r.width*760;let bi=0,bd=1e9;Ss.forEach((S,i)=>{const d=Math.abs(lx(S)-x);if(d<bd){bd=d;bi=i}});
+    xh.setAttribute("x1",lx(Ss[bi]));xh.setAttribute("x2",lx(Ss[bi]));xh.setAttribute("opacity",.5);
+    tip(ev,`<b>${fK(Ss[bi])} rows</b><br>Dense ${vals[0][bi].toFixed(2)} GFLOP / token<br>E33 ${vals[1][bi].toFixed(2)} GFLOP / token`)});
+  hit.addEventListener("mouseleave",()=>{xh.setAttribute("opacity",0);untip()})}
+
+/* ---------------------------------------------------------------- loss composer */
+function renderLoss(){
+  const m=ST.view==="both"?ST.lossM:ST.view,s=ST.models[m],keys=Object.keys(s.loss);
+  const vals=keys.map(k=>({k,on:s.loss[k].on&&termActive(s,k),w:+s.loss[k].w,v:TERMS[k].s0(s)}));
+  const contrib=vals.map(x=>({...x,c:x.on?x.w*x.v:0})),maxC=Math.max(...contrib.map(x=>x.c),1e-9);
+  const pull=x=>{const per=TERMS[x.k].per;if(per==="every token")return x.k==="exit"?x.w*(s.rounds-1):x.w;if(per==="note"){const G=geo(s);return x.w*s.S/G.C}return x.w*s.S/ST.q};
+  let bars=`<svg viewBox="0 0 760 ${contrib.length*26+10}" role="img" aria-label="loss sizes at step 0">`;
+  contrib.forEach((x,i)=>{const y=6+i*26,w=x.c/maxC*420;bars+=`<text class="r-lb" x="150" y="${y+13}" text-anchor="end">${TERMS[x.k].name}</text>`;
+    bars+=x.on?`<rect x="160" y="${y+2}" width="${Math.max(w,1.5)}" height="14" rx="4" fill="var(--fg2)" data-tip="${esc(`${TERMS[x.k].name}: weight ${x.w} × ${x.v.toFixed(2)} = ${x.c.toFixed(3)}`)}"/><text class="pv" x="${166+Math.max(w,1.5)}" y="${y+13}">${x.c<.01?x.c.toExponential(1):x.c.toFixed(2)}</text>`
+      :`<text class="tick" x="162" y="${y+13}">${termNeeds(s,x.k)||"off"}</text>`});
+  bars+="</svg>";
+  $("#loss").innerHTML=`${ST.view==="both"?`<div class="grp" style="margin:6px 0"><span class="lab">Losses of</span><div class="seg" id="seg-loss"><button data-v="dense" class="${m==="dense"?"on":""}">Dense</button><button data-v="e33" class="${m==="e33"?"on":""}">E33</button></div></div>`:""}
+   <p>${m==="dense"?"The dense model trains on the next-token loss and a tiny z-loss.":"E33's recipe adds three terms that act only at question positions: a read target per loop round, the hop naming, and the count. Loop exits and note read-back are earlier recipes, off in e33m."} Hover a term: the graph beside it shows where the term is measured (dashed outline) and which blocks its gradient reaches (pink outline).</p>
+   <div class="lossgrid"><div class="lossgraph" id="lossgraph">${drawGraph(m,{sizes:false,nums:false,id:m+"-l"})}</div><div>
+   <div class="eqn">${eqn(s)}</div>
+   <div class="grid2"><div class="panel"><p class="chart-t">How loud each term starts</p><p class="chart-s">Weighted size at step 0 (uniform predictions and reads). The next-token loss falls to about 1–2 as the model learns.</p><div class="scroll">${bars}</div></div>
+   <div class="panel"><p class="chart-t">Pull per position</p><p class="chart-s">How hard one marked position is pushed compared with one token of the next-token loss: the weight spread over fewer positions.</p>
+    <div class="scroll"><table class="data"><tr><th>term</th><th>acts on</th><th>× one CE token</th></tr>${contrib.filter(x=>x.on).map(x=>`<tr><td>${TERMS[x.k].name}</td><td>${TERMS[x.k].per==="decision"?`~${ST.q} decision positions / row`:TERMS[x.k].per==="note"?"every note":"every token"}</td><td>${pull(x).toFixed(pull(x)<1?4:0)}</td></tr>`).join("")}</table></div>
+    <div class="assum"><label for="a-q">assumed decision positions per ${fK(s.S)} row</label><input type="range" id="a-q" min="1" max="64" value="${ST.q}"><output>${ST.q}</output>
+     ${m==="e33"?`<label for="a-k">assumed true count (count step 0)</label><input type="range" id="a-k" min="1" max="10" value="${ST.kc}"><output>${ST.kc}</output>`:""}</div></div></div>
+   <div class="terms">${keys.map(k=>{const T=TERMS[k],t=s.loss[k],act=termActive(s,k);return `<div class="term${t.on&&act?"":" off"}" data-term="${k}">
+     <div class="th"><b>${T.name}</b>${!act?`<span class="pill p-neu">${termNeeds(s,k)}</span>`:""}<label class="tg"><input type="checkbox" data-lk="${k}" ${t.on?"checked":""} ${k==="ce"?"disabled":""}> on</label></div>
+     ${k!=="ce"?`<div class="ctl"><span class="nm">weight</span><input type="range" id="lw-${m}-${k}" data-lw="${k}" min="0" max="${k==="z"?.001:2}" step="${k==="z"?.00005:.05}" value="${t.w}"><output>${t.w}</output></div>`:""}
+     <div class="f">${esc(T.f)}</div><dl><dt>measured at</dt><dd>${{head:"the LM head",read:"the notebook read",lens:"the naming lens",w_notes:"the notes"}[T.at]}</dd><dt>needs</dt><dd>${esc(T.needs)}</dd><dt>trains</dt><dd>${esc(trainsText(s,k))}</dd><dt>step 0</dt><dd>${T.s0(s).toFixed(2)} × weight</dd></dl></div>`}).join("")}</div></div></div>`}
+
+/* ---------------------------------------------------------------- render */
+const vis=()=>ST.view==="both"?["dense","e33"]:[ST.view];
+function renderAll(full=true){
+  document.querySelectorAll("#seg-view button").forEach(b=>b.classList.toggle("on",b.dataset.v===ST.view));
+  document.querySelectorAll("#seg-size button").forEach(b=>b.classList.toggle("on",+b.dataset.v===ST.size));
+  $("#b-undo").disabled=!ST.hist.length;
+  if(!vis().includes(ST.sel.m))ST.sel={m:vis()[0],id:"tokens"};
+  $("#work").classList.toggle("single",ST.view!=="both");
+  $("#impact").innerHTML=vis().map(impactCard).join("");
+  $("#dgms").innerHTML=vis().map(m=>`<div class="dgm">${drawGraph(m)}</div>`).join("");
+  $("#legend").innerHTML=CATS.map(([c,n],i)=>`<span><i style="background:var(--c${i+1})"></i>${n}</span>`).join("")+`<span><i style="background:none;border:1.5px dashed var(--c5)"></i>loop</span>`;
+  const ss=ST.models[ST.sel.m];if(!steps(ST.sel.m).includes(ST.sel.id)&&!["model","loop"].includes(ST.sel.id))ST.sel.id="model";
+  renderInspector(full);
+  const S=Math.max(...vis().map(m=>ST.models[m].S));const rt=$("#r-t");rt.max=S-1;if(ST.t!=null&&ST.t>S-1)ST.t=S-1;rt.value=ST.t==null?S-1:ST.t;$("#r-tv").textContent=int(+rt.value);
+  $("#reach").innerHTML=vis().map(m=>`<div class="panel scroll">${reachSVG(m)}</div>`).join("");
+  $("#budget").innerHTML=stackChart("p")+stackChart("f");
+  scaleChart();renderLoss()}
+function renderLight(){ // during a drag: everything but the inspector controls and the loss sliders
+  $("#impact").innerHTML=vis().map(impactCard).join("");
+  $("#dgms").innerHTML=vis().map(m=>`<div class="dgm">${drawGraph(m)}</div>`).join("");
+  renderInspector(false);
+  $("#reach").innerHTML=vis().map(m=>`<div class="panel scroll">${reachSVG(m)}</div>`).join("");
+  $("#budget").innerHTML=stackChart("p")+stackChart("f");scaleChart()}
+
+/* ---------------------------------------------------------------- events */
+let dragging=false;
+function pushHist(){ST.hist.push(clone(ST.models));if(ST.hist.length>60)ST.hist.shift()}
+function select(m,id){ST.sel={m,id};stopPlay();renderAll(true)}
+function stopPlay(){if(ST.playing){clearInterval(ST.playing);ST.playing=null}}
+document.addEventListener("click",ev=>{
+  const g=ev.target.closest("g.nd[data-id]");if(g&&g.closest("#dgms,#reach,#lossgraph")){select(g.dataset.m,g.dataset.id);return}
+  const b=ev.target.closest("button");if(!b)return;
+  if(b.closest("#seg-view")){ST.view=b.dataset.v;if(ST.view!=="both")ST.lossM=ST.view;renderAll(true);return}
+  if(b.closest("#seg-size")){pushHist();ST.size=+b.dataset.v;ST.models={dense:preset("dense",ST.size),e33:preset("e33",ST.size)};ST.base=clone(ST.models);renderAll(true);return}
+  if(b.closest("#seg-loss")){ST.lossM=b.dataset.v;renderLoss();return}
+  if(b.id==="b-reset"){pushHist();ST.models=clone(ST.base);renderAll(true);return}
+  if(b.id==="b-undo"){if(ST.hist.length){ST.models=ST.hist.pop();renderAll(true)}return}
+  if(b.id==="st-prev"||b.id==="st-next"){const ids=steps(ST.sel.m);let p=ids.indexOf(ST.sel.id);p=b.id==="st-next"?Math.min(ids.length-1,p+1):Math.max(0,p-1);ST.sel.id=ids[p<0?0:p];stopPlay();renderAll(true);return}
+  if(b.id==="st-play"){if(ST.playing){stopPlay();renderInspector(false);$("#st-play").textContent="Play";return}
+    ST.playing=setInterval(()=>{const ids=steps(ST.sel.m);const p=ids.indexOf(ST.sel.id);if(p>=ids.length-1){stopPlay();renderInspector(true);return}ST.sel.id=ids[p+1];const keep=ST.playing;renderAll(true);ST.playing=keep;$("#st-play").textContent="Pause"},3200);$("#st-play").textContent="Pause";return}
+  if(b.dataset.rt){const S=Math.max(...vis().map(m=>ST.models[m].S));ST.t=Math.round((S-1)*+b.dataset.rt);renderAll(false);return}
+  if(b.id==="copy-args"){const txt=$("pre.args").textContent;navigator.clipboard.writeText(txt).then(()=>{b.textContent="Copied"},()=>{const r=document.createRange();r.selectNodeContents($("pre.args"));const sl=getSelection();sl.removeAllRanges();sl.addRange(r);b.textContent="Selected: press ⌘C"});return}
+  const m=ST.sel.m,s=ST.models[m];
+  if(b.dataset.lev!=null){pushHist();levers(m,ST.sel.id)[+b.dataset.lev].apply(s);fix(s);const ids=steps(m);if(!ids.includes(ST.sel.id)&&!["model","loop"].includes(ST.sel.id))ST.sel.id="model";renderAll(true);return}
+  if(b.dataset.act){pushHist();const i=+b.dataset.i,a=b.dataset.act;
+    if(a==="dup")s.layers.splice(i+1,0,clone(s.layers[i]));
+    if(a==="del"){s.layers.splice(i,1);ST.sel.id=s.layers.length?"L"+Math.max(0,i-1):"model"}
+    if(a==="up"&&i>0){[s.layers[i-1],s.layers[i]]=[s.layers[i],s.layers[i-1]];ST.sel.id="L"+(i-1)}
+    if(a==="down"&&i<s.layers.length-1){[s.layers[i+1],s.layers[i]]=[s.layers[i],s.layers[i+1]];ST.sel.id="L"+(i+1)}
+    if(a==="fit")s.F=fitF(s);
+    fix(s);renderAll(true)}});
+document.addEventListener("keydown",ev=>{const g=ev.target.closest&&ev.target.closest("g.nd[data-id]");if(g&&(ev.key==="Enter"||ev.key===" ")){ev.preventDefault();select(g.dataset.m,g.dataset.id)}});
+document.addEventListener("input",ev=>{const el=ev.target;const m=ST.sel.m,s=ST.models[m];
+  if(el.id==="r-t"){ST.t=+el.value;$("#r-tv").textContent=int(ST.t);$("#reach").innerHTML=vis().map(mm=>`<div class="panel scroll">${reachSVG(mm)}</div>`).join("");return}
+  if(el.id==="a-q"){ST.q=+el.value;el.nextElementSibling.textContent=ST.q;clearTimeout(window._lt);window._lt=setTimeout(renderLoss,120);return}
+  if(el.id==="a-k"){ST.kc=+el.value;el.nextElementSibling.textContent=ST.kc;clearTimeout(window._lt);window._lt=setTimeout(renderLoss,120);return}
+  if(el.dataset.lw){const lm=ST.view==="both"?ST.lossM:ST.view;if(!dragging){pushHist();dragging=true}ST.models[lm].loss[el.dataset.lw].w=+el.value;el.nextElementSibling.textContent=+el.value;
+    $("#dgms").innerHTML=vis().map(mm=>`<div class="dgm">${drawGraph(mm)}</div>`).join("");document.querySelector(".eqn:not(.body .eqn)")&&($("#loss .eqn").textContent=eqn(ST.models[lm]));return}
+  if(el.dataset.k&&el.type==="range"){if(!dragging){pushHist();dragging=true}setP(s,el.dataset.k,el.dataset.vals?+el.dataset.vals.split(",")[+el.value]:+el.value);fix(s);renderLight();return}});
+document.addEventListener("change",ev=>{const el=ev.target;const m=ST.sel.m,s=ST.models[m];
+  if(el.id==="t-sizes"){ST.sizes=el.checked;renderAll(false);return}
+  if(el.id==="t-nums"){ST.nums=el.checked;renderAll(false);return}
+  if(el.dataset.type!=null){pushHist();const i=+el.dataset.type;s.layers[i]={t:el.value,w:el.value==="local"?16:0};fix(s);renderAll(true);return}
+  if(el.dataset.lk){const lm=ST.view==="both"?ST.lossM:ST.view;pushHist();ST.models[lm].loss[el.dataset.lk].on=el.checked;renderAll(true);return}
+  if(el.dataset.lw){dragging=false;renderAll(false);renderLoss();return}
+  if(el.dataset.k){if(el.type==="checkbox"){pushHist();setP(s,el.dataset.k,el.checked)}else if(el.tagName==="SELECT"){pushHist();setP(s,el.dataset.k,+el.value)}else{dragging=false}
+    fix(s);renderAll(true)}});
+document.addEventListener("mouseover",ev=>{const t=ev.target.closest(".term[data-term]");const lm=ST.view==="both"?ST.lossM:ST.view;
+  const redraw=()=>{$("#dgms").innerHTML=vis().map(mm=>`<div class="dgm">${drawGraph(mm)}</div>`).join("");const lg=$("#lossgraph");if(lg)lg.innerHTML=drawGraph(lm,{sizes:false,nums:false,id:lm+"-l"})};
+  if(t){if(!ST.hl||ST.hl.k!==t.dataset.term){ST.hl={m:lm,k:t.dataset.term};redraw()}}
+  else if(ST.hl&&!ev.target.closest(".terms")){ST.hl=null;redraw()}});
+// tooltips
+const TIP=$("#tip");
+function tip(ev,html){TIP.innerHTML=html;TIP.style.opacity=1;const w=TIP.offsetWidth,h=TIP.offsetHeight;let x=ev.clientX+14,y=ev.clientY+14;if(x+w>innerWidth-8)x=ev.clientX-w-12;if(y+h>innerHeight-8)y=ev.clientY-h-12;TIP.style.left=x+"px";TIP.style.top=y+"px"}
+function untip(){TIP.style.opacity=0}
+document.addEventListener("mousemove",ev=>{const t=ev.target.closest&&ev.target.closest("[data-tip]");if(t)tip(ev,esc(t.dataset.tip));else if(!ev.target.closest("#xhit"))untip()});
+
+try{const v=localStorage.getItem("e33b-view");if(v&&["dense","e33","both"].includes(v))ST.view=v}catch(e){}
+document.addEventListener("click",ev=>{if(ev.target.closest("#seg-view"))try{localStorage.setItem("e33b-view",ST.view)}catch(e){}});
+if(innerWidth<760)ST.view=ST.view==="both"?"e33":ST.view;
+renderAll(true);
+</script>

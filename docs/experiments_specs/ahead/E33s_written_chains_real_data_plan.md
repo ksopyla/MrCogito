@@ -255,3 +255,166 @@ def chain_targets(text, offsets, question, derived, after_answer=False) -> list[
   gates (S1–S3) cannot be met, or even resolved from noise (300 items: SE ≈ 1–2.5 points).
 - **As specced, E33s would not be informative.** Decision for the author: re-scope or put on hold before the 100M
   run.
+
+## 11. Re-scope plan (24 Oct 2026): written reasoning from scratch, 30M then 100M, on the text world
+
+Spec: the "Re-scope, 24 Oct 2026" section of [E33s_written_chains_real_data.md](E33s_written_chains_real_data.md).
+
+### 11.0 What does not change
+- **The model.** `e33m_plain`, as in the written route: hop naming 0.3, per-round read target 0.5, order on demand,
+  two count heads, loop exit losses 0.
+- **The dense control:** `dense_plain`.
+- **The machinery:** the text-checks runner (`scripts/run_text_checks.py`, tiers screen / main), the shared
+  launcher (`scripts/train_concept_pretraining_multigpu.sh`), the data builder with written chains
+  (`scripts/build_text_checks_data.py --written_chains`), the rule (`parse_written_chain`, `parse_written_tally`)
+  and the frozen exams `text_checks_v2q8` (v2 + v2.1).
+- **No new architecture.** Every code change below is a fix with a default that keeps old runs bit-identical.
+
+### 11.1 Read target with the order term (`message_loop_read_order`)
+- **Where:**
+  - `nn/perceiver_ar_lm.py`: `PerceiverARConfig` (new field), `MessageCtx` (new `read_order`, set where
+    `read_targets` / `read_round` are filled in `_run_layers`), `attend_message` (passes `note_bias` on),
+    `read_target_loss` and `capture_note_mass` (add the bias).
+  - Trainer argument in `training/concept_pretraining_args.py` (next to `message_loop_read_aux`, line ~442).
+  - The factories' passthrough list in `training/concept_pretraining_factories.py` (line ~430).
+  - `ENV_OF["message_loop_read_order"] = "PAR_LOOP_READ_ORDER"` in `evaluation/text_checks.py`, and the env var in
+    the shared launcher.
+- **What:** with `full`, both functions add the note term the read itself uses to each note's logit:
+  - rank mode (E33e / E33i / E33j / E33m): `−slope[h] · logcount[b, h, q, page(note)]` from `note_rank_logcount`,
+    already scaled by the order switch's σ when there is one;
+  - log mode (E33d / E33jd): `note_age_bias`.
+
+  Raw-window logits are unchanged. `content` (default) is today's code path.
+```python
+# sketch — inside read_target_loss / capture_note_mass, after sl = q_slot·k̄ / √dh   [N, h, nb]
+if ctx.read_order == "full" and note_bias is not None:
+    slope, a, b_, rep, mode = note_bias
+    if mode == "rank":                          # a = logcount [B, h, S, n_w]; notes of page w: w*rep .. (w+1)*rep-1
+        lc = a[bi, :, qp]                       # [N, h, n_w]
+        sl = sl - slope[None, :, None] * lc.repeat_interleave(rep, dim=-1)[..., :nb]
+    else:                                       # E33d: per-note age bias from (pos, slot_pos)
+        sl = sl + note_age_bias(a[bi, qp], b_[bi], slope, rep, mode)   # [N, h, nb]
+```
+- **Tests** (`tests/test_text_memory.py`):
+  - `content` returns the same loss as before, bit for bit, on a fixed seed;
+  - `full` with slope 0 equals `content`;
+  - with two matching notes of different ages and the target on the newer one, `full` gives the lower loss;
+  - the loss sends gradient into `note_order_gate`;
+  - flex and SDPA paths agree on GPU hosts.
+- **Check run (Phase 0, Odra GPUs 1–2, about 0.7 h training + 2 h exams):**
+```bash
+uv run python scripts/run_text_checks.py plan --phase train --tier screen --arches e33m_plain --host odra --gpus 1 2 \
+  --data $TOK/text_checks_v2written_tc_none --out Cache/text_checks/written_tc_none_ro --tokens 100000000 \
+  --eval_lengths 1024 4096 16384 \
+  --extra_env MODEL_NAME_OR_PATH=<written_tc_drop1 final> LEARNING_RATE=0.000333 PAR_LOOP_READ_ORDER=full
+```
+  Adopt for Phase A only if latest at 4k ≥ 83 % with compose and deduce within 2 points of the written route
+  (78 / 93 / 100 %).
+
+### 11.2 `message_loop_span` as a trainer argument
+- **Where:** `training/concept_pretraining_args.py`, the factories' passthrough list, `ENV_OF["message_loop_span"] =
+  "PAR_LOOP_SPAN"`, and the launcher.
+- **What:** the field already exists in `PerceiverARConfig` (`nn/perceiver_ar_lm.py:177`, validated at :460). It is
+  only exposed to the DNA models (`evaluation/bapo_models.py:145`). Default 1.
+- **Test:** a tiny text model with span 2 runs a forward and backward pass, and its core holds the global read plus
+  2 layers; `plan … --extra_env PAR_LOOP_SPAN=2` records the setting in `job.json`.
+
+### 11.3 String booleans in `PerceiverARConfig`
+- **Where:** `nn/perceiver_ar_lm.py` lines ~381 and ~2080: `bool(lm_note_age_learn)` and `bool(lm_note_order_gate)`.
+- **What:** parse `"false" / "0" / "no"` as False through one helper, `_as_bool`.
+- **Test:** `PerceiverARConfig(lm_note_age_learn="false").lm_note_age_learn is False`, and `count_params("e33jf_plain",
+  …)` builds fixed order heads.
+
+### 11.4 Dense reach in the real-QA exam (for Phase C)
+- **Where:** `evaluation/real_multihop_eval.py`.
+- **What:** add `--reach_tokens`, default 4096 for models with no notebook (no `message_write` in the config, or a
+  Hub model) and 0 (whole prompt) for notebook models. When the prompt is longer, keep its last `reach_tokens`
+  tokens, so the question and the end of the document survive. Applies to teacher-forced scoring and generation.
+- **Test:** a 6k-token prompt with `--reach_tokens 4096` gives model inputs of 4,096 tokens that end with the
+  question.
+
+### 11.5 Stage driver (`scripts/text_checks_written_stages.sh`, committed, reusable)
+- **Why:** the 19 Oct driver (`Cache/text_checks/written_t4t6.sh` on Odra) was a one-off.
+- **What:** chains the three schedule stages for one arch, seed and tier through `run_text_checks.py`, and stays
+  resumable (a stage with `DONE` is skipped):
+  - stage 1 from random weights, with `--curve_fractions 0.1 … 1.0` and stage-1 exams at 4k only (the switch-on
+    curve);
+  - stages 2 and 3 from the previous final at `LEARNING_RATE = lr/3`;
+  - stage-3 exams at the full lengths.
+- **Usage:**
+```bash
+bash scripts/text_checks_written_stages.sh <arch> <seed> <tier> "<gpus>" <out_prefix> <data_prefix> \
+     <stage1_tokens> <stage23_tokens> [KEY=VALUE ...]
+```
+
+### 11.6 Data (CPU, both servers, in parallel with Phase 0)
+- **Settings:** the written route's build settings (`written_t4t6.sh`) with `--seed 7`, `--eval_from
+  $TOK/text_checks_v2q8 --eval_splits` (frozen exams reused) and `--tokenizer $TOK/text_checks_v2q8/tokenizer`.
+- **One build per stage:**
+  - `$TOK/text_checks_v2written_s_all`: `--written_chains all`, `--target_tokens 1600000000`;
+  - `$TOK/text_checks_v2written_s_drop1`: `--written_chains drop1`, `--target_tokens 200000000`;
+  - `$TOK/text_checks_v2written_s_none`: `--written_chains none`, `--target_tokens 200000000`.
+- **Size:** about 12 GB per server (the 0.15B-token written builds take 0.9 GB each). Free: Odra 1.3 TB, Polonez 668 GB.
+- **Time:** about 1–1.5 h with `--num_proc 16`.
+
+### 11.7 Launch (after the author's go-ahead; code reaches the servers through dev)
+Both servers run from `~/dev/MrCogito` on `dev`, so the branch is merged into dev and pushed first. That needs the
+author's OK.
+
+**Phase A:**
+```bash
+# Polonez (bursts of 6 h, 20-min cooldowns; the runner's defaults)
+bash scripts/text_checks_written_stages.sh e33m_plain 0 screen "0 1" Cache/text_checks/ws30_e33_s0 $TOK/text_checks_v2written_s 1.2e9 1.5e8
+bash scripts/text_checks_written_stages.sh e33m_plain 1 screen "2 3" Cache/text_checks/ws30_e33_s1 $TOK/text_checks_v2written_s 1.2e9 1.5e8
+# Odra
+bash scripts/text_checks_written_stages.sh e33m_plain 2 screen "0 1" Cache/text_checks/ws30_e33_s2 $TOK/text_checks_v2written_s 1.2e9 1.5e8
+bash scripts/text_checks_written_stages.sh dense_plain 0 screen "2" Cache/text_checks/ws30_dense_s0 $TOK/text_checks_v2written_s 1.2e9 1.5e8
+```
+- Add `PAR_LOOP_READ_ORDER=full` to the E33 lines only if 11.1 adopted it.
+- **A-K1 check:** at 60 % of stage 1, a quick exam (200 items, far lookup at 4k) on that checkpoint, on the GPU
+  dense frees after about 8 h.
+
+**Phase B** (only after the Phase A review):
+```bash
+# step sizes (main tier, 3 × 0.1B tokens per arch, held-out loss), then write the cards
+uv run python scripts/run_text_checks.py plan --phase tune --tier main --arches e33m_plain --host polonez --gpus 0 1 2 \
+  --data $TOK/text_checks_v2written_s_all --out Cache/text_checks/ws100_tune
+uv run python scripts/run_text_checks.py select --out Cache/text_checks/ws100_tune --tier main --write
+# training
+bash scripts/text_checks_written_stages.sh e33m_plain 0 main "0 1 2 3" Cache/text_checks/ws100_e33_s0 $TOK/text_checks_v2written_s 1.6e9 2e8   # Polonez
+bash scripts/text_checks_written_stages.sh dense_plain 0 main "0 1 2" Cache/text_checks/ws100_dense_s0 $TOK/text_checks_v2written_s 1.6e9 2e8  # Odra
+```
+- Phase B's exams add 65536 for E33.
+- The B-K1 checks use the 25 % and 50 % checkpoints.
+
+### 11.8 Order of work and rough effort
+| step | where | effort |
+|---|---|---|
+| 11.1–11.4 code + tests | laptop | half a day |
+| 11.5 driver + local smoke (2M models, all three stages on the smoke tier) | laptop | 1–2 h |
+| merge to dev, push, pull on both servers (author's OK) | — | minutes |
+| 11.6 data builds and the 100M pre-flight; 11.1 check run | servers | about 3 h, in parallel |
+| Phase A | both servers | about 15 h |
+| Phase A review: board, claims, the go / fallback decision | — | about 1 h |
+| Phase B | both servers | about 1.5 days |
+
+### 11.9 Risks
+- **Read targets and naming from step 0, before the notes mean anything.** The aux losses could pull the read
+  around before the notebook switches on.
+  - Early signal: the stage-1 curve at 10–30 %.
+  - Kill: A-K1.
+  - Fallback: the two-phase recipe (plain pretraining, then the written stages), which every warm-start result
+    used.
+- **Exit losses off from scratch is new on text.** E33x kept far lookup as a continuation. On DNA, the loop without
+  answer exits composed in 3 of 3 seeds. A-S2 measures it.
+- **The order term costs about a third of the step time** (`e33jf` ≈ 22k vs `e33qn` ≈ 32k tokens/s per 3090), and
+  the count heads about another tenth.
+  - Both stay in, because latest needs the order term.
+  - Dropping the count heads (count fails anyway) is a later choice, not part of this confirmation.
+- **The written-chain mix has 30 % story tokens** (45 % in the first comparison round). Dense gets the same data,
+  so language no-harm is judged against dense on this mix.
+- **100M memory:** `e33m_plain` runs 2 rows per GPU at the main tier (recipe card); the Phase 0 pre-flight confirms it
+  before the run.
+- **NAS offline:** results stay on the servers and in the committed ledgers until the NAS is back. Pull with
+  `--no-archive`.
+- **Polonez heat:** the runner's bursts and cooldowns apply. Check Odra < 80 °C before long jobs.

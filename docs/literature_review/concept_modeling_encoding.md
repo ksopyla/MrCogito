@@ -26,6 +26,8 @@ Concept learning and encoding, list of extracts from articles. How to model conc
         * [The evaluation procedure, evaluation datasets and results](#the-evaluation-procedure-evaluation-datasets-and-results-2)
         * [Previous attempts to solve this problem](#previous-attempts-to-solve-this-problem-2)
         * [Max 5 top most relevant to the problem follow-up publications](#max-5-top-most-relevant-to-the-problem-follow-up-publications)
+    * [Next-Concept Modeling: Fast, Parallel Coarse-to-Fine Text Generation](#next-concept-modeling-fast-parallel-coarse-to-fine-text-generation)
+    * [Dynamic Chunking for End-to-End Hierarchical Sequence Modeling (H-Net)](#dynamic-chunking-for-end-to-end-hierarchical-sequence-modeling-h-net)
 
 
 
@@ -234,3 +236,181 @@ Link: https://arxiv.org/pdf/2502.06785
 Authors: Mike Heddes, Adel Javanmard, Kyriakos Axiotis, Gang Fu, MohammadHossein Bateni, Vahab Mirrokni
 
 Transformer networks have achieved remarkable success across diverse domains, leveraging a variety of architectural innovations, including residual connections. However, traditional residual connections, which simply sum the outputs of previous layers, can dilute crucial information. This work introduces DeepCrossAttention (DCA), an approach that enhances residual learning in transformers. DCA employs learnable, input-dependent weights to dynamically combine layer outputs, enabling the model to selectively focus on the most relevant information in any of the previous layers. Furthermore, DCA incorporates depth-wise cross-attention, allowing for richer interactions between layers at different depths. Our language modeling experiments show that DCA achieves improved perplexity for a given training time. Moreover, DCA obtains the same model quality up to 3x faster while adding a negligible number of parameters. Theoretical analysis confirms that DCA provides an improved trade-off between accuracy and model size when the ratio of collective layer ranks to the ambient dimension falls below a critical threshold.
+
+
+## Next-Concept Modeling: Fast, Parallel Coarse-to-Fine Text Generation
+
+**Title:** Next-Concept Modeling: Fast, Parallel Coarse-to-Fine Text Generation  
+**Publish Date:** 9 October 2026  
+**Authors:** Hermann Kumbong, Ishan S. Khare, Iddah Mlauzi, Andrew Woen, Charles Ding, E. Kelly Buchanan, Simran Arora, Azalia Mirhoseini, Christopher Ré (Stanford / Together AI)  
+**URL:** [https://arxiv.org/abs/2610.14162](https://arxiv.org/abs/2610.14162) · code [HazyResearch/ncm](https://github.com/HazyResearch/ncm) (MIT; evaluation-only, no training loop; read at `c702742`) · weights [hazyresearch/ncm-checkpoints](https://huggingface.co/hazyresearch/ncm-checkpoints) · data [hazyresearch/ncm-datasets](https://huggingface.co/datasets/hazyresearch/ncm-datasets)  
+**Project fit:** [hierarchy_lessons_hnet_ncm_mai_20261030.md](../4_Research_Notes/hierarchy_lessons_hnet_ncm_mai_20261030.md) (Adapt: ordered / residual notes; Sudoku-style exam)
+
+### TL;DR
+
+Text is first encoded by a frozen **multiscale residual VQ-VAE** into K levels of discrete codes, short and
+coarse first, full length last; a transformer then generates **one level per step, all codes of a level in
+parallel**, conditioned on the cumulative reconstruction of the earlier levels. With K ≪ L steps and short early
+levels, ~100M models match or beat diffusion language models at 10–31× less wall-clock and ~4–5× fewer training
+tokens, and a 25M model solves 86 % of hard Sudoku boards where autoregressive models solve 1 %. "Concept" here
+means *what the coarse levels carry*. Read from the code and appendices: the hierarchy is **not** a compression
+of the text overall (TinyStories: 641 codes of 12 bits for 128 tokens, ~4.6× the bits of the BPE ids); only the
+first levels compress (levels 0–2: 25 codes, ~5 tokens per code), the "down" step is average pooling over fixed
+equal regions, and the coarse levels keep a story's **theme but not its names or objects** (App. H).
+
+### The problem that authors want to solve
+
+Diffusion language models promise parallel generation but (i) lose quality quickly with fewer denoising steps,
+(ii) process the full sequence at every step with no KV cache, and (iii) need many passes over the data (DUO and
+MDLM see > 500B tokens of OpenWebText). Distillation to few steps costs extra training and diversity.
+
+### The solution, main idea on the intuition level and strong points
+
+Borrow next-scale prediction from images (VAR) and residual quantization from audio codecs: describe a sequence
+at increasing resolution, each level coding only what the coarser ones missed, and generate resolution by
+resolution. Coarse levels fix the "idea" (the paper's translation trajectory shows the gist first, words later);
+fine levels fill in and correct. Early steps are cheap because coarse levels are short.
+
+### The detailed solution, training process, data preparation
+
+- **Tokenizer.** `z = E(x) ∈ R^{L×d}`. Level k: `u_k = Down_k(z^{(k-1)}) ∈ R^{ℓ_k×d}` (residual downsampled to
+  `ℓ_k` vectors, `ℓ_1 < … < ℓ_K = L`), nearest entry of codebook `V_k`, a reconstruction operator `R_k` maps the
+  chosen vectors back to length L: `ẑ^{(k)} = ẑ^{(k-1)} + R_k(e_k(r_k))`, `z^{(k)} = z − ẑ^{(k)}`. Decoder maps
+  `ẑ^{(K)}` to token distributions.
+- **Nested dropout.** Each training step samples a cutoff k and computes reconstruction CE plus VQ commitment and
+  codebook MSE at `ẑ^{(k)}`, so every prefix of levels is a usable reconstruction (earlier levels cannot defer
+  information to later ones). Straight-through estimator through quantization.
+- **Generator.** Tokenizer frozen. Input to level k = `ẑ^{(k-1)}` resized to `ℓ_k` positions and projected; all
+  levels trained in one forward pass with block-diagonal attention; loss `Σ_k w_k Σ_i −log p(r_k^i | z̃^{(k-1)})`
+  with `w_k ∝ ℓ_k^{-α}` (α = 0 equal per code, α = 1 equal per level). **Conditioning corruption:** a level-
+  dependent fraction of conditioning codes is replaced by random codes of the same codebook (labels stay true), for
+  robustness to the generator's own errors. Codes within a level are sampled independently given the earlier
+  levels.
+- **Conditional generation.** Prefix-LM mask: prompt tokens (embedded with the tokenizer's table) attend to each
+  other; each target block attends to the prompt and itself.
+- **Scale.** Generators ~100M (88M XSum, 120M WMT, 25M Sudoku); one tokenizer per dataset; scaling run 97M / 317M /
+  725M on LM1B with a shared tokenizer.
+- **As implemented** (`models/quant.py`, `config/eval/*.yaml`):
+  - Levels: TinyStories 1, 8, 16, 24, 32, 40, 52, 64, 76, 92, 108, 128 codes (4,096 per level); OpenWebText
+    1, 4, 9, 16, … (squares); Sudoku 1 → 89 codes with 16 codes per level (4 bits).
+  - Down = `F.interpolate(mode="area")`, up = linear, plus a VAR-style residual conv; only level 0 has learned
+    conv down/up-samplers.
+  - Codebooks: moving-average updates (decay 0.95–0.99) and dead-code restarts; residuals on the stop-gradient
+    encoder output. Code comment: straight-through "at level 0 only; at higher levels it diverges within ~100
+    steps".
+  - Nested dropout (`fine_drop`): probability 0.5 per batch, cutoff level drawn uniformly, minimum 1 kept.
+  - Generator: block-diagonal attention (best quality, 1.4× faster than block-causal); codebook-tied heads; level 0
+    from a unigram (unconditional) or predicted from the prompt (Sudoku, greedy decoding).
+  - Code corruption: mean rate ~0.5, linearly decreasing over levels; moderate rates "greatly improve" quality,
+    excessive ones hurt.
+  - Level-loss weighting barely matters (Gen. PPL 18.9–19.4 for α ≤ 1.5).
+  - More levels help, with diminishing returns (4 → 32).
+
+### The evaluation procedure, evaluation datasets and results
+
+- Unconditional (TinyStories, LM1B, OpenWebText): generative perplexity under GPT-2-large, reported with mean
+  unigram entropy (diversity). Matches or beats the strongest diffusion LMs with ~4–11× fewer function
+  evaluations; LM1B 21× faster than DUO at better perplexity; OWT 10× faster, competitive.
+- Conditional: XSum ROUGE-1/2/L 35.0 / 12.8 / 28.0 at 8 steps vs AURORA-LM 34.7 / 12.2 / 26.6 at 128 (31×
+  faster); with MBR over candidates 37.3 / 14.0 / 29.6. WMT14 De–En 22.6 BLEU at 11 steps (AR 25.2 at 64; E2D2
+  24.8 at 64).
+- Reasoning: Sudoku (40 / 35 / 30 clues) 99.5 / 96.5 / 86.1 % solved at 12 steps vs AR 14.6 / 5.1 / 1.0 %, MDLM 92.0
+  / 77.1 / 30.2 %, FMLM+ 97.7 / 92.8 / 81.3 % at 16 steps.
+- Efficiency: LM1B tokenizer + generator see 13.4B token positions vs 66B for the baselines (4.9×). Tokenizer exact
+  reconstruction near 100 % (100 % on Sudoku), codebook use 62–90 %.
+- Probes (App. H): fixing the first 3 of 12 levels and resampling the rest keeps the story's broad theme while names,
+  objects and wording change; mixing two stories' coarse codes blends their plots; swapping two level-1 codes
+  changes characters and events.
+- Authors' limitations (App. I): fixed depth and level lengths (an input-dependent schedule would adapt compute),
+  separately trained tokenizer (end-to-end could help), ≤ 725M, artifacts at coarse-level transitions.
+
+### Previous attempts to solve this problem
+
+Few-step diffusion by distillation (SDTT, DUO distillation) and flow maps (FMLM); block-autoregressive diffusion
+(KV cache, but blocks are sequential); latent diffusion over continuous text representations. Hierarchical /
+concept-level LMs: MEGABYTE (byte patches), H-Net (learned chunks), Large Concept Models (sentence embeddings),
+ConceptLM, Dynamic Large Concept Models (variable-length concepts), HDLM (hierarchy of vocabularies).
+
+### Max 5 top most relevant to the problem publications from bibliography
+
+- VAR, next-scale prediction for images: [arXiv 2404.02905](https://arxiv.org/abs/2404.02905)
+- RQ-VAE, residual quantization: [arXiv 2203.01941](https://arxiv.org/abs/2203.01941)
+- H-Net, dynamic chunking: [arXiv 2507.07955](https://arxiv.org/abs/2507.07955)
+- Dynamic Large Concept Models: [arXiv 2512.24617](https://arxiv.org/abs/2512.24617)
+- MDLM, masked diffusion LMs: [arXiv 2406.07524](https://arxiv.org/abs/2406.07524)
+
+
+
+## Dynamic Chunking for End-to-End Hierarchical Sequence Modeling (H-Net)
+
+**Title:** Dynamic Chunking for End-to-End Hierarchical Sequence Modeling  
+**Publish Date:** July 2025 (v2 used here); scaled follow-up in Cartesia's blog *From Tokens to Bytes* I–II (28 Oct 2026, not read at source)  
+**Authors:** Sukjun Hwang, Brandon Wang, Albert Gu (CMU, Cartesia AI)  
+**URL:** [https://arxiv.org/abs/2507.07955](https://arxiv.org/abs/2507.07955) · code [goombalab/hnet](https://github.com/goombalab/hnet) (read at `3673fe1`, Sep 2025; the improved Oct 2026 architecture is not released) · weights [cartesia-ai](https://huggingface.co/cartesia-ai)  
+**Project fit:** [hierarchy_lessons_hnet_ncm_mai_20261030.md](../4_Research_Notes/hierarchy_lessons_hnet_ncm_mai_20261030.md) (Adapt: content-placed notes, zero-start raw shortcut, recurrent writer)
+
+### TL;DR
+
+A U-Net-like byte-level LM that **learns where chunks end** (a cosine-dissimilarity router between adjacent encoder
+states), runs a deep Transformer only on the chunk vectors, and expands back with a confidence-weighted moving
+average. With a ratio loss holding the compression, a 1-stage H-Net matches a compute- and data-matched BPE
+Transformer and a 2-stage one beats it (1.3B: 0.715 vs 0.730 bits per byte; downstream 58.2 vs 55.5), is ~2× more
+robust to noisy text, and helps more on Chinese, code and DNA. Ablations: fixed-width pooling clearly loses;
+how a chunk is squeezed does not matter; recurrent (Mamba) encoders compress better than attention.
+
+### The problem that authors want to solve
+
+Tokenizers are a handcrafted, non-end-to-end compression step; byte-level isotropic models are too expensive,
+static pooling (MegaByte, Hourglass) ignores variable information rate, and heuristic or external boundaries
+(SpaceByte, BLT) are modality-specific. Learning discrete boundaries end to end had been unstable.
+
+### The solution, main idea on the intuition level and strong points
+
+Let the model chunk its own input: where the representation changes, start a new chunk. Put most parameters in a
+main network that sees only chunks; keep a cheap full-resolution path for detail. Recurse: the main network can
+itself be an H-Net (bytes → sub-words → words / phrases).
+
+### The detailed solution, training process, data preparation
+
+- Encoder (4 Mamba-2 layers) → router `p_t = ½(1 − cos(W_q x_t, W_k x_{t−1}))`, boundary if `p_t ≥ 0.5`
+  (`W_q = W_k = I` at init; first position always a boundary) → keep boundary vectors (no pooling) → main network
+  → smoothing EMA `z̄_t = P_t ẑ_t + (1 − P_t) z̄_{t−1}` → repeat each chunk vector until the next boundary,
+  multiplied by a straight-through confidence (`p` at boundaries, `1 − p` elsewhere) → add `Linear(x̂)` from the
+  encoder (weight **zero-initialised**) → decoder (4 Mamba-2 layers).
+- Ratio loss `N/(N−1)·((N−1)FG + (1−F)(1−G))`, F = share selected, G = mean probability; weight 0.03; targets 6
+  bytes per chunk (1 stage) or (3, 3) (2 stages).
+- Signal propagation: RMSNorm at the end of every sub-network; projection only on the shortcut; per-stage
+  learning-rate multipliers (outer stages higher, by positions and width); width monotone inward
+  (e.g. 1024 / 1024 / 1536).
+- 100B FineWeb-Edu tokens; 8,192 bytes per sequence; AdamW with warmup-stable-decay; models matched to GPT-3 Large
+  (760M) and XL (1.3B) FLOPs per byte.
+
+### The evaluation procedure, evaluation datasets and results
+
+- Bits per byte (FineWeb-Edu, Large / XL): BPE Transformer 0.756 / 0.730; H-Net pool 0.780 / –; space 0.755 / 0.726;
+  1-stage 0.755 / 0.728; **2-stage 0.743 / 0.715**. 2-stage crosses the Transformer after 30B bytes, gap widening.
+- Zero-shot average of 7 tasks: XL 2-stage 58.2 vs Transformer 55.5; Large 2-stage 55.5 = XL Transformer.
+- Noisy HellaSwag robustness score (XL): 42.8 vs 22.2 for BPE.
+- Chinese (XWinograd-zh 66.3 vs 59.9) and code beat Llama-3-tokenized Transformers; DNA: isotropic perplexity with
+  3.6× less data.
+- Ablations: without smoothing the ratio swings and quality drops; cosine routing and straight-through help;
+  Mamba encoders beat Transformer encoders even on BPE-token inputs; selection ≈ mean ≈ max ≈ cross-attention for
+  the squeeze (App. E.1); hybrid main network scales better; beats a FLOP-matched MoE.
+- Learned chunks: stage 1 at spaces and word starts; stage 2 at words and multi-word groups.
+- Cost: up to 2× slower training; dynamic memory per batch.
+- Cartesia's scaled 2-stage model (blog excerpts, unverified): 3.67B reaches SmolLM3's six-task average after ~1T
+  vs ~11T tokens (different sizes and data); loss-to-loss advantage grows out of domain.
+
+### Previous attempts to solve this problem
+
+Isotropic byte models (ByT5, MambaByte); static pooling (Funnel, Hourglass, MegaByte, Block Transformer);
+external boundaries (SpaceByte by spaces, BLT by a small model's entropy); soft or stochastic dynamic boundaries
+(MANTa, MrT5, DPT) — unstable or single-stage.
+
+### Max 5 top most relevant to the problem publications from bibliography
+
+- Byte Latent Transformer: [arXiv 2412.09871](https://arxiv.org/abs/2412.09871)
+- SpaceByte: [arXiv 2404.14408](https://arxiv.org/abs/2404.14408)
+- MegaByte: [arXiv 2305.07185](https://arxiv.org/abs/2305.07185)
+- Hourglass Transformer: [arXiv 2110.13711](https://arxiv.org/abs/2110.13711)
+- Dynamic Token Pooling (DPT): [arXiv 2211.09761](https://arxiv.org/abs/2211.09761)
