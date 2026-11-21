@@ -57,6 +57,8 @@ way before it goes public (spec `docs/engineering_specs/hub_from_pretrained_load
   the `model-release` and `huggingface-project` skills.
 - Checked: `tests/test_hub_export.py` (CPU tiny models; the 150M checkpoint on an Odra RTX 3090: same loss as our
   loader, 32 greedy tokens identical to our cached greedy); clean venvs with Transformers 4.57.6 and 5.23.0.
+- Backfill: `Meridian21Lab/concept-memory-140m-11.5bt` now loads with `from_pretrained` (Hub PR #1, merged 15:00 UTC;
+  exported from `2e6b9573`); the export writes no server names or local paths into public files.
 
 ## [2026-11-14] - Plain W&B names for the AWS long runs
 
