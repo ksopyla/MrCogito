@@ -32,7 +32,7 @@ import json
 import random
 import sys
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -76,13 +76,22 @@ def memory_mode(model, mode: str):
     """'on' (the model as trained), 'off' (sinks + window only), 'nosum' (opened tokens, no summaries).
 
     Concept read: `concept_off` / `concept["summaries"]`. LSA read (`par_global_read: lsa`, 2026-11-18): `lsa_off`
-    keeps its sinks + 512-token window; it has no summaries, so 'nosum' is refused rather than silently a no-op."""
+    keeps its sinks + 512-token window; it has no summaries, so 'nosum' is refused rather than silently a no-op.
+    Notebook read (a `memory_writer`, e.g. the E38 catalogue, 2026-11-21): 'off' is `message_override("none")` (no
+    notes, so nothing opens: window only), 'nosum' is `open_override("gist_off")` (opened tokens, the notes masked);
+    the catalogue's notes only choose what opens (`lm_note_read: index`, no summaries in the read), so its 'nosum' is
+    refused."""
     attns = [l.attn for l in model.layers if getattr(l.attn, "concept", None) is not None]
     lsa = [l.attn for l in model.layers if getattr(l.attn, "lsa", None) is not None]
+    notes = getattr(model, "memory_writer", None) is not None and \
+        str(getattr(model.config, "message_override", "real")) == "real"
     if mode == "nosum" and lsa and not attns:
         raise ValueError("'nosum' needs a concept read; the LSA read has no summaries (use --modes off)")
-    if mode != "on" and not attns and not lsa:
-        raise ValueError(f"memory mode {mode!r}: the checkpoint has no concept or LSA read to switch")
+    if mode == "nosum" and notes and not attns and str(getattr(model.config, "lm_note_read", "gist")) == "index":
+        raise ValueError("'nosum': the catalogue's notes only choose what opens, there are no summaries to mask "
+                         "(use --modes off)")
+    if mode != "on" and not attns and not lsa and not notes:
+        raise ValueError(f"memory mode {mode!r}: the checkpoint has no concept, LSA or notebook read to switch")
     prev = [(a.concept_off, a.concept["summaries"]) for a in attns]
     prev_lsa = [a.lsa_off for a in lsa]
     for a in attns:
@@ -90,8 +99,14 @@ def memory_mode(model, mode: str):
         a.concept["summaries"] = mode != "nosum"
     for a in lsa:
         a.lsa_off = mode == "off"
+    stack = ExitStack()
+    if notes and mode == "off":
+        stack.enter_context(model.message_override("none"))
+    elif notes and mode == "nosum":
+        stack.enter_context(model.open_override("gist_off"))
     try:
-        yield
+        with stack:
+            yield
     finally:
         for a, (off, s) in zip(attns, prev):
             a.concept_off, a.concept["summaries"] = off, s
