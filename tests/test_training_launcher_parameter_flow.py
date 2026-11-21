@@ -129,8 +129,9 @@ def test_launcher_e05_profile_reaches_canonical_parser(tmp_path):
     assert ddp_capture_path.read_text(encoding="utf-8").strip() == "7200"
 
     parser_args = args[entrypoint_index + 1 :]
-    ddp_backend_index = parser_args.index("--ddp_backend")
-    del parser_args[ddp_backend_index : ddp_backend_index + 2]
+    # The fake nvidia-smi reports one GPU, and the launcher passes --ddp_backend only with more than one process
+    # (one process has no process group; see DDP_ARGS in the launcher).
+    assert "--ddp_backend" not in parser_args
     parser_args.remove("--bf16")
     model_args, _, data_args, optim_args, training_args = (
         build_argument_parser().parse_args_into_dataclasses(args=parser_args)
@@ -586,9 +587,11 @@ def test_multi_gpu_flag_only_when_more_than_one_process(tmp_path):
     result, args, _ = _run_launcher(tmp_path, {"NUM_GPUS": "1"})
     assert result.returncode == 0, result.stdout + result.stderr
     assert "--multi_gpu" not in args
+    assert "--ddp_backend" not in args
     assert "--num_processes=1" in args          # passed as a single --flag=value token
 
     result, args, _ = _run_launcher(tmp_path, {"NUM_GPUS": "4"})
     assert result.returncode == 0, result.stdout + result.stderr
     assert "--multi_gpu" in args
+    assert _value_after(args, "--ddp_backend") == "nccl"
     assert "--num_processes=4" in args

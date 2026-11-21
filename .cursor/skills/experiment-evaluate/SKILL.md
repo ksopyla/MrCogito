@@ -482,6 +482,34 @@ run the preamble now and do not hand off without it; and any failed task with it
 - A `trust_remote_code` warning that then loads via parquet is usually harmless.
 - If a task fails, read the first traceback before rerunning; do not blindly relaunch.
 
+### Comparing with other models and generation tasks (lessons of 2026-11-17/18, the first public release)
+Each of these cost a wrong number once; the full list, with the release workflow, is in the `model-release` skill
+(`references/evaluation_methods.md`).
+- **Generation tasks keep their own answer length.** `evaluation/run_lsa_suite.py --suite ruler` now defaults to
+  `--max_gen_toks 0` (each RULER task's lm-eval length, up to 128). The old default of 32 fit GPT-2 tokens but cut
+  correct answers in the SmolLM2 tokenizer (one digit per token: a UUID is 35 tokens), so every RULER result of a
+  SmolLM2-tokenizer model before 2026-11-18 under-scores the UUID, multi-value, multi-query and common-word tasks
+  (4k mean 0.43 → 0.49 for the 150M concept memory). Before trusting any generation score, count the reference
+  answers in *this* model's tokenizer, and save replies with `--answers_out`.
+- **Reference models run in their own precision.** `run_lm_eval_suite.py --dtype` (default bf16 on CUDA); Pythia
+  (fp16-trained) in fp32, or it loses ~6 ARC-Easy points.
+- **Inputs start the way the model's tokenizer starts a text** (`long_context_compare.py --lead default`); a stray
+  `<|end_of_text|>` wrecked Granite 4.0 350M at long lengths.
+- **Cross-tokenizer comparisons in bits per byte on identical text** (`evaluation/long_context_compare.py`), never
+  nats per token.
+- **Text samples are sampled, not greedy** (`evaluation/sample_text.py`: nucleus T 0.7 / top-p 0.9 / repetition
+  penalty 1.1, plus beam search); greedy prose loops on small base models. Exact-answer benchmarks stay greedy.
+- **The whole release protocol is one command** (second release, 2026-11-18): `scripts/release_evals.sh <checkpoint>
+  <out> <longdocs> 0,1,2 <memory switches> <tag>`, with `HF_EXPORT=<export folder>` for the board tests through the
+  stock `hf` model on the `from_pretrained` export (must equal the adapter's numbers). A shared GPU queue that waits
+  for idle cards; ≈1 h 15 for a 150M model on three RTX 3090. Use it for every model that will be compared with an
+  earlier one, so they share one protocol.
+- **Check every diagnostic switch on one document first.** A switch written for one read can be a silent no-op on
+  another (`long_context_use.py`'s "memory off" did nothing on the LSA read until 2026-11-18); scripts now refuse a
+  switch the checkpoint lacks.
+- **Pair two models' RULER scores only where the prompts match** (compare the saved expected answers): two runs with
+  identical settings drew different needles for 8 of 13 tasks at 32k.
+
 ## Failure-Tolerant Wrapper
 For long best-vs-last suites, wrap each command so one failure does not discard later evidence:
 ```bash

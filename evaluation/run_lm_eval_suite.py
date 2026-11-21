@@ -120,7 +120,7 @@ def build_model(args):
         max_length=args.max_length,
         batch_size=args.batch_size,
         device=args.device,
-        dtype="bfloat16" if args.device.startswith("cuda") else "float32",
+        dtype=args.dtype or ("bfloat16" if args.device.startswith("cuda") else "float32"),
         trust_remote_code=True,
     ), "hf", args.hf_model
 
@@ -142,6 +142,9 @@ def main(argv=None):
     p.add_argument("--tokenizer", default=None)
     p.add_argument("--attn_backend", default="sdpa", help="perceiver_ar only: sdpa (default) | flex")
     p.add_argument("--device", default="cuda")
+    p.add_argument("--dtype", default=None, choices=["bfloat16", "float16", "float32"],
+                   help="hf models only (default bf16 on CUDA). Use float32 for fp16-trained models: Pythia-160M scores "
+                        "ARC-Easy 37.5 %% in bf16 vs 43.6 %% in fp32 (EleutherAI publish 43.5 %%), 2026-11-18")
     p.add_argument("--out_dir", default="Cache/Evaluation_reports/lm_eval")
     p.add_argument("--seed", type=int, default=1234)
     args = p.parse_args(argv)

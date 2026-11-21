@@ -1,0 +1,8 @@
+[e37c-reexam 2026-11-14T16:10:13Z] start e37c_reexam_e37a_seed2026 on e37c-reexam i-0c36249e23cd66663 (NVIDIA L40S, 46068 MiB); code d615298 arch: E37c follow-up — no-cut control mode and the same-docu
+[e37c-reexam 2026-11-14T16:10:17Z] base: runs/e37/e33n_m100_e37a_tok3.0e9_seed42/decay/perceiver_ar_perceiver_H896L3g1s7N128_20261110_090042_e37a_m100_decay/final (624M)
+[e37c-reexam 2026-11-14T16:10:21Z] cut: runs/e37c/e37c_m100_e37a_seed1/split/perceiver_ar_perceiver_H896L3g1s7N128_20261114_064152_e37a_m100_split/final (624M)
+[e37c-reexam 2026-11-14T17:03:36Z] two-agent probe (cut): exit 0, 6 cells
+[e37c-reexam 2026-11-14T17:04:01Z] two-agent probe (base): exit 0, 6 cells
+[e37c-reexam 2026-11-14T17:16:20Z] two-agent probe (base_64k): exit 0, 1 cells
+[e37c-reexam 2026-11-14T17:26:49Z] two-agent probe (cut_64k): exit 0, 1 cells
+[e37c-reexam 2026-11-14T17:26:49Z] done

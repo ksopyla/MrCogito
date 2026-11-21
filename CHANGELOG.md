@@ -15,6 +15,200 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-18] - Second public release (topic index) and one protocol for every release
+
+**Why:** the 150M LSA port was scored with the concept-memory card's protocol and released as
+`Meridian21Lab/topic-index-140m-11.5bt` (author's name for it); the author asked for the same template and method for
+every model, cards that read alike, Hub ids instead of "sibling", and the cards of models on the same data aligned
+and cross-linked.
+
+- **`scripts/release_evals.sh`:** the whole release protocol for one `perceiver_ar` checkpoint (board tier, 7 core
+  tasks, board tier through the stock `hf` model on the `from_pretrained` export, samples, cross-model long documents,
+  our long-context tests at 16k / 64k / 128k, RULER 4k–32k with saved replies) over a shared GPU queue that waits for
+  idle cards; `ONLY=` reruns a subset.
+- **`evaluation/long_context_use.py`:** "memory off" also switches the LSA read off (`lsa_off`); it was a silent
+  no-op on LSA checkpoints. Switches a checkpoint does not have are refused. **`long_context_compare.py prepare`**
+  builds a missing document cache instead of failing.
+- **Cards:** `docs/release/hf_card_topic_index_150m/` (new) and `hf_card_concept_memory_150m/` aligned: one section
+  order, shared sections from one template, both models in every table, one figure script (`CARD` line differs) with
+  one colour per model; each model's raw results ship in the other card's folder (`cm_` / `ti_` prefixes).
+- **Skills:** `model-release` rules 15–19 (Hub ids, line names, families of cards, one figure script, same protocol
+  and loading first), card template v4, evaluation traps (switch no-ops, RULER prompt pairing, GPU checks, export
+  into an empty folder, quoted heredocs); `huggingface-project` (org write token, `move_repo`, new lines);
+  `experiment-evaluate` (the protocol script, switch checks, RULER pairing).
+
+---
+
+## [2026-11-18] - Hub releases that load with `from_pretrained`
+
+**Why:** the first public release (150M concept memory) could only be used by cloning the repo and calling our
+loader; the author asked that every release load with `AutoModelForCausalLM.from_pretrained` and be smoke-tested that
+way before it goes public (spec `docs/engineering_specs/hub_from_pretrained_loading.md`).
+
+- **Export:** `scripts/export_hub_model.py <checkpoint> <out_dir>` vendors the `nn/` modules a `perceiver_ar`
+  config uses into flat `modeling_perceiver_ar.py` / `configuration_perceiver_ar.py` (generated from the source, never
+  edited), adds `auto_map`, switches off training-only fields (`use_liger`, the AWS `tokenizer_name`, flex as the
+  default backend), copies weights + tokenizer and writes `export_manifest.json`.
+- **🤗 interface:** `nn/perceiver_ar_hub.PerceiverARForCausalLM` (same weights and keys as `PerceiverARLM`):
+  `labels=` gives the eval loader's per-token loss (no z-loss); 🤗 `generate` (greedy, sampling, beam search) runs
+  over the cached decoder through `PerceiverARCache`, re-prefills when the row is full, falls back to the uncached
+  loop where the cache does not cover a read. `IncrementalDecoder.reorder` (beam search) is new in `nn/incremental.py`.
+- **Release checklist:** `scripts/hub_smoke_test.py` (load from the Hub id, score one sentence, sample 20 tokens) in
+  the `model-release` and `huggingface-project` skills.
+- Checked: `tests/test_hub_export.py` (CPU tiny models; the 150M checkpoint on an Odra RTX 3090: same loss as our
+  loader, 32 greedy tokens identical to our cached greedy); clean venvs with Transformers 4.57.6 and 5.23.0.
+- Backfill: `Meridian21Lab/concept-memory-140m-11.5bt` now loads with `from_pretrained` (Hub PR #1, merged 15:00 UTC;
+  exported from `2e6b9573`); the export writes no server names or local paths into public files.
+
+## [2026-11-14] - Plain W&B names for the AWS long runs
+
+- `training/utils_training.init_wandb` reads `MC_WANDB_NAME` (display name), `MC_WANDB_TAGS` (extra comma-separated
+  tags) and `MC_WANDB_NOTES` from the environment; the run id, which resume relies on, stays the coded identifier,
+  now also stored as config `run_name_code`. Nothing changes for jobs that set none of them.
+- `infra/aws/jobs/e38_full.sh` sets them per arm in plain words ("150M concept memory, Muon"; tags E38, size, mix,
+  arm, optimizer, seed, plus `leaderboard` from `e38_board.sh`), and `e33n_run.sh` adds the stage ("stage 1 of 3").
+- Checked: `tests/test_training_runtime_contract.py::test_init_wandb_takes_plain_labels_from_the_job`, and a two-stage
+  Odra run with offline W&B logged "30M concept memory, AdamW, stage 1 of 3" and "… stage 2 of 3".
+
+## [2026-11-14] - E37c follow-up: no-cut control mode, same-document re-exam
+
+**Why:**
+- E37c could not say whether its memory-only gain and its one-agent loss came from the cuts or from more long-document
+  training, and its two exams had drawn different documents. The author approved the control ("Yes, run it").
+
+**What changed:**
+- [changed] `scripts/run_e33n.py` - `--cut_max 0` drops the cut settings of the split phase (same rows, rate, seed).
+- [changed] `infra/aws/jobs/e37c_split_ft.sh` - words MODE (cut | nocut) and PROBE_SEED (a node job gets words, not
+  environment).
+- [added] `infra/aws/jobs/e37c_reexam.sh` - the untuned and cut-tuned models on probe documents from one seed.
+- [added] `scripts/a2a_paired_compare.py` - the three-model table on paired documents with McNemar tests.
+
+**Related:** `docs/2_Experiments_Registry/run_reports/e37c_two_agent_split_training_20261114.md` (follow-up section)
+
+---
+
+## [2026-11-14] - Two-agent probe: documents from a seed
+
+**Why:**
+- E37c's exam was meant to use the documents of 2026-11-13 and did not: lm-eval's needle generator draws needles,
+  keys and depths from the global random state, and the probe never seeded it. Two checkpoints were therefore
+  compared on different documents (found when the references of the two runs did not match).
+
+**What changed:**
+- [added] `scripts/a2a_split_probe.py` - `--seed N`: the documents of every (task, length) cell come from that seed
+  (checked: the same seed gives the same documents); -1 = unseeded, as the earlier runs were. Recorded in the output.
+
+**Related:** `docs/2_Experiments_Registry/run_reports/e37c_two_agent_split_training_20261114.md` (the run's result)
+
+## [2026-11-14] - E37c: cut rows, so a model can be trained as two agents (spec, code, job)
+
+**Why:**
+- The eval-only two-agent test of 13 Nov: agent B with only agent A's memory finds 43 % of the needles at 16k against
+  97 % for one agent, while the same memory plus A's last 16 tokens' local caches gives 93 %. The memory holds the
+  answer; B fails on its cold start, a state training never showed the model (an empty local window with a full
+  memory). The author approved a short fine-tune that trains on that state (14 Nov, "Yes, spec it").
+
+**Impact:**
+- Any arm without a notebook or message boundary (dense, LSA port, concept read) can now be trained with rows cut at
+  random points. A training row with a cut is the two-agent setting of `nn/agent_split.py` (unit-tested equal).
+- Off by default: no change to any existing run, checkpoint or eval.
+
+**What changed:**
+- [added] `nn/perceiver_ar_lm.py` - `par_cut_gap_min` / `par_cut_gap_max` / `par_cut_prob` (config), `draw_cuts`,
+  `cut_sides`, the `cut_ids` argument of `forward` and `hidden_states`. In a cut row the local (sliding-window) layers
+  get a side id per stretch between cuts; layers with the full pattern keep the document id. Cuts are drawn in
+  training mode only; refused with a notebook, a message boundary, n-gram input tables or the local sink.
+- [added] `training/concept_pretraining_args.py`, `training/concept_pretraining_factories.py` - the three switches.
+- [added] `scripts/run_e33n.py` - phase `split` (the decay's 16k rows in another order, the long phase's rate,
+  0.2B tokens at m100, `--cut_min` / `--cut_max`).
+- [added] `scripts/a2a_cut_loss.py` - the loss of the positions 0-7 / 8-31 / 32-127 / 128+ after a cut against the
+  same positions without cuts, and the loss on rows cut as training cuts them.
+- [added] `infra/aws/jobs/e37c_split_ft.sh` - pre-flight, training with checkpoints to S3, then the two-agent probe
+  with the settings of 13 Nov; writes only to its own folder `runs/e37c/`.
+- [added] `tests/test_cut_rows.py` - 17 tests (no cut = the plain forward; a cut row = the two-agent decoder for
+  dense, LSA and concept reads; local layers stop at a cut; chained cuts; the draw; refusals).
+- [added] `docs/experiments_specs/done_failed/E37c_two_agent_split_training.md`,
+  `docs/3_Evaluations_and_Baselines/e37c_architecture.html` (alignment page).
+
+**Checked:** 17 new tests and 278 existing model / trainer tests pass. Laptop pipeline checks only (no conclusions):
+12 training steps of the tiny size with cuts; the cut-loss script on the 100M checkpoint at 2,048 tokens.
+
+**Related:** `docs/experiments_specs/done_failed/E37c_two_agent_split_training.md`
+
+## [2026-11-13] - Two agents from one trained 100M model, eval only: the hand-over works with A's last tokens, not with the memory alone
+
+**Why:** can the 100M models already show agent-to-agent work through latents, with no training, and what does it
+cost in bytes and time against sending the text.
+
+- `nn/agent_split.py` (new, `SplitDecoder` on the cached decoding). Agent A = the prefill of the document; its memory
+  = the reading layer's key and value per token and loop pass. Agent B = the steps over its own text and its answer.
+  With the split on, B's local layers read B's own tokens only; the reading layer is unchanged, so A's memory is all
+  that crosses. Options: `tail` (B's local layers still read A's last N tokens), `bits` (A's memory on a coarse
+  grid, the read's index rebuilt from it), `blank` (no memory: the floor). Counts the traffic of handing the memory
+  over and of a remote read (B sends its queries, A returns the read vector and the log of its softmax mass).
+  Full attention, LSA's read and the concept read; the note reads and n-gram input tables are refused.
+  `nn/incremental.py`: an optional `trace` hook in the concept read (the keys and summaries a read opens).
+  `tests/test_agent_split.py` (14): split off = the tokens and hidden states of one row; split on = scrambling
+  every local layer's cache of A's tokens changes nothing for B; blank memory = B decoding alone.
+- `scripts/a2a_split_probe.py` (new): RULER needle documents cut at the question into A's document and B's text.
+  Conditions: one agent; full state (split off); memory only; memory + A's last N tokens; memory + a 148-token
+  preamble of B's own; 8 / 4-bit memory (on the preamble start); no memory; the previous document's memory. Records
+  seconds and sizes (text as UTF-8, zstd-19, bits under the model itself; memory; remote read; what the concept
+  read opened). `scripts/cramming_probe.py`: `--bin` (documents from a token shard).
+  `infra/aws/jobs/a2a_probe_node.sh` (new).
+- Run: 100M models (3.4B tokens), two spot g6e.xlarge in us-east-1, 13 Nov 21:34 UTC - 14 Nov 00:18 UTC, $8.15.
+  Node `a2a-e37a-short` ran four jobs on one card (12 answer tokens); node `a2a-dense` came up from a launch retry
+  and ran the first, heavier configuration (50 documents, 32 answer tokens, bits on every document) — it was noticed
+  only at 23:37 UTC. % of needles found; `number` = RULER niah_single_1 (repeated filler), `essays` = niah_single_2:
+
+  | model, task, length (n) | one agent | full state | memory only | + A's last 16 | + B's preamble | 8-bit | 4-bit | none / other doc |
+  |---|---|---|---|---|---|---|---|---|
+  | concept read, number, 4k (30) | 100 | 100 | 63 | 100 | 90 | 93 | 80 | 0 / 0 |
+  | concept read, number, 16k (30) | 97 | 97 | 43 | 93 | 40 | 33 | 33 | 0 / 0 |
+  | concept read, number, 32k (20) | 90 | 90 | 35 | 60 | 20 | 20 | 0 | 0 / 0 |
+  | concept read, number, 64k (12) | 83 | 83 | 17 | 58 | 8 | 17 | 17 | 0 / 0 |
+  | concept read, number, 64k (20, second run) | 100 | 100 | 40 | 95 (last 32), 100 (last 64) | 15 | – | – | 0 / 0 |
+  | concept read, essays, 4k / 16k / 32k (30 / 30 / 20) | 63 / 10 / 10 | 63 / 10 / 10 | 10 / 10 / 20 | 43 / 23 / 15 | 27 / 7 / 10 | 13 / 13 / 27 | 7 / 27 / 13 | 0 / 0 |
+  | LSA port, number, 4k / 16k / 32k (20 / 20 / 14) | 100 / 100 / 100 | 100 / 100 / 100 | 40 / 25 / 7 | 80 / 80 / 79 | 50 / 30 / 14 | 40 / 30 / 10 | 30 / 10 / 0 | 0 / 0 |
+  | LSA port, essays, 4k / 16k / 32k (20 / 20 / 14) | 95 / 50 / 57 | 95 / 50 / 57 | 80 / 45 / 43 | 90 / 45 / 57 | 85 / 70 / 57 | 80 / 60 / 50 | 80 / 70 / 40 | 0 / 0 |
+  | dense, number, 4k / 16k (30) | 77 / 70 | 77 / 70 | 17 / 43 | 60 / 57 | 53 / 57 | 40 / 47 | 27 / 27 | 0 / 0 |
+  | dense, essays, 4k / 16k (30) | 97 / 57 | 97 / 57 | 7 / 33 | 73 / 47 | 73 / 40 | 80 / 40 | 67 / 47 | 0 / 0 |
+  | dense, number, 4k / 16k (50, first configuration) | 70 / 72 | 70 / 74 | 20 / 52 | 44 / 38 (last 64: 62 / 60) | 40 / 54 | 40 / 56 | 28 / 40 | 0 / 0 |
+  | dense, essays, 4k / 16k (50, first configuration) | 88 / 54 | 88 / 54 | 12 / 38 | 70 / 54 (last 64: 86 / 48) | 74 / 38 | 72 / 38 | 56 / 36 | 0 / 0 |
+
+  The 8 / 4-bit columns of the 12-token runs cover the first 15 documents of a cell (10 for the LSA port, 6 at 64k).
+  In the 50-document run they cover all: 6 bits 36 / 52 / 72 / 36 and 3 bits 12 / 22 / 40 / 30 in the row order
+  above, so 8 and 6 bits equal 16 and 4 bits loses. UUID needles (niah_single_3, dense, 50): one agent 10 / 12 %.
+  - Full state = one agent: the same score in 23 of 24 cells and the same answer text in 680 of 720 documents. Most
+    of the 40 share a beginning and then differ (bf16; the one agent runs the question inside the prefill, the
+    hand-over steps through it). In float32 the tests are exact and the 100M concept model gave the same text in 33
+    of 33 documents of 2k (laptop pipeline check).
+  - With the previous document's memory B never reports its own needle; it reports the other document's, at a rate
+    within 20 points of its preamble score in every cell.
+  - Seconds, median, concept read, A reads / B answers / one agent: 0.56 / 1.95 / 1.01 at 4k, 1.45 / 1.98 / 1.76 at
+    16k, 4.9 / 2.0 / 5.1 at 32k, 8.6 / 1.8 / 9.1 at 64k (shared card). B's ~45 single-position steps cost ~2 s at
+    any length.
+  - Sizes: the memory is 512 numbers per document token (4 passes × (64 key + 64 value)) = 1 KB at 16 bits: 3.9 /
+    16 / 33 / 67 MB at 4k / 16k / 32k / 64k, against 17 / 75 / 152 KB of essay text as UTF-8 (zstd-19: 6.9 / 26 /
+    51 KB; 5.0-5.2 bits per token under the model itself: 2.4 / 10 / 20 KB). A remote read is 14.4 KB per token of
+    B's (3,584 numbers up, 3,640 down) at any length. The concept read opened 3.1 / 6.0 / 7.5 / 9.7 MB of keys,
+    values and summaries at 4k / 16k / 32k / 64k. A's local caches are 3.3 KB per token (13 local layer calls × 128
+    numbers): 53 / 106 / 213 KB for the last 16 / 32 / 64 tokens.
+- Capacity of input vectors for the dense 100M model as the receiver (`cramming_probe.py`, 8 FineWeb-Edu validation
+  texts, 2,000 steps; bits gained on the text, share of texts reproduced exactly):
+
+  | vectors | tokens → bits (exact) |
+  |---|---|
+  | 1 (two runs) | 16 → 85, 96 (75 %, 100 %) · 32 → 165, 165 (62 %, 50 %) · 64 → 265, 237 (0 %, 25 %) · 128 → 266, 301 (0 %) |
+  | 4 (two runs) | 64 → 288, 280 (12 %, 25 %) · 128 → 501, 524 · 256 → 585, 574 · 512 → 677, 720 (0 %) |
+  | 16 (two runs) | 256 → 1,054, 1,087 (12 %, 38 %; 96-97 % of tokens) · 512 → 1,538, 1,440 · 1,024 → 1,932, 1,899 (0 %) |
+
+  The two runs use the same texts and differ in the vectors' random start and in the card (shared / alone).
+
+- Results: `s3://mrcogito-train-<account>/runs/a2a_probe/a2a-e37a-short/` and `.../a2a-dense/`.
+- Not done: training with the split. The concept and LSA reads require the message boundary off in the config, so a
+  split fine-tune needs separate side ids for the local layers.
+
 ## [2026-11-14] - Tiny-ML Leaderboard recipe: shared input/output table, a bigger body under 150M, board scoring
 
 Author, 2026-11-14: submit the 100M models to the Tiny-ML Leaderboard; then "SmolLM2, bigger body". Branch `eng-100m`.

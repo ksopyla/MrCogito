@@ -100,13 +100,34 @@ details.hist[open]>summary{margin-bottom:10px}
 .gauge .v{font-variant-numeric:tabular-nums;font-weight:700;min-width:48px;text-align:right}
 #wtab{min-width:960px}#ctab{min-width:720px}#vtable{min-width:760px}
 @media (max-width:640px){.gauge{flex-wrap:wrap}.gauge>span:first-child{min-width:0!important;flex-basis:100%}}
+/* 24 Oct additions: the reasoning line */
+select.vsel{font:inherit;font-size:13.5px;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px;max-width:100%}
+select.vsel:focus-visible,.seg button:focus-visible,#vtree g:focus-visible,tr.vr:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+#vtree g:focus{outline:none}#vtree g:focus-visible rect{stroke:var(--blue);stroke-width:2.5}
+.svgwrap.tree svg{min-width:760px}
+.sig{display:inline-block;font-size:11.5px;font-weight:650;padding:1px 8px;border-radius:6px;margin:2px 4px 2px 0;white-space:nowrap}
+.sig-g{background:var(--warn-bg);color:var(--amber)}.sig-w{background:var(--good-bg);color:var(--green)}.sig-a{background:var(--info-bg);color:var(--blue)}.sig-d{background:var(--card2);color:var(--fg2)}
+.card .meta{font-size:12.5px;color:var(--fg2);margin:0 0 8px}
+.vrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-top:10px}.vrow>*{min-width:0}
+.vrow .q{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:650}.vrow code{white-space:normal;word-break:break-word}
+table.mini{width:auto;min-width:300px;font-size:13.5px}table.mini td.pm{color:var(--fg2)}
+.hi{color:var(--green)}.ex .st{color:var(--fg2);font-style:italic}
+#vtable{min-width:980px}#vtable td.num{font-size:13.5px}#vtable td.nw{white-space:nowrap}#vtable td:first-child{min-width:220px}
+tr.vr{cursor:pointer}tr.vr:hover td,tr.vr.on td{background:var(--info-bg)}
+tr.grp td{background:var(--card2);font-weight:700;font-size:12.5px;color:var(--fg2);letter-spacing:.02em}
 </style>
 <div id="tip"></div>
 <main>
-<div class="kicker">MrCogito · E33 · re-read from the code and the text board on 15 Oct 2026, questions and checks added 16 Oct · the 30M text model of the 8-questions round</div>
+<div class="kicker">MrCogito · E33 · re-read from the code and the text board on 15 Oct 2026, questions and checks added 16 Oct, the reasoning line of 17–19 Oct added 24 Oct · the 30M text model</div>
 <h1>E33: how it is built, how information flows, how it trains, and what to fix for the harder tasks</h1>
-<p class="sub">This page follows one document through E33, part by part, as the code builds it today. It covers every version tested so far, the notebook (how it is written, kept and read), the token table, the loop, and one training step. Then it puts the latest text-check results for the four harder tasks next to the parts that cause them: latest, compose, count and deduce. It ends with a ranked review of the weak points and the experiments that would test each fix. The DNA chain-test page of 2–4 Oct is kept at the bottom as history.</p>
-<div class="callout bad"><b>23 Oct 2026: this page stops at 16 Oct.</b> It draws E31c, E33, E33d and E33e, which are still correct against the code. It does not draw the reasoning line built since 17 Oct: per-round read targets (E33r), each round naming its hop's word (E33q, E33qn), the writer's key-gradient stop (E33ok), order terms and count heads (E33g to E33m), and written reasoning with the steps removed in stages (R2 and the written route for latest). Those versions train with the exit losses off and start from an E33 checkpoint, not from scratch. Their results are on the text capability board. Also: the "e33q" card in section 1 is the DNA first form, not the text version with hop naming.</div>
+<p class="sub">This page follows one document through E33, part by part, as the code builds it today. It covers every version tested so far, the notebook (how it is written, kept and read), the token table, the loop, and one training step. Then it puts the latest text-check results for the four harder tasks next to the parts that cause them: latest, compose, count and deduce. It ends with a ranked review of the weak points and the experiments that would test each fix. The DNA chain-test page of 2–4 Oct is kept at the bottom as history. Sections 1 and 2 also cover the reasoning line built from 17 Oct; sections 3–14 describe E33 as it stood on 16 Oct.</p>
+<div class="callout good"><b>24 Oct 2026: what changed.</b> Sections 1 and 2 now cover the reasoning line built 17–19 Oct, read from the code (<code>evaluation/text_checks.py</code>, <code>nn/perceiver_ar_lm.py</code>, <code>nn/latent_memory.py</code>) and the committed ledgers.
+<ul style="margin:6px 0 0;padding-left:18px">
+<li><b>Section 1</b> draws every tested version as a family tree: which checkpoint each continued from, what it changed, which training signals it used (generator labels, or targets read off written answers), and its 4k / 16k scores on latest, compose, count, deduce and far lookup.</li>
+<li><b>Section 2</b>'s diagram switches to any of them. It now draws the count heads beside the read, the order term on the notes, the naming lens after each round, and a band of training-only losses (exit losses, read target, naming, read-back, count), each marked on or off for the version.</li>
+<li><b>Renamed:</b> the DNA "first form" card is now "E33 first form (DNA)", so it is not confused with E33q, the text version whose rounds name their hop.</li>
+<li><b>Where it stands</b> (text board, 23 Oct): one model reaches the 70 % goal on latest, compose and deduce without generator labels, the written route (78 / 93 / 100 % at 4k; one run, warm-started). Count stays below 35 % in every version.</li>
+</ul></div>
 <nav class="toc"><a href="#versions">1 · versions</a><a href="#pipeline">2 · forward pass</a><a href="#notebook">3 · the notebook</a><a href="#embed">4 · token table</a><a href="#loopx">5 · the loop</a><a href="#training">6 · training</a><a href="#hard">7 · the four harder tasks</a><a href="#order">8 · order</a><a href="#mask">9 · who sees what</a><a href="#budget">10 · budget</a><a href="#review">11 · review &amp; experiments</a><a href="#sweep">12 · sweep</a><a href="#qa">13 · your questions (16 Oct)</a><a href="#aws">14 · before AWS (16 Oct)</a><a href="#history">history</a></nav>
 
 <div class="callout warn"><b>What changed since the 14 Oct version of this page</b>
@@ -119,22 +140,50 @@ details.hist[open]>summary{margin-bottom:10px}
 
 <!-- ======================================================= -->
 <h2 id="versions">1 · The E33 family: every version we tested</h2>
-<p>E33 is one idea tried in steps: <b>read the notebook more than once, and let each read ask with what the previous one found</b>. It started on the DNA exams (made-up letter strings) and moved to text on 10 Oct. Click a version to see what it changed and what it showed. Section 2's diagram follows the text versions.</p>
-<div class="vchips" id="vchips"></div>
+<p>E33 is one idea tried in steps: <b>read the notebook more than once, and let each read ask with what the previous one found</b>. It started on the DNA exams (made-up letter strings) and moved to text on 10 Oct. Until 16 Oct every text version was trained from scratch on 1.35–1.5B tokens. From 17 Oct the <b>reasoning line</b> continued one checkpoint instead, E33 trained on the bridge-question data, in short runs of 0.1–0.6B tokens. Each run adds one training signal or one part to a run that came before, so the versions form a family tree. Click a version, in the tree or in the table, to see what it changed, how it was trained and what it scored. Section 2's diagram can show any of them.</p>
+
+<div class="grid g2">
+<div class="card"><h3 style="margin-top:0">How the reasoning line trains</h3>
+<div class="eq">loss = CE(next token, every token)
+     + 0.5 × read target   round r reads fact r      E33r on
+     + 0.3 × naming        round r names hop r's word E33q on
+     + 0.1 × read-back     a note names its words     E33b, E33rb
+     + 0.1 or 1 × count    count heads' sum = visits  E33k on
+     + 0.0001 × z-loss
+exit losses (0.3 × 3 rounds in E33): 0 from E33x on</div>
+<p style="font-size:14px;margin:8px 0 0">Every run of the line is 30M with plain input, continued from a trained checkpoint (never from scratch), on the reasoning mix: compose and deduce make 6 of every 11 world documents, stories 30 % of the tokens, with 8 questions and 4 bridge questions per document (E33ok's denser mix: deduce 4 of 12, 8 bridges). The losses above exist only in training; the exams run the plain model and score its answer. One run per version unless its card says otherwise.</p></div>
+<div class="card"><h3 style="margin-top:0">Where the targets come from</h3>
+<p style="font-size:14px;margin:0 0 6px"><span class="sig sig-g">generator label</span> The data generator knows every chain: which fact each hop reads, the word it finds, a latest question's last move, a count's number of visits. It hands these to training as side notes that the text does not contain. A real corpus has none of them.</p>
+<p style="font-size:14px;margin:0 0 6px"><span class="sig sig-w">read off the written answer</span> R2 and the written route write each answer's steps into the training text. A rule reads the targets back from that text alone: each step sentence is found in the document (the read target), and the word a step shares with the next is its hop word (the naming target). The rule agrees with the generator on 99.3 % of hop words and never consults it. Three stages of 0.1B tokens then hide the steps:</p>
+<div class="ex"><span class="q">Question: Where does the teacher of Lumo live?</span>
+<span class="st">stage 1, every step written:</span>
+<span class="q">Answer:</span><span class="a"> Pim was the teacher of Lumo. Pim lived in Selby. So Selby.</span>
+<span class="st">stage 2, the first step hidden:</span>
+<span class="q">Answer:</span><span class="a"> Pim lived in Selby. So Selby.</span>
+<span class="st">stage 3, no steps, as in the exams:</span>
+<span class="q">Answer:</span><span class="a"> Selby.</span></div>
+<p style="font-size:13px;color:var(--fg2);margin:0">An illustration in the generator's format. <span class="sig sig-a">no label</span> marks a part or a loss that needs no annotation (order term, count heads, key stop, read-back); <span class="sig sig-d">data</span> marks a change of data or of starting point.</p></div>
+</div>
+
+<div class="card"><div class="svgwrap tree"><svg id="vtree" viewBox="0 0 1060 694" role="img" aria-label="Family tree of the tested E33 versions: which checkpoint each continued from"></svg></div>
+<div class="legend" id="vlegend"></div></div>
 <div class="card" id="vcard"></div>
+<h3>Scores of every version</h3>
+<p class="chart-s">Exact answers, 400 questions per cell, at 4k / 16k, from the committed ledgers read by the text board's rules (far facts for lookup). A range spans the runs of one recipe. <b class="hi">Bold green</b>: 70 % or more on every run, the goal mark for latest, compose, count and deduce. Dense has no method for reading past its 4k training length, so it is not compared at 16k. Click a row to open its card.</p>
 <div class="tw"><table id="vtable"></table></div>
+<p style="font-size:13px;color:var(--fg2)">Defined in the code but never run: E33ak and E33gak (the key's own read of the page, <code>lm_key_grad = "address"</code>). The DNA versions have no text scores; their results are in their cards and in the history section.</p>
 
 <!-- ======================================================= -->
 <h2 id="pipeline">2 · The forward pass, step by step</h2>
-<p>One row of text goes through two paths. The <b>notebook writer</b> runs first and turns every page into notes. Then the <b>main path</b> runs over every token: two local layers, then the core (the global read plus one local layer, 4 rounds with the same weights), then four local layers and the output head. Click a box, or step with the buttons. A <b>lens</b> re-colours the whole diagram by one question: where position is known, where information is squeezed, what has trainable weights, and where the training signal flows. The detail panel follows the question "Where does Anna live now?" at the end of a 16k document, as an example.</p>
+<p>One row of text goes through two paths. The <b>notebook writer</b> runs first and turns every page into notes. Then the <b>main path</b> runs over every token: two local layers, then the core (the global read plus one local layer, 4 rounds with the same weights), then four local layers and the output head. Click a box, or step with the buttons. A <b>lens</b> re-colours the whole diagram by one question: where position is known, where information is squeezed, what has trainable weights, and where the training signal flows. The detail panel follows the question "Where does Anna live now?" at the end of a 16k document, as an example. The version menu holds every text version of section 1: what a version adds is drawn in place (count heads beside the read, the order term on the notes, the naming lens after the rounds), and the band at the bottom lists the training-only losses, each marked on or off with where its targets come from.</p>
 <div class="controls ns" id="pctl">
  <span class="seg"><button id="pprev">← previous</button><button id="pnext">next →</button></span>
- <span><span class="lab">Version</span><span class="seg" id="pver"><button data-v="e31c">E31c</button><button data-v="e33t" class="on">E33</button><button data-v="e33d">E33d</button><button data-v="e33e">E33e (proposed)</button></span></span>
+ <span><label class="lab" for="pver">Version</label><select id="pver" class="vsel"></select></span>
  <span><span class="lab">Lens</span><span class="seg" id="plens"><button data-v="flow" class="on">parts</button><button data-v="pos">position</button><button data-v="bott">bottlenecks</button><button data-v="learn">weights</button><button data-v="grad">training signal</button></span></span>
  <span><span class="lab">Scale</span><span class="seg" id="pscale"><button data-v="30" class="on">30M</button><button data-v="100">100M</button></span></span>
  <span class="lab" id="pstep" style="margin-left:auto"></span>
 </div>
-<div class="card"><div class="svgwrap"><svg id="pipe" viewBox="0 0 1060 660" role="img" aria-label="E33 text pipeline: notebook writer and main path"></svg></div>
+<div class="card"><div class="svgwrap"><svg id="pipe" viewBox="0 0 1060 800" role="img" aria-label="E33 text pipeline: notebook writer, main path and the training-only losses"></svg></div>
 <div class="legend" id="plegend"></div>
 <div class="det" id="pdet"></div></div>
 
@@ -143,6 +192,7 @@ details.hist[open]>summary{margin-bottom:10px}
 <div class="tile"><div class="q">The only long-range channel</div>Every layer except one sees 16 tokens back. The global read is the single place where a token reaches further: the last 256 tokens exactly, and everything older only as notes. All 9 query heads share <b>one</b> key/value head of 64 numbers. Whatever latest, count or compose needs from far away must pass through this one read, up to 4 times.</div>
 <div class="tile"><div class="q">Cost</div>A 4k document makes 21 pages × 32 = 672 notes, written once. Each token's read covers 256 raw keys plus up to 672 notes (2,720 at 16k). The core runs 4 times over every token, so E33 trains in 7.0 h for 1.5B tokens on Odra, against 2.4 h for E31c and 2.3 h for dense.</div>
 </div>
+<div class="callout"><b>What the reasoning line adds, counted from the code (30M).</b> Two count heads: 88k numbers. The order switch: 577. The name feedback gate: 576. E33c's question control: about 0.31M. The order strengths are fixed numbers, not weights. The read target and the naming loss have no weights of their own (the naming lens reuses the output head, frozen on that path). The read-back head (0.79M) exists only in training and is dropped after it. With the exit losses off, a training step runs 14 layer passes instead of E33's 26.</div>
 
 <!-- ======================================================= -->
 <h2 id="notebook">3 · The notebook up close: written once, never updated, read every round</h2>
@@ -735,43 +785,288 @@ function box(s,x,y,w,h,col,op,t,sub,fs,bold=true,dash){el('rect',{x,y,width:w,he
 function segOn(id,v){document.querySelectorAll(`#${id} button`).forEach(x=>x.classList.toggle('on',x.dataset.v===String(v)));}
 function segBind(id,fn){document.querySelectorAll(`#${id} button`).forEach(b=>b.onclick=()=>{segOn(id,b.dataset.v);fn(b.dataset.v);});}
 
-/* ================= 1 · versions ================= */
+/* ================= 1 · versions (family tree, 24 Oct) ================= */
+/* Scores: exact %, id split, 400 items per cell, [4k, 16k], read by headline() in evaluation/text_checks.py (far
+   facts for lookup), rounded as on the text board; a range spans the runs of one recipe. From the committed ledgers
+   in docs/2_Experiments_Registry/results/capability/text/ on 24 Oct. Dense is not compared past 4k. */
+const SC={"e31c":{"lat":["22–24","5–9"],"comp":["6–9","7–8"],"cnt":["24–28","18–21"],"ded":["8–11","6–9"],"look":["75–97","92–99"],"story":"1.564","runs":3},"e33t":{"lat":["20–22","3–7"],"comp":["8","5–10"],"cnt":["24–27","18–22"],"ded":["8–9","8–10"],"look":["13–76","15–92"],"story":"1.519–1.522","runs":3},"e33d":{"lat":["16–21","1–2"],"comp":["8–9","6–8"],"cnt":["28","17–20"],"ded":["12–13","6–8"],"look":["75","93"],"story":"1.521","runs":2},"e33e":{"lat":["19","0"],"comp":["10","9"],"cnt":["26","21"],"ded":["8","10"],"look":["81","93"],"story":"1.520","runs":1},"e33bridge":{"lat":["22","4"],"comp":["8","9"],"cnt":["26","19"],"ded":["10","7"],"look":["72","90"],"story":"1.525","runs":1},"e33x":{"lat":["20","4"],"comp":["7","11"],"cnt":["31","20"],"ded":["9","8"],"look":["75","91"],"story":"1.512","runs":1},"e33r":{"lat":["20","2"],"comp":["60","76"],"cnt":["21","18"],"ded":["13","9"],"look":["67","89"],"story":"1.516","runs":1},"e33o":{"lat":["19","0"],"comp":["7","1"],"cnt":["20","19"],"ded":["13","8"],"look":["0","0"],"story":"1.514","runs":1},"e33b":{"lat":["19","2"],"comp":["12","10"],"cnt":["22","16"],"ded":["14","7"],"look":["15","21"],"story":"1.513","runs":1},"e33f":{"lat":["4","6"],"comp":["8","8"],"cnt":["29","17"],"ded":["4","7"],"look":["77","91"],"story":"1.516","runs":1},"e33f2":{"lat":["7","10"],"comp":["10","9"],"cnt":["33","17"],"ded":["6","8"],"look":["74","92"],"story":"1.497","runs":1},"r1":{"lat":["18","2"],"comp":["8","9"],"cnt":["28","24"],"ded":["99","100"],"look":["97","99"],"story":"1.514","runs":1},"r3":{"lat":["0","0"],"comp":["1","1"],"cnt":["15","14"],"ded":["7","7"],"look":["6","5"],"story":"1.548","runs":1},"r2":{"lat":["18","2"],"comp":["92","97"],"cnt":["21","18"],"ded":["99","100"],"look":["99","99"],"story":"1.535","runs":1},"r2tc":{"lat":["78","92"],"comp":["93","98"],"cnt":["17","18"],"ded":["100","100"],"look":["99","100"],"story":"1.546","runs":1},"e33rb":{"lat":["20","2"],"comp":["61","82"],"cnt":["22","22"],"ded":["16","12"],"look":["67","91"],"story":"1.514","runs":1},"dgate":{"lat":["19","1"],"comp":["9","7"],"cnt":["15","12"],"ded":["12","8"],"look":["15","13"],"story":"1.512","runs":1},"e33ok":{"lat":["21","1"],"comp":["42","48"],"cnt":["24","23"],"ded":["36","35"],"look":["56","53"],"story":"1.511","runs":1},"e33ok2":{"lat":["20","1"],"comp":["95","97"],"cnt":["24","22"],"ded":["98","99"],"look":["99","98"],"story":"1.493","runs":1},"e33gk":{"lat":["20","3"],"comp":["95","96"],"cnt":["27","28"],"ded":["97","99"],"look":["99","99"],"story":"1.493","runs":1},"e33g":{"lat":["22","2"],"comp":["69","88"],"cnt":["20","16"],"ded":["24","19"],"look":["70","89"],"story":"1.512","runs":1},"e33i":{"lat":["22","2"],"comp":["71","92"],"cnt":["20","23"],"ded":["85","90"],"look":["72","90"],"story":"1.511","runs":1},"e33h":{"lat":["22","2"],"comp":["67","88"],"cnt":["23","20"],"ded":["17","8"],"look":["70","91"],"story":"1.513","runs":1},"e33k":{"lat":["18","2"],"comp":["70","91"],"cnt":["30","26"],"ded":["46","36"],"look":["70","90"],"story":"1.505","runs":1},"e33k2":{"lat":["18","2"],"comp":["88","93"],"cnt":["30","34"],"ded":["98","100"],"look":["92","93"],"story":"1.523","runs":1},"e33q":{"lat":["20","1"],"comp":["94","98"],"cnt":["24","22"],"ded":["99","100"],"look":["100","100"],"story":"1.523","runs":1},"e33q2":{"lat":["20","0"],"comp":["94","98"],"cnt":["27","26"],"ded":["100","100"],"look":["100","100"],"story":"1.523","runs":1},"e33qn":{"lat":["20","1"],"comp":["94","97"],"cnt":["24","24"],"ded":["98","100"],"look":["99","99"],"story":"1.523","runs":1},"e33j":{"lat":["88","95"],"comp":["96","98"],"cnt":["22","25"],"ded":["99","100"],"look":["100","99"],"story":"1.517","runs":1},"e33jf":{"lat":["88","94"],"comp":["96","98"],"cnt":["11","12"],"ded":["98","100"],"look":["99","99"],"story":"1.517","runs":1},"e33jd":{"lat":["37","28"],"comp":["96","98"],"cnt":["28","20"],"ded":["99","100"],"look":["99","99"],"story":"1.518","runs":1},"e33ql":{"lat":["19","3"],"comp":["97","98"],"cnt":["24","24"],"ded":["99","100"],"look":["100","99"],"story":"1.517","runs":1},"e33m":{"lat":["88","94"],"comp":["97","98"],"cnt":["29","29"],"ded":["98","100"],"look":["99","99"],"story":"1.534","runs":1},"qctl":{"lat":["19","0"],"comp":["97","98"],"cnt":["23","24"],"ded":["98","100"],"look":["100","100"],"story":"1.518","runs":1},"dense":{"lat":["18–82",null],"comp":["7–9",null],"cnt":["17–38",null],"ded":["8–10",null],"look":["56–63",null],"story":"1.537–1.548","runs":3},"denseb":{"lat":["92",null],"comp":["8",null],"cnt":["50",null],"ded":["8",null],"look":["81",null],"story":"1.554","runs":1},"denser":{"lat":["92",null],"comp":["8",null],"cnt":["46",null],"ded":["6",null],"look":["81",null],"story":"1.548","runs":1}};
+/* Training signals. Class: g = generator label, w = read off the written answer, a = a part or a label-free loss,
+   d = data or starting point (analysis/text_board_notes.py SIGNALS, split finer). */
+const SIG={
+ scratch:['from scratch','d','trained from random weights'],
+ warm:['warm start','d','continued from another trained model'],
+ q8:['8 questions per document','d','up to 8 questions at the end of every world document'],
+ bridge:['bridge questions','d','compose and deduce documents also ask their single steps'],
+ reason:['reasoning mix','d','compose and deduce 6 of every 11 world documents, stories 30 % of tokens'],
+ denser:['denser mix','d','deduce 4 of every 12 world documents, 8 bridge questions per document'],
+ dgate:['one-fact bridges only','d','deduce documents that ask only their one-fact bridge'],
+ taskfree:['task-free text','d','stories and world documents without their questions, cut at random points'],
+ exits:['exit losses 0.3','a','rounds 1-3 also predict every next token'],
+ exitsoff:['exit losses off','a','rounds 1-3 get no loss of their own'],
+ agelearn:['page distance, learned','a','one slope per head on log(1 + pages back), starting at 0'],
+ ranklearn:['order among matches, learned','a','one strength per head on log(1 + newer matching notes), starting at 0'],
+ order:['order term','a','the read ranks newer matching notes, fixed strengths'],
+ orderlog:['page-distance heads','a','four heads lower older notes by log(1 + pages back), fixed'],
+ sw:['order switch','a','a learned per-question switch on the order term'],
+ count:['count heads','a','a summing read beside the notebook read'],
+ feedback:['name feedback','a','the named word is fed to the next round through a gate from 0'],
+ control:['question control','a','each round reads its next relation word from the question'],
+ split:['notes only after a cut','a','after a cut, earlier text is readable only through the notes'],
+ writeronly:['writer only','a','only the notebook writer trains; the reader is frozen'],
+ keystop:['key stop','a','the writer\'s key gradient is stopped'],
+ readback:['note read-back','a','a training-only head makes each note name its own words'],
+ read:['read target','g','each round told which fact to read'],
+ readnote:['read target on notes','g','each round told which notes to read: those whose latent read the hop\'s word'],
+ name:['hop naming','g','each round told the word its hop finds'],
+ latest:['last-move labels','g','a latest question told which move answers it'],
+ countlab:['count labels','g','the count heads told the true number of visits'],
+ written:['written reasoning','w','answers write their steps; read, naming and count targets read off that text by a rule; the steps then hidden in three stages']};
+const SIGCLS={g:'generator label',w:'read off the written answer',a:'no label: a part or a label-free loss',d:'data or starting point'};
+const STC={'p-yes':'--green','p-part':'--amber','p-no':'--red','p-info':'--blue'};
+/* One entry per tested version, control or check, in tree order. par = the checkpoint it continued from; col / row =
+   place in the tree; dg = what the forward-pass diagram draws (null: DNA). */
+const RT_G={t:'page',src:'G'},RN_G={t:'note',src:'G'},NL_G={src:'G'};
 const VERS=[
- {id:'e31c',name:'E31c',tag:'the notebook, read once',when:'3–15 Oct · text',st:['p-yes','base'],
-  what:'The E31 notebook on text. A writer turns each 256-token page into 32 notes; every token reads the notes of closed pages plus the last 256 raw tokens, in one global read. No loop: 8 layers, each runs once.',
-  res:'Reads its notebook in 3 of 3 runs on the 8-questions recipe: far lookup 75–97 % at 4k and 92–99 % at 16k (notebook off: 0 %). Latest at the floor past the raw window (22–24 % at 4k). Compose and deduce at guessing. Story loss 1.564 nats per token. 2.4 h per run.',
-  code:'evaluation/text_checks.py: e31c_plain'},
- {id:'e33q',name:'E33, first form',tag:'reread the memory, question side only',when:'28–29 Sep · DNA',st:['p-no','killed'],
-  what:'The global read block repeated 4 times over a frozen memory, with a learned round marker. Only the ~40 question positions looped; the answer was formed after the loop by the old layers.',
-  res:'No gain on the parallel chains: 10 cells, −2 to +6 points, with or without per-round targets. Met its kill rule. The diagnosis: nothing asked the reread to depend on what the first read found.',
-  code:'message_read_rounds (kept for old checkpoints)'},
- {id:'e33a',name:'E33a',tag:'read–think–reread loop',when:'3–9 Oct · DNA',st:['p-yes','composes (curriculum)'],
-  what:'The loop moves up: [global read + 1 local layer] tied × 4, then an untied answer layer. Every round\'s state is also decoded during training (deep supervision). On DNA the decoded positions are the answer only.',
-  res:'First exam inconclusive: every model, dense included, sat on a guessing floor. With a 1-hop stage first, it composed 2 hops at 94 % in 2 of 3 seeds from random init with answer-only targets, where E31 (9 %) and dense (15 %) failed on the same schedule; 81 % still at 128k. The answer appears at round 2.',
-  code:'message_loop_rounds = 4, message_loop_exit_aux = 0.3'},
- {id:'e33t',name:'E33 on text',tag:'E31c + the E33a loop',when:'10–15 Oct · text',st:['p-info','current'],
-  what:'E31c with the loop: the global read and one local layer run 4 times with the same weights, for every token. Rounds 1–3 are also decoded through the 4 coda layers during training, on the next token of every position.',
-  res:'Reads its notebook in 2 of 3 runs (one switched on only after 0.9B tokens and stayed at 13–15 %; one never learned quote). Best story loss of the round (1.520 vs 1.564 for E31c, 1.54 for dense). On latest, count, compose and deduce it equals E31c. 7.0 h per run, 2.9× E31c.',
-  code:'evaluation/text_checks.py: e31c_loop_plain'},
- {id:'e33d',name:'E33d',tag:'notes with a page distance',when:'14–15 Oct · text',st:['p-no','stopped'],
-  what:'E33 plus one signed slope per head: a note\'s score drops by slope × log(1 + pages back). Outside the key, so content matching is untouched. Slopes start at 0, so step 0 is exactly E33.',
-  res:'Both runs switched on (far lookup 75 % at 4k, 93 % at 16k) but the slopes stayed near 0 (largest 0.14) and latest stayed at 16–21 % at 4k: the stop rule set before the runs. With slopes set by hand on run 1: +1 lifts latest at 16k from 2 % to 33 % but halves far lookup; +3 erases far facts.',
-  code:'lm_note_age = "log"'},
- {id:'e33e',name:'E33e',tag:'order among matching notes',when:'16 Oct · text',st:['p-info','training'],
-  what:'Instead of "how many pages back", a note\'s score drops by s<sub>h</sub> · log(1 + how many <i>newer</i> notes match the question about as well as its best note): a soft count, computed from the read\'s own scores. Anna\'s newest move has no newer match; a lone fact in a lookup has none either, at any length. Same per-head strength as E33d, starting at 0.',
-  res:'Checked first with no training, one fixed strength (2) on trained weights, exam set: E33 run 1 latest at 16k 5 → 41 % with far lookup 92 → 91 %; E33d run 1 2 → 30 % with lookup 93 → 92 %. Training run started 16 Oct on Odra (section 13).',
-  code:'lm_note_age = "rank" · evaluation/text_checks.py: e33e_plain'}];
-let VSEL='e33t';
-function drawVers(){document.getElementById('vchips').innerHTML=VERS.map(v=>`<button class="vchip${v.id===VSEL?' on':''}" data-v="${v.id}"><b>${v.name}</b><span>${v.tag}</span><br><span>${v.when}</span><br><span class="pill ${v.st[0]} st">${v.st[1]}</span></button>`).join('');
- document.querySelectorAll('.vchip').forEach(b=>b.onclick=()=>{VSEL=b.dataset.v;drawVers();});
- const v=VERS.find(x=>x.id===VSEL);
- document.getElementById('vcard').innerHTML=`<h3 style="margin:0 0 4px">${v.name} · ${v.tag}</h3><div class="dgrid"><div><div class="q">what it changed</div>${v.what}</div><div><div class="q">what it showed</div>${v.res}</div><div><div class="q">setting in the code</div><code>${v.code}</code></div></div>`+
-  (['e31c','e33t','e33d','e33e'].includes(v.id)?`<p style="font-size:13.5px;margin:8px 0 0"><a href="#pipeline" id="vgo">Show ${v.name} in the forward-pass diagram ↓</a></p>`:`<p style="font-size:13.5px;margin:8px 0 0;color:var(--fg2)">A DNA version: 4 layers at width 960, the loop ran only on the question positions. Its diagram is in the history section at the bottom.</p>`);
- const g=document.getElementById('vgo');if(g)g.onclick=()=>{P.ver=v.id;segOn('pver',v.id);drawPipe();};
- document.getElementById('vtable').innerHTML='<tr><th>version</th><th>where</th><th>reads the notebook</th><th>latest at 4k</th><th>compose</th><th>story loss</th><th>status</th></tr>'+
-  [['E31c','text','3 of 3 runs','22–24 %','guessing','1.564','base'],['E33, first form','DNA','—','—','no gain (pchain)','—','killed'],['E33a','DNA','—','—','2 hops 94 % (2 of 3) with a 1-hop stage','—','composes on DNA'],
-   ['E33 on text','text','2 of 3 runs','20–22 %','guessing','1.519–1.522','current'],['E33d','text','2 of 2 runs','16–21 %','guessing','1.521','stopped'],['E33e','text','training','probe: 28–32 % (no training)','—','—','training'],['dense (reference)','text','no notebook','18–82 % (2 of 3 learned it)','guessing','1.537–1.548','ceiling at 4k']]
-  .map(r=>`<tr>${r.map((c,i)=>`<td${i===0?' style="font-weight:700"':''}>${c}</td>`).join('')}</tr>`).join('');}
+ {id:'e31c',name:'E31c',tag:'notebook, no loop',col:0,row:0,par:null,tok:'1.5B',when:'13–15 Oct · text',where:'Odra and Polonez · 3 runs',st:['p-info','base'],
+  start:'from scratch, 1.5B tokens',sig:['scratch','q8'],code:'e31c_plain',
+  what:'The E31 notebook on text. A writer turns each 256-token page into 32 notes; every token reads the notes of closed pages plus the last 256 raw tokens in one global read. No loop: 8 layers, each runs once.',
+  res:'Reads its notebook in 3 of 3 runs: far lookup 75–97 % at 4k, 92–99 % at 16k (notebook off: 0 %). Latest sits at the 20 % floor once the last move leaves the raw window; compose and deduce at guessing. 2.4 h per run.',
+  dg:{loop:0}},
+ {id:'e33t',name:'E33',tag:'+ the 4-round loop',col:0,row:1,par:null,tok:'1.5B',when:'13–15 Oct · text',where:'Odra · 3 runs',st:['p-info','base'],
+  start:'from scratch, 1.5B tokens',sig:['scratch','q8','exits'],code:'e31c_loop_plain · message_loop_rounds = 4, message_loop_exit_aux = 0.3',
+  what:'E31c with the loop: the global read and one local layer run 4 times with the same weights, for every token. In training, rounds 1–3 are also decoded through the 4 coda layers and scored on every next token (exit losses, 0.3 each).',
+  res:'Reads its notebook in 2 of 3 runs (one switched on only after 0.9B tokens). The best story loss of its round, but on latest, count, compose and deduce it equals E31c, and stopping the loop after 1 round changes no task score. 7.0 h per run, 2.9× E31c.',
+  dg:{loop:1,exits:'on'}},
+ {id:'e33d',name:'E33d',tag:'page distance',col:0,row:2,par:null,tok:'1.5B',when:'14–15 Oct · text',where:'Polonez · 2 runs',st:['p-no','stopped'],
+  start:'from scratch, 1.5B tokens',sig:['scratch','q8','exits','agelearn'],code:'e33d_plain · lm_note_age = "log"',
+  what:'E33 plus one signed slope per head: a note\'s score drops by slope × log(1 + pages back). It sits outside the key, so content matching is untouched. The slopes start at 0.',
+  res:'Both runs switched on, but the slopes stayed near 0 (largest 0.14) and latest stayed at 16–21 % at 4k: stopped by the rule set before the runs. Set by hand to +1, the slopes lift latest at 16k from 2 to 33 % and halve far lookup.',
+  dg:{loop:1,exits:'on',ord:{k:'log',learn:1}}},
+ {id:'e33e',name:'E33e',tag:'order among matches',col:0,row:3,par:null,tok:'1.5B',when:'16–17 Oct · text',where:'Odra · 1 run',st:['p-no','no gain'],
+  start:'from scratch, 1.5B tokens',sig:['scratch','q8','exits','ranklearn'],code:'e33e_plain · lm_note_age = "rank"',
+  what:'A note\'s score drops by s · log(1 + how many newer notes match the question about as well as its best note): a soft count from the read\'s own scores, so a lone fact pays nothing at any length. One strength per head, starting at 0.',
+  res:'With a fixed strength of 2 and no training, the term had lifted E33 run 1\'s latest at 16k from 5 to 41 %. Trained from 0, the strengths rose to 0.15 and fell back: latest 19 % at 4k, 0 % at 16k. Far facts fine.',
+  dg:{loop:1,exits:'on',ord:{k:'rank',learn:1}}},
+ {id:'e33bridge',name:'E33',tag:'bridge-question data',col:0,row:5,par:null,tok:'1.35B',when:'16 Oct · text',where:'Polonez · 1 run',st:['p-info','start of the line'],
+  start:'from scratch, 1.35B tokens (stopped at the 24 GPU-hour cap, 90 % of its tokens)',sig:['scratch','q8','bridge','exits'],code:'e31c_loop_plain on the bridge-question data',
+  what:'E33 unchanged, trained on data whose compose and deduce documents also ask their single steps ("Who is the teacher of Lumo?"). Its checkpoint 7038 is where the whole reasoning line starts.',
+  res:'Notebook on: far lookup 72 / 90 % at 4k / 16k. Compose and deduce still at guessing. Dense on the same data answers the single teacher question 69 % of the time but cannot join the two steps either.',
+  dg:{loop:1,exits:'on'}},
+ {id:'e33dna',name:'E33 first form',tag:'DNA, reread',col:0,row:8,par:null,when:'28–29 Sep · DNA',where:'DNA chain exams',st:['p-no','killed'],
+  start:'from scratch on the DNA chain exams',sig:['scratch'],code:'message_read_rounds (kept for old checkpoints)',
+  what:'The first E33, on the DNA exams: the global read block repeated 4 times over a frozen memory, with a learned round marker. Only the ~40 question positions looped; the answer was formed after the loop by the old layers. Not to be confused with E33q, the text version whose rounds name their hop.',
+  res:'No gain on the parallel chains: 10 cells, −2 to +6 points, with or without per-round targets. It met its kill rule. The diagnosis: nothing asked the reread to depend on what the first read found.',
+  dg:null},
+ {id:'e33a',name:'E33a',tag:'DNA, the loop',col:0,row:9,par:null,when:'3–9 Oct · DNA',where:'DNA chain exams',st:['p-yes','composes (curriculum)'],
+  start:'from scratch on the DNA chain exams, with a 1-hop stage first',sig:['scratch','exits'],code:'message_loop_rounds = 4, message_loop_exit_aux = 0.3',
+  what:'The loop moves up: [global read + 1 local layer] tied × 4, then an untied answer layer. Every round\'s state is also decoded in training (deep supervision); on DNA the decoded positions are the answer only.',
+  res:'First exam inconclusive: every model, dense included, sat on a guessing floor. With a 1-hop stage first, it composed 2 hops at 94 % in 2 of 3 seeds from random weights, where E31 (9 %) and dense (15 %) failed on the same schedule. This loop became E33 on text.',
+  dg:null},
+ /* ---- the reasoning line: every entry continues from E33 on the bridge data (checkpoint 7038) or one of its children ---- */
+ {id:'e33x',name:'E33x',tag:'exit losses off',col:1,row:5,par:'e33bridge',tok:'+0.3B',when:'17 Oct',where:'Polonez · 1 run',st:['p-info','base rung'],
+  start:'E33 (bridge data), checkpoint 7038, + 0.3B tokens',sig:['warm','reason','exitsoff'],code:'e33x_plain · message_loop_exit_aux = 0',
+  what:'The exit losses are switched off. They had asked every round for the next token at every position, which makes the rounds interchangeable and asks round 1 of a two-step question for an answer it cannot have read yet.',
+  res:'Not enough alone: two-step compose 7 / 11 % at 4k / 16k (guessing 8 %), far lookup kept. It is the start of the label-free branch (R1, R2, R3).',
+  dg:{loop:1,exits:'off'}},
+ {id:'r1',name:'E33qn0 (R1)',tag:'naming only',col:2,row:5,par:'e33x',tok:'+0.3B',when:'18 Oct',where:'Polonez · 1 run',st:['p-part','deduce, not compose'],
+  start:'E33x + 0.3B tokens',sig:['warm','reason','exitsoff','name'],code:'e33qn0_plain · message_loop_name_lens = 0.3, message_loop_read_aux = 0',
+  what:'Step 1 of the label-free review: the rounds name their hop\'s word through the shared output head (weight 0.3), but nothing says where to read.',
+  res:'Deduce 99 / 100 % and the notes keep the property word (probe 74 %), but compose falls to 8 / 9 %: finding a fact that holds two names needs a signal on where to read.',
+  dg:{loop:1,exits:'off',nl:NL_G}},
+ {id:'r3',name:'E33w (R3)',tag:'writer alone',col:2,row:6,par:'e33x',tok:'+0.3B',when:'18 Oct',where:'Polonez · 1 run',st:['p-no','content erased'],
+  start:'E33x, only its writer training, + 0.3B tokens',sig:['warm','taskfree','split','writeronly','exitsoff'],code:'e33w_plain · TRAIN_ONLY_PARAMS = memory_writer.',
+  what:'Stage W of the label-free review: only the notebook writer trains, on stories and world documents without their questions, cut at random points. After a cut, earlier text is readable only through the notes; the plain next-token loss after each cut is the whole objective.',
+  res:'Content erased: a probe finds the place in a note 13 % of the time (80 % before), and every exam falls to guessing. Continuing text with no back-references does not make the notes keep facts.',
+  dg:{loop:1,exits:'off',split:1,wo:1}},
+ {id:'r2',name:'R2',tag:'written reasoning',col:2,row:7,par:'e33x',tok:'+3 × 0.1B',when:'19 Oct',where:'Polonez · 1 run',st:['p-yes','compose + deduce, no labels'],
+  start:'E33x + 3 × 0.1B tokens: every step written → the first hidden → none',sig:['warm','reason','exitsoff','written'],code:'e33qn_plain · data --written_chains all → drop1 → none',
+  what:'E33qn (read target + naming) trained on written chains: each answer writes its steps out, and a rule reads the read and naming targets off that text. Three stages of 0.1B tokens hide the steps: all written, all but the first, none.',
+  res:'The goal for compose and deduce without generator labels: 92 / 97 % and 99 / 100 % at 4k / 16k (E33qn with labels 94 / 97 %, 98 / 100 %). The reads follow the chain. Latest 18 % and count 21 %: nothing taught order or counting. 3-hop compose 0 %.',
+  dg:{loop:1,exits:'off',rt:{t:'page',src:'W'},nl:{src:'W'}}},
+ {id:'r2tc',name:'Written route',tag:'latest, count',col:3,row:7,par:'r2',tok:'+3 × 0.1B',when:'19 Oct',where:'Odra · 1 run',st:['p-yes','latest too, no labels'],
+  start:'R2 final + 3 × 0.1B tokens: every step written → the first hidden → none',sig:['warm','reason','exitsoff','written','order','sw','count','feedback'],code:'e33m_plain from the R2 final · data --written_chains all → drop1 → none',
+  what:'R2 continued with latest written as the person\'s last move ("Soon after, Anna went to live in Selby. So Selby.") and count as the visits listed, then the number. The model is E33m\'s: order on demand, count heads (their target is the number of visits listed, counted off the text), hop naming with feedback.',
+  res:'Latest 78 / 92 % at 4k / 16k with no generator labels (R2 18 / 2 %; E33j with labels 88 / 95 %), compose 93 / 98 %, deduce 100 / 100 %, evidence removed 0 %. Count 17 / 18 %: listing the visits did not teach counting. New sentence shapes fail (latest 29 %, compose 5 %).',
+  dg:{loop:1,exits:'off',rt:{t:'page',src:'W'},nl:{src:'W'},fb:1,ord:{k:'rank',s:'all',sw:1},cnt:{loss:1,src:'W'}}},
+ {id:'e33r',name:'E33r',tag:'read target',col:1,row:8,par:'e33bridge',tok:'+0.3B',when:'17 Oct',where:'Polonez · 1 run',st:['p-part','compose 60 %'],
+  start:'E33 (bridge data), checkpoint 7038, + 0.3B tokens',sig:['warm','reason','exitsoff','read'],code:'e33r_plain · message_loop_read_aux = 0.5',
+  what:'E33x plus a training target on where each round reads: round r of a compose or deduce answer is pushed onto the page holding fact r of its chain (weight 0.5). Single-step questions put their target on round 1.',
+  res:'The first model above guessing on a two-fact question: compose 60 / 76 % at 4k / 16k (E33x 7 / 11 %). The reads follow the chain: 97 / 90 / 84 % of rounds 1 / 2 / 3 land on their fact. Deduce stays at 13 %: the read reaches the property fact, but the notes do not say which property it is (probe 11 %).',
+  dg:{loop:1,exits:'off',rt:RT_G}},
+ {id:'e33rb',name:'E33rb',tag:'+ read-back',col:2,row:8,par:'e33r',tok:'+0.3B',when:'17 Oct',where:'Polonez · 1 run',st:['p-part','matched control'],
+  start:'E33r + 0.3B tokens',sig:['warm','reason','exitsoff','read','readback'],code:'e33rb_plain · lm_readback_aux = 0.1',
+  what:'E33r plus E33b\'s note read-back (head starting at 0, weight 0.1). It became the matched control for E33g\'s order heads.',
+  res:'No harm, small gains: compose 61 / 82 %, deduce 16 / 12 %. The property-word probe stayed at 12 %: the read-back head learned how common each word is, not the property.',
+  dg:{loop:1,exits:'off',rt:RT_G,rb:1}},
+ {id:'dgate',name:'Deduce gate',tag:'bridges only',col:3,row:8,par:'e33rb',tok:'+0.1B',when:'17–18 Oct',where:'Polonez · 1 run',st:['p-info','check'],
+  start:'E33rb + 0.1B tokens of deduce documents asking only their one-fact bridge',sig:['warm','dgate','exitsoff','read','readback'],code:'e33rb_plain on bridge-only deduce data',
+  what:'A check, not a candidate: can this writer store a property word at all when paid for it? E33rb continued on deduce documents that ask only their one-fact bridge ("What is a kavi like?").',
+  res:'Yes: that question rose from 12 to 44 %. Everything no longer asked was forgotten (far lookup 15 %).',
+  dg:{loop:1,exits:'off',rt:RT_G,rb:1}},
+ {id:'e33ok',name:'E33ok',tag:'key stop',col:2,row:9,par:'e33r',tok:'+0.3B',when:'17 Oct',where:'Polonez · 1 run',st:['p-part','deduce 36 %'],
+  start:'E33r + 0.3B tokens',sig:['warm','reason','exitsoff','readnote','keystop'],code:'e33ok_plain · lm_key_grad = "detach", message_loop_read_target = "note"',
+  what:'E33o\'s note-level read target with the writer\'s key gradient stopped: a note\'s key is built from what its latent read, with the gradient cut, so a loss on where reads land trains only the key projections and cannot pull content out of the value.',
+  res:'The notes keep the property word (probe 8–13 → 33 %) and deduce rises to 36 / 35 % (E33rb 16 / 12 %), but compose falls to 42 / 48 % and far lookup to 56 / 53 %: keys that can only reuse the content read lose the person\'s name.',
+  dg:{loop:1,exits:'off',rt:RN_G,ks:1}},
+ {id:'e33ok2',name:'E33ok',tag:'denser mix',col:3,row:9,par:'e33ok',tok:'+0.6B',when:'18 Oct',where:'Polonez · 1 run',st:['p-yes','compose + deduce'],
+  start:'E33ok final + 0.6B tokens of the denser mix',sig:['warm','denser','exitsoff','readnote','keystop'],code:'e33ok_plain on the denser reasoning mix',
+  what:'E33ok continued on a denser mix: deduce 4 of every 12 world documents, 8 bridge questions each. No naming loss.',
+  res:'A second route to the goal for compose and deduce: 95 / 97 % and 98 / 99 % at 4k / 16k, far lookup 99 / 98 %, story loss 1.493, the lowest of the line. The notes hold the property word (probe 72 %). Latest 20 %, count 24 %.',
+  dg:{loop:1,exits:'off',rt:RN_G,ks:1}},
+ {id:'e33gk',name:'E33gk',tag:'+ order heads',col:3,row:10,par:'e33ok',tok:'+0.6B',when:'18 Oct',where:'Polonez · 1 run',st:['p-yes','same as E33ok'],
+  start:'E33ok final + 0.6B tokens of the denser mix',sig:['warm','denser','exitsoff','readnote','keystop','order'],code:'e33gk_plain · lm_note_age = "rank", lm_note_age_init = "1,2,4,8", fixed',
+  what:'E33ok plus E33g\'s four fixed order heads, on the same denser mix.',
+  res:'The same as E33ok (compose 95 / 96 %, deduce 97 / 99 %): the order term adds nothing once the reads are supervised this well. Latest 20 %.',
+  dg:{loop:1,exits:'off',rt:RN_G,ks:1,ord:{k:'rank',s:'4h'}}},
+ {id:'e33g',name:'E33g',tag:'order heads',col:2,row:11,par:'e33r',tok:'+0.3B',when:'17 Oct',where:'Odra · 1 run',st:['p-part','compose up, latest no'],
+  start:'E33r + 0.3B tokens',sig:['warm','reason','exitsoff','read','order'],code:'e33g_plain · lm_note_age = "rank", lm_note_age_init = "1,2,4,8", lm_note_age_learn = false',
+  what:'E33r plus E33e\'s rank among matching notes at fixed strengths: five heads at 0 for lookup, keyed and quote, four at 1, 2, 4 and 8 for order, with a tighter match. Fixed, because E33e\'s learned strengths never grew.',
+  res:'Latest failed: 22 % at 4k (kill line 30 %); the picks spread over the person\'s 11 places. Compose rose to 69 / 88 % and deduce to 24 / 19 % (matched control E33rb 61 / 82 %, 16 / 12 %).',
+  dg:{loop:1,exits:'off',rt:RT_G,ord:{k:'rank',s:'4h'}}},
+ {id:'e33i',name:'E33i',tag:'order on demand',col:3,row:11,par:'e33g',tok:'+0.3B',when:'18 Oct',where:'Odra · 1 run',st:['p-part','deduce up, latest no'],
+  start:'E33g + 0.3B tokens (its order strengths reset)',sig:['warm','reason','exitsoff','read','order','sw'],code:'e33i_plain · lm_note_order_gate = true, lm_note_age_init = "4", lm_note_rank_margin = 2',
+  what:'Every head ranked at strength 4 with a wider match, scaled by a learned per-position switch σ(w·x + b) that starts nearly off (w = 0, b = −2), so a "now" question can turn order up while story text keeps it off.',
+  res:'Latest failed: 22 % at 4k; the switch barely moved (bias −2 → −2.03). Deduce rose to 85 / 90 % (E33g 24 / 19 %), compose 71 / 92 %.',
+  dg:{loop:1,exits:'off',rt:RT_G,ord:{k:'rank',s:'all',sw:1}}},
+ {id:'e33h',name:'E33h',tag:'count heads',col:2,row:12,par:'e33r',tok:'+0.3B',when:'17–18 Oct',where:'Odra · 1 run',st:['p-no','count no'],
+  start:'E33r + 0.3B tokens',sig:['warm','reason','exitsoff','read','count'],code:'e33h_plain · lm_count_heads = 2',
+  what:'E33r plus two count heads, a summing read beside the global read. Each head adds up σ(a·q·k + b) over the notes and the recent tokens, codes the sum as 0–10, and adds it to the read through a projection that starts at zero.',
+  res:'Count failed: 23 / 20 % at 4k / 16k (kill line 35 %). The answer loss alone did not teach the heads to count.',
+  dg:{loop:1,exits:'off',rt:RT_G,cnt:{loss:0}}},
+ {id:'e33k',name:'E33k',tag:'count labels',col:3,row:12,par:'e33h',tok:'+0.3B',when:'18 Oct',where:'Odra · 1 run',st:['p-part','heads count, answer no'],
+  start:'E33h + 0.3B tokens',sig:['warm','reason','exitsoff','read','count','countlab'],code:'e33k_plain · lm_count_aux = 0.1',
+  what:'E33h with each count head\'s sum at a count question supervised by the true number of visits (Huber loss, weight 0.1).',
+  res:'The heads now count: their sum is within 0.66 of the truth on average (rounded exact 49 %). The answer does not follow: count 30 / 26 %. Deduce rose to 46 / 36 % (E33h 17 / 8 %).',
+  dg:{loop:1,exits:'off',rt:RT_G,cnt:{loss:0.1,src:'G'}}},
+ {id:'e33k2',name:'E33k2',tag:'count word',col:4,row:12,par:'e33k',tok:'+0.3B',when:'18 Oct',where:'Odra · 1 run',st:['p-no','count 30 %'],
+  start:'E33k + 0.3B tokens',sig:['warm','reason','exitsoff','read','name','count','countlab'],code:'e33k2_plain · lm_count_aux = 1.0, message_loop_name_lens = 0.3',
+  what:'E33k with the count loss at weight 1.0 and the naming lens on: rounds 1–3 of a count question must name the number word, so the heads\' sum is decoded into words like "four" and "five", which share a first token.',
+  res:'Count 30 / 34 %, under the 35 % kill line: the answer now follows the heads, but their sum is too rough (off by 0.6–1.4, rounded right 38 %). Compose rose to 88 / 93 % and deduce to 98 / 100 %, as with E33q\'s naming.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G,cnt:{loss:1,src:'G'}}},
+ {id:'e33q',name:'E33q',tag:'hop naming',col:2,row:13,par:'e33r',tok:'+0.3B',when:'17 Oct',where:'Odra · 1 run (a second seed below)',st:['p-yes','compose + deduce'],
+  start:'E33r + 0.3B tokens',sig:['warm','reason','exitsoff','read','name','feedback'],code:'e33q_plain · message_loop_name_lens = 0.3, message_loop_feedback = "soft"',
+  what:'E33r plus: after each round, the state goes through the shared output head and must name the word its hop finds (the bridge person, the place, the class, the property; weight 0.3). The named word is re-embedded and fed to the next round through a gate that starts at 0.',
+  res:'The goal for compose and deduce on the id split: 94 / 98 % and 99 / 100 %, far lookup 100 / 100 % (E33r 60 / 76 %, 13 / 9 %). Learned fast: deduce 96 % by 0.07B tokens. The feedback gate stayed near 0: the naming does the work. Not on new sentence shapes (compose 6 %) or 3 hops (0–2 %).',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G,fb:1}},
+ {id:'e33j',name:'E33j',tag:'order + last move',col:3,row:13,par:'e33q',tok:'+0.3B',when:'18 Oct',where:'Odra · 1 run',st:['p-yes','latest 88 %'],
+  start:'E33q + 0.3B tokens',sig:['warm','reason','exitsoff','read','name','feedback','order','sw','latest'],code:'e33j_plain',
+  what:'E33q plus E33i\'s order on demand, on data where each latest question carries a one-step chain: the asked person\'s last move. Round 1 must read that move and name its place.',
+  res:'Latest solved on the id split: 88 / 95 % (E33q 20 / 1 %), evidence removed 0 %, with compose and deduce kept. The switch opens per question. Order alone (E33i) and the labels alone (E33q on the same data) both stayed near 20 %.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G,fb:1,ord:{k:'rank',s:'all',sw:1}}},
+ {id:'e33m',name:'E33m',tag:'all four',col:4,row:13,par:'e33j',tok:'+0.3B',when:'18 Oct',where:'Odra · 1 run',st:['p-yes','3 of 4 goal tasks'],
+  start:'E33j + 0.3B tokens',sig:['warm','reason','exitsoff','read','name','feedback','order','sw','latest','count','countlab'],code:'e33m_plain',
+  what:'E33j plus E33k2\'s count heads, told the true number (count loss 1.0), with the rounds naming the count word.',
+  res:'One set of weights: latest 88 / 94 %, compose 97 / 98 %, deduce 98 / 100 %, far lookup 99 / 99 %. Count 29 / 29 %. Three of the four goal tasks, with generator labels.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G,fb:1,ord:{k:'rank',s:'all',sw:1},cnt:{loss:1,src:'G'}}},
+ {id:'e33jf',name:'E33jf',tag:'order always on',col:3,row:14,par:'e33q',tok:'+0.3B',when:'18 Oct',where:'Polonez · 1 run',st:['p-yes','latest, no switch'],
+  start:'E33q + 0.3B tokens',sig:['warm','reason','exitsoff','read','name','feedback','order','latest'],code:'e33jf_plain',
+  what:'E33j without the switch: every question reads with order.',
+  res:'Latest 88 / 94 %: the switch is not needed. Compose and deduce kept. Count fell to 11 / 12 %.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G,fb:1,ord:{k:'rank',s:'all',sw:0}}},
+ {id:'e33jd',name:'E33jd',tag:'page-distance heads',col:3,row:15,par:'e33q',tok:'+0.3B',when:'18 Oct',where:'Polonez · 1 run',st:['p-no','latest 37 %'],
+  start:'E33q + 0.3B tokens',sig:['warm','reason','exitsoff','read','name','feedback','orderlog','latest'],code:'e33jd_plain · lm_note_age = "log", lm_note_age_init = "1,2,4,8"',
+  what:'The page-distance alternative under the same last-move labels: four heads lower older notes by s · log(1 + pages back) at fixed s = 1, 2, 4, 8; five heads stay order-free.',
+  res:'Latest only partly: 37 / 28 %. A recency penalty cannot tell the asked person\'s last move from anyone\'s; the rank among matching notes can.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G,fb:1,ord:{k:'log',s:'4h'}}},
+ {id:'e33ql',name:'E33q',tag:'last-move data',col:3,row:16,par:'e33q',tok:'+0.3B',when:'18 Oct',where:'Odra · 1 run',st:['p-no','latest 19 %'],
+  start:'E33q + 0.3B tokens of the last-move-labelled data',sig:['warm','reason','exitsoff','read','name','feedback','latest'],code:'e33q_plain on the latest-chain data',
+  what:'The ablation beside E33j: E33q on the same last-move-labelled data, with no order term.',
+  res:'Latest still 19 / 3 % with the last move as read and naming target: without an order signal in the read, the labels cannot be met. Compose and deduce kept.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G,fb:1}},
+ {id:'e33q2',name:'E33q',tag:'second seed',col:2,row:17,par:'e33r',tok:'+0.3B',when:'18 Oct',where:'Polonez · 1 run',st:['p-yes','replicates'],
+  start:'E33r + 0.3B tokens, a second seed',sig:['warm','reason','exitsoff','read','name','feedback'],code:'e33q_plain, seed 1',
+  what:'The same recipe as E33q, run again with another seed.',
+  res:'Replicates: compose 94 / 98 %, deduce 100 / 100 %. Harder exams: deduce at depth 3 87 / 94 %, compose with 3 hops 2 / 0 %. E33c and its control start from it.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G,fb:1}},
+ {id:'qctl',name:'E33qn + 0.3B',tag:'control',col:3,row:17,par:'e33q2',tok:'+0.3B',when:'18 Oct',where:'Polonez · 1 run',st:['p-info','control'],
+  start:'E33q second seed + 0.3B tokens',sig:['warm','reason','exitsoff','read','name'],code:'e33qn_plain',
+  what:'E33qn trained 0.3B more tokens on the same data, with no new part: the matched control for E33c.',
+  res:'Compose 97 / 98 %, deduce 98 / 100 %, but 3-hop compose stays at 1 %: more training of the same recipe does not add a third hop.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G}},
+ {id:'e33c',name:'E33c',tag:'question control',col:3,row:18,par:'e33q2',tok:'stopped',when:'18 Oct',where:'Polonez · stopped',st:['p-no','stopped, unused'],
+  start:'E33q second seed; stopped at checkpoint 445 of 0.3B tokens',sig:['warm','reason','exitsoff','read','name','control'],code:'e33c_plain · message_loop_control = "question"',
+  what:'E33qn plus a control unit, as in MAC networks: each round attends over the last 48 words, with a learned bias on the distance from the previous round\'s pointer, and adds the relation word it finds ("teacher of", "live") to its input through a gate from 0. The aim: 3-hop compose, where the loop stops after the two teacher reads it was trained on.',
+  res:'Stopped after 33 minutes: the gate stayed at 0.0013, under the 0.02 stop line. With only 1–2 hops in training nothing rewards stepping through the question. No exam.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G,ctl:1}},
+ {id:'e33qn',name:'E33qn',tag:'no feedback',col:2,row:19,par:'e33r',tok:'+0.3B',when:'18 Oct',where:'Polonez · 1 run',st:['p-yes','naming alone'],
+  start:'E33r + 0.3B tokens',sig:['warm','reason','exitsoff','read','name'],code:'e33qn_plain · message_loop_feedback = "none"',
+  what:'E33q without the round-to-round feedback: the naming loss alone.',
+  res:'The same as E33q: compose 94 / 97 %, deduce 98 / 100 %. The simpler recipe, and the one R2 trains on written chains.',
+  dg:{loop:1,exits:'off',rt:RT_G,nl:NL_G}},
+ {id:'e33o',name:'E33o',tag:'target on notes',col:1,row:20,par:'e33bridge',tok:'+0.3B',when:'17 Oct',where:'Polonez · 1 run',st:['p-no','broke the notebook'],
+  start:'E33 (bridge data), checkpoint 7038, + 0.3B tokens',sig:['warm','reason','exitsoff','readnote'],code:'e33o_plain · message_loop_read_target = "note"',
+  what:'E33r\'s read target moved from a fact\'s page to the single notes whose latent read the hop\'s word (the teacher\'s name, the place, the property), to fix deduce.',
+  res:'The push emptied the notes: far lookup 0 % at every length, compose and deduce at guessing. A note\'s key and value come from one latent read, so pulling the key toward the asked person pulled the place out of the value.',
+  dg:{loop:1,exits:'off',rt:RN_G}},
+ {id:'e33b',name:'E33b',tag:'+ read-back',col:1,row:21,par:'e33bridge',tok:'+0.3B',when:'17 Oct',where:'Polonez · run 2',st:['p-no','not repaired'],
+  start:'E33 (bridge data), checkpoint 7038, + 0.3B tokens',sig:['warm','reason','exitsoff','readnote','readback'],code:'e33b_plain · lm_readback_aux = 0.1',
+  what:'E33o plus a training-only head that makes each note\'s value name the words it read (the tokens at its read position −1, 0, +1; weight 0.1, head starting at 0). Run 1 used a random head at 0.2 and was stopped after it scrambled the reader.',
+  res:'Far lookup came back only to 15 / 21 %; compose and deduce at guessing.',
+  dg:{loop:1,exits:'off',rt:RN_G,rb:1}},
+ {id:'e33f',name:'E33f',tag:'notes on the wire',col:1,row:22,par:'e33bridge',tok:'+0.3B',when:'16 Oct',where:'Polonez · 1 run',st:['p-yes','notes carry lookup'],
+  start:'E33 (bridge data), checkpoint 7038, + 0.3B tokens',sig:['warm','bridge','exits','split'],code:'e33f_plain · message_boundary_token = "Question"',
+  what:'Agent to agent: every "Question" starts a new side, so a question reads its document only through the notes (no raw tokens, no local window across the cut), and the page under the cut closes at once. Exit losses stay on.',
+  res:'Far lookup 77 / 91 % through the notes alone (E33 on its own text 72 / 90 %). Facts near the question lose: latest falls to 4 / 6 %, because the last move is no longer in a raw window. About 8 fetched notes answer far lookup at 16k–128k.',
+  dg:{loop:1,exits:'on',split:1}},
+ {id:'e33f2',name:'E33f',tag:'+ 0.6B',col:2,row:22,par:'e33f',tok:'+0.6B',when:'16–17 Oct',where:'Polonez · 1 run',st:['p-yes','quotes through notes'],
+  start:'E33f + 0.6B tokens of split training',sig:['warm','bridge','exits','split'],code:'e33f_plain',
+  what:'E33f continued for 0.6B more tokens of split training.',
+  res:'Word-for-word quotes now pass through the notes: far quote 76 / 95 % (E33f 16 / 24 %, E33 on its own text 0 / 0 %). Lookup unchanged; near facts and latest unchanged.',
+  dg:{loop:1,exits:'on',split:1}}];
+const VBY=Object.fromEntries(VERS.map(v=>[v.id,v]));
+const GSIG=['read','readnote','name','latest','countlab'];
+const srcOf=v=>(v.sig||[]).some(k=>GSIG.includes(k))?'G':(v.sig||[]).includes('written')?'W':null;
+const loMax=s=>{if(s==null)return null;const m=String(s).split('–').map(Number);return m[0];};
+const hiv=s=>{const v=loMax(s);return v!=null&&v>=70;};
+let VSEL='r2tc';
+const TCOL=[[10,176],[214,176],[418,196],[642,212],[882,166]],TY=r=>40+r*28;
+function selectVer(id,scroll){VSEL=id;drawVers();if(scroll){const c=document.getElementById('vcard');const rm=matchMedia('(prefers-reduced-motion: reduce)').matches;c.scrollIntoView({behavior:rm?'auto':'smooth',block:'nearest'});}}
+function drawTree(){const s=document.getElementById('vtree');s.innerHTML='';
+ const anc=new Set();for(let a=VBY[VSEL];a;a=a.par?VBY[a.par]:null)anc.add(a.id);
+ ['from scratch','warm start 1 · from 7038','warm start 2','warm start 3','warm start 4'].forEach((t,i)=>el('text',{x:TCOL[i][0],y:20,'font-size':10.5,'font-weight':700,class:'m','letter-spacing':'.06em'},s,t.toUpperCase()));
+ el('text',{x:10,y:TY(4)+15,'font-size':11,class:'m'},s,'the reasoning line starts here →');
+ el('text',{x:10,y:TY(7)+15,'font-size':11,class:'m'},s,'DNA exams, 28 Sep – 9 Oct (history)');
+ VERS.forEach(v=>{if(!v.par)return;const p=VBY[v.par];const [px,pw]=TCOL[p.col],[cx]=TCOL[v.col];const y1=TY(p.row)+11,y2=TY(v.row)+11,sx=cx-14,on=anc.has(v.id);
+  el('path',{d:`M${px+pw},${y1} H${sx} V${y2} H${cx}`,fill:'none',stroke:on?C('--blue'):C('--muted'),'stroke-width':on?2.2:1.2,'stroke-opacity':on?1:.55},s);});
+ VERS.forEach(v=>{const [x,w]=TCOL[v.col],y=TY(v.row),col=C(STC[v.st[0]]),on=v.id===VSEL;
+  const g=el('g',{tabindex:0,role:'button','aria-label':`${v.name}, ${v.tag}: ${v.st[1]}`},s);
+  el('rect',{x,y,width:w,height:22,rx:6,fill:col,'fill-opacity':on?.32:.12,stroke:on?C('--fg'):col,'stroke-width':on?2:1,'stroke-dasharray':v.dg?'':'4 3'},g);
+  const t=el('text',{x:x+8,y:y+15,'font-size':11.5,style:'white-space:pre'},g);el('tspan',{'font-weight':750},t,v.name);el('tspan',{class:'s'},t,' · '+v.tag);
+  const sb=srcOf(v);if(sb){const c2=C(sb==='G'?'--amber':'--green');el('circle',{cx:x+w-12,cy:y+11,r:7.5,fill:C('--card'),stroke:c2,'stroke-width':1.5},g);
+   el('text',{x:x+w-12,y:y+14.5,'text-anchor':'middle','font-size':9.5,'font-weight':800,style:`fill:${c2}`},g,sb);}
+  const sc=SC[v.id];
+  hov(g,`<b>${v.name}</b> · ${v.tag}<br>${v.st[1]}`+(sc?`<br>at 4k: latest ${sc.lat[0]} · compose ${sc.comp[0]} · count ${sc.cnt[0]} · deduce ${sc.ded[0]} %`:''));g.style.cursor='pointer';
+  g.addEventListener('click',()=>selectVer(v.id));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();selectVer(v.id);}});});}
+function drawVers(){drawTree();
+ document.getElementById('vlegend').innerHTML=[['p-yes','passed what it was built to test'],['p-part','partly'],['p-no','failed, stopped or broke the notebook'],['p-info','starting point, control or check']].map(([k,t])=>`<span><i style="background:var(${STC[k]})"></i>${t}</span>`).join('')+
+  '<span><b style="color:var(--amber)">G</b> trained with generator labels</span><span><b style="color:var(--green)">W</b> targets read off written answers</span><span>no letter: no labels</span><span><i style="background:transparent;border:1.5px dashed var(--muted)"></i>DNA version</span>';
+ const v=VBY[VSEL],p=v.par?VBY[v.par]:null,sc=SC[v.id],ps=p?SC[p.id]:null;
+ const sig=(v.sig||[]).map(k=>`<span class="sig sig-${SIG[k][1]}" title="${SIGCLS[SIG[k][1]]}: ${SIG[k][2]}">${SIG[k][0]}</span>`).join('');
+ const T=[['latest','lat'],['compose','comp'],['count','cnt'],['deduce','ded'],['far lookup','look']];
+ const f=x=>x==null?'—':(hiv(x)?`<b class="hi">${x}</b>`:x);
+ const tab=sc?`<table class="mini"><tr><th>exact %</th><th class="num">4k</th><th class="num">16k</th>${ps?`<th class="num" title="${p.name} · ${p.tag}">its start: ${p.name}</th>`:''}</tr>`+
+  T.map(([n,k])=>`<tr><td>${n}</td><td class="num">${f(sc[k][0])}</td><td class="num">${f(sc[k][1])}</td>${ps?`<td class="num pm">${ps[k][0]??'—'} / ${ps[k][1]??'—'}</td>`:''}</tr>`).join('')+
+  `<tr><td>story loss</td><td class="num" colspan="2">${sc.story??'—'}</td>${ps?`<td class="num pm">${ps.story??'—'}</td>`:''}</tr></table>`
+  :`<p style="font-size:13.5px;color:var(--fg2);margin:0">${v.dg?'No exam: the run was stopped before its end.':'A DNA version: no text scores. Its diagram is in the history section at the bottom.'}</p>`;
+ document.getElementById('vcard').innerHTML=`<h3 style="margin:0 0 2px">${v.name} · ${v.tag}</h3><div class="meta">${v.when} · ${v.where} · <span class="pill ${v.st[0]}">${v.st[1]}</span></div>`+
+  `<div class="dgrid"><div><div class="q">what it changed</div>${v.what}</div><div><div class="q">how it was trained</div><b>Start:</b> ${v.start}.<div style="margin-top:6px">${sig}</div></div><div><div class="q">what it showed</div>${v.res}</div></div>`+
+  `<div class="vrow"><div class="tw">${tab}</div><div><div class="q">setting in the code</div><code>evaluation/text_checks.py: ${v.code}</code>`+
+  (v.dg?`<p style="font-size:13.5px;margin:8px 0 0"><a href="#pipeline" id="vgo">Show ${v.name} · ${v.tag} in the forward-pass diagram ↓</a></p>`:'')+`</div></div>`;
+ const g=document.getElementById('vgo');if(g)g.onclick=()=>{P.ver=v.id;document.getElementById('pver').value=v.id;drawPipe();};
+ drawVTable();}
+function drawVTable(){const T=['lat','comp','cnt','ded','look'];const f=x=>x==null?'—':(hiv(x)?`<b class="hi">${x}</b>`:x);
+ const cells=sc=>T.map(k=>`<td class="num">${sc?`${f(sc[k][0])} / ${f(sc[k][1])}`:'—'}</td>`).join('');
+ const depth=v=>{let d=0;for(let a=v;a&&a.par;a=VBY[a.par])d++;return d;};
+ const lab={G:'<span class="sig sig-g">labels</span>',W:'<span class="sig sig-w">written</span>'},SHORT={e33bridge:'E33 (bridge)',e33q2:'E33q seed 2'};
+ const row=v=>{const p=v.par?VBY[v.par]:null,sc=SC[v.id],sb=srcOf(v),d=depth(v);
+  return `<tr class="vr${v.id===VSEL?' on':''}" data-v="${v.id}" tabindex="0"><td style="padding-left:${9+d*12}px">${d?'↳ ':''}<b>${v.name}</b> · ${v.tag}</td><td class="nw">${p?`${SHORT[p.id]||p.name} ${v.tok}`:`scratch ${v.tok}`}</td><td>${sb?lab[sb]:'none'}</td>${cells(sc)}<td class="num">${sc?sc.story??'—':(v.dg?'stopped':'—')}</td></tr>`;};
+ const grp=t=>`<tr class="grp"><td colspan="9">${t}</td></tr>`;
+ const dn=[['dense','Dense','3 runs, 8 questions'],['denseb','Dense','bridge data'],['denser','Dense','+0.3B, reasoning mix']];
+ document.getElementById('vtable').innerHTML='<tr><th>version</th><th>started from</th><th>targets from</th><th class="num">latest</th><th class="num">compose</th><th class="num">count</th><th class="num">deduce</th><th class="num">far lookup</th><th class="num">story loss</th></tr>'+
+  grp('Reference: dense, full attention, no notebook')+dn.map(([k,n,t])=>`<tr><td><b>${n}</b> · ${t}</td><td class="nw">${k==='denser'?'dense (bridge) +0.3B':'scratch 1.5B'}</td><td>none</td>${cells(SC[k])}<td class="num">${SC[k].story}</td></tr>`).join('')+
+  grp('From scratch: the 8-questions round and the bridge data')+VERS.filter(v=>!v.par&&v.dg).map(row).join('')+
+  grp('The reasoning line: warm starts from E33 on the bridge data (checkpoint 7038), in tree order')+VERS.filter(v=>v.par).map(row).join('');
+ document.querySelectorAll('#vtable tr.vr').forEach(r=>{const go=()=>selectVer(r.dataset.v,true);r.onclick=go;r.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();go();}};});}
 
 /* ================= 2 · pipeline ================= */
 const PN={
@@ -782,12 +1077,20 @@ const PN={
  notes:{x:50,y:150,w:350,h:160,t:'notes',sub:'',col:'--violet'},
  emb:{x:590,y:505,w:320,h:48,t:'embedding',sub:{30:'token table 256 → width 576',100:'token table 256 → width 896'},col:'--blue'},
  prelude:{x:590,y:430,w:320,h:48,t:{30:'prelude · 2 local layers',100:'prelude · 3 local layers'},sub:'16 tokens back · runs once',col:'--blue'},
- read:{x:590,y:330,w:320,h:54,t:'GLOBAL READ',sub:'raw: last 256 tokens ‖ notes: closed pages',col:'--blue'},
+ read:{x:590,y:326,w:320,h:62,t:'GLOBAL READ',sub:'raw: last 256 tokens ‖ notes: closed pages',col:'--blue'},
+ cnt:{x:830,y:326,w:80,h:62,t:'count',sub:'heads × 2',col:'--pink'},
  think:{x:590,y:262,w:320,h:46,t:'local layer (think)',sub:'16 tokens back',col:'--teal'},
  coda:{x:590,y:150,w:320,h:48,t:{30:'coda · 4 local layers',100:'coda · 7 local layers'},sub:'16 tokens back · once, after round 4',col:'--blue'},
  head:{x:590,y:70,w:320,h:44,t:'output head → next token',sub:'',col:'--green'},
- exits:{x:940,y:150,w:100,h:100,t:'exits',sub:'rounds 1–3',col:'--green'}};
-const PORDER=['tokens','pages','penc','latents','notes','emb','prelude','read','think','coda','head','exits'];
+ exits:{x:940,y:150,w:100,h:100,t:'exits',sub:'rounds 1–3',col:'--green'},
+ lens:{x:940,y:150,w:106,h:100,t:'naming lens',sub:'',col:'--green'},
+ L_exit:{x:20,y:692,w:196,h:94,t:'exit losses',n:1,col:'--green'},
+ L_read:{x:226,y:692,w:196,h:94,t:'read target',n:2,col:'--blue'},
+ L_name:{x:432,y:692,w:196,h:94,t:'naming loss',n:3,col:'--green'},
+ L_rb:{x:638,y:692,w:196,h:94,t:'note read-back',n:4,col:'--violet'},
+ L_cnt:{x:844,y:692,w:196,h:94,t:'count loss',n:5,col:'--pink'}};
+const PORD=['tokens','pages','penc','latents','notes','emb','prelude','read','cnt','think','coda','head','exits','lens','L_exit','L_read','L_name','L_rb','L_cnt'];
+const BAND=['L_exit','L_read','L_name','L_rb','L_cnt'];
 /* lens values: pos class · bottleneck [0 none,1 mild,2 limit,3 main squeeze, text] · weights {30,100} · training signal [0..3, text] */
 const LZ={
  tokens:{pos:'na',bott:[0,'1 id per token'],w:{30:'no weights',100:'no weights'},g:[0,'—']},
@@ -798,10 +1101,17 @@ const LZ={
  emb:{pos:'none',bott:[0,'576 per token'],w:{30:'1.68M · table 1.05M + up-projection',100:'2.31M'},g:[3,'main path + writer (shared table)']},
  prelude:{pos:'exact',bott:[2,'16 tokens back'],w:{30:'5.46M · 2 × 2.73M',100:'22.8M · 3 × 7.6M'},g:[3,'final + 3 exits']},
  read:{pos:'mixed',bott:[3,'the only path past 16 tokens · 1 key/value head of 64'],w:{30:'2.73M · tied, used 4×',100:'7.6M · tied, used 4×'},g:[3,'summed over 4 rounds + exits']},
+ cnt:{pos:'none',bott:[1,'one sum per head, coded 0–10'],w:{30:'88k · 2 heads: query, gate, output from 0',100:'0.14M'},g:[3,'answer loss; + count loss when told the number']},
  think:{pos:'exact',bott:[2,'16 tokens back'],w:{30:'2.73M · tied, used 4×',100:'7.6M · tied, used 4×'},g:[3,'summed over 4 rounds + exits']},
  coda:{pos:'exact',bott:[2,'16 tokens back'],w:{30:'10.9M · 4 × 2.73M',100:'53M · 7 × 7.6M'},g:[3,'final + 3 exits = 4 passes']},
  head:{pos:'na',bott:[0,'4,096 scores'],w:{30:'2.36M · not tied to the table',100:'3.67M'},g:[3,'every loss']},
- exits:{pos:'na',bott:[0,'training only'],w:{30:'no own weights: reuse coda + head',100:'no own weights'},g:[2,'3 × weight 0.3']}};
+ exits:{pos:'na',bott:[0,'training only'],w:{30:'no own weights: reuse coda + head',100:'no own weights'},g:[2,'3 × weight 0.3']},
+ lens:{pos:'na',bott:[0,'4,096 scores per round'],w:{30:'none of its own: the output head, frozen here (+ a 576-number gate with feedback)',100:'the head, frozen here (+ a 896-number gate)'},g:[2,'naming loss → the round states']},
+ L_exit:{pos:'na',bott:[0,'training only'],w:{30:'no weights',100:'no weights'},g:[2,'0.3 × 3 → coda, core, notes, writer']},
+ L_read:{pos:'na',bott:[0,'training only'],w:{30:'no weights',100:'no weights'},g:[2,'0.5 × → queries, keys, notes, writer']},
+ L_name:{pos:'na',bott:[0,'training only'],w:{30:'no weights',100:'no weights'},g:[2,'0.3 × → round states, not the head']},
+ L_rb:{pos:'na',bott:[0,'training only'],w:{30:'0.79M head, dropped after training',100:'0.79M head'},g:[1,'0.1 × → note values → writer']},
+ L_cnt:{pos:'na',bott:[0,'training only'],w:{30:'no weights',100:'no weights'},g:[2,'0.1 or 1 × → count heads, keys']}};
 const POSC={exact:['--green','exact distance (rotated keys)'],page:['--amber','order inside one page only'],none:['--red','no position at all'],na:['--muted','not about position'],mixed:['--green','raw part exact · notes none']};
 const LEV=['--green','--teal','--amber','--red'];
 const PD={
@@ -817,8 +1127,8 @@ const PD={
  latents:{what:'32 latents per page, 512 numbers each, 8 heads. Each starts as a learned identity with a soft preference for its own 8-token slice of the page (a bump it can learn to move). In each of 2 rounds it reads the page (a softmax over the page tokens), then updates through a feed-forward layer.',
   shape:'[pages, 32, 512]',keep:'what each latent chose to read: 32 summaries of a 256-token page',code:'LatentMemoryWriter._latent_read · prior',
   ex:'The 2–3 latents whose slices cover the sentence read it; one of them probably ends up holding "Anna → Selby".'},
- notes:{what:'Each latent becomes one note: a key of 64 numbers (its state plus what it read) and a value of 64 numbers (what it read; its state enters through weights that start at zero). The code also records the note\'s expected position (where its reading weight sits on average), but the read does not use it in E33.',
-  shape:'4k → 672 notes × (64 key + 64 value) · 16k → 2,720 notes',keep:'about 27× fewer numbers than the main path holds for the same text',code:'lm_slot_pos = "reader", lm_addr = "none"',
+ notes:{what:'Each latent becomes one note: a key of 64 numbers (its state plus what it read) and a value of 64 numbers (what it read; its state enters through weights that start at zero). The code also records the note\'s expected position (where its reading weight sits on average); the order terms of E33d and later and the read-back use it.',
+  shape:'4k → 672 notes × (64 key + 64 value) · 16k → 2,720 notes',keep:'about 27× fewer numbers than the main path holds for the same text',code:'lm_slot_pos = "reader", lm_addr = "none" · lm_key_grad',
   ex:'That latent becomes a note with no page number. Anna\'s 10 earlier places are notes too, and look the same apart from the place.'},
  emb:{what:'The same token table (256 per token, shared with the writer) is projected up to the model width and normalised. Plain input: no word-pair tables and no value embeddings. This vector is also added back in every layer through a learned weight that starts at zero.',
   shape:'[B, S, 576] (100M: 896)',keep:'the word only',code:'nn/perceiver_ar_lm.py · TinyHashedEmbedding',
@@ -829,6 +1139,9 @@ const PD={
  read:{what:'Each token forms 9 queries and runs <b>one softmax over two pools</b>: the raw keys of the last 256 tokens, rotated so distance counts, and the notes of every page that closed at or before the token, which meet an un-rotated copy of the query so distance does not count. Raw keys and notes compete for the same attention.',
   shape:'queries [B, S, 9, 64] · keys: 256 raw + up to 672 notes at 4k',keep:'per token and round: 9 blends of 64 numbers',code:'attend_message (q_slot) · dense_message_mask, closed rule',
   ex:'Round 1: the query matches Anna\'s 11 place notes about equally. The read returns a blend of Anna\'s places, with no way to favour the newest.'},
+ cnt:{what:'Two count heads beside the global read, in the same layer. Each forms its own query, scores every closed page\'s notes (each document token once: a page owns its first 192 tokens) and the recent raw tokens no closed page owns yet, and <b>adds up</b> σ(a·q·k + b), where the read takes an average. The sum is coded as a soft one-hot over 0–10 plus log(1 + sum) and added to the read\'s output through a projection that starts at zero, so a warm start is unchanged at step 0.',
+  shape:'query [B, S, 2, 64] · sum [B, S, 2] · code 2 × 12 → 576',keep:'one number per head: how many notes and recent tokens match',code:'nn/perceiver_ar_lm.py · NoteCounter, note_count · lm_count_heads = 2',
+  ex:'For "How many times did Anna visit the market?" each head should sum to the number of visits. E33k\'s heads land within 0.66 of the truth on average (rounded exact 49 %); E33k2 makes the answer follow them, rounded right 38 %.'},
  think:{what:'One local layer (16 tokens back) after the read mixes what was read with the neighbours. Read plus think is the core. The same weights run 4 times, and a learned loop marker (zero at the start) is added before each round. The notes are the same every round; the queries and the raw keys change, because the token states change.',
   shape:'[B, S, 576] · tied × 4',keep:'the state after round r',code:'PerceiverARLM._run_layers (loop_emb, core)',
   ex:'Rounds 2–4 re-ask with the updated state, but the notes are the same and carry no order, so the blend stays a blend.'},
@@ -837,30 +1150,80 @@ const PD={
   ex:'Turns the final state into a prediction for the next token.'},
  head:{what:'Normalise, project to the 4,096-word vocabulary and soft-cap the scores. The loss is next-token cross-entropy on every token: story, questions and answers alike.',
   shape:'[B, S, 4096]',keep:'—',code:'chunked_softcap_ce',
-  ex:'Measured at 16k: the pick spreads evenly over Anna\'s 11 places (about 9 % each); the right one gets 7 %.'},
+  ex:'Measured at 16k on E33: the pick spreads evenly over Anna\'s 11 places (about 9 % each); the right one gets 7 %.'},
  exits:{what:'Training only. The states after rounds 1, 2 and 3 also run through the coda layers and the head, and each adds 0.3 × its next-token loss on every token. The exits are off at evaluation, so the reported loss is the plain next-token loss. There are no step targets: every round is asked for the same next token.',
   shape:'3 extra passes through the coda layers',keep:'—',code:'_loop_exit_loss (message_loop_exit_targets = "answer")',
-  ex:'During training, rounds 1–3 are also asked to predict " S" here, and every other next token in the row.'}};
-const VDIFF={e31c:{read:'In E31c the read runs once per token: no loop marker, no rounds.',think:'In E31c this layer runs once.',exits:'E31c has no exits: there are no rounds to decode.'},
- e33t:{},
- e33d:{read:'<b>E33d:</b> each head subtracts slope × log(1 + pages back) from every note\'s score; one learned slope per head, starting at 0. In the trained runs the slopes stayed near 0.'},
- e33e:{read:'<b>E33e (proposed):</b> each head subtracts slope × log(1 + newer matching notes): a soft count, summed over the notes that are newer and that match the query. Lone facts pay nothing; among Anna\'s moves, only the newest pays nothing.'}};
-const P={i:7,scale:'30',lens:'flow',ver:'e33t'};
+  ex:'During training, rounds 1–3 are also asked to predict " S" here, and every other next token in the row.'},
+ lens:{what:'After rounds 1, 2 and 3 the round\'s state goes through the final norm and the shared output head, whose weights are frozen for this path (neither the head nor the token table learns from it). In training, at each question\'s answer position, the round must name its hop\'s word, all its pieces (a name\'s first piece is a capital letter a dozen people share). With feedback the distribution is re-embedded with the token table and added to the next round through a per-channel gate that starts at 0.',
+  shape:'[B, S, 576] → [B, S, 4,096] → (feedback) [B, S, 576]',keep:'the word the round found',code:'PerceiverARLM._loop_lens · message_loop_name_lens, message_loop_feedback',
+  ex:'"Where does the teacher of Lumo live?": round 1 names "Pim", round 2 names "Selby". From E33j on, for "Where does Anna live now?" round 1 names the place of her last move.'},
+ L_exit:{what:'0.3 × the next-token loss of rounds 1, 2 and 3, each decoded through the coda and the head, on every token. Off (weight 0) in every version from E33x on: it asked round 1 of a two-step question for an answer it cannot have read yet, and made the rounds interchangeable.',
+  shape:'3 × [B, S, 4096]',keep:'—',code:'message_loop_exit_aux = 0.3 (E33) · 0 (E33x on)',ex:'—'},
+ L_read:{what:'In training, round r of a question\'s read should land on fact r of its chain. The loss is −log of the share of the read\'s own softmax (raw window and notes, mean over the 9 heads) that falls on the fact: its raw tokens if they are among the last 256, otherwise the notes of every page covering it, or, in the note versions (E33o, E33b, E33ok, E33gk), only the notes whose latent read the hop\'s word. Single-step questions put their target on round 1. Weight 0.5. The gradient reaches the queries, the keys and, through the note keys, the writer, unless the key stop cuts that last path.',
+  shape:'one share in [0, 1] per (question, round)',keep:'—',code:'read_target_loss · message_loop_read_aux = 0.5 · message_loop_read_target = page | note',
+  ex:'At "Answer:", round 1 should read "Pim was the teacher of Lumo", round 2 "Pim lived in Selby". E33r\'s reads followed: 97 / 90 / 84 % of rounds 1 / 2 / 3 on their facts.'},
+ L_name:{what:'0.3 × the naming loss of the lens: −mean log-probability of the hop word\'s pieces at each question\'s answer position, rounds 1–3. Words longer than 4 pieces are skipped. The output head is frozen for this path, so the loss trains what produced the round\'s state: the core, the read, the notes and the writer.',
+  shape:'per (question, round): up to 4 pieces',keep:'—',code:'_loop_lens · message_loop_name_lens = 0.3',
+  ex:'Round 1 at "Answer:" must put its probability on " Pim".'},
+ L_rb:{what:'A training-only linear head reads each note\'s value and must name the tokens at the note\'s average read position −1, 0 and +1. No labels: the targets are the page\'s own words. Weight 0.1, head starting at 0 (E33b run 1 started it at random with weight 0.2 and scrambled the reader). The head is dropped after training.',
+  shape:'each note value 64 → 3 × 4,096',keep:'—',code:'_readback_loss · lm_readback_aux = 0.1',
+  ex:'The note on "Every kavi is shiny." should name "shiny". It did not: the probe for the property stayed at 12 %.'},
+ L_cnt:{what:'At each count question\'s answer position, after the last round, every count head\'s sum must equal the number of visits: Huber(sum − visits), mean over heads and questions. Weight 0.1 in E33k, 1.0 in E33k2, E33m and the written route.',
+  shape:'2 sums per count question',keep:'—',code:'_count_loss · lm_count_aux',
+  ex:'Anna visited the market 3 times: both heads should sum to 3 at "Answer:".'}};
+/* What changes for the selected version (from its dg entry) */
+const DG=()=>VBY[P.ver].dg;
+function visible(k,g){if(k==='cnt')return !!g.cnt;if(k==='lens')return !!(g.loop&&(g.nl||g.fb));if(k==='exits')return !!(g.loop&&!(g.nl||g.fb));return true;}
+const order=()=>{const g=DG();return PORD.filter(k=>visible(k,g));};
+function changedSet(g){const s=new Set();if(!g.loop){s.add('read');s.add('think');}
+ if(g.ord||g.split)s.add('read');if(g.cnt)s.add('cnt');if(g.ks||g.wo)s.add('notes');if(g.ctl||g.fb)s.add('think');
+ if(g.loop&&g.exits==='off'){s.add('exits');s.add('L_exit');}if(g.nl||g.fb)s.add('lens');
+ if(g.rt)s.add('L_read');if(g.nl)s.add('L_name');if(g.rb)s.add('L_rb');if(g.cnt&&g.cnt.loss)s.add('L_cnt');return s;}
+function ordShort(o){if(o.k==='log')return o.learn?'notes − s·log(1 + pages back), s from 0':'4 heads − s·log(1 + pages back)';
+ if(o.learn)return 'notes − s·log(1 + newer matches), s from 0';if(o.s==='4h')return '4 heads − s·log(1 + newer matches)';
+ return o.sw?'− 4·log(1 + newer matches) × switch':'every head − 4·log(1 + newer matches)';}
+function ordLong(o){if(o.k==='log'&&o.learn)return '<b>Page distance (E33d):</b> each head subtracts slope × log(1 + pages back) from every note\'s score; one learned slope per head, starting at 0. In the trained runs the slopes stayed near 0.';
+ if(o.k==='log')return '<b>Page-distance heads (E33jd):</b> four heads subtract s · log(1 + pages back) at fixed s = 1, 2, 4 and 8; five heads stay order-free.';
+ if(o.learn)return '<b>Order among matches, learned (E33e):</b> each head subtracts s · log(1 + newer matching notes): a soft count, summed over the notes that are newer and that match the query about as well as its best note. Lone facts pay nothing; among Anna\'s moves, only the newest pays nothing. Strengths start at 0.';
+ if(o.s==='4h')return '<b>Order heads (E33g, E33gk):</b> the same rank among matching notes at fixed strengths: five heads at 0, so lookup, keyed and quote stay order-free, and four at 1, 2, 4 and 8. A note "matches" when its score is within 0.5 of the best note\'s (gate steepness 4).';
+ return o.sw?'<b>Order on demand (E33i, E33j, E33m, the written route):</b> every head subtracts 4 · log(1 + newer matching notes), with a wider match (within 2 of the best note, steepness 2), scaled at each position by a learned switch σ(w·x + b) that starts nearly off (w = 0, b = −2).'
+  :'<b>Order always on (E33jf):</b> every head subtracts 4 · log(1 + newer matching notes), match within 2, no switch.';}
+const SRCN={G:'generator label',W:'read off the written answer',N:'no label: the page\'s own words'};
+function bandState(k,g){const off=(a,b)=>({on:0,l1:a,l2:b,src:null});
+ if(k==='L_exit')return !g.loop?off('no rounds in E31c',''):g.exits==='on'?{on:1,l1:'rounds 1–3 → coda + head',l2:'every next token · 0.3 each',src:'X'}:off('rounds 1–3 get no loss','weight 0 from E33x on');
+ if(k==='L_read')return g.rt?{on:1,l1:'round r reads fact r',l2:(g.rt.t==='note'?'on the word\'s own notes':'on its page\'s notes or raw')+' · 0.5',src:g.rt.src}:off('where each round reads','not supervised');
+ if(k==='L_name')return g.nl?{on:1,l1:'rounds 1–3 name hop r\'s word',l2:'through the frozen head · 0.3',src:g.nl.src}:off('rounds name their word','not asked');
+ if(k==='L_rb')return g.rb?{on:1,l1:'a note names its words',l2:'positions −1, 0, +1 · 0.1',src:'N'}:off('a note names its words','not asked');
+ if(k==='L_cnt')return g.cnt&&g.cnt.loss?{on:1,l1:'heads\' sum = visits',l2:'Huber · weight '+g.cnt.loss,src:g.cnt.src}:g.cnt?off('count heads present','answer loss only'):off('heads\' sum = visits','no count heads');}
+function vNote(k,g){const n=[];
+ if(k==='read'){if(!g.loop)n.push('In E31c the read runs once per token: no loop marker, no rounds.');if(g.ord)n.push(ordLong(g.ord));
+  if(g.split)n.push('<b>Split read'+(g.wo?' (R3)':' (E33f)')+':</b> '+(g.wo?'every cut':'every "Question"')+' starts a new side; from there the earlier text is readable only as notes (no raw tokens, no local window across the cut), and the page under the cut closes at once.');
+  if(g.cnt)n.push('The count heads sit beside this read, in the same layer (the pink box).');if(g.rt)n.push('In training the read target (band, 2) scores where each round\'s read lands.');}
+ if(k==='cnt')n.push(g.cnt.loss?`Trained with the count loss at weight ${g.cnt.loss} (${g.cnt.src==='W'?'the number of visits counted off the written answer':'the true number of visits from the generator'}).`:'Trained by the answer loss alone (no count loss).');
+ if(k==='think'){if(!g.loop)n.push('In E31c this layer runs once.');if(g.fb)n.push('<b>Feedback:</b> from round 2 on, the round\'s input also holds the word the previous round named, re-embedded, × a gate that starts at 0. In E33q the gate stayed near 0 and removing it at exam time changed nothing.');
+  if(g.ctl)n.push('<b>Question control (E33c):</b> before each round a control unit reads the next relation word from the last 48 words and adds it to the round\'s input through a gate from 0; it is taken out again after the round. The gate never opened (0.0013).');}
+ if(k==='notes'){if(g.ks)n.push('<b>Key stop (E33ok, E33gk):</b> the note\'s key is built from the latent\'s state and what it read with the gradient stopped, so a loss on where reads land trains only the key projections; what a latent reads is shaped by its value alone.');
+  if(g.rb)n.push('<b>Read-back (band, 4):</b> each note\'s value must name the words it read.');if(g.wo)n.push('<b>R3:</b> only the writer trains, on task-free text; the main path is frozen.');}
+ if(k==='exits'){if(!g.loop)n.push('E31c has no exits: there are no rounds to decode.');else if(g.exits==='off')n.push('<b>Off in this version</b> (weight 0), as in every version from E33x on.');}
+ if(k==='lens')n.push(g.nl?`This version names hop words${g.cnt&&g.cnt.loss>=1&&g.nl.src==='G'?' and, at count questions, the number word':''};the targets are ${g.nl.src==='W'?'read off the written answer by a rule':'generator labels'}.`+(g.fb?' The name is fed to the next round.':' No feedback.'):'Feedback only.');
+ if(BAND.includes(k)){const b=bandState(k,g);n.push(b.on?`<b>On in this version.</b> ${b.src==='G'?'Targets: generator labels.':b.src==='W'?'Targets: read off the written answer by a rule; the generator is not used.':b.src==='N'?'No labels needed.':'No extra labels: the next token.'}`:`<b>Off in this version.</b>`);}
+ return n.join(' ');}
+const P={k:'read',scale:'30',lens:'flow',ver:'e33t'};
 const pk=(v,s)=>typeof v==='object'?v[s]:v;
 function nodeCol(k){const z=LZ[k];if(P.lens==='pos')return C(POSC[z.pos][0]);if(P.lens==='bott')return C(LEV[z.bott[0]]);
- if(P.lens==='learn')return C(k==='read'||k==='think'?'--teal':(/no /.test(z.w[30])?'--muted':'--blue'));if(P.lens==='grad')return C(LEV[z.g[0]]);return C(PN[k].col);}
+ if(P.lens==='learn')return C(k==='read'||k==='think'?'--teal':(/^no |^none/.test(z.w[30])?'--muted':'--blue'));if(P.lens==='grad')return C(LEV[z.g[0]]);return C(PN[k].col);}
 function badge(k){const z=LZ[k];if(P.lens==='bott')return z.bott[1];if(P.lens==='learn')return z.w[P.scale];if(P.lens==='grad')return z.g[1];if(P.lens==='pos')return POSC[z.pos][1];return '';}
-function drawPipe(){const s=document.getElementById('pipe');s.innerHTML='';
+function numBadge(s,x,y,n,on){el('circle',{cx:x,cy:y,r:9,fill:on?C('--fg'):C('--card'),stroke:on?C('--fg'):C('--muted')},s);el('text',{x,y:y+4,'text-anchor':'middle','font-size':11,'font-weight':800,style:`fill:${on?C('--bg'):C('--muted')}`},s,n);}
+function drawPipe(){const s=document.getElementById('pipe');s.innerHTML='';const g=DG();const ord=order();if(!ord.includes(P.k))P.k='read';
  mk(s,'qG',C('--muted'));mk(s,'qO',C('--orange'));mk(s,'qT',C('--teal'));mk(s,'qE',C('--green'));mk(s,'qR',C('--red'));
- const sel=PORDER[P.i],loop=P.ver!=='e31c';
+ const sel=P.k,loop=!!g.loop,lensOn=visible('lens',g),chg=changedSet(g);
  el('rect',{x:10,y:10,width:440,height:576,rx:12,fill:C('--violet'),'fill-opacity':.05,stroke:C('--line')},s);
  el('text',{x:24,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--violet')}`},s,'NOTEBOOK WRITER · runs once per document, first');
  el('text',{x:24,y:52,'font-size':11,class:'s'},s,'reads the token table directly, not the model\'s states');
- el('text',{x:24,y:68,'font-size':11,class:'s'},s,'finishes before layer 1 of the main path runs · 3.99M parameters');
+ el('text',{x:24,y:68,'font-size':11,class:'s'},s,g.wo?'R3: the only part that trains · 3.99M parameters':'finishes before layer 1 of the main path runs · 3.99M parameters');
  el('rect',{x:470,y:10,width:580,height:576,rx:12,fill:C('--blue'),'fill-opacity':.04,stroke:C('--line')},s);
- el('text',{x:484,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--blue')}`},s,'MAIN PATH · every token');
+ el('text',{x:484,y:34,'font-size':13,'font-weight':750,style:`fill:${C('--blue')}`},s,g.wo?'MAIN PATH · frozen in R3':'MAIN PATH · every token');
  el('text',{x:484,y:52,'font-size':11,class:'s'},s,P.scale==='30'?'8 layers × 2.73M · width 576':'12 layers × 7.6M · width 896');
- // core frame
  el('rect',{x:565,y:236,width:370,height:162,rx:14,fill:C('--teal'),'fill-opacity':loop?.06:.02,stroke:C('--teal'),'stroke-width':2,'stroke-dasharray':loop?'7 5':'2 4'},s);
  el('text',{x:575,y:252,'font-size':12,'font-weight':750,style:`fill:${C('--teal')}`},s,loop?'CORE · same weights × 4 rounds':'CORE · runs once (E31c)');
  if(loop){for(let r=1;r<=4;r++){const cy=274+r*24;el('circle',{cx:960,cy,r:9,fill:C('--card'),stroke:C('--teal')},s);el('text',{x:960,y:cy+4,'text-anchor':'middle','font-size':10.5,'font-weight':800,style:`fill:${C('--teal')}`},s,r);}
@@ -869,52 +1232,88 @@ function drawPipe(){const s=document.getElementById('pipe');s.innerHTML='';
  const grad=P.lens==='grad';const ac=grad?C('--red'):C('--muted'),am=grad?'qR':'qG';
  if(!grad){A('M450,604 C330,590 225,580 225,556',ac,am);A('M610,604 C690,590 750,580 750,556',ac,am);
   A('M225,505 L225,475',ac,am);A('M225,425 L225,395',ac,am);A('M225,345 L225,312',ac,am);
-  A('M750,505 L750,480',ac,am);A('M750,430 L750,386',ac,am);A('M750,330 L750,310',ac,am);A('M750,236 L750,200',ac,am);A('M750,150 L750,116',ac,am);
+  A('M750,505 L750,480',ac,am);A('M750,430 L750,390',ac,am);A('M750,326 L750,310',ac,am);A('M750,236 L750,200',ac,am);A('M750,150 L750,116',ac,am);
   A('M402,250 C500,250 520,357 588,357',C('--orange'),'qO',2.6);
   el('text',{x:412,y:402,'font-size':11.5,'font-weight':700,style:`fill:${C('--orange')}`},s,'notes of closed pages');
-  el('text',{x:412,y:417,'font-size':11.5,'font-weight':700,style:`fill:${C('--orange')}`},s,P.ver==='e33d'?'− slope × log(1 + pages back)':P.ver==='e33e'?'− slope × log(1 + newer matches)':'no position');}
- else{ // backward: reverse arrows
-  A('M750,116 L750,148',ac,am,2.4);A('M750,200 L750,234',ac,am,2.4);A('M750,310 L750,328',ac,am,2.4);A('M750,386 L750,428',ac,am,2.4);A('M750,480 L750,503',ac,am,2.4);
+  el('text',{x:412,y:417,'font-size':11.5,'font-weight':700,style:`fill:${C('--orange')}`},s,!g.ord?'no position':g.ord.k==='log'?'+ a page distance':'+ order among matches');}
+ else{A('M750,116 L750,148',ac,am,2.4);A('M750,200 L750,234',ac,am,2.4);A('M750,310 L750,324',ac,am,2.4);A('M750,390 L750,428',ac,am,2.4);A('M750,480 L750,503',ac,am,2.4);
   A('M588,357 C520,357 500,250 404,250',ac,am,2);A('M225,312 L225,343',ac,am,1.5);A('M225,395 L225,423',ac,am,1.4);A('M225,475 L225,503',ac,am,1.3);
   A('M225,556 C225,590 330,600 448,604',ac,am,1.2);
-  el('text',{x:412,y:402,'font-size':11.5,'font-weight':700,style:`fill:${C('--red')}`},s,'the writer learns only');el('text',{x:412,y:417,'font-size':11.5,'font-weight':700,style:`fill:${C('--red')}`},s,'through what the read uses');
-  if(loop){A('M990,252 C990,272 962,262 937,262',C('--red'),'qR',1.6,'4 3');}}
- if(loop&&!grad){A('M935,262 C962,262 990,272 990,252',C('--green'),'qE',1.6,'4 3');A('M985,150 C985,120 960,96 912,94',C('--green'),'qE',1.6,'4 3');}
- Object.entries(PN).forEach(([k,n])=>{if(k==='exits'&&!loop)return;const g=el('g',{},s);const on=k===sel;const col=nodeCol(k);
-  const changed=(P.ver==='e33d'||P.ver==='e33e')&&k==='read'||P.ver==='e31c'&&(k==='think'||k==='read');
-  if(k==='notes'){el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:10,fill:col,'fill-opacity':on?.18:.08,stroke:on?C('--fg'):col,'stroke-width':on?2.5:1.2},g);
-   el('text',{x:n.x+12,y:n.y+20,'font-size':13,'font-weight':750},g,'notes · 32 per page · 1 key + 1 value of 64');
-   el('text',{x:n.x+12,y:n.y+36,'font-size':10.5,class:'s'},g,'written once; the same in all 4 rounds; never updated');
-   for(let p=0;p<6;p++){const px=n.x+14+p*55;el('rect',{x:px,y:n.y+48,width:46,height:96,rx:6,fill:C('--card2'),stroke:C('--line')},g);
-    el('text',{x:px+23,y:n.y+60,'text-anchor':'middle','font-size':9.5,class:'m'},g,p<5?'page ?':'…');
-    if(p<5)for(let q=0;q<4;q++)el('rect',{x:px+6,y:n.y+66+q*19,width:34,height:14,rx:3,fill:col,'fill-opacity':.45},g);}
-  }else if(P.lens==='pos'&&LZ[k].pos==='mixed'){el('rect',{x:n.x,y:n.y,width:n.w/2,height:n.h,rx:8,fill:C('--green'),'fill-opacity':.25,stroke:C('--green')},g);
-   el('rect',{x:n.x+n.w/2,y:n.y,width:n.w/2,height:n.h,rx:8,fill:C('--red'),'fill-opacity':.25,stroke:C('--red')},g);
-   if(on)el('rect',{x:n.x-2,y:n.y-2,width:n.w+4,height:n.h+4,rx:9,fill:'none',stroke:C('--fg'),'stroke-width':2.5},g);
-   el('text',{x:n.x+n.w/2,y:n.y+n.h/2-3,'text-anchor':'middle','font-size':13,'font-weight':750},g,pk(n.t,P.scale));
-   el('text',{x:n.x+n.w/2,y:n.y+n.h/2+13,'text-anchor':'middle','font-size':10.5,class:'s'},g,'raw: exact distance ‖ notes: no position');
-  }else{el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:8,fill:col,'fill-opacity':on?.32:.13,stroke:on?C('--fg'):col,'stroke-width':on?2.5:1.2},g);
-   let sub=pk(n.sub,P.scale);if(k==='think'&&!loop)sub='16 tokens back · once';if(k==='read'&&P.ver==='e33d')sub='raw ‖ notes − slope·log(1 + pages back)';if(k==='read'&&P.ver==='e33e')sub='raw ‖ notes − slope·log(1 + newer matches)';
-   el('text',{x:n.x+n.w/2,y:n.y+(sub?n.h/2-3:n.h/2+5),'text-anchor':'middle','font-size':k==='exits'?12.5:13,'font-weight':750},g,pk(n.t,P.scale));
-   if(sub)el('text',{x:n.x+n.w/2,y:n.y+n.h/2+13,'text-anchor':'middle','font-size':10.5,class:'s'},g,sub);
-   if(k==='exits'){el('text',{x:n.x+n.w/2,y:n.y+n.h/2+29,'text-anchor':'middle','font-size':10.5,class:'s'},g,'training only');el('text',{x:n.x+n.w/2,y:n.y+n.h/2+43,'text-anchor':'middle','font-size':10.5,class:'s'},g,'weight 0.3 each');}}
-  if(changed){el('rect',{x:n.x-4,y:n.y-4,width:n.w+8,height:n.h+8,rx:10,fill:'none',stroke:C('--orange'),'stroke-width':2,'stroke-dasharray':'5 3'},g);
-}
-  const b=badge(k);if(b&&P.lens!=='flow'&&P.lens!=='pos'){const bw=Math.min(k==='exits'?220:n.w-10,Math.max(80,b.length*6+14));const bx=n.x+n.w-bw-5,by=k==='notes'?n.y+n.h-22:(k==='exits'?n.y-22:n.y+n.h-2);
-   el('rect',{x:bx,y:by,width:bw,height:17,rx:8,fill:C('--card'),stroke:col},g);el('text',{x:bx+bw/2,y:by+12,'text-anchor':'middle','font-size':10,'font-weight':700},g,b);}
-  g.style.cursor='pointer';g.addEventListener('click',()=>{P.i=PORDER.indexOf(k);drawPipe();});});
- const lg=document.getElementById('plegend');const chg=P.ver!=='e33t'?'<span><i style="background:transparent;border:2px dashed var(--orange)"></i>changed in this version</span>':'';
- lg.innerHTML=chg+P.lens==='pos'?['exact','page','none','na'].map(k=>`<span><i style="background:var(${POSC[k][0]})"></i>${POSC[k][1]}</span>`).join(''):
+  el('text',{x:412,y:402,'font-size':11.5,'font-weight':700,style:`fill:${C('--red')}`},s,'the writer learns only');el('text',{x:412,y:417,'font-size':11.5,'font-weight':700,style:`fill:${C('--red')}`},s,g.ks?'through values (keys stopped)':'through what the read uses');
+  if(loop&&g.exits==='on'&&!lensOn)A('M990,252 C990,272 962,262 937,262',C('--red'),'qR',1.6,'4 3');
+  if(lensOn&&g.nl)A('M980,252 C980,270 962,262 937,262',C('--red'),'qR',1.6,'4 3');}
+ if(loop&&!grad&&!lensOn&&g.exits==='on'){A('M935,262 C962,262 990,272 990,252',C('--green'),'qE',1.6,'4 3');A('M985,150 C985,120 960,96 912,94',C('--green'),'qE',1.6,'4 3');}
+ if(lensOn&&!grad){A('M935,262 C962,262 980,270 980,252',C('--green'),'qE',1.6,'4 3');el('path',{d:'M990,150 C990,120 962,96 912,94',fill:'none',stroke:C('--muted'),'stroke-width':1.4,'stroke-dasharray':'2 3'},s);
+  if(g.fb)A('M1030,252 C1040,330 1000,388 937,388',C('--teal'),'qT',1.6,'4 3');}
+ if(g.ks)el('text',{x:236,y:331,'font-size':11,'font-weight':700,style:`fill:${C('--red')}`},s,'key stop on the note keys');
+ // band of training-only losses
+ el('rect',{x:10,y:660,width:1040,height:134,rx:12,fill:C('--fg2'),'fill-opacity':.04,stroke:C('--line')},s);
+ el('text',{x:24,y:681,'font-size':12.5,'font-weight':750,class:'s'},s,'TRAINING-ONLY LOSSES · added in training, absent at exam time · the numbers mark where each acts');
+ const sx={L_exit:null,L_read:'read',L_name:'lens',L_rb:'notes',L_cnt:'cnt'};
+ Object.entries(PN).forEach(([k,n])=>{if(!visible(k,g))return;const gg=el('g',{},s);const on=k===sel;let col=nodeCol(k);
+  if(BAND.includes(k)){const b=bandState(k,g);const c=b.on?col:C('--muted');
+   el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:9,fill:b.on?c:C('--card2'),'fill-opacity':b.on?(on?.26:.1):(on?.9:.5),stroke:on?C('--fg'):c,'stroke-width':on?2.5:1.2,'stroke-dasharray':b.on?'':'4 3'},gg);
+   numBadge(gg,n.x+16,n.y+17,n.n,b.on);
+   el('text',{x:n.x+32,y:n.y+22,'font-size':12.5,'font-weight':750,class:b.on?'':'m'},gg,n.t);
+   el('text',{x:n.x+10,y:n.y+42,'font-size':10.5,class:b.on?'s':'m'},gg,b.l1);el('text',{x:n.x+10,y:n.y+57,'font-size':10.5,class:b.on?'s':'m'},gg,b.l2);
+   const ct=b.on?(b.src==='G'?['generator label','--warn-bg','--amber']:b.src==='W'?['read off the written answer','--good-bg','--green']:b.src==='N'?['no label: the page\'s words','--info-bg','--blue']:['no extra label','--info-bg','--blue']):['off in this version','--card2','--muted'];
+   const cw=Math.min(n.w-20,ct[0].length*6+16);el('rect',{x:n.x+10,y:n.y+66,width:cw,height:18,rx:6,fill:C(ct[1]),stroke:b.on?'none':C('--line')},gg);
+   el('text',{x:n.x+10+cw/2,y:n.y+79,'text-anchor':'middle','font-size':10.5,'font-weight':700,style:`fill:${C(ct[2])}`},gg,ct[0]);
+   if(chg.has(k))el('rect',{x:n.x-3,y:n.y-3,width:n.w+6,height:n.h+6,rx:11,fill:'none',stroke:C('--orange'),'stroke-width':2,'stroke-dasharray':'5 3'},gg);
+  }else if(k==='notes'){el('rect',{x:n.x,y:n.y,width:n.w,height:n.h,rx:10,fill:col,'fill-opacity':on?.18:.08,stroke:on?C('--fg'):col,'stroke-width':on?2.5:1.2},gg);
+   el('text',{x:n.x+12,y:n.y+20,'font-size':13,'font-weight':750},gg,'notes · 32 per page · 1 key + 1 value of 64');
+   el('text',{x:n.x+12,y:n.y+36,'font-size':10.5,class:'s'},gg,'written once; the same in all 4 rounds; never updated');
+   for(let p=0;p<6;p++){const px=n.x+14+p*55;el('rect',{x:px,y:n.y+48,width:46,height:96,rx:6,fill:C('--card2'),stroke:C('--line')},gg);
+    el('text',{x:px+23,y:n.y+60,'text-anchor':'middle','font-size':9.5,class:'m'},gg,p<5?'page ?':'…');
+    if(p<5)for(let q=0;q<4;q++)el('rect',{x:px+6,y:n.y+66+q*19,width:34,height:14,rx:3,fill:col,'fill-opacity':.45},gg);}
+  }else if(P.lens==='pos'&&LZ[k].pos==='mixed'){const w2=g.cnt?PN.cnt.x-8-n.x:n.w;el('rect',{x:n.x,y:n.y,width:w2/2,height:n.h,rx:8,fill:C('--green'),'fill-opacity':.25,stroke:C('--green')},gg);
+   el('rect',{x:n.x+w2/2,y:n.y,width:w2/2,height:n.h,rx:8,fill:C('--red'),'fill-opacity':.25,stroke:C('--red')},gg);
+   if(on)el('rect',{x:n.x-2,y:n.y-2,width:w2+4,height:n.h+4,rx:9,fill:'none',stroke:C('--fg'),'stroke-width':2.5},gg);
+   el('text',{x:n.x+w2/2,y:n.y+n.h/2-3,'text-anchor':'middle','font-size':13,'font-weight':750},gg,pk(n.t,P.scale));
+   el('text',{x:n.x+w2/2,y:n.y+n.h/2+13,'text-anchor':'middle','font-size':10.5,class:'s'},gg,'raw: exact distance ‖ notes: no position');
+   if(chg.has(k))el('rect',{x:n.x-4,y:n.y-4,width:w2+8,height:n.h+8,rx:10,fill:'none',stroke:C('--orange'),'stroke-width':2,'stroke-dasharray':'5 3'},gg);
+  }else{let w=n.w;if(k==='read'&&g.cnt)w=PN.cnt.x-8-n.x;
+   const offx=k==='exits'&&g.exits==='off';
+   el('rect',{x:n.x,y:n.y,width:w,height:n.h,rx:8,fill:offx?C('--card2'):col,'fill-opacity':offx?.6:(on?.32:.13),stroke:on?C('--fg'):(offx?C('--muted'):col),'stroke-width':on?2.5:1.2,'stroke-dasharray':offx||(k==='lens'&&!g.nl)?'4 3':''},gg);
+   const cx=n.x+w/2;
+   if(k==='read'){const a=g.split?'after a cut: earlier text only as notes':(g.cnt?'raw 256 ‖ closed pages\' notes':'raw: last 256 tokens ‖ notes: closed pages');const b=g.ord?ordShort(g.ord):'';
+    el('text',{x:cx,y:n.y+(b?20:26),'text-anchor':'middle','font-size':13,'font-weight':750},gg,'GLOBAL READ');
+    el('text',{x:cx,y:n.y+(b?36:44),'text-anchor':'middle','font-size':10.5,class:'s'},gg,a);if(b)el('text',{x:cx,y:n.y+51,'text-anchor':'middle','font-size':10.5,'font-weight':700,style:`fill:${C('--orange')}`},gg,b);}
+   else if(k==='cnt'){['count','heads × 2','a sum, not','an average'].forEach((t,i)=>el('text',{x:cx,y:n.y+16+i*13,'text-anchor':'middle','font-size':i?10:12,'font-weight':i?500:750,class:i?'s':''},gg,t));}
+   else if(k==='exits'){const L=offx?['exits','off (weight 0)','from E33x on','']:['exits','rounds 1–3','training only','weight 0.3 each'];L.forEach((t,i)=>el('text',{x:cx,y:n.y+28+i*16,'text-anchor':'middle','font-size':i?10.5:12.5,'font-weight':i?500:750,class:i?(offx?'m':'s'):(offx?'m':'')},gg,t));}
+   else if(k==='lens'){const L=g.nl?['naming lens','round → head','names its hop word',g.fb?'+ fed to next round':'(head frozen here)']:['feedback','round → head','fed to next round',''];L.forEach((t,i)=>el('text',{x:cx,y:n.y+26+i*16,'text-anchor':'middle','font-size':i?10.5:12.5,'font-weight':i?500:750,class:i?'s':''},gg,t));}
+   else{let sub=pk(n.sub,P.scale);if(k==='think'&&!loop)sub='16 tokens back · once';if(k==='think'&&g.ctl)sub='16 tokens back · + question control';
+    el('text',{x:cx,y:n.y+(sub?n.h/2-3:n.h/2+5),'text-anchor':'middle','font-size':13,'font-weight':750},gg,pk(n.t,P.scale));
+    if(sub)el('text',{x:cx,y:n.y+n.h/2+13,'text-anchor':'middle','font-size':10.5,class:'s'},gg,sub);}
+   if(chg.has(k))el('rect',{x:n.x-4,y:n.y-4,width:w+8,height:n.h+8,rx:10,fill:'none',stroke:C('--orange'),'stroke-width':2,'stroke-dasharray':'5 3'},gg);
+   n._w=w;}
+  if(k==='notes'&&chg.has(k))el('rect',{x:n.x-4,y:n.y-4,width:n.w+8,height:n.h+8,rx:12,fill:'none',stroke:C('--orange'),'stroke-width':2,'stroke-dasharray':'5 3'},gg);
+  const bd=BAND.includes(k)?'':badge(k);if(bd&&P.lens!=='flow'&&P.lens!=='pos'){const nw=n._w||n.w;const bw=Math.min(k==='exits'||k==='lens'?220:nw-10,Math.max(80,bd.length*6+14));const bx=n.x+nw-bw-5,by=k==='notes'?n.y+n.h-22:(k==='exits'||k==='lens'?n.y-22:(k==='cnt'?n.y-19:n.y+n.h-2));
+   el('rect',{x:bx,y:by,width:bw,height:17,rx:8,fill:C('--card'),stroke:col},gg);el('text',{x:bx+bw/2,y:by+12,'text-anchor':'middle','font-size':10,'font-weight':700},gg,bd);}
+  gg.style.cursor='pointer';gg.addEventListener('click',()=>{P.k=k;drawPipe();});});
+ // where each band loss acts
+ const st=k=>bandState(k,g).on;
+ if(st('L_exit'))numBadge(s,948,158,1,true);if(st('L_read'))numBadge(s,(g.cnt?PN.cnt.x-8:910)-4,334,2,true);if(st('L_name'))numBadge(s,1036,158,3,true);
+ if(st('L_rb'))numBadge(s,390,158,4,true);if(st('L_cnt'))numBadge(s,902,334,5,true);
+ const lg=document.getElementById('plegend');const cs=chg.size?'<span><i style="background:transparent;border:2px dashed var(--orange)"></i>differs from E33 in this version</span>':'';
+ lg.innerHTML=cs+(P.lens==='pos'?['exact','page','none','na'].map(k=>`<span><i style="background:var(${POSC[k][0]})"></i>${POSC[k][1]}</span>`).join(''):
   P.lens==='bott'?[[3,'the main squeeze'],[2,'a hard limit'],[1,'a mild limit'],[0,'not a limit']].map(([l,t])=>`<span><i style="background:var(${LEV[l]})"></i>${t}</span>`).join(''):
   P.lens==='learn'?'<span><i style="background:var(--blue)"></i>own weights</span><span><i style="background:var(--teal)"></i>tied: one set used 4×</span><span><i style="background:var(--muted)"></i>no weights</span><span>badges: parameter counts at '+P.scale+'M</span>':
   P.lens==='grad'?[[3,'gets the full training signal'],[2,'a share of it'],[1,'only through the notes'],[0,'none']].map(([l,t])=>`<span><i style="background:var(${LEV[l]})"></i>${t}</span>`).join('')+'<span>red arrows: where the gradient flows</span>':
-  '<span><i style="background:var(--violet)"></i>notebook writer</span><span><i style="background:var(--blue)"></i>main path</span><span><i style="background:var(--teal)"></i>tied core</span><span><i style="background:var(--green)"></i>output</span><span><i style="background:var(--orange)"></i>notes enter the read</span>';
- const d=PD[sel],z=LZ[sel];const vd=(VDIFF[P.ver]||{})[sel];
- document.getElementById('pstep').textContent=`step ${P.i+1} of ${PORDER.length}`;
- document.getElementById('pdet').innerHTML=`<h3 style="margin:2px 0 6px">${P.i+1} · ${pk(PN[sel].t,P.scale)}</h3><p style="margin:0 0 8px;max-width:none">${d.what}</p>${vd?`<p class="callout warn" style="margin:6px 0;max-width:none">${vd}</p>`:''}
+  '<span><i style="background:var(--violet)"></i>notebook writer</span><span><i style="background:var(--blue)"></i>main path</span><span><i style="background:var(--teal)"></i>tied core</span><span><i style="background:var(--pink)"></i>count heads</span><span><i style="background:var(--green)"></i>output, exits, naming</span><span><i style="background:var(--orange)"></i>notes enter the read</span><span><i style="background:var(--fg)"></i>numbers: training-only losses</span>');
+ const d=PD[sel],z=LZ[sel],vd=vNote(sel,g),i=ord.indexOf(sel);
+ document.getElementById('pstep').textContent=`step ${i+1} of ${ord.length}`;
+ document.getElementById('pdet').innerHTML=`<h3 style="margin:2px 0 6px">${i+1} · ${pk(PN[sel].t,P.scale)}</h3><p style="margin:0 0 8px;max-width:none">${d.what}</p>${vd?`<p class="callout warn" style="margin:6px 0;max-width:none"><b>${VBY[P.ver].name} · ${VBY[P.ver].tag}:</b> ${vd}</p>`:''}
  <div class="dgrid"><div><div class="q">shape</div>${d.shape}</div><div><div class="q">what gets through</div>${d.keep}</div><div><div class="q">position it knows</div>${POSC[z.pos][1]}</div>
  <div><div class="q">bottleneck</div>${z.bott[1]}</div><div><div class="q">weights · ${P.scale}M</div>${z.w[P.scale]}</div><div><div class="q">training signal</div>${z.g[1]}</div>
  <div style="grid-column:1/-1"><div class="q">example: "Where does Anna live now?" at 16k</div>${d.ex}</div><div style="grid-column:1/-1"><div class="q">code</div><code>${d.code}</code></div></div>`;}
+function initPver(){const sel=document.getElementById('pver');const G=[['From scratch',['e31c','e33t','e33d','e33e','e33bridge']],
+  ['From E33x: the label-free branch',['e33x','r1','r3','r2','r2tc']],
+  ['From E33r: read targets, order, count',['e33r','e33rb','dgate','e33ok','e33ok2','e33gk','e33g','e33i','e33h','e33k','e33k2']],
+  ['From E33r: hop naming',['e33q','e33j','e33m','e33jf','e33jd','e33ql','e33q2','qctl','e33c','e33qn']],
+  ['From E33 (bridge data): notes',['e33o','e33b','e33f','e33f2']]];
+ sel.innerHTML=G.map(([t,ids])=>`<optgroup label="${t}">${ids.map(id=>`<option value="${id}">${VBY[id].name} · ${VBY[id].tag}</option>`).join('')}</optgroup>`).join('');
+ sel.value=P.ver;sel.onchange=()=>{P.ver=sel.value;drawPipe();};}
 
 /* ================= 3 · notebook ================= */
 const NP={ph:0};
@@ -1227,9 +1626,9 @@ function drawDecision(){const s=document.getElementById('dsvg');s.innerHTML='';m
 
 /* ================= init ================= */
 function renderAll(){drawVers();drawPipe();drawNote();drawEmb();drawLoop();drawCurves();drawHard();drawOrder();drawMask();drawWeak();drawDecision();}
-document.getElementById('pprev').onclick=()=>{P.i=(P.i+PORDER.length-1)%PORDER.length;drawPipe();};
-document.getElementById('pnext').onclick=()=>{P.i=(P.i+1)%PORDER.length;drawPipe();};
-segBind('pver',v=>{P.ver=v;drawPipe();});segBind('plens',v=>{P.lens=v;drawPipe();});segBind('pscale',v=>{P.scale=v;drawPipe();});
+document.getElementById('pprev').onclick=()=>{const o=order();P.k=o[(o.indexOf(P.k)+o.length-1)%o.length];drawPipe();};
+document.getElementById('pnext').onclick=()=>{const o=order();P.k=o[(o.indexOf(P.k)+1)%o.length];drawPipe();};
+initPver();segBind('plens',v=>{P.lens=v;drawPipe();});segBind('pscale',v=>{P.scale=v;drawPipe();});
 document.getElementById('nprev').onclick=()=>{NP.ph=(NP.ph+4)%5;drawNote();};document.getElementById('nnext').onclick=()=>{NP.ph=(NP.ph+1)%5;drawNote();};
 segBind('nphase',v=>{NP.ph=+v;drawNote();});
 segBind('lround',v=>{LP.r=+v;drawLoop();});segBind('ldir',v=>{LP.dir=v;drawLoop();});
@@ -1602,5 +2001,6 @@ document.querySelectorAll('#loop button').forEach(b=>b.onclick=()=>{S.loop=+b.da
 document.getElementById('frz').onchange=e=>{S.frz=e.target.checked;drawMain();};document.getElementById('det').onchange=e=>{S.det=e.target.checked;drawMain();};
 document.addEventListener('keydown',e=>{if(!document.getElementById('history').open)return;if(e.key==='ArrowRight'||e.key==='ArrowLeft'){S.loop=Math.max(0,Math.min(5,S.loop+(e.key==='ArrowRight'?1:-1)));document.querySelectorAll('#loop button').forEach(x=>x.classList.toggle('on',+x.dataset.v===S.loop));drawMain();}});
 drawAll();matchMedia('(prefers-color-scheme: dark)').addEventListener('change',drawAll);
+new MutationObserver(()=>{renderAll();drawQaEncdec();drawQaErd();drawQaEmb();drawQaHop();drawAll();}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 
 </script>

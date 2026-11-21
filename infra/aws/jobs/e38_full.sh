@@ -34,8 +34,16 @@ export E33N_EXPERIMENT=E38 E33N_SEED="$SEED" E33N_GPUS="$G" E33N_CKPT_S3=1 E33N_
 unset E33N_FLOW
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+# plain names for the W&B board (author 2026-11-14: models named plainly on dashboards, codes as a secondary label)
+case "$SIZE" in m120t) SZP="150M";; m100) SZP="100M";; s30) SZP="30M";; *) SZP="$SIZE";; esac
+case "$OPT" in adam) OPTP="AdamW";; *) OPTP="Muon";; esac
 for ARM in "$@"; do
   RUN="e33n_${SIZE}_${ARM}${TAG:+_$TAG}_tok${TT}_seed${SEED}"
+  case "$ARM" in e37a) ARMP="concept memory";; lsa) ARMP="LSA port";; catalogue_reuse_n4) ARMP="catalogue";;
+    dense_rope) ARMP="fair full attention";; dense) ARMP="full attention";; window) ARMP="window only";; *) ARMP="$ARM";; esac
+  export E33N_PLAIN="$SZP $ARMP, $OPTP"
+  export MC_WANDB_TAGS="E38,$SIZE,$MIX,$ARM,opt-$OPT,seed$SEED${E38_BOARD:+,leaderboard}"
+  export MC_WANDB_NOTES="$SZP $ARMP, $OPTP${E38_BOARD:+, for the Tiny-ML leaderboard}. Code: arm $ARM, size $SIZE, mix $MIX, optimizer $OPT, seed $SEED, run $RUN."
   R="$MC_DISK/runs/$RUN"; S3R="s3://$MC_BUCKET/runs/e38/$RUN"
   if aws s3 ls "$S3R/eval_core_long.json" >/dev/null 2>&1; then
     echo "[e38_full] $ARM seed $SEED already has its tests in S3, skipped"; continue

@@ -1,9 +1,33 @@
 # E38 — Two 100M models on a modern data mix: longer budget, SmolLM2 tokenizer, far-context data
 
-- **Status:** approved; data built, runs waiting for the 4-GPU slot (author, 2026-11-14: "Train two best models 100M
-  with a longer data budget, with a better tokenizer and data mix; try to find some multi-hop or reasoning data in
-  Hugging Face"; budget raised the same day: "Increase our budget to $4000"). `m21mix_v1` is in S3 since 07:58 UTC
-  Nov 14; the pipeline check and the L40S speed check ran the same morning.
+- **Status:** leaderboard run 1 of 4 launched (2026-11-15, 05:24 UTC): the 150M concept-memory model
+  (`e33n_m120t_e37a_muon0.01_tok8.0e9_seed42`, Muon) on g6e.12xlarge spot `i-0712f5801fcca98ee`, us-east-1b, max 48 h.
+  **Muon test result (finished 04:09 UTC Nov 15, $15):** held-out loss at the same steps, AdamW → Muon:
+  step 500 2.905 → 2.742, 1,000 2.541 → 2.450, 1,500 2.403 → 2.342, 2,000 2.323 → 2.283. At step 2,000 Muon is
+  0.040 lower, above the 0.03 pass mark, so all four leaderboard runs use Muon (`--muon_peak 0.01`). The gap narrowed at
+  every check (0.164, 0.091, 0.061, 0.040), so the gain may shrink further over 11.5B tokens; the AdamW v1
+  checkpoint-4000 (2.168) stays as a reference point. The slot came free at 05:13 UTC when the E37 session parked its
+  e37a seed-7 run at checkpoint-4004 (it resumes after the fourth leaderboard run). Order on the one slot: concept
+  memory, LSA port, catalogue, fair full-attention control, each starting after the previous one's tests are in S3.
+  Earlier (2026-11-14, 21:36 UTC, author's "Yes, stop it"): the v1 concept-memory long run
+  (`e33n_m100_e37a_tok8.0e9_seed42`, 162M total, over the board's 150M cap) was stopped at about step 4,300 of 15,259;
+  the four 150M runs (`m120t` on `m21mix_v2`, seed 42) are queued by a launcher on the laptop
+  (`Cache/keepers/e38-board-chain.sh` and `e38_pick_opt.py`, not in git) that applied the pass mark and started four
+  keepers. Per model about 37 h and $295 (spot about $8.00/h): stage 1 at 105.6k tokens/s (measured 06:25 UTC Nov 15
+  on this run: 13% below the v1 AdamW 100M run's 121k; cards at 21.5 of 48 GB), stage 2 about 71k and stage 3 about
+  59k (estimates scaled by the same 13%), tests about 1.5 h. Expected done: concept memory Mon 16 Nov ~18:30 UTC,
+  LSA port Wed 18 ~07:30, catalogue Thu 19 ~20:30, fair full-attention control Sat 21 ~09:30. W&B online, run name
+  "150M concept memory, Muon, stage 1 of 3". Two lanes since 06:54 UTC Nov 15 (author: "Could you try to spin another
+  machine for next schedule model, do we have capacity and quota? Maybe next L40 or H100?"): a second g6e.12xlarge
+  does not fit (G spot 64 vCPU in us-east-1, 48 in use; 8 in us-east-2 and us-west-2; G on-demand 0 / 8 / 0; the
+  increases to 96 are still open), so the LSA port's keeper asks for one on-demand p5.4xlarge (P on-demand 64 vCPU in
+  us-east-1; P spot 8, too small) every 10 min, falling back to the L40S slot after the concept-memory run's tests.
+  First try 06:54 UTC: no capacity in any us-east-1 zone. The catalogue waits for the concept-memory tests and the
+  LSA port's start (`events.log` in S3); the fair full-attention control waits for the catalogue's start and takes the
+  L40S slot, or the H100 once the LSA port is done. One H100 is an estimate of 55-60 h and about $410 per model
+  (same rows per step: 8 rows at 4k and 2 at 16k per pass on 80 GB). Data: `m21mix_v1` in S3 since 07:58 UTC
+  Nov 14, `m21mix_v2` since 19:53 UTC (author, 2026-11-14: "Train two best models 100M with a longer data budget, with
+  a better tokenizer and data mix"; "Increase our budget to $4000"; "SmolLM2, bigger body").
 - **Serves:** the meridian21 goal of 2026-11-13 (first models and a demo for investors: show that the memory
   architecture uses far context on real long documents) and Vision priority 2 (long context). Not a new
   architecture: the two best 100M reads of E37 stage B, unchanged, on better data. A data and protocol experiment,

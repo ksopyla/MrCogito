@@ -460,6 +460,9 @@ def _plain_loop_kwargs(model_args) -> dict:
                       "concept_reasoner_layers", "concept_reasoner_dim", "concept_reasoner_heads",
                       "concept_reasoner_loops"):
                 out[k] = getattr(model_args, k)
+    if int(getattr(model_args, "par_cut_gap_max", 0) or 0) > 0:  # E37c: cut rows in training
+        for k in ("par_cut_gap_min", "par_cut_gap_max", "par_cut_prob"):
+            out[k] = getattr(model_args, k)
     return out
 
 

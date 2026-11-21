@@ -1,0 +1,751 @@
+{
+  "tag": "ref_smollm2_135m_step480k_board",
+  "model_kind": "hf",
+  "model": "Cache/e38_board/ref_models/smollm2_135m_step480k",
+  "tasks": [
+    "blimp",
+    "arc_easy",
+    "wikitext"
+  ],
+  "num_fewshot": 0,
+  "limit": null,
+  "max_length": 2048,
+  "elapsed_s": 512.5379064083099,
+  "results": {
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.5997474747474747,
+      "acc_stderr,none": 0.010053550119896153,
+      "acc_norm,none": 0.5496632996632996,
+      "acc_norm_stderr,none": 0.010209047724374136
+    },
+    "blimp": {
+      "acc,none": 0.7961940298507463,
+      "acc_stderr,none": 0.001417613497594885,
+      "alias": "blimp"
+    },
+    "blimp_adjunct_island": {
+      "alias": " - blimp_adjunct_island",
+      "acc,none": 0.885,
+      "acc_stderr,none": 0.010093407594904551
+    },
+    "blimp_anaphor_gender_agreement": {
+      "alias": " - blimp_anaphor_gender_agreement",
+      "acc,none": 0.969,
+      "acc_stderr,none": 0.005483527064679181
+    },
+    "blimp_anaphor_number_agreement": {
+      "alias": " - blimp_anaphor_number_agreement",
+      "acc,none": 0.987,
+      "acc_stderr,none": 0.003583830889403662
+    },
+    "blimp_animate_subject_passive": {
+      "alias": " - blimp_animate_subject_passive",
+      "acc,none": 0.771,
+      "acc_stderr,none": 0.013294199326613684
+    },
+    "blimp_animate_subject_trans": {
+      "alias": " - blimp_animate_subject_trans",
+      "acc,none": 0.886,
+      "acc_stderr,none": 0.010055103435823278
+    },
+    "blimp_causative": {
+      "alias": " - blimp_causative",
+      "acc,none": 0.724,
+      "acc_stderr,none": 0.01414298497574059
+    },
+    "blimp_complex_NP_island": {
+      "alias": " - blimp_complex_NP_island",
+      "acc,none": 0.594,
+      "acc_stderr,none": 0.01553722643863458
+    },
+    "blimp_coordinate_structure_constraint_complex_left_branch": {
+      "alias": " - blimp_coordinate_structure_constraint_complex_left_branch",
+      "acc,none": 0.72,
+      "acc_stderr,none": 0.014205696104091548
+    },
+    "blimp_coordinate_structure_constraint_object_extraction": {
+      "alias": " - blimp_coordinate_structure_constraint_object_extraction",
+      "acc,none": 0.858,
+      "acc_stderr,none": 0.011043457699378305
+    },
+    "blimp_determiner_noun_agreement_1": {
+      "alias": " - blimp_determiner_noun_agreement_1",
+      "acc,none": 0.986,
+      "acc_stderr,none": 0.003717232548256541
+    },
+    "blimp_determiner_noun_agreement_2": {
+      "alias": " - blimp_determiner_noun_agreement_2",
+      "acc,none": 0.984,
+      "acc_stderr,none": 0.003969856390319398
+    },
+    "blimp_determiner_noun_agreement_irregular_1": {
+      "alias": " - blimp_determiner_noun_agreement_irregular_1",
+      "acc,none": 0.953,
+      "acc_stderr,none": 0.006695956678163013
+    },
+    "blimp_determiner_noun_agreement_irregular_2": {
+      "alias": " - blimp_determiner_noun_agreement_irregular_2",
+      "acc,none": 0.972,
+      "acc_stderr,none": 0.005219506034410081
+    },
+    "blimp_determiner_noun_agreement_with_adj_2": {
+      "alias": " - blimp_determiner_noun_agreement_with_adj_2",
+      "acc,none": 0.95,
+      "acc_stderr,none": 0.006895472974897918
+    },
+    "blimp_determiner_noun_agreement_with_adj_irregular_1": {
+      "alias": " - blimp_determiner_noun_agreement_with_adj_irregular_1",
+      "acc,none": 0.888,
+      "acc_stderr,none": 0.009977753031397177
+    },
+    "blimp_determiner_noun_agreement_with_adj_irregular_2": {
+      "alias": " - blimp_determiner_noun_agreement_with_adj_irregular_2",
+      "acc,none": 0.95,
+      "acc_stderr,none": 0.006895472974897918
+    },
+    "blimp_determiner_noun_agreement_with_adjective_1": {
+      "alias": " - blimp_determiner_noun_agreement_with_adjective_1",
+      "acc,none": 0.969,
+      "acc_stderr,none": 0.005483527064679181
+    },
+    "blimp_distractor_agreement_relational_noun": {
+      "alias": " - blimp_distractor_agreement_relational_noun",
+      "acc,none": 0.87,
+      "acc_stderr,none": 0.010640169792499236
+    },
+    "blimp_distractor_agreement_relative_clause": {
+      "alias": " - blimp_distractor_agreement_relative_clause",
+      "acc,none": 0.721,
+      "acc_stderr,none": 0.014190150117611877
+    },
+    "blimp_drop_argument": {
+      "alias": " - blimp_drop_argument",
+      "acc,none": 0.784,
+      "acc_stderr,none": 0.013019735539307761
+    },
+    "blimp_ellipsis_n_bar_1": {
+      "alias": " - blimp_ellipsis_n_bar_1",
+      "acc,none": 0.846,
+      "acc_stderr,none": 0.011419913065098805
+    },
+    "blimp_ellipsis_n_bar_2": {
+      "alias": " - blimp_ellipsis_n_bar_2",
+      "acc,none": 0.911,
+      "acc_stderr,none": 0.009008893392651516
+    },
+    "blimp_existential_there_object_raising": {
+      "alias": " - blimp_existential_there_object_raising",
+      "acc,none": 0.798,
+      "acc_stderr,none": 0.012702651587655128
+    },
+    "blimp_existential_there_quantifiers_1": {
+      "alias": " - blimp_existential_there_quantifiers_1",
+      "acc,none": 0.992,
+      "acc_stderr,none": 0.002818500300504498
+    },
+    "blimp_existential_there_quantifiers_2": {
+      "alias": " - blimp_existential_there_quantifiers_2",
+      "acc,none": 0.309,
+      "acc_stderr,none": 0.014619600977206347
+    },
+    "blimp_existential_there_subject_raising": {
+      "alias": " - blimp_existential_there_subject_raising",
+      "acc,none": 0.896,
+      "acc_stderr,none": 0.009658016218524242
+    },
+    "blimp_expletive_it_object_raising": {
+      "alias": " - blimp_expletive_it_object_raising",
+      "acc,none": 0.792,
+      "acc_stderr,none": 0.012841374572097058
+    },
+    "blimp_inchoative": {
+      "alias": " - blimp_inchoative",
+      "acc,none": 0.648,
+      "acc_stderr,none": 0.015110404505648562
+    },
+    "blimp_intransitive": {
+      "alias": " - blimp_intransitive",
+      "acc,none": 0.783,
+      "acc_stderr,none": 0.013041513757270706
+    },
+    "blimp_irregular_past_participle_adjectives": {
+      "alias": " - blimp_irregular_past_participle_adjectives",
+      "acc,none": 0.589,
+      "acc_stderr,none": 0.01556667341859915
+    },
+    "blimp_irregular_past_participle_verbs": {
+      "alias": " - blimp_irregular_past_participle_verbs",
+      "acc,none": 0.921,
+      "acc_stderr,none": 0.00853415677333337
+    },
+    "blimp_irregular_plural_subject_verb_agreement_1": {
+      "alias": " - blimp_irregular_plural_subject_verb_agreement_1",
+      "acc,none": 0.928,
+      "acc_stderr,none": 0.008178195576218687
+    },
+    "blimp_irregular_plural_subject_verb_agreement_2": {
+      "alias": " - blimp_irregular_plural_subject_verb_agreement_2",
+      "acc,none": 0.838,
+      "acc_stderr,none": 0.011657267771304384
+    },
+    "blimp_left_branch_island_echo_question": {
+      "alias": " - blimp_left_branch_island_echo_question",
+      "acc,none": 0.489,
+      "acc_stderr,none": 0.01581547119529257
+    },
+    "blimp_left_branch_island_simple_question": {
+      "alias": " - blimp_left_branch_island_simple_question",
+      "acc,none": 0.776,
+      "acc_stderr,none": 0.013190830072364589
+    },
+    "blimp_matrix_question_npi_licensor_present": {
+      "alias": " - blimp_matrix_question_npi_licensor_present",
+      "acc,none": 0.623,
+      "acc_stderr,none": 0.0153331701257798
+    },
+    "blimp_npi_present_1": {
+      "alias": " - blimp_npi_present_1",
+      "acc,none": 0.534,
+      "acc_stderr,none": 0.01578268332993769
+    },
+    "blimp_npi_present_2": {
+      "alias": " - blimp_npi_present_2",
+      "acc,none": 0.641,
+      "acc_stderr,none": 0.01517726422479853
+    },
+    "blimp_only_npi_licensor_present": {
+      "alias": " - blimp_only_npi_licensor_present",
+      "acc,none": 0.618,
+      "acc_stderr,none": 0.015372453034968502
+    },
+    "blimp_only_npi_scope": {
+      "alias": " - blimp_only_npi_scope",
+      "acc,none": 0.597,
+      "acc_stderr,none": 0.015518757419066512
+    },
+    "blimp_passive_1": {
+      "alias": " - blimp_passive_1",
+      "acc,none": 0.92,
+      "acc_stderr,none": 0.00858333697775368
+    },
+    "blimp_passive_2": {
+      "alias": " - blimp_passive_2",
+      "acc,none": 0.883,
+      "acc_stderr,none": 0.010169287802713345
+    },
+    "blimp_principle_A_c_command": {
+      "alias": " - blimp_principle_A_c_command",
+      "acc,none": 0.719,
+      "acc_stderr,none": 0.01422115470843494
+    },
+    "blimp_principle_A_case_1": {
+      "alias": " - blimp_principle_A_case_1",
+      "acc,none": 1.0,
+      "acc_stderr,none": 0.0
+    },
+    "blimp_principle_A_case_2": {
+      "alias": " - blimp_principle_A_case_2",
+      "acc,none": 0.963,
+      "acc_stderr,none": 0.0059721576223896395
+    },
+    "blimp_principle_A_domain_1": {
+      "alias": " - blimp_principle_A_domain_1",
+      "acc,none": 0.977,
+      "acc_stderr,none": 0.004742730594656784
+    },
+    "blimp_principle_A_domain_2": {
+      "alias": " - blimp_principle_A_domain_2",
+      "acc,none": 0.794,
+      "acc_stderr,none": 0.012795613612786522
+    },
+    "blimp_principle_A_domain_3": {
+      "alias": " - blimp_principle_A_domain_3",
+      "acc,none": 0.602,
+      "acc_stderr,none": 0.015486634102859016
+    },
+    "blimp_principle_A_reconstruction": {
+      "alias": " - blimp_principle_A_reconstruction",
+      "acc,none": 0.438,
+      "acc_stderr,none": 0.01569721001969466
+    },
+    "blimp_regular_plural_subject_verb_agreement_1": {
+      "alias": " - blimp_regular_plural_subject_verb_agreement_1",
+      "acc,none": 0.935,
+      "acc_stderr,none": 0.007799733061832043
+    },
+    "blimp_regular_plural_subject_verb_agreement_2": {
+      "alias": " - blimp_regular_plural_subject_verb_agreement_2",
+      "acc,none": 0.752,
+      "acc_stderr,none": 0.013663187134877524
+    },
+    "blimp_sentential_negation_npi_licensor_present": {
+      "alias": " - blimp_sentential_negation_npi_licensor_present",
+      "acc,none": 0.975,
+      "acc_stderr,none": 0.004939574819698493
+    },
+    "blimp_sentential_negation_npi_scope": {
+      "alias": " - blimp_sentential_negation_npi_scope",
+      "acc,none": 0.755,
+      "acc_stderr,none": 0.01360735683959821
+    },
+    "blimp_sentential_subject_island": {
+      "alias": " - blimp_sentential_subject_island",
+      "acc,none": 0.453,
+      "acc_stderr,none": 0.015749255189977683
+    },
+    "blimp_superlative_quantifiers_1": {
+      "alias": " - blimp_superlative_quantifiers_1",
+      "acc,none": 0.832,
+      "acc_stderr,none": 0.011828605831454352
+    },
+    "blimp_superlative_quantifiers_2": {
+      "alias": " - blimp_superlative_quantifiers_2",
+      "acc,none": 0.668,
+      "acc_stderr,none": 0.014899597242811567
+    },
+    "blimp_tough_vs_raising_1": {
+      "alias": " - blimp_tough_vs_raising_1",
+      "acc,none": 0.684,
+      "acc_stderr,none": 0.014709193056057166
+    },
+    "blimp_tough_vs_raising_2": {
+      "alias": " - blimp_tough_vs_raising_2",
+      "acc,none": 0.914,
+      "acc_stderr,none": 0.008870325962594761
+    },
+    "blimp_transitive": {
+      "alias": " - blimp_transitive",
+      "acc,none": 0.853,
+      "acc_stderr,none": 0.011203415395160376
+    },
+    "blimp_wh_island": {
+      "alias": " - blimp_wh_island",
+      "acc,none": 0.768,
+      "acc_stderr,none": 0.013354937452281623
+    },
+    "blimp_wh_questions_object_gap": {
+      "alias": " - blimp_wh_questions_object_gap",
+      "acc,none": 0.818,
+      "acc_stderr,none": 0.0122075806376622
+    },
+    "blimp_wh_questions_subject_gap": {
+      "alias": " - blimp_wh_questions_subject_gap",
+      "acc,none": 0.924,
+      "acc_stderr,none": 0.008384169266796462
+    },
+    "blimp_wh_questions_subject_gap_long_distance": {
+      "alias": " - blimp_wh_questions_subject_gap_long_distance",
+      "acc,none": 0.861,
+      "acc_stderr,none": 0.010945263761042892
+    },
+    "blimp_wh_vs_that_no_gap": {
+      "alias": " - blimp_wh_vs_that_no_gap",
+      "acc,none": 0.977,
+      "acc_stderr,none": 0.004742730594656784
+    },
+    "blimp_wh_vs_that_no_gap_long_distance": {
+      "alias": " - blimp_wh_vs_that_no_gap_long_distance",
+      "acc,none": 0.972,
+      "acc_stderr,none": 0.005219506034410081
+    },
+    "blimp_wh_vs_that_with_gap": {
+      "alias": " - blimp_wh_vs_that_with_gap",
+      "acc,none": 0.523,
+      "acc_stderr,none": 0.015802554246726087
+    },
+    "blimp_wh_vs_that_with_gap_long_distance": {
+      "alias": " - blimp_wh_vs_that_with_gap_long_distance",
+      "acc,none": 0.435,
+      "acc_stderr,none": 0.015685057252717346
+    },
+    "wikitext": {
+      "alias": "wikitext",
+      "word_perplexity,none": 27.72688359955645,
+      "word_perplexity_stderr,none": "N/A",
+      "byte_perplexity,none": 1.8613571451984425,
+      "byte_perplexity_stderr,none": "N/A",
+      "bits_per_byte,none": 0.8963548969725248,
+      "bits_per_byte_stderr,none": "N/A"
+    }
+  },
+  "versions": {
+    "arc_easy": 1.0,
+    "blimp": 2.0,
+    "blimp_adjunct_island": 1.0,
+    "blimp_anaphor_gender_agreement": 1.0,
+    "blimp_anaphor_number_agreement": 1.0,
+    "blimp_animate_subject_passive": 1.0,
+    "blimp_animate_subject_trans": 1.0,
+    "blimp_causative": 1.0,
+    "blimp_complex_NP_island": 1.0,
+    "blimp_coordinate_structure_constraint_complex_left_branch": 1.0,
+    "blimp_coordinate_structure_constraint_object_extraction": 1.0,
+    "blimp_determiner_noun_agreement_1": 1.0,
+    "blimp_determiner_noun_agreement_2": 1.0,
+    "blimp_determiner_noun_agreement_irregular_1": 1.0,
+    "blimp_determiner_noun_agreement_irregular_2": 1.0,
+    "blimp_determiner_noun_agreement_with_adj_2": 1.0,
+    "blimp_determiner_noun_agreement_with_adj_irregular_1": 1.0,
+    "blimp_determiner_noun_agreement_with_adj_irregular_2": 1.0,
+    "blimp_determiner_noun_agreement_with_adjective_1": 1.0,
+    "blimp_distractor_agreement_relational_noun": 1.0,
+    "blimp_distractor_agreement_relative_clause": 1.0,
+    "blimp_drop_argument": 1.0,
+    "blimp_ellipsis_n_bar_1": 1.0,
+    "blimp_ellipsis_n_bar_2": 1.0,
+    "blimp_existential_there_object_raising": 1.0,
+    "blimp_existential_there_quantifiers_1": 1.0,
+    "blimp_existential_there_quantifiers_2": 1.0,
+    "blimp_existential_there_subject_raising": 1.0,
+    "blimp_expletive_it_object_raising": 1.0,
+    "blimp_inchoative": 1.0,
+    "blimp_intransitive": 1.0,
+    "blimp_irregular_past_participle_adjectives": 1.0,
+    "blimp_irregular_past_participle_verbs": 1.0,
+    "blimp_irregular_plural_subject_verb_agreement_1": 1.0,
+    "blimp_irregular_plural_subject_verb_agreement_2": 1.0,
+    "blimp_left_branch_island_echo_question": 1.0,
+    "blimp_left_branch_island_simple_question": 1.0,
+    "blimp_matrix_question_npi_licensor_present": 1.0,
+    "blimp_npi_present_1": 1.0,
+    "blimp_npi_present_2": 1.0,
+    "blimp_only_npi_licensor_present": 1.0,
+    "blimp_only_npi_scope": 1.0,
+    "blimp_passive_1": 1.0,
+    "blimp_passive_2": 1.0,
+    "blimp_principle_A_c_command": 1.0,
+    "blimp_principle_A_case_1": 1.0,
+    "blimp_principle_A_case_2": 1.0,
+    "blimp_principle_A_domain_1": 1.0,
+    "blimp_principle_A_domain_2": 1.0,
+    "blimp_principle_A_domain_3": 1.0,
+    "blimp_principle_A_reconstruction": 1.0,
+    "blimp_regular_plural_subject_verb_agreement_1": 1.0,
+    "blimp_regular_plural_subject_verb_agreement_2": 1.0,
+    "blimp_sentential_negation_npi_licensor_present": 1.0,
+    "blimp_sentential_negation_npi_scope": 1.0,
+    "blimp_sentential_subject_island": 1.0,
+    "blimp_superlative_quantifiers_1": 1.0,
+    "blimp_superlative_quantifiers_2": 1.0,
+    "blimp_tough_vs_raising_1": 1.0,
+    "blimp_tough_vs_raising_2": 1.0,
+    "blimp_transitive": 1.0,
+    "blimp_wh_island": 1.0,
+    "blimp_wh_questions_object_gap": 1.0,
+    "blimp_wh_questions_subject_gap": 1.0,
+    "blimp_wh_questions_subject_gap_long_distance": 1.0,
+    "blimp_wh_vs_that_no_gap": 1.0,
+    "blimp_wh_vs_that_no_gap_long_distance": 1.0,
+    "blimp_wh_vs_that_with_gap": 1.0,
+    "blimp_wh_vs_that_with_gap_long_distance": 1.0,
+    "wikitext": 2.0
+  },
+  "n_samples": {
+    "wikitext": {
+      "original": 62,
+      "effective": 62
+    },
+    "arc_easy": {
+      "original": 2376,
+      "effective": 2376
+    },
+    "blimp_adjunct_island": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_anaphor_gender_agreement": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_anaphor_number_agreement": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_animate_subject_passive": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_animate_subject_trans": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_causative": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_complex_NP_island": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_coordinate_structure_constraint_complex_left_branch": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_coordinate_structure_constraint_object_extraction": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_determiner_noun_agreement_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_determiner_noun_agreement_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_determiner_noun_agreement_irregular_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_determiner_noun_agreement_irregular_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_determiner_noun_agreement_with_adj_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_determiner_noun_agreement_with_adj_irregular_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_determiner_noun_agreement_with_adj_irregular_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_determiner_noun_agreement_with_adjective_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_distractor_agreement_relational_noun": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_distractor_agreement_relative_clause": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_drop_argument": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_ellipsis_n_bar_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_ellipsis_n_bar_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_existential_there_object_raising": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_existential_there_quantifiers_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_existential_there_quantifiers_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_existential_there_subject_raising": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_expletive_it_object_raising": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_inchoative": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_intransitive": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_irregular_past_participle_adjectives": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_irregular_past_participle_verbs": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_irregular_plural_subject_verb_agreement_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_irregular_plural_subject_verb_agreement_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_left_branch_island_echo_question": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_left_branch_island_simple_question": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_matrix_question_npi_licensor_present": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_npi_present_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_npi_present_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_only_npi_licensor_present": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_only_npi_scope": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_passive_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_passive_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_principle_A_c_command": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_principle_A_case_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_principle_A_case_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_principle_A_domain_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_principle_A_domain_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_principle_A_domain_3": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_principle_A_reconstruction": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_regular_plural_subject_verb_agreement_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_regular_plural_subject_verb_agreement_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_sentential_negation_npi_licensor_present": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_sentential_negation_npi_scope": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_sentential_subject_island": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_superlative_quantifiers_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_superlative_quantifiers_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_tough_vs_raising_1": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_tough_vs_raising_2": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_transitive": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_wh_island": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_wh_questions_object_gap": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_wh_questions_subject_gap": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_wh_questions_subject_gap_long_distance": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_wh_vs_that_no_gap": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_wh_vs_that_no_gap_long_distance": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_wh_vs_that_with_gap": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "blimp_wh_vs_that_with_gap_long_distance": {
+      "original": 1000,
+      "effective": 1000
+    }
+  },
+  "lm_eval_config": {
+    "model": "Cache/e38_board/ref_models/smollm2_135m_step480k",
+    "model_args": null,
+    "model_num_parameters": 134515008,
+    "model_dtype": "torch.bfloat16",
+    "model_revision": "main",
+    "model_sha": "",
+    "batch_size": null,
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": null,
+    "random_seed": 1234,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "tiny_ml_board": {
+    "blimp": 79.61940298507463,
+    "arc": 59.97474747474747,
+    "wiki": 1.8613571451984425,
+    "params": 134515008,
+    "wiki_score": 99.9869614270484,
+    "overall": 79.86037062895683,
+    "efficiency": 81.5895452704,
+    "rank": 11
+  }
+}

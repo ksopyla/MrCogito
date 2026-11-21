@@ -249,6 +249,39 @@ def test_init_wandb_preserves_project_identity_and_effective_dataset(monkeypatch
     assert all(len(tag) <= 64 for tag in captured["tags"])
 
 
+def test_init_wandb_takes_plain_labels_from_the_job(monkeypatch):
+    """MC_WANDB_NAME / MC_WANDB_TAGS / MC_WANDB_NOTES (set by the AWS jobs) give the run a plain display name, extra
+    tags and notes; the run id, which resume relies on, stays the coded identifier."""
+    captured = {}
+    run_identifier = "perceiver_ar_perceiver_H896L3g1s9N128_20261115_045000_e37a_m120t_trunk"
+    monkeypatch.setattr(utils_training, "is_main_process", lambda: True)
+    monkeypatch.setattr(utils_training, "get_git_info", lambda: {"commit": "abc1234", "dirty": False})
+    monkeypatch.setattr(utils_training, "get_hostname", lambda: "test-host")
+    monkeypatch.setattr(utils_training.wandb, "init", lambda **kw: captured.update(kw))
+    monkeypatch.setattr(utils_training.wandb, "run", SimpleNamespace(id=run_identifier, name="x"))
+    monkeypatch.setenv("MC_WANDB_NAME", "150M concept memory, Muon, stage 1 of 3")
+    monkeypatch.setenv("MC_WANDB_TAGS", "E38, m120t,m21mix_v2,leaderboard,,test-host")
+    monkeypatch.setenv("MC_WANDB_NOTES", "150M concept memory, Muon, for the Tiny-ML leaderboard.")
+    config = SimpleNamespace(hidden_size=32, token_embedding_dim=32, num_hidden_layers=1, concept_num=4,
+                             intermediate_size=64, num_attention_heads=4, vocab_size=128, max_sequence_length=16)
+    data_args = SimpleNamespace(dataset_name="JeanKaddour/minipile", dataset_name_subset=None, dataset_mix=None,
+                                dataset_mix_recipe=None, pretokenized_manifest=None, tokenizer_name="t",
+                                max_seq_length=16)
+    loss_config = SimpleNamespace(is_enabled=False, concept_losses=[], weighting_strategy="fixed")
+    utils_training.init_wandb(
+        SimpleNamespace(run_name=run_identifier, optim="adamw_torch_fused"), torch.nn.Linear(4, 4), config,
+        data_args, loss_config, "E38_perceiver_ar", run_identifier, job_type="train", model_type="perceiver_ar",
+        wandb_tags=["E38"], extra_config={"experiment_id": "E38", "wandb_group": "E38_perceiver_ar"},
+    )
+    assert captured["id"] == run_identifier
+    assert captured["name"] == "150M concept memory, Muon, stage 1 of 3"
+    assert captured["notes"] == "150M concept memory, Muon, for the Tiny-ML leaderboard."
+    assert captured["config"]["run_name_code"] == run_identifier
+    for tag in ("E38", "m120t", "m21mix_v2", "leaderboard", "test-host"):
+        assert captured["tags"].count(tag) == 1, (tag, captured["tags"])
+    assert "" not in captured["tags"]
+
+
 def test_setup_run_dirs_preserves_workspace_cache_layout():
     args = SimpleNamespace(
         output_dir="Cache/Training",
