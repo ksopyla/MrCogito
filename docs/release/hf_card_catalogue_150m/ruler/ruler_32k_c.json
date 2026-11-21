@@ -1,0 +1,47 @@
+{
+  "checkpoint": "Cache/e38_board/cat_m120t_final",
+  "suite": "ruler",
+  "lengths": [
+    32768
+  ],
+  "limit": 100,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "max_gen_toks": "task default",
+  "results": {
+    "32768": {
+      "ruler_cwe": {
+        "alias": "ruler_cwe",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.16899999999999998,
+        "32768_stderr,none": "N/A"
+      },
+      "ruler_fwe": {
+        "alias": "ruler_fwe",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.3933333333333333,
+        "32768_stderr,none": "N/A"
+      },
+      "ruler_qa_hotpot": {
+        "alias": "ruler_qa_hotpot",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.2,
+        "32768_stderr,none": "N/A"
+      },
+      "ruler_qa_squad": {
+        "alias": "ruler_qa_squad",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.13083333333333333,
+        "32768_stderr,none": "N/A"
+      }
+    }
+  },
+  "mean": {
+    "32768": 0.22329166666666667
+  },
+  "seconds": 1795.4
+}
