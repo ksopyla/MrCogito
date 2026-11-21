@@ -30,11 +30,19 @@ SCOREBOARD = {
 
 # Mission control: what is running, what is next, what blocks us. Times UTC.
 STATUS = {
-    "as_of": "2026-10-23 20:30 UTC",
-    "headline": "One model meets the goal on latest, compose and deduce without generator labels: written reasoning gives "
-                "78 / 93 / 100 % at 4k (one run, warm-started). Count stays at 17 %; new sentence shapes and 3-hop "
-                "questions still fail.",
+    "as_of": "2026-11-21 (frozen)",
+    "headline": "Frozen on 21 Nov 2026: the project now tests its models on real long documents. Kept as the record: "
+                "written reasoning took one 30M model to latest 78 %, compose 93 %, deduce 100 % at 4k without generator "
+                "labels (warm start, one run). Count, 3 hops and new sentence shapes failed.",
     "where": [
+        "21 Nov 2026: board frozen. No text-check run since 19 Oct. The E33s plan (30M from scratch on this data, then "
+        "100M against dense) was canceled before any run. After 24 Oct the project moved to real long documents: the "
+        "summary notebook recovered only about 6 % of the short-window to full-attention gap there (5 Nov), and "
+        "exact-read memories replaced it (concept memory, the LSA port, the catalogue model), trained at 100M and 150M "
+        "on AWS. Their results live in the E37 and E38 specs, the catalogue-read results page and the 150M model "
+        "cards. Still standing from this board: a loop learns multi-hop only when each step is written out in "
+        "training and then removed in stages; the concept-memory reasoner, trained on next-word loss alone, added "
+        "nothing (8 Nov).",
         "23 Oct: both servers idle since 22 Oct 16:32 UTC. The NAS is offline, so today's results were pulled without "
         "the NAS copy; on Polonez a few copy jobs from 16-18 Oct are still stuck waiting for it (load 16 while idle).",
         "21-22 Oct, before the 100M real-text run E33s (Polonez, multi-hop session): the rule finds the written steps in "
@@ -175,12 +183,7 @@ STATUS = {
         "story; latest's floor is 20 %; dense is not compared past 4k. Nothing had to be retrained.",
     ],
     "next": [
-        "Nothing is running. Both servers are free.",
-        "Planned, waiting for the author's go-ahead (E33s re-scoped, 24 Oct): code fixes and the read-order check, then "
-        "the 30M from-scratch confirmation (3 E33 seeds + dense, written chains from step 0), then 100M E33 vs dense.",
-        "Before any 100M or AWS run: the changes in section 14 of the E33 page (exit-loss cost, far-recall data from "
-        "step 0, a switch-on detector, a compute-matched loop check).",
-        "Open for the author: the notebook-proportions sweep; count (no route works yet).",
+        "Nothing planned: the board is the record of the text checks, 6-19 Oct 2026.",
     ],
 }
 
@@ -1397,13 +1400,7 @@ GOAL = {"set": "2026-10-17", "target": 0.70, "tasks": ["latest", "compose", "cou
         "text": "70 % exact on T4-T7 with a notebook model (30M, the current exams)."}
 
 # Decisions waiting for the author: shown at the top of the board. Remove an item when it is decided.
-DECISIONS = [
-    "Approve the re-scoped E33s plan (24 Oct): first code fixes and one cheap check; then 3 E33 seeds and a dense run "
-    "from scratch at 30M with written chains from step 0 (about 15 h on both servers); then 100M E33 vs dense (about "
-    "1.5 days). About 225 GPU-hours on our servers in all; the plan's gates decide each step.",
-    "3 hops: both labelled and written recipes stop after two. Add 3-hop chains to the written data (in-distribution), "
-    "or keep 3 hops as the held-out test?",
-]
+DECISIONS = []
 
 # One entry per architecture family compared on the board: plain name, what it is in one line, the standing analogy
 # (research-comms), and the current one-line verdict. Keys are the scoreboard families.

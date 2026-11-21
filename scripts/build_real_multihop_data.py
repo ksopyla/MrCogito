@@ -11,7 +11,7 @@ Modes (combine in one call, or run one at a time into the same --out_dir):
   --exams                 frozen eval/realqa.jsonl from the dev / test splits at --lengths, with removed twins.
 
 Layout (what scripts/run_text_checks.py reads): tokenizer/, manifest.json, text_checks_meta.json (kind, mix.
-mean_row_tokens, hashes), eval/. Spec: docs/experiments_specs/ahead/E33s_written_chains_real_data.md.
+mean_row_tokens, hashes), eval/. Spec: docs/experiments_specs/canceled/E33s_written_chains_real_data.md.
 """
 from __future__ import annotations
 
