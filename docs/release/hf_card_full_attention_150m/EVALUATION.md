@@ -384,7 +384,10 @@ The release folder is written by `scripts/export_hub_model.py` (modeling code ge
   2026-11-21 17:38–17:44 UTC): BLiMP 80.13 %, ARC-Easy 49.75 %, WikiText-2 byte perplexity 1.95500; through our
   adapter the same three numbers (`eval_results/e38_rope150m_final_hf.json`). A reader running lm-eval on the Hub id
   gets this card's numbers.
-- ⟨HUB_SMOKE⟩
+- From the Hub id, in the same clean environments (`python -I scripts/hub_smoke_test.py
+  Meridian21Lab/full-attention-140m-11.5bt`, the repository still private, 2026-11-21, CPU, fp32): passed on
+  Transformers 4.57.6 and 5.23.0, the same sentence loss (1.9132 nats per token) and the same seed-0 sample on both
+  (`hub_smoke_test.json`).
 
 ## Text samples
 
