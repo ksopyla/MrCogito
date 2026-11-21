@@ -63,6 +63,11 @@ def cmd_prepare(a) -> None:
             starts = np.flatnonzero(sh == 50256)
             ends = np.append(starts[1:], len(sh))
             texts += [g2.decode(sh[s + 1:e].tolist()) for s, e in zip(starts, ends)]
+        if not (Path(a.cache) / f"{src}_val_retok.npz").exists():  # build long_context_use.py's cache first
+            from evaluation.long_context_use import load_docs
+
+            eot = tok.convert_tokens_to_ids("<|endoftext|>")
+            load_docs(Path(a.data), src, tok, eot if eot is not None else tok.eos_token_id, 0, Path(a.cache))
         z = np.load(Path(a.cache) / f"{src}_val_retok.npz")
         cached = [z[k] for k in sorted(z.files, key=lambda s: int(s[1:]))]
         assert len(cached) == len(texts), (src, len(cached), len(texts))

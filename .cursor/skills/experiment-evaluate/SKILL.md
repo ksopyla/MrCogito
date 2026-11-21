@@ -499,6 +499,16 @@ Each of these cost a wrong number once; the full list, with the release workflow
   nats per token.
 - **Text samples are sampled, not greedy** (`evaluation/sample_text.py`: nucleus T 0.7 / top-p 0.9 / repetition
   penalty 1.1, plus beam search); greedy prose loops on small base models. Exact-answer benchmarks stay greedy.
+- **The whole release protocol is one command** (second release, 2026-11-18): `scripts/release_evals.sh <checkpoint>
+  <out> <longdocs> 0,1,2 <memory switches> <tag>`, with `HF_EXPORT=<export folder>` for the board tests through the
+  stock `hf` model on the `from_pretrained` export (must equal the adapter's numbers). A shared GPU queue that waits
+  for idle cards; ≈1 h 15 for a 150M model on three RTX 3090. Use it for every model that will be compared with an
+  earlier one, so they share one protocol.
+- **Check every diagnostic switch on one document first.** A switch written for one read can be a silent no-op on
+  another (`long_context_use.py`'s "memory off" did nothing on the LSA read until 2026-11-18); scripts now refuse a
+  switch the checkpoint lacks.
+- **Pair two models' RULER scores only where the prompts match** (compare the saved expected answers): two runs with
+  identical settings drew different needles for 8 of 13 tasks at 32k.
 
 ## Failure-Tolerant Wrapper
 For long best-vs-last suites, wrap each command so one failure does not discard later evidence:

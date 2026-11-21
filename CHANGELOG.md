@@ -15,6 +15,49 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-18] - Second public release (topic index) and one protocol for every release
+
+**Why:** the 150M LSA port was scored with the concept-memory card's protocol and released as
+`Meridian21Lab/topic-index-140m-11.5bt` (author's name for it); the author asked for the same template and method for
+every model, cards that read alike, Hub ids instead of "sibling", and the cards of models on the same data aligned
+and cross-linked.
+
+- **`scripts/release_evals.sh`:** the whole release protocol for one `perceiver_ar` checkpoint (board tier, 7 core
+  tasks, board tier through the stock `hf` model on the `from_pretrained` export, samples, cross-model long documents,
+  our long-context tests at 16k / 64k / 128k, RULER 4k–32k with saved replies) over a shared GPU queue that waits for
+  idle cards; `ONLY=` reruns a subset.
+- **`evaluation/long_context_use.py`:** "memory off" also switches the LSA read off (`lsa_off`); it was a silent
+  no-op on LSA checkpoints. Switches a checkpoint does not have are refused. **`long_context_compare.py prepare`**
+  builds a missing document cache instead of failing.
+- **Cards:** `docs/release/hf_card_topic_index_150m/` (new) and `hf_card_concept_memory_150m/` aligned: one section
+  order, shared sections from one template, both models in every table, one figure script (`CARD` line differs) with
+  one colour per model; each model's raw results ship in the other card's folder (`cm_` / `ti_` prefixes).
+- **Skills:** `model-release` rules 15–19 (Hub ids, line names, families of cards, one figure script, same protocol
+  and loading first), card template v4, evaluation traps (switch no-ops, RULER prompt pairing, GPU checks, export
+  into an empty folder, quoted heredocs); `huggingface-project` (org write token, `move_repo`, new lines);
+  `experiment-evaluate` (the protocol script, switch checks, RULER pairing).
+
+---
+
+## [2026-11-18] - Hub releases that load with `from_pretrained`
+
+**Why:** the first public release (150M concept memory) could only be used by cloning the repo and calling our
+loader; the author asked that every release load with `AutoModelForCausalLM.from_pretrained` and be smoke-tested that
+way before it goes public (spec `docs/engineering_specs/hub_from_pretrained_loading.md`).
+
+- **Export:** `scripts/export_hub_model.py <checkpoint> <out_dir>` vendors the `nn/` modules a `perceiver_ar`
+  config uses into flat `modeling_perceiver_ar.py` / `configuration_perceiver_ar.py` (generated from the source, never
+  edited), adds `auto_map`, switches off training-only fields (`use_liger`, the AWS `tokenizer_name`, flex as the
+  default backend), copies weights + tokenizer and writes `export_manifest.json`.
+- **🤗 interface:** `nn/perceiver_ar_hub.PerceiverARForCausalLM` (same weights and keys as `PerceiverARLM`):
+  `labels=` gives the eval loader's per-token loss (no z-loss); 🤗 `generate` (greedy, sampling, beam search) runs
+  over the cached decoder through `PerceiverARCache`, re-prefills when the row is full, falls back to the uncached
+  loop where the cache does not cover a read. `IncrementalDecoder.reorder` (beam search) is new in `nn/incremental.py`.
+- **Release checklist:** `scripts/hub_smoke_test.py` (load from the Hub id, score one sentence, sample 20 tokens) in
+  the `model-release` and `huggingface-project` skills.
+- Checked: `tests/test_hub_export.py` (CPU tiny models; the 150M checkpoint on an Odra RTX 3090: same loss as our
+  loader, 32 greedy tokens identical to our cached greedy); clean venvs with Transformers 4.57.6 and 5.23.0.
+
 ## [2026-11-14] - Plain W&B names for the AWS long runs
 
 - `training/utils_training.init_wandb` reads `MC_WANDB_NAME` (display name), `MC_WANDB_TAGS` (extra comma-separated

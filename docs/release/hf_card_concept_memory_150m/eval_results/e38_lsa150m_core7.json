@@ -1,0 +1,142 @@
+{
+  "tag": "e38_lsa150m_core7",
+  "model_kind": "perceiver_ar",
+  "model": "Cache/e38_board/lsa_m120t_final",
+  "tasks": [
+    "arc_challenge",
+    "arc_easy",
+    "hellaswag",
+    "lambada_openai",
+    "piqa",
+    "sciq",
+    "winogrande",
+    "wikitext"
+  ],
+  "num_fewshot": 0,
+  "limit": null,
+  "max_length": 2048,
+  "elapsed_s": 206.7734673023224,
+  "results": {
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.21843003412969283,
+      "acc_stderr,none": 0.012074291605700917,
+      "acc_norm,none": 0.257679180887372,
+      "acc_norm_stderr,none": 0.012780770562768334
+    },
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.484006734006734,
+      "acc_stderr,none": 0.010254533589288175,
+      "acc_norm,none": 0.4351851851851852,
+      "acc_norm_stderr,none": 0.010173216430370821
+    },
+    "hellaswag": {
+      "alias": "hellaswag",
+      "acc,none": 0.300637323242382,
+      "acc_stderr,none": 0.0045759807639238785,
+      "acc_norm,none": 0.33569010157339174,
+      "acc_norm_stderr,none": 0.004712660409846627
+    },
+    "lambada_openai": {
+      "alias": "lambada_openai",
+      "perplexity,none": 48.676308399724704,
+      "perplexity_stderr,none": 2.0355950908241103,
+      "acc,none": 0.33281583543566856,
+      "acc_stderr,none": 0.006565033230659798
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.6338411316648531,
+      "acc_stderr,none": 0.011240106070308514,
+      "acc_norm,none": 0.6229597388465724,
+      "acc_norm_stderr,none": 0.011307569752543913
+    },
+    "sciq": {
+      "alias": "sciq",
+      "acc,none": 0.776,
+      "acc_stderr,none": 0.013190830072364589,
+      "acc_norm,none": 0.696,
+      "acc_norm_stderr,none": 0.014553205687950535
+    },
+    "wikitext": {
+      "alias": "wikitext",
+      "word_perplexity,none": 35.56471659097284,
+      "word_perplexity_stderr,none": "N/A",
+      "byte_perplexity,none": 1.9500617867992964,
+      "byte_perplexity_stderr,none": "N/A",
+      "bits_per_byte,none": 0.9635198358193734,
+      "bits_per_byte_stderr,none": "N/A"
+    },
+    "winogrande": {
+      "alias": "winogrande",
+      "acc,none": 0.5067087608524072,
+      "acc_stderr,none": 0.014051220692330247
+    }
+  },
+  "versions": {
+    "arc_challenge": 1.0,
+    "arc_easy": 1.0,
+    "hellaswag": 1.0,
+    "lambada_openai": 1.0,
+    "piqa": 1.0,
+    "sciq": 1.0,
+    "wikitext": 2.0,
+    "winogrande": 1.0
+  },
+  "n_samples": {
+    "wikitext": {
+      "original": 62,
+      "effective": 62
+    },
+    "winogrande": {
+      "original": 1267,
+      "effective": 1267
+    },
+    "sciq": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "piqa": {
+      "original": 1838,
+      "effective": 1838
+    },
+    "lambada_openai": {
+      "original": 5153,
+      "effective": 5153
+    },
+    "hellaswag": {
+      "original": 10042,
+      "effective": 10042
+    },
+    "arc_easy": {
+      "original": 2376,
+      "effective": 2376
+    },
+    "arc_challenge": {
+      "original": 1172,
+      "effective": 1172
+    }
+  },
+  "lm_eval_config": {
+    "model": "Cache/e38_board/lsa_m120t_final",
+    "model_args": null,
+    "model_num_parameters": 141506208,
+    "model_dtype": "torch.bfloat16",
+    "model_revision": "main",
+    "model_sha": "",
+    "batch_size": null,
+    "batch_sizes": [
+      64
+    ],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": null,
+    "random_seed": 1234,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  }
+}
