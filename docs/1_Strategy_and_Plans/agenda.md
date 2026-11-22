@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-11-21 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-11-22 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -20,6 +20,19 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-22 — E39, living concepts: a new reading-layer memory at 150M (approved by the author for build,
+  pre-flight checks and training; nothing built yet).** Concept memory ties the topic index on single needles and
+  on long text but loses when one answer needs several far items (all values of one key 0.34 against 0.64 at 8k).
+  E39 regroups the reading layer's memory the way text is written: contiguous spans of 1–16 tokens cut where
+  neighbouring keys stop resembling each other, and document-wide concepts that each span joins or founds (no
+  blocks of equal groups, no bank). A reader scores concepts first, opens the best spans of the best 32 (512
+  tokens) and reads one summary per concept for what it did not open. No new weights; the loop of 4 passes stays;
+  the concept reasoner and the concept tree are later stages. Same recipe as the other four 150M models
+  (`m21mix_v2`, 11.5B tokens, seed 42). Before the paid run: three checks on the released concept-memory model (is
+  there a span signal, is the diagnosis right, how do concepts grow) and a 30M screen at home. Pass marks: the four
+  multi-item RULER cells at 8k and 16k ≥ 0.40 (concept memory 0.25, topic index 0.54), long-document loss within
+  0.010 / 0.020 nats of concept memory at 16k / 64k, single needles kept. Budget cap raised to $5,000. Spec
+  [E39](../experiments_specs/ahead/E39_living_concepts.md).
 - **2026-11-14 — E38, two 100M models on a modern data mix (approved by the author, in build).** The two best
   reads of E37 (concept memory `e37a`, the LSA port), unchanged, on `m21mix_v1`: the SmolLM2 tokenizer, 11.5B tokens
   in three length stages (8.0B at 4k web-heavy with code, math and rewritten text; 3.0B at 16k with 60 % long

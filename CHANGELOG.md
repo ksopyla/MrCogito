@@ -15,6 +15,22 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-22] - E39 spec (living concepts); AWS budget cap $5,000
+
+**Why:**
+- The author chose the next reading-layer memory after the walkthrough of the four 150M models ("I like the dynamic
+  span grouping", "Start Stages 1 and 2 together, I've raised the budget to $5000").
+
+**What changed:**
+- [added] `docs/experiments_specs/ahead/E39_living_concepts.md` - the frozen spec: contiguous spans cut on the
+  reading layer's own keys, document-wide concepts formed online with one causal version per 512-token stride, a
+  two-level choice by match, summaries for the unopened rest; pre-flight checks, pass and kill marks against the
+  measured 150M concept-memory and topic-index scores, the plan. No code yet.
+- [changed] `infra/aws/env.sh` - `MC_BUDGET_USD` default 4000 → 5000 (the cap `keep_running.sh` checks before every
+  launch).
+- [changed] `docs/1_Strategy_and_Plans/agenda.md` (current focus), `docs/glossary.md` (span, living concept, the two
+  thresholds, concept version, two-level choice).
+
 ## [2026-11-21] - The 150M family drawn: architecture page and NN Builder designs
 
 **Why:**
