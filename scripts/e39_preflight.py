@@ -733,7 +733,7 @@ def cmd_ruler(a) -> None:
                                  task_manager=TaskManager(metadata={"tokenizer": a.checkpoint, "max_seq_lengths": [L]}),
                                  bootstrap_iters=0)
     torch.save(records, raw_path)
-    summ = summarize(records)
+    summ = summarize(records, lm.tokenizer)
     summ["lm_eval"] = {t: v.get(f"{L},none") for t, v in ev["results"].items() if isinstance(v, dict)}
     summ["args"] = {"theta": a.theta, "lam": a.lam, "length": L, "limit": a.limit, "checkpoint": a.checkpoint}
     Path(str(a.out) + ".json").write_text(json.dumps(summ, indent=1))
@@ -744,9 +744,54 @@ def _pc(x: int) -> int:
     return bin(int(x)).count("1")
 
 
-def summarize(records: list[dict]) -> dict:
+def _by_pass(sel: list[dict], P: int) -> dict:
+    """Far values at the last prompt position, loop pass by loop pass: the share whose tokens are all held word for
+    word (concept memory as trained; E39 two-level; E39 flat), and the attention on the value's tokens (best head),
+    with the summaries in the softmax and without."""
+    if not sel:
+        return {}
+    out = {}
+    for r in range(P):
+        out[f"pass_{r + 1}"] = {
+            "cm_full": float(np.mean([x["p_raw"][r] >= 0.999 for x in sel])),
+            "e2_full": float(np.mean([x["p_e2"][r] >= 0.999 for x in sel])),
+            "ef_full": float(np.mean([x["p_ef"][r] >= 0.999 for x in sel])),
+            "mass_mean": float(np.mean([x["p_mass"][r] for x in sel])),
+            "mass_median": float(np.median([x["p_mass"][r] for x in sel])),
+            "mass_no_summaries_mean": float(np.mean([x["p_mass_ns"][r] for x in sel]))}
+    for key in ("p_raw", "p_e2", "p_ef"):
+        n_full = [sum(c >= 0.999 for c in x[key]) for x in sel]
+        out[f"{key[2:]}_passes_full_hist"] = {str(k): float(np.mean([n == k for n in n_full])) for k in range(P + 1)}
+    out["mass_best_pass_mean"] = float(np.mean([max(x["p_mass"]) for x in sel]))
+    out["mass_best_pass_median"] = float(np.median([max(x["p_mass"]) for x in sel]))
+    return out
+
+
+def _emit(sel: list[dict], P: int) -> dict:
+    """Values the model wrote, at the positions that wrote their digits: the reader of digit j, loop pass by loop
+    pass: is digit j's source token held word for word, and the attention on the value's tokens (best head)."""
+    sel = [x for x in sel if x.get("emit")]
+    if not sel:
+        return {"values": 0}
+    out = {"values": len(sel)}
+    for r in range(P):
+        out[f"pass_{r + 1}"] = {
+            "digit_token_held": float(np.mean([np.mean([e["held"][r] for e in x["emit"]]) for x in sel])),
+            "mass_mean": float(np.mean([np.mean([e["mass"][r] for e in x["emit"]]) for x in sel]))}
+    best = [np.mean([max(e["mass"]) for e in x["emit"]]) for x in sel]
+    first = [max(x["emit"][0]["mass"]) for x in sel]
+    out["mass_best_pass_mean"] = float(np.mean(best))
+    out["first_digit_mass_best_pass_mean"] = float(np.mean(first))
+    out["first_digit_mass_best_pass_median"] = float(np.median(first))
+    out["first_digit_held_any_pass"] = float(np.mean([any(x["emit"][0]["held"]) for x in sel]))
+    out["passes_holding_digit_mean"] = float(np.mean([np.mean([sum(e["held"]) for e in x["emit"]]) for x in sel]))
+    return out
+
+
+def summarize(records: list[dict], tok=None) -> dict:
     """Per task: scores, and for each answer value the coverage and attention numbers, far values split by found /
-    missed (far = no token in the raw window of the first reader)."""
+    missed (far = no token in the raw window of the first reader). With a tokenizer, also the positions that wrote
+    each found value's digits (`_emit`)."""
     out = {}
     for task in dict.fromkeys(r["task"] for r in records):
         rs = [r for r in records if r["task"] == task]
@@ -757,6 +802,15 @@ def summarize(records: list[dict]) -> dict:
             P = r["passes"]
             recs = r["recs"]
             readers = [recs[i:i + P] for i in range(0, len(recs) - len(recs) % P, P)]
+            starts = {}
+            if tok is not None:  # where each found value starts in the reply, in tokens
+                pieces = [tok.decode([x]) for x in r["tokens"]]
+                offs = np.cumsum([0] + [len(p) for p in pieces])
+                text = "".join(pieces)
+                for v, ref in enumerate(r["outputs"]):
+                    at = text.find(ref)
+                    if at >= 0:
+                        starts[v] = int(np.searchsorted(offs, at, side="right")) - 1
             for j, name in enumerate(split):
                 split[name].append(float(np.mean([x["src"][j] for x in readers[0]])))
             n_open.append(float(np.mean([x["n_open"] for x in readers[0]])))
@@ -776,7 +830,18 @@ def summarize(records: list[dict]) -> dict:
                     return max(_pc(x[key][v]) for x in rd) / nt
 
                 first = readers[0]
+                emit = []
+                if v in starts:  # the reader of the value's j-th token: position L0 − 1 + (its place in the reply)
+                    for j in range(nt):
+                        i = starts[v] + j
+                        if i < len(readers):
+                            emit.append({"held": [bool(x["raw"][v] >> j & 1) for x in readers[i]],
+                                         "mass": [x["mass_max"][v] for x in readers[i]]})
                 vals.append({
+                    "emit": emit,
+                    "p_raw": [_pc(x["raw"][v]) / nt for x in first], "p_e2": [_pc(x["e2"][v]) / nt for x in first],
+                    "p_ef": [_pc(x["ef"][v]) / nt for x in first], "p_mass": [x["mass_max"][v] for x in first],
+                    "p_mass_ns": [x["mass_ns_max"][v] for x in first],
                     "found": bool(r["found"][v]), "found_nosum": bool(r["found_nosum"][v]), "n_tok": nt,
                     "far": all(x["win"][v] == 0 for x in first),
                     "groups": float(np.mean([x["groups"][v] for x in first])),
@@ -797,7 +862,7 @@ def summarize(records: list[dict]) -> dict:
         def block(sel):
             if not sel:
                 return {"values": 0}
-            keys = [k for k in sel[0] if k not in ("found", "found_nosum", "far", "full")]
+            keys = [k for k in sel[0] if k not in ("found", "found_nosum", "far", "full", "emit") and k[:2] != "p_"]
             b = {"values": len(sel), "found_with_summaries_off": float(np.mean([x["found_nosum"] for x in sel]))}
             for k in keys:
                 b[k] = float(np.mean([x[k] for x in sel]))
@@ -822,6 +887,10 @@ def summarize(records: list[dict]) -> dict:
                          "concepts": float(np.mean([r["e39"]["concepts"] for r in rs]))},
             "far_found": block([x for x in far if x["found"]]),
             "far_missed": block(missed),
+            "first_reader_by_pass_far_missed": _by_pass(missed, rs[0]["passes"]),
+            "first_reader_by_pass_far_found": _by_pass([x for x in far if x["found"]], rs[0]["passes"]),
+            "writing_positions_far_found": _emit([x for x in far if x["found"]], rs[0]["passes"]),
+            "writing_positions_window_found": _emit([x for x in vals if x["found"] and not x["far"]], rs[0]["passes"]),
             # the three outcomes of the spec, on the far values the model missed
             "missed_never_fully_opened": float(np.mean([x["cm_peak_pass"] < 0.999 for x in missed])) if missed else None,
             "missed_fully_opened_in_some_pass": float(np.mean([x["cm_peak_pass"] >= 0.999 for x in missed])) if missed else None,
@@ -830,7 +899,25 @@ def summarize(records: list[dict]) -> dict:
 
 
 def cmd_summary(a) -> None:
-    print(json.dumps(summarize(torch.load(a.raw, weights_only=True)), indent=1))   # plain lists and numbers
+    tok = None
+    if a.checkpoint:
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(a.checkpoint)
+    records = []
+    for f in a.raw.split(","):
+        records += torch.load(f, weights_only=True)   # plain lists and numbers
+    if a.first > 0:  # the first prompts of each task only (a run stopped early)
+        seen, keep = {}, []
+        for r in records:
+            seen[r["task"]] = seen.get(r["task"], 0) + 1
+            if seen[r["task"]] <= a.first:
+                keep.append(r)
+        records = keep
+    s = summarize(records, tok)
+    if a.out:
+        Path(a.out).write_text(json.dumps(s, indent=1))
+    print(json.dumps(s, indent=1))
 
 
 def main() -> None:
@@ -869,7 +956,10 @@ def main() -> None:
     p.add_argument("--theta", type=float, required=True)
     p.add_argument("--lam", type=float, required=True)
     p = sub.add_parser("summary")
-    p.add_argument("--raw", required=True)
+    p.add_argument("--raw", required=True, help="one or more saved `ruler` record files (.pt), comma-separated")
+    p.add_argument("--checkpoint", default="", help="for its tokenizer: adds the positions that wrote each found value")
+    p.add_argument("--first", type=int, default=0, help="only the first N prompts of each task")
+    p.add_argument("--out", default="")
     a = ap.parse_args()
     {"spans": cmd_spans, "concepts": cmd_concepts, "ruler": cmd_ruler, "summary": cmd_summary}[a.what](a)
 
