@@ -1,0 +1,54 @@
+{
+  "checkpoint": "Cache/e38_board/cat_m120t_final",
+  "suite": "ruler",
+  "lengths": [
+    32768
+  ],
+  "limit": 100,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "max_gen_toks": "task default",
+  "results": {
+    "32768": {
+      "niah_multikey_1": {
+        "alias": "niah_multikey_1",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.51,
+        "32768_stderr,none": "N/A"
+      },
+      "niah_multikey_2": {
+        "alias": "niah_multikey_2",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.22,
+        "32768_stderr,none": "N/A"
+      },
+      "niah_single_1": {
+        "alias": "niah_single_1",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.99,
+        "32768_stderr,none": "N/A"
+      },
+      "niah_single_2": {
+        "alias": "niah_single_2",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.72,
+        "32768_stderr,none": "N/A"
+      },
+      "niah_single_3": {
+        "alias": "niah_single_3",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.09,
+        "32768_stderr,none": "N/A"
+      }
+    }
+  },
+  "mean": {
+    "32768": 0.506
+  },
+  "seconds": 2717.4
+}

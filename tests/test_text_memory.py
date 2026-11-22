@@ -204,6 +204,26 @@ def test_closed_mask_rule_dense_and_flex_predicate():
     assert torch.equal(grid, dense)
 
 
+def test_closed_mask_many_documents_per_row():
+    # 2026-11-19: the E38 catalogue run crashed on a 16k row of 2,637 tiny documents (the int32 slot code then
+    # allowed ≤ 511 per row). 600 two-token documents: past the old limit, and the predicate must still equal
+    # the dense reference.
+    m = make(**TEXT, message_raw_window=8)
+    S = 1200
+    ids = text_row(S=S)
+    doc = (torch.arange(S) // 2)[None]
+    with torch.no_grad():
+        m(ids, doc_ids=doc)
+    ctx = m._last_message_ctx
+    assert int(ctx.slot_doc.max()) + 1 > 511
+    nb = ctx.n_slots
+    dense = dense_message_mask(S, ctx, None, "cpu")[0, 0]
+    pred = make_message_mask_pred(S, ctx, None)
+    qq = torch.arange(S)[:, None].expand(S, S + nb)
+    kv = torch.arange(S + nb)[None].expand(S, S + nb)
+    assert torch.equal(pred(torch.zeros_like(qq), None, qq, kv), dense)
+
+
 @pytest.mark.parametrize("S", [200, 300])
 def test_band_block_lists_cover_the_closed_read(S):
     m = make(**TEXT, message_raw_window=64)

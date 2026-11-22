@@ -1353,6 +1353,9 @@ def exclusive_visible(replace: torch.Tensor, ctx: MessageCtx) -> torch.Tensor:
 
 
 _CLOSE_STRIDE = 1 << 22  # E31c closed read: slot code = doc · 2²² + close (int32: ≤ 4M tokens, ≤ 511 docs)
+# Rows of ≤ 128k tokens pack with 2¹⁷ instead (≤ 16,383 docs per row): 2²² alone crashed the E38 catalogue run on
+# 2026-11-19 (a 16k row of 2,637 tiny documents). close ≤ S − 1 < stride, so the masks are identical where both fit.
+_CLOSE_STRIDE_SHORT = 1 << 17
 
 
 def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Tensor], *, opened=None,
@@ -1381,6 +1384,7 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
     if anchor is None:
         anchor = torch.zeros(tag.shape, dtype=torch.bool, device=tag.device)
     closed = ctx.read_rule == "closed"
+    stride = _CLOSE_STRIDE_SHORT if S <= _CLOSE_STRIDE_SHORT else _CLOSE_STRIDE  # fixed powers of two
     if closed:
         # E31c: one int32 per slot, doc · S + close (no extra captured tensor; see the docstring)
         if ctx.slot_close is None:
@@ -1388,11 +1392,11 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         # The packing stride is a fixed power of two, not S: under dynamic-shape compilation S is a SymInt
         # and `div(tensor, SymInt)` does not trace (it broke flex at varying eval lengths on CUDA).
         n_doc = int(ctx.slot_doc.max().item()) + 1 if ctx.slot_doc.numel() else 1
-        if S > _CLOSE_STRIDE or max(n_doc, 1) * _CLOSE_STRIDE >= 2**31:
+        if S > stride or max(n_doc, 1) * stride >= 2**31:
             raise ValueError(f"closed read: {n_doc} documents × {S} tokens overflow the int32 slot code "
-                             f"(≤ {_CLOSE_STRIDE} tokens, ≤ {2**31 // _CLOSE_STRIDE - 1} documents per row)")
+                             f"(≤ {stride} tokens, ≤ {2**31 // stride - 1} documents per row)")
         slot_tag = torch.where((ctx.slot_doc < 0) | (ctx.slot_close < 0), torch.full_like(ctx.slot_doc, -1),
-                               ctx.slot_doc * _CLOSE_STRIDE + ctx.slot_close).to(torch.int32)
+                               ctx.slot_doc * stride + ctx.slot_close).to(torch.int32)
 
     def pred(b, h, q, kv):
         is_raw = kv < S
@@ -1424,8 +1428,8 @@ def make_message_mask_pred(S: int, ctx: MessageCtx, key_valid: Optional[torch.Te
         s = slot_tag[b, js]
         if closed:
             dq = torch.div(tq, m, rounding_mode="floor")
-            s_doc = torch.div(s, _CLOSE_STRIDE, rounding_mode="floor")
-            slot_ok = (j < nb) & (s >= 0) & (tq >= 0) & (s_doc == dq) & (s - s_doc * _CLOSE_STRIDE <= q)
+            s_doc = torch.div(s, stride, rounding_mode="floor")
+            slot_ok = (j < nb) & (s >= 0) & (tq >= 0) & (s_doc == dq) & (s - s_doc * stride <= q)
         else:
             d = tq - s
             slot_ok = (j < nb) & (s >= 0) & (d > 0) & (d < n_sides)

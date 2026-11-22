@@ -704,14 +704,22 @@ def init_wandb(
     if extra_config:
         wandb_config.update(extra_config)
 
+    # Plain-language labels for dashboards (author 2026-11-14: name models plainly on boards, codes as a secondary
+    # label), set by the job scripts: MC_WANDB_NAME replaces the display name (the run id, which resume relies on,
+    # stays), MC_WANDB_TAGS adds comma-separated tags, MC_WANDB_NOTES replaces the notes.
+    display_name = os.environ.get("MC_WANDB_NAME", "").strip() or training_args.run_name
+    tags.extend(t.strip() for t in os.environ.get("MC_WANDB_TAGS", "").split(",") if t.strip())
+    notes = os.environ.get("MC_WANDB_NOTES", "").strip() or notes
+    wandb_config["run_name_code"] = training_args.run_name
+
     # W&B tags are capped at 64 chars (a longer tag raises a pydantic ValidationError
     # in wandb.init). Clamp as a safety net so no future long tag crashes the run.
-    tags = [str(t)[:64] for t in tags if t]
+    tags = list(dict.fromkeys(str(t)[:64] for t in tags if t))
 
     wandb.init(
         project="MrCogito",
         id=run_identifier,
-        name=training_args.run_name,
+        name=display_name,
         job_type=job_type,
         config=wandb_config,
         tags=tags,

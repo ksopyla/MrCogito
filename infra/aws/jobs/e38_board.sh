@@ -7,5 +7,5 @@
 # Results: s3://BUCKET/runs/e38/e33n_m120t_<ARM>[_muon<PEAK>]_tok8.0e9_seed<SEED>/
 set -uo pipefail
 SEED="${1:?seed}"; OPT="${2:?adam or muon:PEAK}"; shift 2
-export E38_SIZE=m120t E38_MIX="${E38_MIX:-m21mix_v2}" E38_OPT="$OPT"
+export E38_SIZE=m120t E38_MIX="${E38_MIX:-m21mix_v2}" E38_OPT="$OPT" E38_BOARD=1
 exec bash "$(cd "$(dirname "$0")" && pwd)/e38_full.sh" "$SEED" "$@"

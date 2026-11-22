@@ -261,7 +261,7 @@ Limits of this audit
   - `data/mix_recipes/e18_main_stage1_v1.json` (2026-09-07; the run is **BLOCKED, never launched**:
     `docs/experiments_specs/ahead/E18_main_run_aws_plan.md:12`);
   - E33s Phase C table, `nemotron_cc_v21_hq` 30 % (branch e33-multihop,
-    `docs/experiments_specs/ahead/E33s_written_chains_real_data.md:300-309`; the recipe file
+    `docs/experiments_specs/canceled/E33s_written_chains_real_data.md:311-319`; the recipe file
     `e33s_realtext_4k_v1.json` it names does not exist on any branch; Phase C is deferred).
   - `docs/2_Experiments_Registry/master_experiment_log.md` has zero "Nemotron" hits.
 - The mixes that **were** built are "SmolLM3-inspired" (FineWeb-Edu, DCLM, Stack-Edu, FineMath, FinePDFs, reasoning
@@ -492,7 +492,7 @@ E33n then took GPT-2 to copy LSA's protocol (`docs/experiments_specs/done_failed
 | `docs/literature_review/learned_kv_context_compression.md:382-388` | LSA's own data: 100B FineWeb-Edu at 4k, then 12B at 128k; LongDocs of 16k–1M tokens weighted towards 512k–1M |
 | `docs/1_Strategy_and_Plans/aws_small_pretraining_plan.md:95-124` | the 2026-10-13 plan for a ~500M run: SmolLM2 tokenizer, tied embeddings, 16k packed rows, ~35 % long documents; proposed mix FineWeb-Edu 30 / DCLM 15 / Stack-Edu py 10 / FineMath-3+ 10 / PG-19 17.5 / FinePDFs ≥ 4k 17.5; phase 2 adds synthetic far-recall documents. Open: synthetic share, PG-19 decontamination ("missing"), 2-byte storage check. Never launched |
 | `docs/experiments_specs/ahead/E18_main_run_aws_plan.md:44-51` | the blocked Nemotron plan's context schedule: 300B at 8k → 32k, then 50B at 256k with the long tier re-weighted to 35 % (+ ProLong-64K / 512K), then 20B at 512k with repo-level code |
-| `MrCogito-e33/docs/experiments_specs/ahead/E33s_written_chains_real_data.md:300-309` | Phase C pretraining mix (deferred): Wikipedia 40 / Nemotron-CC-v2.1 HQ 30 / PG-19 15 / FinePDFs long 15, 1.5B tokens |
+| `MrCogito-e33/docs/experiments_specs/canceled/E33s_written_chains_real_data.md:311-319` | Phase C pretraining mix (deferred): Wikipedia 40 / Nemotron-CC-v2.1 HQ 30 / PG-19 15 / FinePDFs long 15, 1.5B tokens |
 | `MrCogito-sft/docs/experiments_specs/ahead/E37_sft_sensitivity.md:39-66` | the instruction-tuning data (smol-smoltalk + 10 % LongDocs replay) |
 
 Not found on arch-10m or e37-sft: a spec for a new pretraining mix, a books / papers / code-repository tier beyond

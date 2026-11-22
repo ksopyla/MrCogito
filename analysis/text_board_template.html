@@ -492,7 +492,7 @@ function overview() {
   const running = (D.ladder || []).filter(r => r.standing === "running").map(job);
   const queued = (D.ladder || []).filter(r => ["queued", "blocked"].includes(r.standing)).map(job);
   const asks = D.decisions || [];
-  now.append(card("Running now", running, "", "Nothing is training. Both servers are free."),
+  now.append(card("Running now", running, "", "No text-check run is training."),
     card("Up next", queued, "", "Nothing queued."));
   const a = el("div", { class: "card ask" }, el("h3", {}, "Needs your decision", el("span", { class: "count" }, String(asks.length))));
   if (asks.length) a.append(el("ol", {}, ...asks.map(t => el("li", {}, t)))); else a.append(el("div", { class: "small" }, "Nothing waiting."));

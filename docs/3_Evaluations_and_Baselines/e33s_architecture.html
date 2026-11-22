@@ -103,7 +103,7 @@ svg text { font-family: var(--f-mono); fill: var(--ink); }
 
 <div class="wrap">
   <header class="lede">
-    <span class="eyebrow">E33s · alignment page · draft spec 2026-10-21</span>
+    <span class="eyebrow">E33s · alignment page · canceled 2026-11-21</span>
     <h1>Multi-hop on real text, taught by written reasoning, at 100M</h1>
     <p>The bet: a 100M notebook model is trained on real multi-hop questions and maths whose answers write their
       reasoning out. A fixed rule reads each step's word and location off that text and supervises one loop round
@@ -111,9 +111,12 @@ svg text { font-family: var(--f-mono); fill: var(--ink); }
       as a dense model trained the same way at 4k, and stay accurate at 16k–64k, where the dense model's window
       cannot see the evidence.</p>
     <p class="note">The 30M synthetic pilot (R2) reached compose 92 % and deduce 99 % at 4k this way, with no
-      generator labels. Spec: <code>docs/experiments_specs/ahead/E33s_written_chains_real_data.md</code>.</p>
+      generator labels. Spec: <code>docs/experiments_specs/canceled/E33s_written_chains_real_data.md</code>.</p>
     <div class="status" role="note">
-      <b>Status 23 Oct 2026: on hold, re-scope before any 100M run.</b> The pre-flight (21–22 Oct, Polonez) found:
+      <b>Canceled 21 Nov 2026: never run.</b> The 24 Oct re-scope (30M from scratch on the text world, then 100M) was
+      not launched. The project moved to real long documents with exact-read memories (concept memory, the LSA port,
+      the catalogue read), and trained 100M and 150M models on AWS, so this design is out of date. Kept as a record.
+      The pre-flight (21–22 Oct, Polonez) found:
       <ul>
         <li>The rule finds the written steps in 71 % of MuSiQue + HotpotQA bridge questions (kill line 60 %).</li>
         <li>A 30M pilot ran end to end, but every real-QA score sat on its no-evidence floor.</li>

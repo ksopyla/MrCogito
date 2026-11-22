@@ -231,10 +231,10 @@ class IncrementalDecoder:
 
     # ------------------------------------------------------------------ prefill
     @torch.no_grad()
-    def prefill(self, buf: torch.Tensor, doc: torch.Tensor, L0: int) -> torch.Tensor:
+    def prefill(self, buf: torch.Tensor, doc: torch.Tensor, L0: int, all_positions: bool = False) -> torch.Tensor:
         """buf [B, Lb]: the prompt in [0, L0), anything after; doc [B, Lb]: document ids, −1 = padding or not yet
         written. Runs the model's forward over the row and keeps every attention call's keys and values. Returns the
-        final-norm hidden state at L0 − 1 [B, d]."""
+        final-norm hidden state at L0 − 1 [B, d] (`all_positions`: of every prompt position [B, L0, d])."""
         m, cfg = self.m, self.cfg
         mult = int(cfg.attn_pad_multiple)
         S0 = buf.shape[1]
@@ -289,7 +289,7 @@ class IncrementalDecoder:
                 self.cat.ni.groups.doc_start = self.cat.ni.groups.doc_start.clone()
         elif self.kind == "notes":
             self._build_notes(msgs.get(self.gi))
-        return h[:, self.L0 - 1]
+        return h[:, :self.L0] if all_positions else h[:, self.L0 - 1]
 
     def _ds_col(self, j: int) -> torch.Tensor:
         """[B] document start of position j (prompt: from the prefill; answer slots: as written)."""
@@ -712,6 +712,34 @@ class IncrementalDecoder:
         h = self.prefill(buf, doc, L0)
         t = self._decode(h, new, eos, check)
         return self.buf[:, :t]
+
+    # ------------------------------------------------------------------ beam search
+    @torch.no_grad()
+    def reorder(self, rows: torch.Tensor) -> None:
+        """Keep the batch rows `rows` [B'] (repeats allowed): 🤗 beam search's cache reorder after each step
+        (nn/perceiver_ar_hub.py, 2026-11-18). The cached keys and values, the reading layer's inputs, the row and its
+        document ids are gathered; what the reading layer derives from many keys (LSA's buckets, the concepts and the
+        reasoner's updates) is rebuilt from the gathered cache, as `step` rebuilds it at a block end. The closed blocks
+        are the same as before, and the open block is read through its raw window until `step` rebuilds it at its end,
+        so the next steps write what a decoding of the gathered rows would. The catalogue and notes reads keep
+        notebooks per row that are not rebuilt here: refused."""
+        if self.kind in ("catalogue", "notes"):
+            _refuse("reordering the rows of a notebook read (catalogue / notes)")
+        rows = rows.to(device=self.buf.device, dtype=torch.long)
+
+        def pick(x: torch.Tensor) -> torch.Tensor:
+            return x.index_select(0, rows)
+
+        self.buf, self.doc, self._ds0 = pick(self.buf), pick(self.doc), pick(self._ds0)
+        for store in (self.K, self.V, self.X):
+            for key in list(store):
+                store[key] = pick(store[key])
+        self._ds_cols = {j: pick(col) for j, col in self._ds_cols.items()}
+        self.B = int(rows.numel())
+        if self.kind == "lsa":
+            self._build_lsa()
+        elif self.kind == "concept":
+            self._build_concepts()
 
     # ------------------------------------------------------------------ read once, answer many
     _SHARED = ("m", "cfg", "kind", "gi")
