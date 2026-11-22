@@ -647,6 +647,100 @@ def probe_prompt(model, buf, doc, L0: int, new: int, *, eos: int, values: list[t
             "e39": {"spans": n_spans, "concepts": nC, "tokens": int(member.sum()), "value_spans": spans_of}}
 
 
+@torch.no_grad()
+def probe_prompt_lsa(model, buf, doc, L0: int, new: int, *, eos: int, values: list[torch.Tensor], check=None) -> dict:
+    """The same record as `probe_prompt` for a model with the topic-index read (our port of LSA, `par_global_read:
+    lsa`): per reader and loop pass, which tokens of each answer value the read holds word for word (its sliding
+    512-token window, its sinks, the tokens of the buckets it chose) and the attention on them. It has no summaries
+    and nothing is simulated, so the E39 columns repeat the model's own and the summary columns are zero."""
+    from nn.exact_read import ORD_MOD, doc_starts
+    from nn.incremental import IncrementalDecoder
+    from nn.lsa_buckets import lsa_open_table
+
+    gi = model.config.global_layer_index
+    att = model.layers[gi].attn
+    c = att.lsa
+    rw = int(c["window"])
+    dec = IncrementalDecoder(model)
+    q0: list = []
+    orig = att._lsa_read
+
+    def grab(q, k, v, *, doc_ids, key_valid):
+        q0.append(q[:, L0 - 1:L0].detach().float().clone())
+        return orig(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
+
+    att._lsa_read = grab
+    try:
+        h = dec.prefill(buf, doc, L0)
+    finally:
+        del att._lsa_read
+    dev = buf.device
+    pos = torch.arange(dec.S, device=dev)
+    recs: list[dict] = []
+
+    def detail(q, r, t):
+        d = q.shape[-1]
+        n = t + 1
+        jpos = pos[:n]
+        docr, doc_t = dec.doc[:, :n], dec.doc[:, t]
+        dsr = doc_starts(dec.doc)[:, :n]
+        same = (docr == doc_t[:, None]) & (doc_t >= 0)[:, None]
+        win = ((t - jpos) < rw)[None] & same
+        sink = ((jpos[None] - dsr) < int(c["sinks"])) & (docr >= 0) & same & ~win
+        opened = torch.zeros_like(win)
+        bucket = None
+        built = dec.lsa_groups[r]
+        if built is not None:
+            centroids, gidx, members = built
+            ch = lsa_open_table(q.to(dec.K[(gi, r)].dtype), centroids, gidx, top_k=c["top_k"], width=c["width"],
+                                raw_window=rw, impl="list", q_offset=t, members=members)
+            p_, ok_ = ch.opened(t, t + 1, rw)
+            ok_ = ok_[0, 0] & (p_[0, 0] < n)
+            opened[0, p_[0, 0][ok_]] = True
+            opened = opened & same & ~win & ~sink
+            codes = gidx.codes[0, 0, :n].long()
+            bucket = torch.where(codes >= 0, torch.div(codes, ORD_MOD, rounding_mode="floor"), torch.full_like(codes, -1))
+        raw = win | sink | opened
+        lg = torch.einsum("bhd,bkd->bhk", q[:, 0], dec.K[(gi, r)][:, :n, 0].float()) / math.sqrt(d)
+        p = torch.softmax(lg.masked_fill(~raw[:, None, :], NEG), -1)[0]
+        rec = {"t": t, "r": r, "raw": [], "win": [], "e2": [], "ef": [], "mass_max": [], "mass_mean": [],
+               "mass_ns_max": [], "sum_mass": [], "groups": [],
+               "src": [float((p * m[0]).sum(-1).mean()) for m in (win, sink, opened)] + [0.0],
+               "n_open": int(opened.sum()), "n_sum": 0}
+        for A in values:
+            A = A[A < n]
+            if A.numel() == 0:
+                for k_ in ("raw", "win", "e2", "ef", "groups"):
+                    rec[k_].append(0)
+                for k_ in ("mass_max", "mass_mean", "mass_ns_max", "sum_mass"):
+                    rec[k_].append(0.0)
+                continue
+            b = _bits(raw[0, A])
+            for k_ in ("raw", "e2", "ef"):
+                rec[k_].append(b)
+            rec["win"].append(_bits(win[0, A]))
+            ma = p[:, A].sum(-1)
+            rec["mass_max"].append(float(ma.max()))
+            rec["mass_mean"].append(float(ma.mean()))
+            rec["mass_ns_max"].append(float(ma.max()))
+            rec["sum_mass"].append(0.0)
+            rec["groups"].append(int(bucket[A][bucket[A] >= 0].unique().numel()) if bucket is not None else 0)
+        return rec
+
+    for r in range(dec.passes):
+        recs.append(detail(q0[r], r, L0 - 1))
+    real = dec._lsa_read
+
+    def traced(q, K, V, r, t, att_):
+        recs.append(detail(q.float(), r, t))
+        return real(q, K, V, r, t, att_)
+
+    dec._lsa_read = traced
+    t_end = dec._decode(h, new, eos, check)
+    return {"tokens": dec.buf[0, L0:t_end].tolist(), "recs": recs, "passes": dec.passes,
+            "e39": {"spans": 1, "concepts": 1, "tokens": 0, "value_spans": [0 for _ in values]}}
+
+
 def cmd_ruler(a) -> None:
     import lm_eval
     from lm_eval.models.utils import handle_stop_sequences, normalize_gen_kwargs, postprocess_generated_text
@@ -702,17 +796,23 @@ def cmd_ruler(a) -> None:
                         done[0] = any(s in self.tokenizer.decode(out[0, L0:t].tolist()) for s in stops)
                     return done
 
-                pr = probe_prompt(self.model, buf, doc, L0, new, eos=eos, values=values, theta=a.theta, lam=a.lam,
-                                  geo=geo, check=check)
-                reply = postprocess_generated_text(generation=self.tok_decode(pr["tokens"]), stop=until,
-                                                   think_end_token=None)
-                att.concept["summaries"] = False   # the same prompt with the summaries out of the read
-                try:
-                    out2 = IncrementalDecoder(self.model).greedy(buf.clone(), doc.clone(), L0, new, eos=eos, check=check)
-                finally:
-                    att.concept["summaries"] = True
-                reply2 = postprocess_generated_text(generation=self.tok_decode(out2[0, L0:].tolist()), stop=until,
-                                                    think_end_token=None)
+                if att.lsa is not None:   # the topic-index model: the same record, nothing simulated, no summaries
+                    pr = probe_prompt_lsa(self.model, buf, doc, L0, new, eos=eos, values=values, check=check)
+                    reply = reply2 = postprocess_generated_text(generation=self.tok_decode(pr["tokens"]), stop=until,
+                                                                think_end_token=None)
+                else:
+                    pr = probe_prompt(self.model, buf, doc, L0, new, eos=eos, values=values, theta=a.theta,
+                                      lam=a.lam, geo=geo, check=check)
+                    reply = postprocess_generated_text(generation=self.tok_decode(pr["tokens"]), stop=until,
+                                                       think_end_token=None)
+                    att.concept["summaries"] = False   # the same prompt with the summaries out of the read
+                    try:
+                        out2 = IncrementalDecoder(self.model).greedy(buf.clone(), doc.clone(), L0, new, eos=eos,
+                                                                     check=check)
+                    finally:
+                        att.concept["summaries"] = True
+                    reply2 = postprocess_generated_text(generation=self.tok_decode(out2[0, L0:].tolist()),
+                                                        stop=until, think_end_token=None)
                 records.append({"task": req.task_name, "doc_id": req.doc_id, "length": L, "L0": L0,
                                 "outputs": outs, "values": [v.tolist() for v in values], "reply": reply,
                                 "reply_nosum": reply2, "found": [o.lower() in reply.lower() for o in outs],
