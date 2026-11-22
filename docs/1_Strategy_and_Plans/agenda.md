@@ -1,6 +1,6 @@
 # MrCogito — Research Agenda (living)
 
-**Updated:** 2026-11-14 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
+**Updated:** 2026-11-21 · The daily driver for *current* work. Overarching direction: [vision_and_goals.md](vision_and_goals.md). Results ledger: [master_experiment_log.md](../2_Experiments_Registry/master_experiment_log.md). Specs: [experiments_specs](../experiments_specs/).
 
 > This is **research / exploration** — the direction is genuinely open. This file
 > stays small on purpose: how we work, the immediate focus, and a neutral record
@@ -75,34 +75,6 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   Eval fixes (561fe26): RULER 16k ran out of memory on every arm (flex recompiled per generated token, fell back to
   eager), notes-open crashed at 128k (opening table > 2³¹ elements); finished runs rerun.
   Spec [E33p](../experiments_specs/ahead/E33p_note_indexed_exact_read.md).
-- **2026-10-23 — Where the E33 line stands before the 100M decision.**
-  - **Written reasoning also teaches latest** (19 Oct, Odra; pulled 23 Oct). From R2, with latest answers written as
-    the person's last move and the steps removed in stages: latest 78 / 92 % at 4k / 16k with no generator labels.
-    In the same model, compose is 93 / 98 % and deduce 100 / 100 %. Count stays at 17 %. One warm-started run.
-  - **Still open on the synthetic world:** count; 3-hop compose (0 %); new sentence shapes (compose 5 %); far
-    quotes (lost in the reasoning line). Nothing of the reasoning line has been trained from scratch yet.
-  - **E33s (real multi-hop QA at 100M) is on hold.** Its pre-flight showed that a pretrained SmolLM2-135M sits near
-    the floor on MuSiQue, so the run's gates cannot be resolved.
-  - **24 Oct: E33s re-scoped (draft, awaiting go-ahead).**
-    - Phase 0: code fixes and one cheap check.
-    - Phase A: 30M from scratch, written chains from step 0, 3 seeds plus dense.
-    - Phase B: 100M E33 against dense.
-    - About 225 GPU-hours on our servers. Real data deferred.
-    - Spec: [E33s](../experiments_specs/ahead/E33s_written_chains_real_data.md), re-scope section; plan section 11.
-  - Board: text capability board (status and decisions updated 23 Oct).
-- **2026-10-21 — E33s, multi-hop on real text taught by written reasoning, at 100M. Spec drafted; on hold after
-  the 22 Oct pre-flight (see above).**
-  - **The 30M pilot (R2, 19 Oct)** used no generator labels:
-    - answers wrote their chain out, and a rule read each hop's word and location off that text;
-    - the written steps were removed in three stages;
-    - compose reached 92 % and deduce 99 % at 4k, as with generator labels (94 / 98 %).
-  - **E33s** moves this to real data at 100M, against a dense 100M model trained on the same chains:
-    - data: MuSiQue, HotpotQA, 2WikiMultiHopQA and GSM8K-Aug;
-    - pretraining: 1.5B tokens of long-document text, then 3 × 0.15B written-chain stages;
-    - exams: 4k / 16k / 64k contexts padded with real distractors.
-  - Spec: [E33s_written_chains_real_data.md](../experiments_specs/ahead/E33s_written_chains_real_data.md) ·
-    alignment page: [e33s_architecture.html](../3_Evaluations_and_Baselines/e33s_architecture.html) · review:
-    [e33_multihop_review_label_free_20261018.md](../4_Research_Notes/e33_multihop_review_label_free_20261018.md).
 - **2026-10-18 — E36, a trained writer for a frozen reader (SmolLM2-360M). S0 + S1 done on Polonez; the span
   ladder failed its pass mark.**
   - The frozen reader can take a whole 512-token span through one optimised key/value entry: 99.98 % of tokens,
@@ -145,33 +117,6 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
     - near facts and latest got worse;
     - one seed.
   - Spec: [E33f_notes_on_the_wire.md](../experiments_specs/ahead/E33f_notes_on_the_wire.md).
-- **2026-10-17 — Reasoning on text: compose (T5) and deduce (T7), then count (T6). Analysed; waiting for the
-  author's go-ahead.**
-  - **Where we stand:** every model, dense included, sits exactly on the uniform guess over the document's
-    candidates, one step and two steps, 1k–16k, even when the single steps are taught.
-  - **The diagnosis:**
-    - the join between two lookups gets about 0.04 % of the training loss and no curriculum;
-    - E33's four rounds score the same as one;
-    - a read hands out the next token, not the bridge entity.
-  - **Plan:**
-    1. measurements on existing checkpoints (no training);
-    2. three runs at 30M from E33's bridge-data checkpoint, plus a dense control:
-       - a reasoning phase with task-dense, staged data and exits on answers only;
-       - the same plus a round-1 target that names the bridge;
-       - the same plus a target for where each round reads;
-    3. supervision switched off before the exam.
-
-    Count is a separate fix: a summing read.
-  - **Step 0 measured (17 Oct, no training).** Link 1 breaks in both models: asked a two-step question, neither
-    makes the first lookup.
-    - E33's reads go to all home facts about equally (the answer's type).
-    - Dense never holds the bridge, although it answers each single step when asked for it (77 % and 68 %).
-    - E33 also cannot read a two-name fact ("Who is the teacher of X?", 8 %).
-
-    Next: the per-round read target leads. E33 must first pass the teacher question (≥ 60 %), with two keys per
-    note if it does not.
-
-    Note: [e33_text_multihop_diagnosis_20261017.md](../4_Research_Notes/e33_text_multihop_diagnosis_20261017.md).
 - **2026-10-14 — E33d, notes with a page distance (built; text runs handed to the text-checks session).**
   E33's notes carry no position, so it cannot tell which of two facts is newer (latest: 95 % at 1k, 22 % at
   4k, guessing 20 %). E33d adds one signed slope per read head, starting at 0, that lowers a note's score by
@@ -268,6 +213,39 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-10-17 → 11-21 — E33 multi-hop on the text world, and E33s (written reasoning at 100M): closed; E33s canceled 2026-11-21.**
+  - **What worked (30M, warm starts from one E33 run, one run each).** Each loop round trained to name the word its hop finds: compose 8 → 94 %, deduce 13 → 99 % at 4k. With no generator labels, answers that write their steps out, the steps then removed in stages: compose 92 %, deduce 99 %, latest 78 / 92 % at 4k / 16k (R2 and the written route, 19 Oct). Diagnosis note: [e33_text_multihop_diagnosis_20261017.md](../4_Research_Notes/e33_text_multihop_diagnosis_20261017.md).
+  - **What did not:** count (17–31 % in every recipe); 3-hop compose (0 %); new sentence shapes (compose 5 %); far quotes (lost in the reasoning line). Nothing was trained from scratch.
+  - **E33s.** Its real-data pre-flight (21–22 Oct) showed that real multi-hop QA cannot resolve 100M gates: a pretrained SmolLM2-135M reaches MuSiQue 4.7 % exact. The 24 Oct re-scope (30M from scratch on the text world, then 100M) was never launched. The project moved to real long documents with exact-read memories (E33n, E33p, E33t, E37, E38), which made its model and test bed out of date.
+  - **Still standing:** a loop learns multi-hop only from step-wise supervision. The concept-memory reasoner, trained on next-word loss alone, added nothing (E37 e37b, 8 Nov).
+  - Spec [E33s](../experiments_specs/canceled/E33s_written_chains_real_data.md) (canceled) · review [e33_multihop_review_label_free_20261018.md](../4_Research_Notes/e33_multihop_review_label_free_20261018.md) · results on the text capability board (frozen 2026-11-21).
+- **2026-11-14 — E37c, two-agent split training (the concept-read 100M model fine-tuned on rows cut at random points; 0.2B tokens, one L40S, $9.06).**
+  - Main pass mark missed: B with memory only finds 20 / 16 / 9 / 12 of 30 / 30 / 20 / 20 needles at 4k / 16k / 32k / 64k (marks 93 / 86 / 79 % at 4k–32k).
+  - Same-document control (cuts off, everything else equal): the cuts are what teaches B to answer from A's memory — 37 against 17 of 70 at 16k–64k (p = 0.0002); untuned 28. The same training without cuts makes memory only worse.
+  - The drop as one agent (92 → 77 of 100) comes mostly from the long-document training itself (no cuts: 82, p = 0.23 against cuts), as a growing habit of opening the answer with a blank line.
+  - What was trained did move: the extra loss 32–127 tokens after a cut fell from 0.081 to 0.021; the no-cut model stays at 0.078. Cuts cost 0.019 of long-text loss at 64k.
+  - Exam lesson: two unseeded runs drew different documents and moved a cell by 27 points; `--seed` added to the probe, all comparisons now paired.
+  - Next, if two agents stay a goal: cut rows plus a guard on the answer format (for example question-shaped rows), not more 16k text alone. Spec
+    [E37c](../experiments_specs/done_failed/E37c_two_agent_split_training.md) ·
+    [run report](../2_Experiments_Registry/run_reports/e37c_two_agent_split_training_20261114.md).
+- **2026-11-13 — Two agents from one trained 100M model, no training (eval only).** Agent A reads the document and
+  keeps the reading layer's memory; agent B holds only its question and reads A's memory. Number needles in
+  documents of 4k–64k tokens, 12–50 documents per cell, one seed.
+  - With A's whole state B answers as one agent does (the same score in 23 of 24 cells).
+  - With the memory alone B fails more as the document grows: 63 / 43 / 35 / 17–40 % at 4k / 16k / 32k / 64k for the
+    concept read, where one agent finds 100 / 97 / 90 / 83–100 %. The models were never trained to start cold.
+  - The memory plus A's caches for its last tokens recovers it: 93 % with 16 tokens at 16k, 95–100 % with 32–64
+    tokens at 64k (106–213 KB on top of the memory). A preamble of B's own helps at 4k only.
+  - No memory, or another document's: 0 %.
+  - It saves B's reading time from about 32k tokens up (2 s against 9 s at 64k), not bytes: the memory is 1 KB per
+    document token, about 220 times the text; 6–8 bits per number do as well as 16.
+  - One input vector of the 100M model holds about 270–300 bits (exact text up to about 32 tokens); 16 vectors
+    about 1,900 bits.
+  - On essays the concept read itself finds 10 % past 4k, so there is nothing to hand over there; the LSA port keeps
+    43–80 % with the memory alone against 50–95 % as one agent.
+  - Open: a short fine-tune with the split in training (the E33f route, 0.3B tokens there), which needs separate
+    side ids for the local layers because the concept and LSA reads require the message boundary off.
+  - Code `nn/agent_split.py`, `scripts/a2a_split_probe.py`; numbers in `CHANGELOG.md` (13 Nov).
 - **2026-11-05 — E33n, E33 notebook on natural long text at 30M (LSA testbed: FineWeb-Edu 4k trunk, LongDocs-lite 16k
   decay; home servers, ~66 RTX 3090 hours, AWS $0.17).** At 16k on positions ≥ 2k the dense ceiling beats the window
   control by 0.134 nats; the full note read recovers 5.5 % of that gap and the top-64 read 6.1 % (95 % ≤ 7.8 %) — the

@@ -1,7 +1,8 @@
 # E33s — Implementation Plan
 
-- **Spec:** [E33s_written_chains_real_data.md](E33s_written_chains_real_data.md) · **Status:** approved (author aligned
-  2026-10-21) · building P0 and P1
+- **Spec:** [E33s_written_chains_real_data.md](E33s_written_chains_real_data.md) · **Status:** canceled 2026-11-21 with the spec (see
+  its status). Sections 1–10: the real-data design and its 21–22 Oct pre-flight results. Section 11: the 24 Oct
+  re-scope plan, never built or launched.
 - **Authored by:** `implementation-plan` · for → `research-implement`
 
 ## 1. Source & fit

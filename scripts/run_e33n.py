@@ -38,6 +38,11 @@ Spec: docs/experiments_specs/done_failed/E33n_lsa_testbed_topk_notes.md · plan:
                  packed into 16,384-token rows, loss on the answers, plus 10 % LongDocs-lite replay), 16 rows per step,
                  200M tokens, the decay's schedule shape at a peak LR given by --lr (the pre-flight's pick); evaluates
                  the held-out answer loss (the manifest's eval rows) before the first step and at the last.
+         split — E37c (docs/experiments_specs/done_failed/E37c_two_agent_split_training.md): from the decay's final weights,
+                 fresh optimizer, the decay's rows of 16,384 in another order (manifest seed 3042), every row cut at
+                 random points (gaps log-uniform in [--cut_min, --cut_max]): a local layer reads its own side of a cut
+                 only, the reading layer the whole document. The long phase's rate (10 % of the peak → 1 %), 0.2B
+                 tokens at m100. Arms without a notebook only (dense, lsa, e37a, e37b).
 
 Usage (on a node, from the repo root):
   uv run python scripts/run_e33n.py cmd --arm e33n --size s30 --phase trunk --data /opt/dlami/nvme/data --out OUT
@@ -62,13 +67,13 @@ EOT = 50256
 SIZES = {
     #        hidden  e    pre  stack  target   trunk tok  decay tok  long tok  trunk rows/step (×4k)  lr peak
     "s30":  dict(hidden=576,  e=256, pre=2, stack=5, target=30e6,  trunk=1.5e9, decay=0.2e9, long=0.1e9, rows=64,
-                 lr=1.0e-3),
+                 lr=1.0e-3, split=0.1e9),
     "m100": dict(hidden=896,  e=384, pre=3, stack=7, target=100e6, trunk=3.0e9, decay=0.4e9, long=0.2e9, rows=128,
-                 lr=6.4e-4),
+                 lr=6.4e-4, split=0.2e9),
     "l300": dict(hidden=1280, e=512, pre=4, stack=9, target=300e6, trunk=5.0e9, decay=0.6e9, long=0.3e9, rows=256,
-                 lr=4.5e-4),
+                 lr=4.5e-4, split=0.3e9),
     "tiny": dict(hidden=128,  e=64,  pre=1, stack=2, target=8e6,   trunk=2e6,   decay=1e6,   long=0.5e6, rows=4,
-                 lr=1.0e-3),
+                 lr=1.0e-3, split=0.5e6),
 }
 # Tiny-ML leaderboard sizes (2026-11-14, author: "SmolLM2, bigger body"): the output reuses the input token table
 # (lm_head_tied), the SmolLM2 vocabulary is counted, and the body grows to fill the board's 150M total-parameter cap
@@ -220,7 +225,7 @@ def decay_len(size: str) -> int:
 
 
 def manifests(data: Path, out: Path, size: str) -> dict:
-    """Write the three token-shard manifests (trunk / decay / long) for a run under `out`, return their paths."""
+    """Write the token-shard manifests (trunk / decay / long / split) for a run under `out`, return their paths."""
     out.mkdir(parents=True, exist_ok=True)
     fw, ld = data / "fineweb_edu_gpt2", data / "longdocs_lite_gpt2"
     tiny = size == "tiny"
@@ -233,8 +238,9 @@ def manifests(data: Path, out: Path, size: str) -> dict:
              "eval": [{"name": s, "files": [str(ld / f"{s}_val_*.bin")], "rows": 16} for s in srcs]}
     long = {**decay, "seq_len": 2048 if tiny else 65536, "seed": 2042,
             "eval": [{**e, "rows": 4} for e in decay["eval"]]}
-    p = {k: out / f"manifest_{k}.json" for k in ("trunk", "decay", "long")}
-    for k, m in (("trunk", trunk), ("decay", decay), ("long", long)):
+    split = {**decay, "seed": 3042}  # E37c: the decay's rows, another order
+    p = {k: out / f"manifest_{k}.json" for k in ("trunk", "decay", "long", "split")}
+    for k, m in (("trunk", trunk), ("decay", decay), ("long", long), ("split", split)):
         p[k].write_text(json.dumps(m, indent=2))
     return p
 
@@ -378,10 +384,12 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               workers: int = 6, fast: bool = False, mix: str | None = None,
               save_every: int | None = None, mix_lenient: bool = False, optimizer: str = "adam",
               muon_adamw_lr: float | None = None, warmup: int | None = None,
-              muon_peak: float | None = None) -> list[str]:
+              muon_peak: float | None = None, cut: tuple[int, int] = (32, 4096)) -> list[str]:
     liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
+    if phase == "split" and cut[1] > 0:  # E37c: cut rows (the model refuses arms with a notebook or a message boundary)
+        args = {**args, "par_cut_gap_min": int(cut[0]), "par_cut_gap_max": int(cut[1])}
     tokenizer = str(data / "tokenizer_gpt2")
     if phase == "sft":
         if not (sft_manifest and init and lr):
@@ -433,9 +441,9 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
         # ends at 10 % of it), the 64k phase starts where the decay ended; the AdamW fallback scales the same way
         if lr is not None:
             raise ValueError("give --muon_peak or --lr, not both")
-        lr = 0.1 * muon_peak if phase == "long" else muon_peak
-        muon_adamw_lr = muon_adamw_lr or (0.1 * z["lr"] if phase == "long" else z["lr"])
-    lr = lr or (0.1 * z["lr"] if phase == "long" else z["lr"])  # long: the rate the decay ended on
+        lr = 0.1 * muon_peak if phase in ("long", "split") else muon_peak
+        muon_adamw_lr = muon_adamw_lr or (0.1 * z["lr"] if phase in ("long", "split") else z["lr"])
+    lr = lr or (0.1 * z["lr"] if phase in ("long", "split") else z["lr"])  # long, split: the rate the decay ended on
     launch = (["torchrun", "--standalone", f"--nproc_per_node={gpus}"] if gpus > 1 else ["python"])
     cmd = ["uv", "run", *launch, "training/train_concept_pretraining.py"]
     for k, v in args.items():
@@ -511,7 +519,7 @@ def main() -> None:
     c = sub.add_parser("cmd")
     c.add_argument("--arm", required=True, choices=sorted(ARMS))
     c.add_argument("--size", required=True, choices=sorted(SIZES))
-    c.add_argument("--phase", required=True, choices=("trunk", "decay", "long", "sft"))
+    c.add_argument("--phase", required=True, choices=("trunk", "decay", "long", "split", "sft"))
     c.add_argument("--data", required=True)
     c.add_argument("--out", required=True)
     c.add_argument("--init")
@@ -548,6 +556,9 @@ def main() -> None:
     c.add_argument("--rows", type=int, help="speed checks only: rows per optimizer step instead of the size's")
     c.add_argument("--workers", type=int, default=6, help="dataloader worker processes per GPU")
     c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
+    c.add_argument("--cut_min", type=int, default=32, help="E37c split phase: shortest gap between cuts, tokens")
+    c.add_argument("--cut_max", type=int, default=4096, help="E37c split phase: longest gap between cuts, tokens (0 = no cuts: the "
+                   "control, the same rows, rate and seed without a cut)")
     a = ap.parse_args()
     if a.what == "mixinfo":
         f = Path(a.mix)
@@ -590,7 +601,8 @@ def main() -> None:
                     local=a.local, flow=a.flow, seed=a.seed, gpus=a.gpus, sft_manifest=a.sft_manifest,
                     grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
                     fast=a.fast, mix=a.mix, save_every=a.save_every, mix_lenient=a.mix_lenient,
-                    optimizer=a.optimizer, muon_adamw_lr=a.muon_adamw_lr, warmup=a.warmup, muon_peak=a.muon_peak)
+                    optimizer=a.optimizer, muon_adamw_lr=a.muon_adamw_lr, warmup=a.warmup, muon_peak=a.muon_peak,
+                    cut=(a.cut_min, a.cut_max))
     print(shlex.join(cmd))
 
 

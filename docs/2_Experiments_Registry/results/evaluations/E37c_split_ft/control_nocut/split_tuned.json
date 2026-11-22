@@ -1,0 +1,3098 @@
+{
+ "checkpoint": "/opt/dlami/nvme/runs/e37c_m100_e37a_seed1_nocut/split/perceiver_ar_perceiver_H896L3g1s7N128_20261114_162005_e37a_m100_split/final",
+ "kind": "concept",
+ "vocab": 50257,
+ "hidden": 896,
+ "query_heads": 14,
+ "head_dim": 64,
+ "new": 12,
+ "bits": [
+  8,
+  4
+ ],
+ "tails": [
+  16
+ ],
+ "warm_tokens": 148,
+ "dtype": "bfloat16",
+ "seed": 2026,
+ "local_window": 128,
+ "cells": [
+  {
+   "task": "niah_single_1",
+   "length": 4096,
+   "docs_seconds": 7.2,
+   "n": 30,
+   "same_tokens_as_one_row": 30,
+   "score": {
+    "joint": 0.9666666666666667,
+    "relay": 0.9666666666666667,
+    "split": 0.4666666666666667,
+    "tail16": 0.9333333333333333,
+    "warm": 0.6333333333333333,
+    "bits8": 0.6,
+    "bits4": 0.5333333333333333,
+    "alone": 0.0,
+    "swap": 0.0
+   },
+   "n_scored": {
+    "joint": 30,
+    "relay": 30,
+    "split": 30,
+    "tail16": 30,
+    "warm": 30,
+    "bits8": 15,
+    "bits4": 15,
+    "alone": 30,
+    "swap": 29
+   },
+   "swap_reports_other_needle": 0.6206896551724138,
+   "seconds": {
+    "read_A": 0.16712641716003418,
+    "B_with_memory": 0.9408789873123169,
+    "one_agent": 0.3868553638458252
+   },
+   "seconds_first": {
+    "read_A": 0.16715407371520996,
+    "B_with_memory": 0.9846301078796387,
+    "one_agent": 8.671193599700928
+   },
+   "sizes": {
+    "answer_tokens": 12.0,
+    "fetch_summaries": 792.3333333333334,
+    "fetch_tokens": 11079.4,
+    "keys_per_read": 1239.6666666666667,
+    "memory_numbers": 1943381.3333333333,
+    "model_bits": 504.39998166533087,
+    "remote_down_per_token": 3640.0,
+    "remote_up_per_token": 3584.0,
+    "tokens_A": 3795.6666666666665,
+    "tokens_B": 34.0,
+    "utf8": 13696.333333333334,
+    "zlib9": 271.8333333333333,
+    "zstd19": 207.23333333333332
+   },
+   "rows": [
+    {
+     "index": 0,
+     "tokens_A": 3797,
+     "tokens_B": 37,
+     "ref": [
+      "3641224"
+     ],
+     "joint": ": 3641224.\nThe special magic number for tang",
+     "relay": ": 3641224.\nThe special magic number for tang",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ": 3641224.\nThe special magic number for tang",
+     "warm": ":\n\n$$\\mathbf{x} = \\",
+     "bits8": ":\n\n$$\\mathbf{x} = \\",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 1,
+     "tokens_A": 3795,
+     "tokens_B": 33,
+     "ref": [
+      "2446205"
+     ],
+     "joint": ": 2446205.\nThe special magic number for selfish",
+     "relay": ": 2446205.\nThe special magic number for selfish",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ": 2446205.\nThe special magic number for selfish",
+     "warm": ": 2446205.\nThe special magic number for selfish",
+     "bits8": ": 2446205.\nThe special magic number for selfish",
+     "bits4": ":\n\"The man who is not a man, but",
+     "alone": " the number of times that the number of times that the number",
+     "swap": ":\n\n1. The number of times the number of"
+    },
+    {
+     "index": 2,
+     "tokens_A": 3796,
+     "tokens_B": 33,
+     "ref": [
+      "7143544"
+     ],
+     "joint": ": 7143544.\nThe special magic number for",
+     "relay": ": 7143544.\nThe special magic number for",
+     "split": " the magic number for the smart phone.\nThe magic number",
+     "answer_tokens": 12,
+     "tail16": ": 7143544.\nThe special magic number for",
+     "warm": ": 7143544.\nThe magic number for futuristic",
+     "bits8": ": 7143544.\nThe magic number for futuristic",
+     "bits4": ": 7143544.\nThe magic number for futuristic",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 3,
+     "tokens_A": 3796,
+     "tokens_B": 35,
+     "ref": [
+      "8349807"
+     ],
+     "joint": ": 8349807.\nThe special magic number for damaged",
+     "relay": ": 8349807.\nThe special magic number for damaged",
+     "split": ": 8349807.\nThe special magic number for damaged",
+     "answer_tokens": 12,
+     "tail16": ": 8349807.\nThe special magic number for damaged",
+     "warm": ": 8349807.\nThe special magic number for damaged",
+     "bits8": ": 8349807.\nThe special magic number for damaged",
+     "bits4": ": 8349807.\nThe special magic number for damaged",
+     "alone": " the number of letters in the alphabet.\n\nThe following",
+     "swap": ": 7143544.\nThe magic number for damaged"
+    },
+    {
+     "index": 4,
+     "tokens_A": 3794,
+     "tokens_B": 31,
+     "ref": [
+      "4614823"
+     ],
+     "joint": ": 4614823.\nThe special magic number for youthful",
+     "relay": ": 4614823.\nThe special magic number for youthful",
+     "split": ": 4614823.\nThe magic number for youthful-",
+     "answer_tokens": 12,
+     "tail16": ": 4614823.\nThe special magic number for youthful",
+     "warm": ": 4614823.\nThe magic number for youthful-",
+     "bits8": ": 4614823.\nThe magic number for youthful-",
+     "bits4": ": 4614823.\nThe magic number for youthful-",
+     "alone": " the number of years that a young person has spent in the",
+     "swap": ": 8349807.\nThe magic number for youthful-"
+    },
+    {
+     "index": 5,
+     "tokens_A": 3795,
+     "tokens_B": 33,
+     "ref": [
+      "3727570"
+     ],
+     "joint": ": 3727570.\nThe special magic number for mach",
+     "relay": ": 3727570.\nThe special magic number for mach",
+     "split": " the magic number for the song.\nThe magic number for",
+     "answer_tokens": 12,
+     "tail16": ": 3727570.\nThe special magic number for mach",
+     "warm": " the number of the words that the reader has to remember.",
+     "bits8": " the number of the words that the reader has to remember.",
+     "bits4": " the number of the words that the reader has to remember.",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 4614823.\nThe special magic number for mach"
+    },
+    {
+     "index": 6,
+     "tokens_A": 3797,
+     "tokens_B": 37,
+     "ref": [
+      "9598993"
+     ],
+     "joint": ": 9598993.\nThe special magic number for j",
+     "relay": ": 9598993.\nThe special magic number for j",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ": 9598993.\nThe special magic number for j",
+     "warm": " the number of words that the jumbled-linguistics",
+     "bits8": " the number of words that the jumbled-linguistics",
+     "bits4": " the number of words that the reader can remember. The number",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the jumbled-linguistics"
+    },
+    {
+     "index": 7,
+     "tokens_A": 3798,
+     "tokens_B": 37,
+     "ref": [
+      "9902033"
+     ],
+     "joint": ": 9902033.\nThe special magic number for",
+     "relay": ": 9902033.\nThe special magic number for",
+     "split": " the magic number for jazzy-guess.\n",
+     "answer_tokens": 12,
+     "tail16": ": 9902033.\nThe special magic number for",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of times that the jazzy-guess",
+     "swap": ": 9598993.\nThe special magic number for j"
+    },
+    {
+     "index": 8,
+     "tokens_A": 3798,
+     "tokens_B": 37,
+     "ref": [
+      "9378615"
+     ],
+     "joint": ": 9378615.\nThe special magic number for",
+     "relay": ": 9378615.\nThe special magic number for",
+     "split": ": 9378615.\nThe special magic number for",
+     "answer_tokens": 12,
+     "tail16": ": 9378615.\nThe special magic number for",
+     "warm": ": 9378615.\nThe special magic number for",
+     "bits8": ": 9378615.\nThe special magic number for",
+     "bits4": ": 9378615.\nThe special magic number for",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 9902033.\nThe special magic number for"
+    },
+    {
+     "index": 9,
+     "tokens_A": 3794,
+     "tokens_B": 31,
+     "ref": [
+      "3579709"
+     ],
+     "joint": ": 3579709.\nThe special magic number for tricky",
+     "relay": ": 3579709.\nThe special magic number for tricky",
+     "split": ": 3579709.\nThe magic number for tricky-",
+     "answer_tokens": 12,
+     "tail16": ": 3579709.\nThe special magic number for tricky",
+     "warm": ": 3579709.\nThe magic number for tricky-",
+     "bits8": ": 3579709.\nThe magic number for tricky-",
+     "bits4": ": 3579709.\nThe magic number for tricky-",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 9378615.\nThe magic number for tricky"
+    },
+    {
+     "index": 10,
+     "tokens_A": 3796,
+     "tokens_B": 35,
+     "ref": [
+      "4062053"
+     ],
+     "joint": ": 4062053.\nThe special magic number for fe",
+     "relay": ": 4062053.\nThe special magic number for fe",
+     "split": ": 4062053.\nThe special magic number for fe",
+     "answer_tokens": 12,
+     "tail16": ": 4062053.\nThe special magic number for fe",
+     "warm": ": 4062053.\nThe special magic number for fe",
+     "bits8": ": 4062053.\nThe special magic number for fe",
+     "bits4": ": 4062053.\nThe special magic number for fe",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ":\n\"The man who is a man who is a"
+    },
+    {
+     "index": 11,
+     "tokens_A": 3796,
+     "tokens_B": 35,
+     "ref": [
+      "6220562"
+     ],
+     "joint": ": 6220562.\nThe special magic number for br",
+     "relay": ": 6220562.\nThe special magic number for br",
+     "split": ": 6220562.\nThe magic number for brash",
+     "answer_tokens": 12,
+     "tail16": ": 6220562.\nThe special magic number for br",
+     "warm": ": 6220562.\nThe magic number for brash",
+     "bits8": ": 6220562.\nThe magic number for brash",
+     "bits4": ": 6220562.\nThe magic number for brash",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 4062053.\nThe magic number for brash"
+    },
+    {
+     "index": 12,
+     "tokens_A": 3797,
+     "tokens_B": 37,
+     "ref": [
+      "9686307"
+     ],
+     "joint": ": 9686307.\nThe special magic number for statues",
+     "relay": ": 9686307.\nThe special magic number for statues",
+     "split": ": 9686307.\nThe special magic number for statues",
+     "answer_tokens": 12,
+     "tail16": ": 9686307.\nThe special magic number for statues",
+     "warm": ": 9686307.\nThe special magic number for statues",
+     "bits8": ": 9686307.\nThe special magic number for statues",
+     "bits4": ": 9686307.\nThe special magic number for statues",
+     "alone": " the number of the number of the statue of the goddess of",
+     "swap": ": 6220562.\nThe special magic number for statues"
+    },
+    {
+     "index": 13,
+     "tokens_A": 3796,
+     "tokens_B": 35,
+     "ref": [
+      "5605400"
+     ],
+     "joint": ": 55400.\nThe special magic number for s",
+     "relay": ": 55400.\nThe special magic number for s",
+     "split": ":\n\n$$\\mathbf{x} = \\",
+     "answer_tokens": 12,
+     "tail16": ": 5.\nThe special magic number for sable-",
+     "warm": ": 5.\nThe special magic number for sable-",
+     "bits8": ": 5.\nThe special magic number for sable-",
+     "bits4": ": 5.\nThe special magic number for sable-",
+     "alone": " the number of sable-relationship.\n\nThe",
+     "swap": ": 9686307.\nThe special magic number for s"
+    },
+    {
+     "index": 14,
+     "tokens_A": 3794,
+     "tokens_B": 31,
+     "ref": [
+      "9723336"
+     ],
+     "joint": ": 9723336.\nThe special magic number for capable",
+     "relay": ": 9723336.\nThe special magic number for capable",
+     "split": " the magic number for capable-mind.\nThe magic number",
+     "answer_tokens": 12,
+     "tail16": ": 9723336.\nThe special magic number for capable",
+     "warm": " the number of words that the text says. The number of",
+     "bits8": " the number of words that the text says. The number of",
+     "bits4": " the number of words that the text says. The number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 5.\nThe magic number for capable-mind mentioned"
+    },
+    {
+     "index": 15,
+     "tokens_A": 3796,
+     "tokens_B": 35,
+     "ref": [
+      "9538475"
+     ],
+     "joint": ": 9538475.\nThe special magic number for break",
+     "relay": ": 9538475.\nThe special magic number for break",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ":\n\n$$\\mathbf{x} = \\",
+     "warm": ":\n\n######  The magic number for breakable",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 16,
+     "tokens_A": 3796,
+     "tokens_B": 35,
+     "ref": [
+      "3066739"
+     ],
+     "joint": ": 3066739.\nThe special magic number for uncovered",
+     "relay": ": 3066739.\nThe special magic number for uncovered",
+     "split": ":\n\n$$\\mathbf{x} = \\",
+     "answer_tokens": 12,
+     "tail16": ": 3066739.\nThe special magic number for uncovered",
+     "warm": ": 3066739.\nThe magic number for uncovered-",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ":\n\t\t\t\t\t\t\t\t\t\t"
+    },
+    {
+     "index": 17,
+     "tokens_A": 3797,
+     "tokens_B": 35,
+     "ref": [
+      "9875983"
+     ],
+     "joint": ": 9875983.\nThe special magic number for",
+     "relay": ": 9875983.\nThe special magic number for",
+     "split": ":\n\t\t\t\t\t\t\t\t\t\t",
+     "answer_tokens": 12,
+     "tail16": ": 9875983.\nThe special magic number for",
+     "warm": ":\n\t\t\t\t\t\t\t\t\t\t",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 3066739.\nThe special magic number for condemned"
+    },
+    {
+     "index": 18,
+     "tokens_A": 3796,
+     "tokens_B": 33,
+     "ref": [
+      "9495601"
+     ],
+     "joint": ": 9495601.\nThe special magic number for",
+     "relay": ": 9495601.\nThe special magic number for",
+     "split": ": 9495601.\nThe magic number for abrupt",
+     "answer_tokens": 12,
+     "tail16": ": 9495601.\nThe special magic number for",
+     "warm": ": 9495601.\nThe special magic number for",
+     "alone": " the number of seconds.\n\nThe following example illustrates the",
+     "swap": ":\n\n\"The blood is flowing in the veins of"
+    },
+    {
+     "index": 19,
+     "tokens_A": 3795,
+     "tokens_B": 33,
+     "ref": [
+      "3992620"
+     ],
+     "joint": ": 3992620.\nThe special magic number for sticky",
+     "relay": ": 3992620.\nThe special magic number for sticky",
+     "split": ":\n\n$$\\mathbf{x} = \\",
+     "answer_tokens": 12,
+     "tail16": ": 3992620.\nThe special magic number for sticky",
+     "warm": ": 3992620.\nThe special magic number for sticky",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 9495601.\nThe special magic number for"
+    },
+    {
+     "index": 20,
+     "tokens_A": 3794,
+     "tokens_B": 31,
+     "ref": [
+      "5302186"
+     ],
+     "joint": ": 5302186.\nThe special magic number for murky",
+     "relay": ": 5302186.\nThe special magic number for murky",
+     "split": ": 5302186.\nThe magic number for the dark",
+     "answer_tokens": 12,
+     "tail16": ": 5302186.\nThe special magic number for the",
+     "warm": ": 5302186.\nThe magic number for the dark",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ":\n\nThe grass is green. The sky is blue"
+    },
+    {
+     "index": 21,
+     "tokens_A": 3795,
+     "tokens_B": 33,
+     "ref": [
+      "6601610"
+     ],
+     "joint": ": 6601610.\nThe grass is green. The",
+     "relay": ": 6601610.\nThe grass is green. The",
+     "split": ": 6601610.\nThe special magic number for unbiased",
+     "answer_tokens": 12,
+     "tail16": ": 6601610.\nThe special magic number for unbiased",
+     "warm": ": 6601610.\nThe special magic number for unbiased",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 5302186.\nThe magic number for unbiased-"
+    },
+    {
+     "index": 22,
+     "tokens_A": 3795,
+     "tokens_B": 35,
+     "ref": [
+      "1967311"
+     ],
+     "joint": ": 1967311.\nThe special magic number for quack",
+     "relay": ": 1967311.\nThe special magic number for quack",
+     "split": ": 1967311.\nThe special magic number for quack",
+     "answer_tokens": 12,
+     "tail16": ": 1967311.\nThe special magic number for quack",
+     "warm": ": 1967311.\nThe special magic number for quack",
+     "alone": " the number of quacks that are in the game.\n",
+     "swap": ": 6601610.\nThe special magic number for qu"
+    },
+    {
+     "index": 23,
+     "tokens_A": 3796,
+     "tokens_B": 35,
+     "ref": [
+      "7729977"
+     ],
+     "joint": ": 7729977.\nThe special magic number for defective",
+     "relay": ": 7729977.\nThe special magic number for defective",
+     "split": ": 7729977.\nThe special magic number for defective",
+     "answer_tokens": 12,
+     "tail16": ": 7729977.\nThe special magic number for defective",
+     "warm": ": 7729977.\nThe special magic number for defective",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 1967311.\nThe special magic number for defective-"
+    },
+    {
+     "index": 24,
+     "tokens_A": 3794,
+     "tokens_B": 31,
+     "ref": [
+      "1506703"
+     ],
+     "joint": ": 1506703.\nThe special magic number for successful",
+     "relay": ": 1506703.\nThe special magic number for successful",
+     "split": ": 1506703.\nThe magic number for successful-",
+     "answer_tokens": 12,
+     "tail16": ": 1506703.\nThe special magic number for successful",
+     "warm": ": 1506703.\nThe magic number for successful-",
+     "alone": " the number of blades that can be produced by a single blade",
+     "swap": ": 7729977.\nThe magic number for successful-"
+    },
+    {
+     "index": 25,
+     "tokens_A": 3796,
+     "tokens_B": 33,
+     "ref": [
+      "9472752"
+     ],
+     "joint": ": 9472752.\nThe special magic number for",
+     "relay": ": 9472752.\nThe special magic number for",
+     "split": ": 9472752.\nThe magic number for average",
+     "answer_tokens": 12,
+     "tail16": ": 9472752.\nThe special magic number for",
+     "warm": ": 9472752.\nThe magic number for average",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 1506703.\nThe magic number for average-"
+    },
+    {
+     "index": 26,
+     "tokens_A": 3796,
+     "tokens_B": 35,
+     "ref": [
+      "2463324"
+     ],
+     "joint": ": 2463324.\nThe special magic number for pl",
+     "relay": ": 2463324.\nThe special magic number for pl",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ": 2463324.\nThe special magic number for pl",
+     "warm": " the number of days that the person is to be married.",
+     "alone": " the number of days in the week.\n\nThe following",
+     "swap": ": 9472752.\nThe magic number for pl"
+    },
+    {
+     "index": 27,
+     "tokens_A": 3795,
+     "tokens_B": 33,
+     "ref": [
+      "5817157"
+     ],
+     "joint": ": 5817157.\nThe special magic number for e",
+     "relay": ": 5817157.\nThe special magic number for e",
+     "split": " the magic number for ethereal-compliance.\nThe magic",
+     "answer_tokens": 12,
+     "tail16": ": 5817157.\nThe special magic number for e",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of ethereal-compliance ethereal-compliance e",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 28,
+     "tokens_A": 3795,
+     "tokens_B": 33,
+     "ref": [
+      "4518737"
+     ],
+     "joint": ": 4518737.\nThe special magic number for langu",
+     "relay": ": 4518737.\nThe special magic number for langu",
+     "split": " the magic number for languid-fail mentioned in the provided",
+     "answer_tokens": 12,
+     "tail16": ": 4518737.\nThe special magic number for langu",
+     "warm": " the number of days that the person is in a position to",
+     "alone": " the number of days in which the person is not able to",
+     "swap": " the number of days that the person is in a state of"
+    },
+    {
+     "index": 29,
+     "tokens_A": 3795,
+     "tokens_B": 33,
+     "ref": [
+      "1664181"
+     ],
+     "joint": ": 1664181.\nThe special magic number for healthy",
+     "relay": ": 1664181.\nThe special magic number for healthy",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ": 1664181.\nThe special magic number for healthy",
+     "warm": ": 1664181.\nThe magic number for healthy-",
+     "alone": " the number of times that the number of times that the number",
+     "swap": ": 4518737.\nThe special magic number for healthy"
+    }
+   ]
+  },
+  {
+   "task": "niah_single_2",
+   "length": 4096,
+   "docs_seconds": 1.3,
+   "n": 30,
+   "same_tokens_as_one_row": 30,
+   "score": {
+    "joint": 0.8333333333333334,
+    "relay": 0.8666666666666667,
+    "split": 0.1,
+    "tail16": 0.6333333333333333,
+    "warm": 0.4666666666666667,
+    "bits8": 0.4,
+    "bits4": 0.26666666666666666,
+    "alone": 0.0,
+    "swap": 0.0
+   },
+   "n_scored": {
+    "joint": 30,
+    "relay": 30,
+    "split": 30,
+    "tail16": 30,
+    "warm": 30,
+    "bits8": 15,
+    "bits4": 15,
+    "alone": 30,
+    "swap": 29
+   },
+   "swap_reports_other_needle": 0.2413793103448276,
+   "seconds": {
+    "read_A": 0.16824722290039062,
+    "B_with_memory": 0.9526331424713135,
+    "one_agent": 0.3887244462966919
+   },
+   "seconds_first": {
+    "read_A": 0.16766691207885742,
+    "B_with_memory": 0.9918382167816162,
+    "one_agent": 0.3885982036590576
+   },
+   "sizes": {
+    "answer_tokens": 12.0,
+    "fetch_summaries": 1505.1,
+    "fetch_tokens": 10213.833333333334,
+    "keys_per_read": 1109.2666666666667,
+    "memory_numbers": 1876616.5333333334,
+    "model_bits": 19043.531568837105,
+    "remote_down_per_token": 3640.0,
+    "remote_up_per_token": 3584.0,
+    "tokens_A": 3665.266666666667,
+    "tokens_B": 34.86666666666667,
+    "utf8": 17422.0,
+    "zlib9": 7200.1,
+    "zstd19": 6885.8
+   },
+   "rows": [
+    {
+     "index": 0,
+     "tokens_A": 3666,
+     "tokens_B": 37,
+     "ref": [
+      "2282596"
+     ],
+     "joint": ": 2282596. It's a special magic number for",
+     "relay": ": 2282596. It's a special magic number for",
+     "split": " the number of scrawny-sitar that the sc",
+     "answer_tokens": 12,
+     "tail16": " the number of years that a scrawny-sitar",
+     "warm": " the number of words that the text says. The number of",
+     "bits8": " the number of words that the text says. The number of",
+     "bits4": " the number of words that the text says. The magic number",
+     "alone": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 1,
+     "tokens_A": 3665,
+     "tokens_B": 33,
+     "ref": [
+      "3403877"
+     ],
+     "joint": ": 3403877. \nThe magic number for the",
+     "relay": ": 3403877. \nThe magic number for the",
+     "split": " the magic number for the whole of the whole of the whole",
+     "answer_tokens": 12,
+     "tail16": ":\n\t\t\t\t\t\t\t\t\t\t",
+     "warm": " the number of words that the text says. The magic number",
+     "bits8": " the number of words that the text says. The magic number",
+     "bits4": " the number of words that the text says. The magic number",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the text says. The magic number"
+    },
+    {
+     "index": 2,
+     "tokens_A": 3666,
+     "tokens_B": 37,
+     "ref": [
+      "3954155"
+     ],
+     "joint": ": 3954155. The magic number for unbecoming",
+     "relay": ": 3954155. The magic number for unbecoming",
+     "split": " the number of words that are not a special magic number.",
+     "answer_tokens": 12,
+     "tail16": " the number of words that are not a part of the sentence",
+     "warm": " the number of words that are in the text. The number",
+     "bits8": " the number of words that are in the text. The number",
+     "bits4": " the number of words that are in the text. The number",
+     "alone": " the number of times that the special magic number is used in",
+     "swap": " the number of words that the author used in the text."
+    },
+    {
+     "index": 3,
+     "tokens_A": 3665,
+     "tokens_B": 35,
+     "ref": [
+      "3177145"
+     ],
+     "joint": ": 3177145. Why haven't we just been measuring",
+     "relay": ": 3177145. Why haven't we just been measuring",
+     "split": " the number of times that the number of times that the number",
+     "answer_tokens": 12,
+     "tail16": ": 3177145. Why? Because the special magic number",
+     "warm": ": 3177145. Why do you think that's the",
+     "bits8": ": 3177145. Why do you think that's the",
+     "bits4": " the number of words that the speaker has to answer. The",
+     "alone": " the number of the bagpipe in the bagpipe.\n",
+     "swap": " the number of words that are in the right place in the"
+    },
+    {
+     "index": 4,
+     "tokens_A": 3667,
+     "tokens_B": 35,
+     "ref": [
+      "5890164"
+     ],
+     "joint": ": 5890164. \nThe magic number for",
+     "relay": ": 5890164. \nThe magic number for",
+     "split": " the number of times that a bored-cornerstone has",
+     "answer_tokens": 12,
+     "tail16": ": 5890164.      ",
+     "warm": " the number of times that the word \"out\" appears in",
+     "bits8": " the number of times that the word \"out\" appears in",
+     "bits4": ": 5890164. _____ I am not sure",
+     "alone": " the number of times that the number of times that the number",
+     "swap": ": 3177145. Why? Because it's the magic"
+    },
+    {
+     "index": 5,
+     "tokens_A": 3664,
+     "tokens_B": 33,
+     "ref": [
+      "6249693"
+     ],
+     "joint": " the number of years that a company has been in business.",
+     "relay": ": 6249693. The special magic number for periodic-",
+     "split": " the number of times that the periodic-charger is used",
+     "answer_tokens": 12,
+     "tail16": " the number of years that a company has been in business.",
+     "warm": " the number of years that the company has been in business.",
+     "bits8": " the number of years that the company has been in business.",
+     "bits4": " the number of years that the company has been in business.",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of times that the number of times that the number"
+    },
+    {
+     "index": 6,
+     "tokens_A": 3663,
+     "tokens_B": 33,
+     "ref": [
+      "1860800"
+     ],
+     "joint": ": 1860800. So when you're trying to make a",
+     "relay": ": 1860800. So when you're trying to make a",
+     "split": " the magic number for the first time in the history of the",
+     "answer_tokens": 12,
+     "tail16": " the number of times that a person is in the right place",
+     "warm": " the number of words that the writer has to say. The",
+     "bits8": " the number of words that the writer has to say. The",
+     "bits4": " the number of words that the writer has to say. The",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the user can read. The number"
+    },
+    {
+     "index": 7,
+     "tokens_A": 3666,
+     "tokens_B": 37,
+     "ref": [
+      "4560338"
+     ],
+     "joint": ": 4560338. But what is the special magic number",
+     "relay": ": 4560338. But what is the special magic number",
+     "split": " the magic number for the number of people who are not in",
+     "answer_tokens": 12,
+     "tail16": ": 4560338. The magic number for pretty-heart",
+     "warm": ": 4560338. This is the magic number for the",
+     "bits8": ": 4560338. This is the magic number for the",
+     "bits4": ": 4560338. This is the magic number for the",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the author used in the text."
+    },
+    {
+     "index": 8,
+     "tokens_A": 3666,
+     "tokens_B": 37,
+     "ref": [
+      "5422194"
+     ],
+     "joint": ": 5422194. The special magic number for tightf",
+     "relay": ": 5422194. The special magic number for tightf",
+     "split": " the number of times that the number of times that the number",
+     "answer_tokens": 12,
+     "tail16": ": 5422194.\nThe special magic number for tight",
+     "warm": ": 5422194. I think that's a good question",
+     "bits8": ": 5422194. I think that's a good question",
+     "bits4": " the number of words that the text says. The number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that are in the right place in the"
+    },
+    {
+     "index": 9,
+     "tokens_A": 3666,
+     "tokens_B": 37,
+     "ref": [
+      "5328269"
+     ],
+     "joint": " the number of years that a person has been in the business",
+     "relay": " the number of years that a person has been in the business",
+     "split": " the number of daffy-thorn daffy",
+     "answer_tokens": 12,
+     "tail16": " the number of years that the organization has been in existence.",
+     "warm": " the number of words that the text says. The number of",
+     "bits8": " the number of words that the text says. The number of",
+     "bits4": " the number of words that the text says. The number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 5422194. The magic number for daffy"
+    },
+    {
+     "index": 10,
+     "tokens_A": 3663,
+     "tokens_B": 31,
+     "ref": [
+      "2025761"
+     ],
+     "joint": ": 2025761.\nThe magic number for Early-",
+     "relay": ": 2025761.\nThe magic number for Early-",
+     "split": ":\n\n\"The number of years of schooling a child",
+     "answer_tokens": 12,
+     "tail16": ": 2025761.\n#### **5. Conclusion**",
+     "warm": ": 2025761.\nThe magic number for Early-",
+     "bits8": ": 2025761.\nThe magic number for Early-",
+     "bits4": " the number of words that the author has to say. The",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of years that the person is in the position of"
+    },
+    {
+     "index": 11,
+     "tokens_A": 3664,
+     "tokens_B": 33,
+     "ref": [
+      "9431017"
+     ],
+     "joint": ": 9431017. It can also hide the lack of",
+     "relay": ": 9431017. It can also hide the lack of",
+     "split": " the magic number for plain-sandpaper mentioned in the text",
+     "answer_tokens": 12,
+     "tail16": ": 9431017. It can also hide the lack of",
+     "warm": ": 9431017. It's a magic number that's",
+     "bits8": ": 9431017. It's a magic number that's",
+     "bits4": ": 9431017. It's a special magic number that",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 2025761.\n#### **5.2."
+    },
+    {
+     "index": 12,
+     "tokens_A": 3664,
+     "tokens_B": 33,
+     "ref": [
+      "1148387"
+     ],
+     "joint": ": 1148387. The special magic number for premium-",
+     "relay": ": 1148387. The special magic number for premium-",
+     "split": ":\n\n$$\\mathbf{x}\\_{\\",
+     "answer_tokens": 12,
+     "tail16": ": 1148387.\nThe special magic number for premium",
+     "warm": ": 1148387. The magic number for premium-v",
+     "bits8": ": 1148387. The magic number for premium-v",
+     "bits4": ":\n\"The number of years of experience in the field",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ":\n\"The following are the numbers of the number of"
+    },
+    {
+     "index": 13,
+     "tokens_A": 3666,
+     "tokens_B": 37,
+     "ref": [
+      "7625380"
+     ],
+     "joint": ": 7625380. The special magic number for trite",
+     "relay": ": 7625380. The special magic number for trite",
+     "split": " the number of words that are in the text. The number",
+     "answer_tokens": 12,
+     "tail16": ": 7625380. The special magic number for trite",
+     "warm": ": 7625380. This is the magic number for tr",
+     "bits8": " the number of words that the text says. The number of",
+     "bits4": ": 7625380. This is the magic number for tr",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ":\n\"The following is a list of the names of"
+    },
+    {
+     "index": 14,
+     "tokens_A": 3665,
+     "tokens_B": 33,
+     "ref": [
+      "7912011"
+     ],
+     "joint": ": 7912011. \nThe magic number for red",
+     "relay": ": 7912011. \nThe magic number for red",
+     "split": " the number of red-memo that the red-mem",
+     "answer_tokens": 12,
+     "tail16": ": 7912011.       ",
+     "warm": " the number of words that the text says. The magic number",
+     "bits8": " the number of words that the text says. The magic number",
+     "bits4": " the number of words that the text says. The magic number",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the text says. The number of"
+    },
+    {
+     "index": 15,
+     "tokens_A": 3665,
+     "tokens_B": 35,
+     "ref": [
+      "6655115"
+     ],
+     "joint": ": 6655115. So when you're offbeat-",
+     "relay": ": 6655115. So when you're offbeat-",
+     "split": " the number of offbeat-swath-swath-",
+     "answer_tokens": 12,
+     "tail16": ":\n\"The number of members of the board is the",
+     "warm": " the number of words that you can read in a sentence.",
+     "alone": " the number of the offbeat-swath.\n\n",
+     "swap": " the number of times that the offbeat-swath is"
+    },
+    {
+     "index": 16,
+     "tokens_A": 3667,
+     "tokens_B": 39,
+     "ref": [
+      "1490033"
+     ],
+     "joint": ": 1490033. But what is the special magic number",
+     "relay": ": 1490033. But what is the special magic number",
+     "split": ": 1490033.\nThe special magic number for gut",
+     "answer_tokens": 12,
+     "tail16": ": 1490033. But what is the special magic number",
+     "warm": ": 1490033. The magic number for guttural",
+     "alone": " the number of days in the year in which the animal was",
+     "swap": " the number of words that you can read in a sentence."
+    },
+    {
+     "index": 17,
+     "tokens_A": 3665,
+     "tokens_B": 35,
+     "ref": [
+      "4937385"
+     ],
+     "joint": " the number of years that a person has spent in the US",
+     "relay": " the number of years that a person has spent in the US",
+     "split": " the number of years that a person has been hospitable-",
+     "answer_tokens": 12,
+     "tail16": " the number of years that a person has been in the United",
+     "warm": " the number of years you have been in the United States.",
+     "alone": " the number of days in the year in which the hospitable",
+     "swap": ": 1490033. The magic number for hospitable-"
+    },
+    {
+     "index": 18,
+     "tokens_A": 3664,
+     "tokens_B": 31,
+     "ref": [
+      "9471244"
+     ],
+     "joint": ": 9471244. What is the special magic number",
+     "relay": ": 9471244. What is the special magic number",
+     "split": " the magic number for the magic number for the magic number for",
+     "answer_tokens": 12,
+     "tail16": ": 9471244.\nThe following text is from",
+     "warm": ": 9471244. So you can't just say",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the text says. The magic number"
+    },
+    {
+     "index": 19,
+     "tokens_A": 3667,
+     "tokens_B": 37,
+     "ref": [
+      "9861614"
+     ],
+     "joint": " the number of years that a person has been in the company",
+     "relay": " the number of years that a person has been in the company",
+     "split": " the number of nappy-enthusiasm nappy-",
+     "answer_tokens": 12,
+     "tail16": " the number of nappy-enthusiasm nappies",
+     "warm": " the number of words that the text says. The number of",
+     "alone": " the number of times that the child has been told that she",
+     "swap": " the number of times you have been asked to give a n"
+    },
+    {
+     "index": 20,
+     "tokens_A": 3664,
+     "tokens_B": 33,
+     "ref": [
+      "3595752"
+     ],
+     "joint": ": 3595752. March 2021 I try to write using",
+     "relay": ": 3595752. March 2021 I try to write using",
+     "split": ": 3595752. March 2021 I try to write using",
+     "answer_tokens": 12,
+     "tail16": ": 3595752. March 2021 I try to write using",
+     "warm": ": 3595752. March 2021 I try to write using",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of years that the company has been in business."
+    },
+    {
+     "index": 21,
+     "tokens_A": 3667,
+     "tokens_B": 37,
+     "ref": [
+      "8178144"
+     ],
+     "joint": ": 8178144. \nThe special magic number for",
+     "relay": ": 8178144. \nThe special magic number for",
+     "split": " the number of nuts that are nuts. The number of nuts",
+     "answer_tokens": 12,
+     "tail16": ": 8178144. _____\n\nThe special magic",
+     "warm": " the number of words that the word \"apple\" has in",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 3595752. March 2021 I try to write using"
+    },
+    {
+     "index": 22,
+     "tokens_A": 3664,
+     "tokens_B": 33,
+     "ref": [
+      "1454255"
+     ],
+     "joint": ":\n#### **The magic number for dynamic-crib",
+     "relay": ":\n#### **The magic number for dynamic-crib",
+     "split": " the magic number for dynamic-crib. What is the",
+     "answer_tokens": 12,
+     "tail16": " the number of years that a company has been in business.",
+     "warm": " the number of times you have a dynamic-crib.",
+     "alone": " the number of cycles in the cycle.\n\nThe following",
+     "swap": " the number of times you have a dynamic-crib."
+    },
+    {
+     "index": 23,
+     "tokens_A": 3665,
+     "tokens_B": 33,
+     "ref": [
+      "7221902"
+     ],
+     "joint": ": 7221902. The special magic number for abrupt",
+     "relay": ": 7221902. The special magic number for abrupt",
+     "split": ": 7221902.\nThe following text is from",
+     "answer_tokens": 12,
+     "tail16": ": 7221902. The special magic number for abrupt",
+     "warm": ": 7221902. The magic number for abrupt-",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the text says. The number of"
+    },
+    {
+     "index": 24,
+     "tokens_A": 3667,
+     "tokens_B": 37,
+     "ref": [
+      "8861430"
+     ],
+     "joint": ": 8861430. Why do we need to know",
+     "relay": ": 8861430. Why do we need to know",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ": 8861430.\nThe following text is from",
+     "warm": ": 8861430. I think that's a good",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that are in the right place in the"
+    },
+    {
+     "index": 25,
+     "tokens_A": 3665,
+     "tokens_B": 35,
+     "ref": [
+      "2326867"
+     ],
+     "joint": ": 2326867. It's a special magic number for",
+     "relay": ": 2326867. It's a special magic number for",
+     "split": " the number of cooing-broiler coops that are",
+     "answer_tokens": 12,
+     "tail16": " the number of years that the organization has been in existence.",
+     "warm": " the number of words that the author used in the text.",
+     "alone": " the number of cooing-broiler-sparks",
+     "swap": ": 8861430. The magic number for cooing"
+    },
+    {
+     "index": 26,
+     "tokens_A": 3664,
+     "tokens_B": 33,
+     "ref": [
+      "4484515"
+     ],
+     "joint": ": 4484515. [2] _____ The obvious",
+     "relay": ": 4484515. [2] _____ The obvious",
+     "split": " the magic number for the mundane-farming mentioned in the",
+     "answer_tokens": 12,
+     "tail16": ": 4484515. [2] _____ The obvious",
+     "warm": " the number of days in a week. The magic number for",
+     "alone": " the number of days in the year.\n\nThe special",
+     "swap": " the number of days in a week. The magic number for"
+    },
+    {
+     "index": 27,
+     "tokens_A": 3666,
+     "tokens_B": 37,
+     "ref": [
+      "7718121"
+     ],
+     "joint": ": 7718121. December 2010 A few months ago I",
+     "relay": ": 7718121. December 2010 A few months ago I",
+     "split": " the number of words that are not a special magic number.",
+     "answer_tokens": 12,
+     "tail16": ": 7718121. December 2010 A few months ago I",
+     "warm": ": 7718121. December 2010 A few months ago I",
+     "alone": " the number of times that the number of times that the number",
+     "swap": " the number of words that are used in the text. The"
+    },
+    {
+     "index": 28,
+     "tokens_A": 3668,
+     "tokens_B": 39,
+     "ref": [
+      "7124041"
+     ],
+     "joint": ": 7124041. It's a special magic number",
+     "relay": ": 7124041. It's a special magic number",
+     "split": " the number of times that a person is unbecoming-",
+     "answer_tokens": 12,
+     "tail16": ": 7124041.\nThe magic number for un",
+     "warm": " the number of words that the text says. The number of",
+     "alone": " the number of times that the special magic number is used in",
+     "swap": ": 7718121. December 2010 A few months ago I"
+    },
+    {
+     "index": 29,
+     "tokens_A": 3664,
+     "tokens_B": 31,
+     "ref": [
+      "5592627"
+     ],
+     "joint": ": 5592627. If you want to know what",
+     "relay": ": 5592627. If you want to know what",
+     "split": " the magic number for the absorbed-health. The magic number",
+     "answer_tokens": 12,
+     "tail16": ": 5592627.\nThe following text is from",
+     "warm": ": 5592627. If you want to know what",
+     "alone": " the number of days in a year that the patient is in",
+     "swap": " the number of days you have been in a hospital. The"
+    }
+   ]
+  },
+  {
+   "task": "niah_single_1",
+   "length": 16384,
+   "docs_seconds": 0.8,
+   "n": 30,
+   "same_tokens_as_one_row": 30,
+   "score": {
+    "joint": 0.8333333333333334,
+    "relay": 0.8333333333333334,
+    "split": 0.3,
+    "tail16": 0.7333333333333333,
+    "warm": 0.2,
+    "bits8": 0.13333333333333333,
+    "bits4": 0.0,
+    "alone": 0.0,
+    "swap": 0.0
+   },
+   "n_scored": {
+    "joint": 30,
+    "relay": 30,
+    "split": 30,
+    "tail16": 30,
+    "warm": 30,
+    "bits8": 15,
+    "bits4": 15,
+    "alone": 30,
+    "swap": 29
+   },
+   "swap_reports_other_needle": 0.13793103448275862,
+   "seconds": {
+    "read_A": 0.47789907455444336,
+    "B_with_memory": 0.9429205656051636,
+    "one_agent": 0.6473555564880371
+   },
+   "seconds_first": {
+    "read_A": 6.0383031368255615,
+    "B_with_memory": 0.9075798988342285,
+    "one_agent": 7.9289870262146
+   },
+   "sizes": {
+    "answer_tokens": 12.0,
+    "fetch_summaries": 3353.2,
+    "fetch_tokens": 19468.966666666667,
+    "keys_per_read": 1338.8666666666666,
+    "memory_numbers": 8023483.733333333,
+    "model_bits": 727.6425752726501,
+    "remote_down_per_token": 3640.0,
+    "remote_up_per_token": 3584.0,
+    "tokens_A": 15670.866666666667,
+    "tokens_B": 34.266666666666666,
+    "utf8": 56446.933333333334,
+    "zlib9": 431.23333333333335,
+    "zstd19": 210.03333333333333
+   },
+   "rows": [
+    {
+     "index": 0,
+     "tokens_A": 15670,
+     "tokens_B": 33,
+     "ref": [
+      "7733527"
+     ],
+     "joint": ": 7733527.\nThe grass is green. The",
+     "relay": ": 7733527.\nThe grass is green. The",
+     "split": " the magic number for succinct-exile mentioned in the provided",
+     "answer_tokens": 12,
+     "tail16": ": 7733527.\nThe special magic number for succinct",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of days in the week.\n\nThe following"
+    },
+    {
+     "index": 1,
+     "tokens_A": 15671,
+     "tokens_B": 35,
+     "ref": [
+      "5544173"
+     ],
+     "joint": ": 5544173.\nThe special magic number for nice",
+     "relay": ": 5544173.\nThe special magic number for nice",
+     "split": ":\n\n$$\\mathbf{x} = \\",
+     "answer_tokens": 12,
+     "tail16": ": 5544173.\nThe special magic number for nice",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 2,
+     "tokens_A": 15670,
+     "tokens_B": 33,
+     "ref": [
+      "3584440"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": ":\n\n$$\\mathbf{x} = \\",
+     "answer_tokens": 12,
+     "tail16": ":\n\n(1)\n\n(2)\n",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 3,
+     "tokens_A": 15670,
+     "tokens_B": 33,
+     "ref": [
+      "6039141"
+     ],
+     "joint": ": 6039141.\nThe grass is green. The",
+     "relay": ": 6039141.\nThe grass is green. The",
+     "split": ": 6039141.\nThe special magic number for mindless",
+     "answer_tokens": 12,
+     "tail16": ": 6039141.\nThe special magic number for mindless",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 4,
+     "tokens_A": 15672,
+     "tokens_B": 37,
+     "ref": [
+      "4727866"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " the magic number for sour-dumbwaiter.\n",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 6039141.\nThe special magic number for sour"
+    },
+    {
+     "index": 5,
+     "tokens_A": 15673,
+     "tokens_B": 37,
+     "ref": [
+      "6903470"
+     ],
+     "joint": ": 6903470.\nThe special magic number for",
+     "relay": ": 6903470.\nThe special magic number for",
+     "split": " the magic number for the special magic number for the special magic",
+     "answer_tokens": 12,
+     "tail16": ": 6903470.\nThe special magic number for",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 6,
+     "tokens_A": 15670,
+     "tokens_B": 33,
+     "ref": [
+      "3711193"
+     ],
+     "joint": ": 3711193.\nThe grass is green. The",
+     "relay": ": 3711193.\nThe grass is green. The",
+     "split": " the magic number for the naturalisation of the natural world.",
+     "answer_tokens": 12,
+     "tail16": ": 3711193.\nThe special magic number for ubiquitous",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of times that the number of times that the number",
+     "swap": " the magic number for the magic number for the magic number for"
+    },
+    {
+     "index": 7,
+     "tokens_A": 15671,
+     "tokens_B": 35,
+     "ref": [
+      "9154277"
+     ],
+     "joint": ": 9154277.\nThe special magic number for discreet",
+     "relay": ": 9154277.\nThe special magic number for discreet",
+     "split": ":\n\n$$\\mathbf{x} = \\",
+     "answer_tokens": 12,
+     "tail16": ": 9154277.\nThe special magic number for discreet",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 8,
+     "tokens_A": 15671,
+     "tokens_B": 35,
+     "ref": [
+      "4483774"
+     ],
+     "joint": ": 4483774.\nThe special magic number for joy",
+     "relay": ": 4483774.\nThe special magic number for joy",
+     "split": ": 4483774.\nThe special magic number for joy",
+     "answer_tokens": 12,
+     "tail16": ": 4483774.\nThe special magic number for joy",
+     "warm": ": 4483774.\nThe special magic number for joy",
+     "bits8": ": 4483774.\nThe special magic number for joy",
+     "bits4": ":\n\n\"The grass is green.\"\n\nThe",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 9,
+     "tokens_A": 15670,
+     "tokens_B": 33,
+     "ref": [
+      "2659386"
+     ],
+     "joint": ": 2659386.\nThe special magic number for tr",
+     "relay": ": 2659386.\nThe special magic number for tr",
+     "split": " the magic number for trite-bit.\nThe magic",
+     "answer_tokens": 12,
+     "tail16": " the number of the number of the number of the number of",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of bits that are not a bit of a bit",
+     "swap": ":\n\n\"The man who is a trite-"
+    },
+    {
+     "index": 10,
+     "tokens_A": 15671,
+     "tokens_B": 35,
+     "ref": [
+      "1552516"
+     ],
+     "joint": ": 1552516.\nThe grass is green. The",
+     "relay": ": 1552516.\nThe grass is green. The",
+     "split": ": 1552516.\nThe special magic number for disillusion",
+     "answer_tokens": 12,
+     "tail16": ": 1552516.\nThe special magic number for disillusion",
+     "warm": ": 1552516.\nThe special magic number for disillusion",
+     "bits8": ": 1552516.\nThe special magic number for disillusion",
+     "bits4": ":\n\t\t\t\t\t\t\t\t\t\t",
+     "alone": " the number of times that the reader has been told that the",
+     "swap": " the number that the text says is the number of times that"
+    },
+    {
+     "index": 11,
+     "tokens_A": 15672,
+     "tokens_B": 35,
+     "ref": [
+      "6690891"
+     ],
+     "joint": ": 6690891.\nThe special magic number for",
+     "relay": ": 6690891.\nThe special magic number for",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ": 6690891.\nThe special magic number for",
+     "warm": " the number of lines that the author has to write down.",
+     "bits8": " the number of words that the text says. The number of",
+     "bits4": " the number of lines that the author has to write down.",
+     "alone": " the number of words that are used in the text. The",
+     "swap": ":\n\n\"The man who is a man is a"
+    },
+    {
+     "index": 12,
+     "tokens_A": 15671,
+     "tokens_B": 35,
+     "ref": [
+      "4190844"
+     ],
+     "joint": ": 4190844.\nThe special magic number for woo",
+     "relay": ": 4190844.\nThe special magic number for woo",
+     "split": " the magic number for woozy-decline.\nThe",
+     "answer_tokens": 12,
+     "tail16": " the number of the number of the number of the number of",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 13,
+     "tokens_A": 15670,
+     "tokens_B": 33,
+     "ref": [
+      "1953082"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " the magic number for the first time.\nThe magic number",
+     "answer_tokens": 12,
+     "tail16": ":\n\n$$\\mathbf{x} = \\",
+     "warm": " the number that the reader has to remember.\nThe magic",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": ":\n\n$$\\mathbf{x} = \\",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number that is the number of the number of the number"
+    },
+    {
+     "index": 14,
+     "tokens_A": 15671,
+     "tokens_B": 33,
+     "ref": [
+      "6421958"
+     ],
+     "joint": ": 6421958.\nThe grass is green.",
+     "relay": ": 6421958.\nThe grass is green.",
+     "split": ": 6421958.\nThe special magic number for",
+     "answer_tokens": 12,
+     "tail16": ": 6421958.\nThe special magic number for",
+     "warm": " the number that the text says is the number that the text",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number that is the number of the number of the number",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number that is the number of the number of the number"
+    },
+    {
+     "index": 15,
+     "tokens_A": 15672,
+     "tokens_B": 37,
+     "ref": [
+      "4027369"
+     ],
+     "joint": ": 4027369.\nThe special magic number for flipped",
+     "relay": ": 4027369.\nThe special magic number for flipped",
+     "split": " the magic number for flipping-out-preservation.\n",
+     "answer_tokens": 12,
+     "tail16": ": 4027369.\nThe special magic number for flipped",
+     "warm": " the number of times that the text says that the number of",
+     "alone": " the number of times that the number of times that the number",
+     "swap": " the number that the reader has to remember.\nThe special"
+    },
+    {
+     "index": 16,
+     "tokens_A": 15672,
+     "tokens_B": 35,
+     "ref": [
+      "5982406"
+     ],
+     "joint": ": 5982406.\nThe grass is green.",
+     "relay": ": 5982406.\nThe grass is green.",
+     "split": " the magic number for abnormal-hurdle.\nThe",
+     "answer_tokens": 12,
+     "tail16": ": 5982406.\nThe special magic number for",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of times that the number of times the number of",
+     "swap": ": 4027369.\nThe special magic number for abnormal"
+    },
+    {
+     "index": 17,
+     "tokens_A": 15669,
+     "tokens_B": 31,
+     "ref": [
+      "8021240"
+     ],
+     "joint": ": 8021240.\nThe special magic number for cynical",
+     "relay": ": 8021240.\nThe special magic number for cynical",
+     "split": ":\n\n$$\\mathbf{x} = \\",
+     "answer_tokens": 12,
+     "tail16": ": 8021240.\nThe special magic number for cynical",
+     "warm": ":\n\t\t\t\t\t\t\t\t\t\t",
+     "alone": " the number of days in the year in which the person is",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 18,
+     "tokens_A": 15670,
+     "tokens_B": 33,
+     "ref": [
+      "9955827"
+     ],
+     "joint": ": 9955827.\nThe special magic number for miniature",
+     "relay": ": 9955827.\nThe special magic number for miniature",
+     "split": ": 9955827.\nThe magic number for miniature-",
+     "answer_tokens": 12,
+     "tail16": ": 9955827.\nThe special magic number for miniature",
+     "warm": ": 9955827.\nThe magic number for miniature-",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 19,
+     "tokens_A": 15670,
+     "tokens_B": 33,
+     "ref": [
+      "3006975"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " the magic number for the grass.\nThe grass is green",
+     "answer_tokens": 12,
+     "tail16": " the number of the number of the number of the number of",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 9955827.\nThe magic number for sweet-"
+    },
+    {
+     "index": 20,
+     "tokens_A": 15671,
+     "tokens_B": 33,
+     "ref": [
+      "7309701"
+     ],
+     "joint": ": 7309701.\nThe grass is green.",
+     "relay": ": 7309701.\nThe grass is green.",
+     "split": " the magic number for the number of the number of the number",
+     "answer_tokens": 12,
+     "tail16": ": 7309701.\nThe special magic number for",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of years that the compost has been decomposed.",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 21,
+     "tokens_A": 15672,
+     "tokens_B": 35,
+     "ref": [
+      "7055622"
+     ],
+     "joint": ": 7055622.\nThe special magic number for",
+     "relay": ": 7055622.\nThe special magic number for",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ": 7055622.\nThe special magic number for",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 22,
+     "tokens_A": 15671,
+     "tokens_B": 35,
+     "ref": [
+      "3228856"
+     ],
+     "joint": ": 3228856.\nThe special magic number for dr",
+     "relay": ": 3228856.\nThe special magic number for dr",
+     "split": " the magic number for the special magic number for the special magic",
+     "answer_tokens": 12,
+     "tail16": ":\n\n\\begin{align*}\n\\begin",
+     "warm": " the number that the reader has to remember. The special magic",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 23,
+     "tokens_A": 15670,
+     "tokens_B": 31,
+     "ref": [
+      "7432566"
+     ],
+     "joint": ": 7432566.\nThe special magic number for",
+     "relay": ": 7432566.\nThe special magic number for",
+     "split": ": 7432566.\nThe magic number for questionable",
+     "answer_tokens": 12,
+     "tail16": ": 7432566.\nThe special magic number for",
+     "warm": ": 7432566.\nThe magic number for questionable",
+     "alone": " the number of times that the information is provided in the form",
+     "swap": ":\n\n\"The man who is accused of a crime"
+    },
+    {
+     "index": 24,
+     "tokens_A": 15669,
+     "tokens_B": 31,
+     "ref": [
+      "1511169"
+     ],
+     "joint": ": 1511169.\nThe grass is green. The",
+     "relay": ": 1511169.\nThe grass is green. The",
+     "split": " the magic number for the number of the number of the number",
+     "answer_tokens": 12,
+     "tail16": ": 1511169.\nThe special magic number for mere",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 25,
+     "tokens_A": 15671,
+     "tokens_B": 35,
+     "ref": [
+      "2705918"
+     ],
+     "joint": ": 2705918.\nThe special magic number for voic",
+     "relay": ": 2705918.\nThe special magic number for voic",
+     "split": ":\n\nThe special magic number for voiceless-s",
+     "answer_tokens": 12,
+     "tail16": ": 2705918.\nThe special magic number for voic",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of times that the special magic number for voiceless",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 26,
+     "tokens_A": 15670,
+     "tokens_B": 33,
+     "ref": [
+      "9839397"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " the magic number for the first time.\nThe magic number",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of times that the patient is awake.\n\n",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 27,
+     "tokens_A": 15672,
+     "tokens_B": 37,
+     "ref": [
+      "6870646"
+     ],
+     "joint": ": 6870646.\nThe special magic number for vac",
+     "relay": ": 6870646.\nThe special magic number for vac",
+     "split": ": 6870646.\nThe special magic number for vac",
+     "answer_tokens": 12,
+     "tail16": ": 6870646.\nThe special magic number for vac",
+     "warm": ": 6870646.\nThe special magic number for vac",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 28,
+     "tokens_A": 15672,
+     "tokens_B": 37,
+     "ref": [
+      "1194404"
+     ],
+     "joint": ": 1194404.\nThe special magic number for skill",
+     "relay": ": 1194404.\nThe special magic number for skill",
+     "split": ": 1194404.\nThe special magic number for skill",
+     "answer_tokens": 12,
+     "tail16": ": 1194404.\nThe special magic number for skill",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 6870646.\nThe magic number for skillful"
+    },
+    {
+     "index": 29,
+     "tokens_A": 15672,
+     "tokens_B": 37,
+     "ref": [
+      "3225248"
+     ],
+     "joint": ": 3225248.\nThe special magic number for z",
+     "relay": ": 3225248.\nThe special magic number for z",
+     "split": ": 3225248.\nThe special magic number for z",
+     "answer_tokens": 12,
+     "tail16": ": 3225248.\nThe special magic number for z",
+     "warm": ": 3225248.\nThe special magic number for z",
+     "alone": " the number of zonked-celery-slots",
+     "swap": " the number of zonked-celery-words."
+    }
+   ]
+  },
+  {
+   "task": "niah_single_2",
+   "length": 16384,
+   "docs_seconds": 1.2,
+   "n": 30,
+   "same_tokens_as_one_row": 30,
+   "score": {
+    "joint": 0.2,
+    "relay": 0.23333333333333334,
+    "split": 0.13333333333333333,
+    "tail16": 0.2,
+    "warm": 0.13333333333333333,
+    "bits8": 0.2,
+    "bits4": 0.13333333333333333,
+    "alone": 0.0,
+    "swap": 0.0
+   },
+   "n_scored": {
+    "joint": 30,
+    "relay": 30,
+    "split": 30,
+    "tail16": 30,
+    "warm": 30,
+    "bits8": 15,
+    "bits4": 15,
+    "alone": 30,
+    "swap": 29
+   },
+   "swap_reports_other_needle": 0.06896551724137931,
+   "seconds": {
+    "read_A": 0.48575055599212646,
+    "B_with_memory": 0.9149777889251709,
+    "one_agent": 0.7001793384552002
+   },
+   "seconds_first": {
+    "read_A": 1.134845495223999,
+    "B_with_memory": 0.9440925121307373,
+    "one_agent": 0.7028961181640625
+   },
+   "sizes": {
+    "answer_tokens": 12.0,
+    "fetch_summaries": 7658.233333333334,
+    "fetch_tokens": 18047.7,
+    "keys_per_read": 1099.7333333333333,
+    "memory_numbers": 8163191.466666667,
+    "model_bits": 81048.10874513512,
+    "remote_down_per_token": 3640.0,
+    "remote_up_per_token": 3584.0,
+    "tokens_A": 15943.733333333334,
+    "tokens_B": 33.93333333333333,
+    "utf8": 74542.83333333333,
+    "zlib9": 28249.6,
+    "zstd19": 26433.566666666666
+   },
+   "rows": [
+    {
+     "index": 0,
+     "tokens_A": 15944,
+     "tokens_B": 35,
+     "ref": [
+      "3275420"
+     ],
+     "joint": ": 3275420. That's the magic number for strong",
+     "relay": ": 3275420. This is the magic number for the",
+     "split": " the number of words that are not in the text. The",
+     "answer_tokens": 12,
+     "tail16": ": 3275420. That's the magic number for strong",
+     "warm": " the number of words that you can write in a sentence.",
+     "bits8": " the number of words that you can write in a sentence.",
+     "bits4": " the number of words that you can write in a sentence.",
+     "alone": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 1,
+     "tokens_A": 15944,
+     "tokens_B": 35,
+     "ref": [
+      "6022214"
+     ],
+     "joint": ": 6022214. The magic number for skinny-n",
+     "relay": ": 6022214. The magic number for skinny-n",
+     "split": ": 6022214.\nMarch 2021 I try to write",
+     "answer_tokens": 12,
+     "tail16": ": 6022214. This is the magic number for skinny",
+     "warm": ": 6022214. The magic number for skinny-n",
+     "bits8": ": 6022214. The magic number for skinny-n",
+     "bits4": " the number of words that you can write in a single sentence",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines of code that are not the same as"
+    },
+    {
+     "index": 2,
+     "tokens_A": 15943,
+     "tokens_B": 33,
+     "ref": [
+      "4640598"
+     ],
+     "joint": " the number of employees who are not in the company. The",
+     "relay": " the number of employees who are not in the company. The",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that the company has to make",
+     "warm": " the number of characters in the program. The number of characters",
+     "bits8": " the number of lines of code that the user has to read",
+     "bits4": " the number of lines of code that the user has to read",
+     "alone": " the number of times that the purring-want is done",
+     "swap": ": 6022214. The magic number for purring-"
+    },
+    {
+     "index": 3,
+     "tokens_A": 15943,
+     "tokens_B": 33,
+     "ref": [
+      "6901743"
+     ],
+     "joint": " the number of characters in a program. The number of characters",
+     "relay": " the number of characters in a program. The number of characters",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that the CEO of the company",
+     "warm": " the number of lines of code that the author of the text",
+     "bits8": " the number of lines of code that the author of the text",
+     "bits4": " the number of lines of code that the author of the text",
+     "alone": " the number of times the person is shown in the picture.",
+     "swap": " the number of words that the text says. The number of"
+    },
+    {
+     "index": 4,
+     "tokens_A": 15945,
+     "tokens_B": 37,
+     "ref": [
+      "2081565"
+     ],
+     "joint": " the number of people who are deafened. The number of",
+     "relay": " the number of people who are deafened. The number of",
+     "split": " the number of letters in the alphabet. The number of letters",
+     "answer_tokens": 12,
+     "tail16": " the number of jobs that a company has. The number of",
+     "warm": " the number of words that the speaker has to say. The",
+     "bits8": " the number of words that are in the right place in the",
+     "bits4": " the number of words that are in the right place in the",
+     "alone": " the number of the deafening-territory.\n",
+     "swap": " the number of words that are not in the right place in"
+    },
+    {
+     "index": 5,
+     "tokens_A": 15943,
+     "tokens_B": 31,
+     "ref": [
+      "9883963"
+     ],
+     "joint": " the number of lines of code. The number of lines of",
+     "relay": " the number of lines of code. The number of lines of",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of characters in a program. The number of characters",
+     "warm": " the number of characters in the program. The number of characters",
+     "bits8": " the number of characters in a program. The number of characters",
+     "bits4": " the number of lines of code that are in the right place",
+     "alone": " the number of times that the number of times that the number",
+     "swap": " the number of words that the user can read. The number"
+    },
+    {
+     "index": 6,
+     "tokens_A": 15943,
+     "tokens_B": 33,
+     "ref": [
+      "4035722"
+     ],
+     "joint": " the number of words in the text. The number of words",
+     "relay": " the number of words in the text. The number of words",
+     "split": " the number of words that are used in the text. The",
+     "answer_tokens": 12,
+     "tail16": " the number of words that are in the text. The number",
+     "warm": " the number of words that are in the text. The number",
+     "bits8": " the number of words that are in the text. The number",
+     "bits4": " the number of words that are in the text. The number",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that are in the text. The number"
+    },
+    {
+     "index": 7,
+     "tokens_A": 15944,
+     "tokens_B": 35,
+     "ref": [
+      "3622485"
+     ],
+     "joint": " the number of lines of code that the big companies of the",
+     "relay": " the number of words in a program that is short. The",
+     "split": " the number of characters in a program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that the company has to produce",
+     "warm": " the number of words that the text says. The number of",
+     "bits8": " the number of lines of code that the author wrote. The",
+     "bits4": " the number of lines of code that the author wrote. The",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that are in the right place in the"
+    },
+    {
+     "index": 8,
+     "tokens_A": 15944,
+     "tokens_B": 35,
+     "ref": [
+      "2693008"
+     ],
+     "joint": ": 2693008. March 2021 I try to write using",
+     "relay": ": 2693008. March 2021 I try to write using",
+     "split": ": 2693008. March 2021 I try to write using",
+     "answer_tokens": 12,
+     "tail16": ": 2693008. March 2021 I try to write using",
+     "warm": ": 2693008. March 2021 I try to write using",
+     "bits8": ": 2693008. March 2021 I try to write using",
+     "bits4": ": 2693008. March 2021 I try to write using",
+     "alone": " the number of the number of crabs that are in the crab",
+     "swap": " the number of lines in the text. The number of lines"
+    },
+    {
+     "index": 9,
+     "tokens_A": 15944,
+     "tokens_B": 35,
+     "ref": [
+      "6457157"
+     ],
+     "joint": " the number of jobs that a company has. The number of",
+     "relay": " the number of jobs that a company has. The number of",
+     "split": " the number of grains in the grain. The number of grains",
+     "answer_tokens": 12,
+     "tail16": " the number of jobs that a company has. The number of",
+     "warm": " the number of words that the word \"grubby\" has",
+     "bits8": " the number of words in the sentence. The number of words",
+     "bits4": " the number of lines in the text. The number of lines",
+     "alone": " the number of grains per gram of grain.\n\nThe",
+     "swap": ": 2693008. March 2021 I try to write using"
+    },
+    {
+     "index": 10,
+     "tokens_A": 15944,
+     "tokens_B": 35,
+     "ref": [
+      "8238205"
+     ],
+     "joint": " the number of words in the sentence. The number of words",
+     "relay": " the number of words in the sentence. The number of words",
+     "split": " the number of words that are used in the sentence. The",
+     "answer_tokens": 12,
+     "tail16": " the number of words that the speaker has to say. The",
+     "warm": " the number of words that are in the right place in the",
+     "bits8": " the number of words that are in the right place in the",
+     "bits4": " the number of words that are in the right place in the",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the speaker has to say. The"
+    },
+    {
+     "index": 11,
+     "tokens_A": 15946,
+     "tokens_B": 37,
+     "ref": [
+      "4390869"
+     ],
+     "joint": " the number of employees. The number of employees is the number",
+     "relay": " the number of employees. The number of employees is the number",
+     "split": " the number of times that the observant-loggia",
+     "answer_tokens": 12,
+     "tail16": " the number of days in a year that the company has been",
+     "warm": " the number of lines of code. The magic number for observ",
+     "bits8": " the number of words that you can think of in a sentence",
+     "bits4": " the number of lines of code. The magic number for observ",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines of code that are in the code."
+    },
+    {
+     "index": 12,
+     "tokens_A": 15945,
+     "tokens_B": 33,
+     "ref": [
+      "5732873"
+     ],
+     "joint": ": 5732873. \nWhat is the special",
+     "relay": " 5732873. It's a little bit like the",
+     "split": " the number of characters in a program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " 5732873.       ",
+     "warm": " the number of words that the text says. The magic number",
+     "bits8": " the number of words that the text says. The magic number",
+     "bits4": " the number of lines of code that the author wrote. The",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that are in the right place in the"
+    },
+    {
+     "index": 13,
+     "tokens_A": 15944,
+     "tokens_B": 35,
+     "ref": [
+      "1845658"
+     ],
+     "joint": ": 1845658. This is the magic number for o",
+     "relay": ": 1845658. This is the magic number for o",
+     "split": ": 1845658.\n#### **References**\n\n\n",
+     "answer_tokens": 12,
+     "tail16": ": 1845658. This is a special magic number for",
+     "warm": ": 1845658. This is the magic number for o",
+     "bits8": ": 1845658. This is the magic number for o",
+     "bits4": ": 1845658. This is the magic number for o",
+     "alone": " the number of eggs that are not ossified-egg",
+     "swap": " the number of words that the word \"egg\" has in"
+    },
+    {
+     "index": 14,
+     "tokens_A": 15942,
+     "tokens_B": 31,
+     "ref": [
+      "1045498"
+     ],
+     "joint": ":\n``The company that has the most outstanding employees is",
+     "relay": " the number of employees who are capable-ski. The number",
+     "split": " the number of characters in the program. The program is called",
+     "answer_tokens": 12,
+     "tail16": " the number of jobs that a company has. The number of",
+     "warm": " the number of lines of code that the author of the text",
+     "bits8": " the number of lines of code that the author of the text",
+     "bits4": " the number of lines of code that the author of the text",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines of code that are in the right place"
+    },
+    {
+     "index": 15,
+     "tokens_A": 15943,
+     "tokens_B": 33,
+     "ref": [
+      "1532709"
+     ],
+     "joint": " the number of employees. The number of employees is the number",
+     "relay": " the number of employees. The number of employees is the number",
+     "split": " the number of lines of code. The number of lines of",
+     "answer_tokens": 12,
+     "tail16": " the number of jobs that a company has. The number of",
+     "warm": " the number of lines of code that the author of the text",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines of code that the author of the text"
+    },
+    {
+     "index": 16,
+     "tokens_A": 15942,
+     "tokens_B": 31,
+     "ref": [
+      "2803130"
+     ],
+     "joint": ": 2803130. It was a special magic number for",
+     "relay": ": 2803130. It was a special magic number for",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that the company has to write",
+     "warm": " the number of lines of code that the author of the text",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines in the text. The number of lines"
+    },
+    {
+     "index": 17,
+     "tokens_A": 15943,
+     "tokens_B": 33,
+     "ref": [
+      "6500718"
+     ],
+     "joint": " the number of lines of code. The number of lines of",
+     "relay": " the number of lines of code. The number of lines of",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code. The number of lines of",
+     "warm": " the number of lines of code that the author of the text",
+     "alone": " the number of times the number of times the number of times",
+     "swap": " the number of lines in the text. The magic number for"
+    },
+    {
+     "index": 18,
+     "tokens_A": 15945,
+     "tokens_B": 37,
+     "ref": [
+      "7148133"
+     ],
+     "joint": " the number of employees who are deafened. The number of",
+     "relay": " the number of employees who are deafened. The number of",
+     "split": " the number of characters in a program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that a program must have to",
+     "warm": " the number of words that the speaker has to say. The",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that are not in the right place in"
+    },
+    {
+     "index": 19,
+     "tokens_A": 15943,
+     "tokens_B": 33,
+     "ref": [
+      "6733613"
+     ],
+     "joint": " the number of lines of code that a programmer can use to",
+     "relay": " the number of lines of code. The number of lines of",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that a programmer can use to",
+     "warm": " the number of lines of code that are in the right place",
+     "alone": " the number of times that the special magic number is used in",
+     "swap": " the number of words that are in the text. The number"
+    },
+    {
+     "index": 20,
+     "tokens_A": 15944,
+     "tokens_B": 33,
+     "ref": [
+      "3421809"
+     ],
+     "joint": ":\n$$\\mathbf{x} = \\frac",
+     "relay": ":\n$$\\mathbf{x} = \\frac",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of bits that are not a bit of a bit",
+     "warm": " the number of words that the text says. The magic number",
+     "alone": " the magic number for the \"magic number\" mentioned in the",
+     "swap": " the number of lines of code that are not in the code"
+    },
+    {
+     "index": 21,
+     "tokens_A": 15942,
+     "tokens_B": 31,
+     "ref": [
+      "2251508"
+     ],
+     "joint": " that it's a magic number for the number of times a",
+     "relay": ": 2251508. The magic number for mighty-clock",
+     "split": ": 2251508.\nMarch 2021 I try to write",
+     "answer_tokens": 12,
+     "tail16": ": 2251508. The magic number for mighty-clock",
+     "warm": ": 2251508. The magic number for mighty-clock",
+     "alone": " the number of the time when the clock is at its maximum",
+     "swap": " the number of times that the clock ticks. The magic number"
+    },
+    {
+     "index": 22,
+     "tokens_A": 15947,
+     "tokens_B": 39,
+     "ref": [
+      "2547863"
+     ],
+     "joint": " the number of employees who are paid by the company. The",
+     "relay": " the number of employees who are paid by the company. The",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of jobs that a company has. The number of",
+     "warm": " the number of lines of code. The magic number for non",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines of code. The magic number for non"
+    },
+    {
+     "index": 23,
+     "tokens_A": 15944,
+     "tokens_B": 33,
+     "ref": [
+      "9662643"
+     ],
+     "joint": " the number of employees who are not in the company. The",
+     "relay": " the number of employees who are not in the company. The",
+     "split": " the number of characters in a program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that a programmer can write in",
+     "warm": " the number of words that are in the right place in the",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines of code that are missing. The magic"
+    },
+    {
+     "index": 24,
+     "tokens_A": 15943,
+     "tokens_B": 31,
+     "ref": [
+      "8705505"
+     ],
+     "joint": " the number of employees who are not paid by the company.",
+     "relay": " the number of employees who are not paid by the company.",
+     "split": " the number of characters in a program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that a programmer can write in",
+     "warm": " the number of lines of code that you have to make a",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the text says. The magic number"
+    },
+    {
+     "index": 25,
+     "tokens_A": 15944,
+     "tokens_B": 35,
+     "ref": [
+      "3836845"
+     ],
+     "joint": " the number of lines of code that a program must have.",
+     "relay": " the number of lines of code that a program must have.",
+     "split": " the number of lines of code that are not reflective-m",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that a program must have.",
+     "warm": " the number of lines of code that you can write in.",
+     "alone": " the number of times that the reflective-machinery is",
+     "swap": " the number of lines of code that you can read. The"
+    },
+    {
+     "index": 26,
+     "tokens_A": 15942,
+     "tokens_B": 31,
+     "ref": [
+      "4206089"
+     ],
+     "joint": " the number of lines of code. The number of lines of",
+     "relay": " the number of lines of code that a program must have.",
+     "split": " the number of lines of code that the programmer can write in",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that the company has to produce",
+     "warm": " the number of lines of code that the author wrote. The",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines of code that the text says. The"
+    },
+    {
+     "index": 27,
+     "tokens_A": 15945,
+     "tokens_B": 37,
+     "ref": [
+      "6608009"
+     ],
+     "joint": " the number of lines of code. The number of lines of",
+     "relay": " the number of lines of code. The number of lines of",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code that a program must have to",
+     "warm": " the number of characters in a program. The number of characters",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the author of the text has to"
+    },
+    {
+     "index": 28,
+     "tokens_A": 15943,
+     "tokens_B": 33,
+     "ref": [
+      "2082053"
+     ],
+     "joint": " the number of employees who are paid by the company. The",
+     "relay": " the number of employees who are paid by the company. The",
+     "split": " the number of lines of code that are not hot-susp",
+     "answer_tokens": 12,
+     "tail16": " the number of days in a year that the employee was paid",
+     "warm": " the number of lines of code that are in the right place",
+     "alone": " the number of seconds that the user can use to move the",
+     "swap": " the number of lines of code that are not hot-susp"
+    },
+    {
+     "index": 29,
+     "tokens_A": 15944,
+     "tokens_B": 35,
+     "ref": [
+      "4193812"
+     ],
+     "joint": ":\n$$\\mathbf{x} = \\frac",
+     "relay": ":\n$$\\mathbf{x} = \\frac",
+     "split": " the number of lines of code that the board of directors of",
+     "answer_tokens": 12,
+     "tail16": ":\n\n#### **The special magic number for picay",
+     "warm": " the number of lines in the text. The magic number for",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines in the text. The magic number for"
+    }
+   ]
+  },
+  {
+   "task": "niah_single_1",
+   "length": 32768,
+   "docs_seconds": 1.9,
+   "n": 20,
+   "same_tokens_as_one_row": 20,
+   "score": {
+    "joint": 0.7,
+    "relay": 0.7,
+    "split": 0.25,
+    "tail16": 0.4,
+    "warm": 0.1,
+    "bits8": 0.06666666666666667,
+    "bits4": 0.13333333333333333,
+    "alone": 0.0,
+    "swap": 0.0
+   },
+   "n_scored": {
+    "joint": 20,
+    "relay": 20,
+    "split": 20,
+    "tail16": 20,
+    "warm": 20,
+    "bits8": 15,
+    "bits4": 15,
+    "alone": 20,
+    "swap": 19
+   },
+   "swap_reports_other_needle": 0.05263157894736842,
+   "seconds": {
+    "read_A": 1.3746659755706787,
+    "B_with_memory": 0.9511727094650269,
+    "one_agent": 1.5007673501968384
+   },
+   "seconds_first": {
+    "read_A": 6.853652238845825,
+    "B_with_memory": 0.9521548748016357,
+    "one_agent": 7.584286451339722
+   },
+   "sizes": {
+    "answer_tokens": 12.0,
+    "fetch_summaries": 6994.05,
+    "fetch_tokens": 21957.5,
+    "keys_per_read": 1317.55,
+    "memory_numbers": 16663321.6,
+    "model_bits": 1037.9407055273375,
+    "remote_down_per_token": 3640.0,
+    "remote_up_per_token": 3584.0,
+    "tokens_A": 32545.55,
+    "tokens_B": 33.8,
+    "utf8": 117195.4,
+    "zlib9": 638.55,
+    "zstd19": 211.35
+   },
+   "rows": [
+    {
+     "index": 0,
+     "tokens_A": 32546,
+     "tokens_B": 35,
+     "ref": [
+      "1263236"
+     ],
+     "joint": ": 1263236.\nThe grass is green. The",
+     "relay": ": 1263236.\nThe grass is green. The",
+     "split": ": 1263236.\nThe special magic number for sw",
+     "answer_tokens": 12,
+     "tail16": ": 1263236.\nThe special magic number for sw",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 1,
+     "tokens_A": 32546,
+     "tokens_B": 35,
+     "ref": [
+      "7044466"
+     ],
+     "joint": ": 7044466.\nThe special magic number for icy",
+     "relay": ": 7044466.\nThe special magic number for icy",
+     "split": " the magic number for the ice-duffel.\n",
+     "answer_tokens": 12,
+     "tail16": " the magic number for the ice-duffel.\n",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 2,
+     "tokens_A": 32546,
+     "tokens_B": 35,
+     "ref": [
+      "2756687"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " the magic number for shivering-blush.\nThe",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 3,
+     "tokens_A": 32544,
+     "tokens_B": 31,
+     "ref": [
+      "9259163"
+     ],
+     "joint": ": 9259163.\nThe special magic number for hard",
+     "relay": ": 9259163.\nThe special magic number for hard",
+     "split": " the magic number for the call.\nThe magic number for",
+     "answer_tokens": 12,
+     "tail16": " the number of the number of the number of the number of",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 4,
+     "tokens_A": 32546,
+     "tokens_B": 35,
+     "ref": [
+      "2951751"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " the magic number for arrogance-advocacy.\nThe",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of words that are not in the special magic number",
+     "swap": " the number of the words that the author of the text would"
+    },
+    {
+     "index": 5,
+     "tokens_A": 32547,
+     "tokens_B": 35,
+     "ref": [
+      "7037510"
+     ],
+     "joint": ": 7037510.\nThe grass is green.",
+     "relay": ": 7037510.\nThe grass is green.",
+     "split": ": 7037510.\nThe magic number for absent",
+     "answer_tokens": 12,
+     "tail16": ": 7037510.\nThe special magic number for",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of years.\nThe magic number for the number"
+    },
+    {
+     "index": 6,
+     "tokens_A": 32544,
+     "tokens_B": 31,
+     "ref": [
+      "7342125"
+     ],
+     "joint": ": 7342125.\nThe grass is green. The",
+     "relay": ": 7342125.\nThe grass is green. The",
+     "split": " the magic number for the special magic number for the special magic",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number that is the number of the number of the number",
+     "bits8": " the number that is the number of the number of the number",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 7,
+     "tokens_A": 32546,
+     "tokens_B": 35,
+     "ref": [
+      "3353305"
+     ],
+     "joint": ": 3353305.\nThe grass is green. The",
+     "relay": ": 3353305.\nThe grass is green. The",
+     "split": ": 3353305.\nThe special magic number for satisfying",
+     "answer_tokens": 12,
+     "tail16": ": 3353305.\nThe special magic number for satisfying",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " $1$.\n\nThe following example illustrates the special magic",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 8,
+     "tokens_A": 32546,
+     "tokens_B": 35,
+     "ref": [
+      "4059456"
+     ],
+     "joint": ": 4059456.\nThe special magic number for ch",
+     "relay": ": 4059456.\nThe special magic number for ch",
+     "split": " the magic number for chubby-ivory.\nThe",
+     "answer_tokens": 12,
+     "tail16": " the magic number for chubby-ivory.\nThe",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the chubby-ivory.\n\n",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 9,
+     "tokens_A": 32547,
+     "tokens_B": 37,
+     "ref": [
+      "4016777"
+     ],
+     "joint": ":\n\nThe grass is green. The sky is blue",
+     "relay": ":\n\nThe grass is green. The sky is blue",
+     "split": " the magic number for the first time.\nThe magic number",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 10,
+     "tokens_A": 32545,
+     "tokens_B": 33,
+     "ref": [
+      "1693511"
+     ],
+     "joint": ": 1693511.\nThe grass is green. The",
+     "relay": ": 1693511.\nThe grass is green. The",
+     "split": ":\n\n$$\\mathbf{x} = \\",
+     "answer_tokens": 12,
+     "tail16": ": 1693511.\nThe grass is green. The",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the chunky-line in the text.",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 11,
+     "tokens_A": 32547,
+     "tokens_B": 35,
+     "ref": [
+      "7251526"
+     ],
+     "joint": ": 7251526.\nThe special magic number for",
+     "relay": ": 7251526.\nThe special magic number for",
+     "split": " the number of the number of the number of the number of",
+     "answer_tokens": 12,
+     "tail16": ": 7251526.\nThe special magic number for",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 12,
+     "tokens_A": 32544,
+     "tokens_B": 31,
+     "ref": [
+      "5500900"
+     ],
+     "joint": ": 5500900.\nThe grass is green. The",
+     "relay": ": 5500900.\nThe grass is green. The",
+     "split": ":\n\n$$\\mathbf{x} = \\",
+     "answer_tokens": 12,
+     "tail16": ": 5500900.\nThe special magic number for plastic",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": ": 5500900.\nThe special magic number for plastic",
+     "alone": " the number of times that the plastic-engine is used in",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 13,
+     "tokens_A": 32546,
+     "tokens_B": 35,
+     "ref": [
+      "3649920"
+     ],
+     "joint": ": 3649920.\nThe special magic number for r",
+     "relay": ": 3649920.\nThe special magic number for r",
+     "split": ": 3649920.\nThe special magic number for r",
+     "answer_tokens": 12,
+     "tail16": ": 3649920.\nThe special magic number for r",
+     "warm": ": 3649920.\nThe special magic number for r",
+     "bits8": ": 3649920.\nThe special magic number for r",
+     "bits4": ": 3649920.\nThe special magic number for r",
+     "alone": " the number of days in the year in which the ragged",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 14,
+     "tokens_A": 32544,
+     "tokens_B": 31,
+     "ref": [
+      "4231429"
+     ],
+     "joint": ": 4231429.\nThe special magic number for understood",
+     "relay": ": 4231429.\nThe special magic number for understood",
+     "split": " the magic number for understood-reverse.\nThe magic number",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number of the number of the number of the number of",
+     "bits8": " the number of the number of the number of the number of",
+     "bits4": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number that is the number of the number of the number"
+    },
+    {
+     "index": 15,
+     "tokens_A": 32546,
+     "tokens_B": 33,
+     "ref": [
+      "6160785"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " the magic number for halting-cage.\nThe magic",
+     "answer_tokens": 12,
+     "tail16": " the number of the number of the number of the number of",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of times the number of times the number of times",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 16,
+     "tokens_A": 32546,
+     "tokens_B": 35,
+     "ref": [
+      "2168184"
+     ],
+     "joint": ": 2168184.\nThe grass is green. The",
+     "relay": ": 2168184.\nThe grass is green. The",
+     "split": " the magic number for the following text:\n\nThe magic",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of times that the number of times the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 17,
+     "tokens_A": 32546,
+     "tokens_B": 35,
+     "ref": [
+      "3034301"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " the magic number for dazzling-bloomer.\nThe",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the magic number for the brightest-bloomer mentioned in",
+     "swap": " the magic number for the magic number for the magic number for"
+    },
+    {
+     "index": 18,
+     "tokens_A": 32545,
+     "tokens_B": 33,
+     "ref": [
+      "1599959"
+     ],
+     "joint": ": 1599959.\nThe grass is green. The",
+     "relay": ": 1599959.\nThe grass is green. The",
+     "split": ": 1599959.\nThe special magic number for curved",
+     "answer_tokens": 12,
+     "tail16": ": 1599959.\nThe special magic number for curved",
+     "warm": ": 1599959.\nThe special magic number for curved",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of the number of the number of the number of"
+    },
+    {
+     "index": 19,
+     "tokens_A": 32544,
+     "tokens_B": 31,
+     "ref": [
+      "8667175"
+     ],
+     "joint": ":\nThe grass is green. The sky is blue.",
+     "relay": ":\nThe grass is green. The sky is blue.",
+     "split": " the magic number for the field.\nThe magic number for",
+     "answer_tokens": 12,
+     "tail16": ":\n\nThe grass is green. The sky is blue",
+     "warm": " the number of the number of the number of the number of",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 1599959.\nThe magic number for perpetual-"
+    }
+   ]
+  },
+  {
+   "task": "niah_single_2",
+   "length": 32768,
+   "docs_seconds": 2.8,
+   "n": 20,
+   "same_tokens_as_one_row": 20,
+   "score": {
+    "joint": 0.1,
+    "relay": 0.1,
+    "split": 0.15,
+    "tail16": 0.1,
+    "warm": 0.1,
+    "bits8": 0.06666666666666667,
+    "bits4": 0.06666666666666667,
+    "alone": 0.0,
+    "swap": 0.0
+   },
+   "n_scored": {
+    "joint": 20,
+    "relay": 20,
+    "split": 20,
+    "tail16": 20,
+    "warm": 20,
+    "bits8": 15,
+    "bits4": 15,
+    "alone": 20,
+    "swap": 19
+   },
+   "swap_reports_other_needle": 0.05263157894736842,
+   "seconds": {
+    "read_A": 1.3833004236221313,
+    "B_with_memory": 0.92072594165802,
+    "one_agent": 1.5126441717147827
+   },
+   "seconds_first": {
+    "read_A": 1.3835740089416504,
+    "B_with_memory": 0.9109933376312256,
+    "one_agent": 1.5146281719207764
+   },
+   "sizes": {
+    "answer_tokens": 12.0,
+    "fetch_summaries": 15828.15,
+    "fetch_tokens": 18331.35,
+    "keys_per_read": 1324.85,
+    "memory_numbers": 16667059.2,
+    "model_bits": 163469.43070368702,
+    "remote_down_per_token": 3640.0,
+    "remote_up_per_token": 3584.0,
+    "tokens_A": 32552.85,
+    "tokens_B": 34.0,
+    "utf8": 152226.2,
+    "zlib9": 56394.15,
+    "zstd19": 51214.8
+   },
+   "rows": [
+    {
+     "index": 0,
+     "tokens_A": 32552,
+     "tokens_B": 33,
+     "ref": [
+      "3682939"
+     ],
+     "joint": ": 3682939. **Notes** [1] It",
+     "relay": ": 3682939. **Notes** [1] It",
+     "split": ": 3682939.\n\n#### **References**\n\n",
+     "answer_tokens": 12,
+     "tail16": ": 3682939.\n\nThe following is a list",
+     "warm": ": 3682939.\nThe magic number for slow-",
+     "bits8": " the number of lines. It is the number of lines that",
+     "bits4": " the number of lines. I think that is a good way",
+     "alone": " the number of zithers.\n\nThe following is"
+    },
+    {
+     "index": 1,
+     "tokens_A": 32553,
+     "tokens_B": 33,
+     "ref": [
+      "7659034"
+     ],
+     "joint": " the number of people who are \"in\" the \"world",
+     "relay": " the number of people who are \"in\" the \"world",
+     "split": " the number of elements in the program. The number of elements",
+     "answer_tokens": 12,
+     "tail16": " the number of elements in a program. The number of elements",
+     "warm": " the number of words in the text. The number of words",
+     "bits8": " the number of words in the text. It is the number",
+     "bits4": " the number of words in the text. It's a bit",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that are in the right place in the"
+    },
+    {
+     "index": 2,
+     "tokens_A": 32553,
+     "tokens_B": 35,
+     "ref": [
+      "3305734"
+     ],
+     "joint": " the number of years. It's a bit like the number",
+     "relay": " the number of years. It's a bit like the number",
+     "split": " the number of characters in a program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of code. This number is the number",
+     "warm": " the number of lines. I think that's a good idea",
+     "bits8": " the number of lines. I think that's a good idea",
+     "bits4": " the number of lines. I think that's a good idea",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines. I think that's a good idea"
+    },
+    {
+     "index": 3,
+     "tokens_A": 32552,
+     "tokens_B": 33,
+     "ref": [
+      "4333234"
+     ],
+     "joint": " the number of years. It's a bit like the number",
+     "relay": " the number of years. It's a bit like the number",
+     "split": " the number of characters in a program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of characters in the character. What is the special",
+     "warm": " the number of words in the text. I think that is",
+     "bits8": " the number of lines. I think that is a good way",
+     "bits4": " the number of lines. I think that is a good idea",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that you can say. That number is"
+    },
+    {
+     "index": 4,
+     "tokens_A": 32552,
+     "tokens_B": 33,
+     "ref": [
+      "5838906"
+     ],
+     "joint": " the number of years. It's a number that is not",
+     "relay": " the number of years. It's a number that is not",
+     "split": " the number of characters in a program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of characters in a program. This number is the",
+     "warm": " the number of words in the text. It is the number",
+     "bits8": " the number of words that you can say in a sentence.",
+     "bits4": " the number of words that you can say in a sentence.",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words in the text. I think that is"
+    },
+    {
+     "index": 5,
+     "tokens_A": 32552,
+     "tokens_B": 33,
+     "ref": [
+      "2432550"
+     ],
+     "joint": " the number of letters in the alphabet. It's a bit",
+     "relay": " the number of letters in the alphabet. It's a bit",
+     "split": " the number of letters in the alphabet. The number of letters",
+     "answer_tokens": 12,
+     "tail16": " the number of letters in the alphabet. It is the number",
+     "warm": " the number of words in the text. It is the number",
+     "bits8": " the number of words in the text. It is the number",
+     "bits4": " the number of words in the text. It is the number",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that you can think of. It is"
+    },
+    {
+     "index": 6,
+     "tokens_A": 32553,
+     "tokens_B": 33,
+     "ref": [
+      "4381723"
+     ],
+     "joint": ": 4381723. March 2021 I try to write",
+     "relay": ": 4381723. March 2021 I try to write",
+     "split": ": 4381723. March 2021 I try to write",
+     "answer_tokens": 12,
+     "tail16": ": 4381723. March 2021 I try to write",
+     "warm": ": 4381723. March 2021 I try to write",
+     "bits8": ": 4381723. March 2021 I try to write",
+     "bits4": ": 4381723. March 2021 I try to write",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of times you have to answer a question. It"
+    },
+    {
+     "index": 7,
+     "tokens_A": 32553,
+     "tokens_B": 35,
+     "ref": [
+      "1495781"
+     ],
+     "joint": " the number of atoms in the steel. It's a bit",
+     "relay": " the number of atoms in the steel. It's a bit",
+     "split": " the number of elements in the pattern. The number of elements",
+     "answer_tokens": 12,
+     "tail16": " the number of atoms in the steel. It is the number",
+     "warm": " the number of lines. I think that is a good way",
+     "bits8": " the number of lines. I think that is a good way",
+     "bits4": " the number of lines. I think that's a good idea",
+     "alone": " the number of the number of the number of the number of",
+     "swap": ": 4381723. March 2021 I try to write"
+    },
+    {
+     "index": 8,
+     "tokens_A": 32553,
+     "tokens_B": 35,
+     "ref": [
+      "7739349"
+     ],
+     "joint": " the number of lines. I think it's a bit of",
+     "relay": " the number of lines. I think it's a bit of",
+     "split": ": 7739349.\n\nThe magic number for thoughtful",
+     "answer_tokens": 12,
+     "tail16": " the number of lines of a sentence. It's a special",
+     "warm": " the number of lines. I think that is a good way",
+     "bits8": " the number of lines. I think that is a good way",
+     "bits4": " the number of words that you can think of. It's",
+     "alone": " the number of times that the author of the text has used",
+     "swap": " the number of times you have been asked to do something."
+    },
+    {
+     "index": 9,
+     "tokens_A": 32552,
+     "tokens_B": 31,
+     "ref": [
+      "5662797"
+     ],
+     "joint": " the number of years. It's a number that is not",
+     "relay": " the number of years. It's a number that is not",
+     "split": " the number of characters in the character. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of letters in the alphabet. I think it's",
+     "warm": " the number of words that you can think of. It's",
+     "bits8": " the number of words that you can think of. It is",
+     "bits4": " the number of words that you can think of. It's",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of lines. I think that is a good idea"
+    },
+    {
+     "index": 10,
+     "tokens_A": 32556,
+     "tokens_B": 39,
+     "ref": [
+      "8331414"
+     ],
+     "joint": " the number of lines. It's a bit like the number",
+     "relay": " the number of lines. It's a bit like the number",
+     "split": " the number of characters in the program. The program is a",
+     "answer_tokens": 12,
+     "tail16": " the number of lines in the text. It's a bit",
+     "warm": " the number of lines. I think that's a good idea",
+     "bits8": " the number of lines. I think that's a good idea",
+     "bits4": " the number of words in the sentence. I think that's",
+     "alone": " the number of times that the teeny-tiny-cr",
+     "swap": " the number of years that a teeny-tiny-cr"
+    },
+    {
+     "index": 11,
+     "tokens_A": 32552,
+     "tokens_B": 33,
+     "ref": [
+      "3530317"
+     ],
+     "joint": " the number of years. It's a bit like the number",
+     "relay": " the number of years. It's a bit like the number",
+     "split": " the number of characters in the program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of years that the game has been played. It",
+     "warm": " the number of years. I think that's a good idea",
+     "bits8": " the number of years. I think that's a good idea",
+     "bits4": " the number of years. I think that's a good idea",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of years. I think that's a good idea"
+    },
+    {
+     "index": 12,
+     "tokens_A": 32552,
+     "tokens_B": 31,
+     "ref": [
+      "7072646"
+     ],
+     "joint": " the number of people who are likely to be affected by the",
+     "relay": " the number of people who are likely to be affected by the",
+     "split": " the number of characters in a program. The number of characters",
+     "answer_tokens": 12,
+     "tail16": " the number of words in the sentence. It is the number",
+     "warm": " the number of words in the sentence. I think that's",
+     "bits8": " the number of words that are in the right place in the",
+     "bits4": " the number of words that are in the sentence. The number",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that are in the sentence. That number"
+    },
+    {
+     "index": 13,
+     "tokens_A": 32553,
+     "tokens_B": 35,
+     "ref": [
+      "3672272"
+     ],
+     "joint": " the number of years. It's a bit like the number",
+     "relay": " the number of years. It's a bit like the number",
+     "split": " the number of the earthy-plier. I think",
+     "answer_tokens": 12,
+     "tail16": " the number of years. It is a number that is not",
+     "warm": " the number of years. I think that is a good idea",
+     "bits8": " the number of years. That number is the number of years",
+     "bits4": " the number of years. I think that's a good idea",
+     "alone": " the number of the earthy-plier.\n\n",
+     "swap": " the number of years. I think that is a good idea"
+    },
+    {
+     "index": 14,
+     "tokens_A": 32553,
+     "tokens_B": 35,
+     "ref": [
+      "9803419"
+     ],
+     "joint": " \"1.\" This is the number of times you have to",
+     "relay": " the number of years. It's a bit like the number",
+     "split": " the number of words in the sentence. The number of words",
+     "answer_tokens": 12,
+     "tail16": " the number of words in the sentence. It is the number",
+     "warm": " the number of words in the sentence. The number of words",
+     "bits8": " the number of words in the sentence. What is the special",
+     "bits4": " the number of lines. I think that's a good idea",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that the author has to say. It"
+    },
+    {
+     "index": 15,
+     "tokens_A": 32552,
+     "tokens_B": 33,
+     "ref": [
+      "7326864"
+     ],
+     "joint": " the number of days in a year. That number is the",
+     "relay": " the number of days in a year. That number is the",
+     "split": " the number of characters that are not in the right place in",
+     "answer_tokens": 12,
+     "tail16": " the number of characters in the text. It is a special",
+     "warm": " the number of words that the user can read. The number",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of words that you can say. It is the"
+    },
+    {
+     "index": 16,
+     "tokens_A": 32554,
+     "tokens_B": 35,
+     "ref": [
+      "8141849"
+     ],
+     "joint": " the number of years. I think that's a good idea",
+     "relay": " the number of years. It's a bit like the number",
+     "split": " the number of letters in the alphabet. That number is called",
+     "answer_tokens": 12,
+     "tail16": " the number of letters in the alphabet. I think that is",
+     "warm": " the number of words that you can think of. It is",
+     "alone": " the number of icky-diver-like  ",
+     "swap": " the number of words that you can think of. It's"
+    },
+    {
+     "index": 17,
+     "tokens_A": 32554,
+     "tokens_B": 37,
+     "ref": [
+      "1384356"
+     ],
+     "joint": " the number of years. I think that is a good idea",
+     "relay": " the number of years. I think that is a good idea",
+     "split": " the number of letters in the alphabet. I think that is",
+     "answer_tokens": 12,
+     "tail16": " the number of letters in the alphabet. I think that is",
+     "warm": " the number of words that you can say in a sentence.",
+     "alone": " the number of the letters in the alphabet.\n\nThe",
+     "swap": " the number of years. I think that is a good idea"
+    },
+    {
+     "index": 18,
+     "tokens_A": 32554,
+     "tokens_B": 35,
+     "ref": [
+      "3941074"
+     ],
+     "joint": " the number of years you have been in the same hospital.",
+     "relay": " the number of years you have been in the same position as",
+     "split": " the number of times the person has been in the hospital.",
+     "answer_tokens": 12,
+     "tail16": " the number of times the number of times the number of times",
+     "warm": " the number of times you have been in a situation where you",
+     "alone": " the number of days in which the patient is admitted to hospital",
+     "swap": " the number of times you have been in hospital. It's"
+    },
+    {
+     "index": 19,
+     "tokens_A": 32552,
+     "tokens_B": 33,
+     "ref": [
+      "3001153"
+     ],
+     "joint": " the number of years. It's a bit like the number",
+     "relay": " the number of years. It's a bit like the number",
+     "split": " the number of times the author of the book has been given",
+     "answer_tokens": 12,
+     "tail16": " the number of times you have a good idea. It's",
+     "warm": " the number of times you have a good idea. It's",
+     "alone": " the number of the number of the number of the number of",
+     "swap": " the number of times you have a good idea. It's"
+    }
+   ]
+  }
+ ]
+}

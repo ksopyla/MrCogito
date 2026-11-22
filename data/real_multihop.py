@@ -9,7 +9,7 @@ removed in three stages (iCoT): all → the first dropped → none.
 The datasets' own annotations (supporting paragraphs and sentences, MuSiQue's per-hop sub-answers, GSM8K-Aug's
 equations) are used only to WRITE the chain text, as a reasoning dataset would. No target comes from a generator.
 
-Spec: docs/experiments_specs/ahead/E33s_written_chains_real_data.md · plan: E33s_written_chains_real_data_plan.md.
+Spec: docs/experiments_specs/canceled/E33s_written_chains_real_data.md · plan: E33s_written_chains_real_data_plan.md.
 """
 from __future__ import annotations
 

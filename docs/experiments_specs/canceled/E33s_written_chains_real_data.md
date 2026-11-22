@@ -1,9 +1,19 @@
 # E33s — Written reasoning from scratch: a 30M confirmation, then 100M against dense (real data deferred)
 
-- **Status:** re-scoped 2026-10-24, draft awaiting the author's go-ahead. Asked for by the author on 24 Oct: "plan
-  the 30M from-scratch confirmation (written chains for every task from step 0, exit losses off, 3 seeds + dense on
-  the same data) plus the small code fixes, then the 100M comparison. Show me the plan and cost before launching
-  anything." The real-data design of 21 Oct is kept below as Phase C, deferred.
+- **Status:** canceled 2026-11-21 (author: "Yes, retire it"). Never launched: the 24 Oct re-scope waited for a
+  go-ahead that did not come, and none of its Phase 0 code was written. Only the 21–22 Oct pre-flight ran: rule
+  coverage, a 30M pilot, and the SmolLM2-135M ceiling probe (plan section 10).
+  - **Superseded because** the project moved to real long documents with exact-read memories after 24 Oct, so this
+    spec's model, test bed and 100M question are all out of date:
+    - the E33 summary notebook recovered about 6 % of the window → full-attention gap on real text (E33n, closed
+      2026-11-05);
+    - concept memory (E37), the LSA port (E33p) and the catalogue read (E33t) replaced it;
+    - 100M and 150M models were trained on AWS (E37, E38), and two 150M models were released on 2026-11-17/18.
+  - **What stays true:** the 30M synthetic-world finding. A loop learns multi-hop only when each step is written
+    out in training and the steps are then removed in stages (R2 and the written route, 19 Oct; text capability
+    board). The concept-memory reasoner, trained on next-word loss alone, added nothing (E37 e37b, shelved
+    2026-11-08).
+  - **History:** re-scoped 2026-10-24 from the 21 Oct real-data design (kept below as Phase C).
 - **Serves:** the Vision (reason in latent space over compressed memory) and the author's 18 Oct direction:
   methods that need no generator labels, only available text, instruction and reasoning data.
 - **Implementation plan:** [E33s_written_chains_real_data_plan.md](E33s_written_chains_real_data_plan.md) (section 11
