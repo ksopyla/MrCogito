@@ -1,0 +1,1140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Living Concepts Check</title>
+<style>
+:root{--bg:#fbfaf7;--card:#fff;--ink:#1d1d1b;--mute:#6b6a65;--line:#dedbd2;--a:#2f6f9f;--a2:#d9e8f3;--b:#b8612a;--b2:#f6e3d3;
+  --ok:#2e7d5b;--ok2:#dcefe6;--new:#8a4fbf;--new2:#ece1f6;--bad:#b3403a;--bad2:#f6dedc;--sum:#a08a2a;--sum2:#f3ecc9;
+  --pk:#b0456f;--pk2:#f6dbe4;--tl:#2a8588;--tl2:#d5eeee;--gy:#6b6a65;--gy2:#e9e6de;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171715;--card:#20201d;--ink:#eceae3;--mute:#a09e96;--line:#3a3934;
+  --a:#7db6de;--a2:#1f3545;--b:#e39a63;--b2:#46301f;--ok:#6cc79c;--ok2:#1d3a2d;--new:#c29be8;--new2:#34264a;--bad:#e2756e;--bad2:#44201d;
+  --sum:#d8c26a;--sum2:#3b341a;--pk:#e58fb0;--pk2:#452635;--tl:#6fc9cc;--tl2:#1b3b3d;--gy:#a09e96;--gy2:#33322e}}
+:root[data-theme="dark"]{--bg:#171715;--card:#20201d;--ink:#eceae3;--mute:#a09e96;--line:#3a3934;--a:#7db6de;--a2:#1f3545;--b:#e39a63;
+  --b2:#46301f;--ok:#6cc79c;--ok2:#1d3a2d;--new:#c29be8;--new2:#34264a;--bad:#e2756e;--bad2:#44201d;--sum:#d8c26a;--sum2:#3b341a;
+  --pk:#e58fb0;--pk2:#452635;--tl:#6fc9cc;--tl2:#1b3b3d;--gy:#a09e96;--gy2:#33322e}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;overflow-wrap:break-word}
+main{max-width:1060px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:24px;margin:6px 0 4px;line-height:1.25}
+h2{font-size:18px;margin:34px 0 8px;padding-top:14px;border-top:1px solid var(--line);scroll-margin-top:120px}
+h3{font-size:13px;margin:0 0 6px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+h3.gap{margin-top:14px}
+h4{font-size:15px;margin:0 0 4px}
+p{margin:6px 0}ul{margin:6px 0;padding-left:22px}li{margin:4px 0}
+.lead{font-size:16px;max-width:880px}.note{color:var(--mute);font-size:13px}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:10px 0}
+.grid2{display:grid;grid-template-columns:1.15fr 1fr;gap:12px}.grid2>*{min-width:0}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.bar{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.secnav{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:13px}
+.secnav a{color:var(--a);text-decoration:none;white-space:nowrap}.secnav a:hover{text-decoration:underline}
+.barrow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+@media(max-width:560px){.bar{padding:6px 0;gap:4px}.bar .seg button{padding:5px 8px;font-size:13px}.barrow .note{display:none}.secnav{gap:0 10px;font-size:12.5px}}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--ink);padding:7px 11px;font:inherit;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}.seg button.on{background:var(--ink);color:var(--bg)}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 11px;font:inherit;cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--bg)}
+.pgroup{border:1px solid var(--line);border-radius:10px;padding:8px 10px 10px;margin:8px 0}
+.pgroup.loop{border-style:dashed;border-color:var(--new)}
+.pipe{display:flex;flex-wrap:wrap;gap:6px}
+.node{flex:1 1 132px;max-width:230px;text-align:left;font:inherit;font-size:12.5px;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:7px 8px;background:var(--card);cursor:pointer;display:flex;flex-direction:column;gap:2px;align-items:flex-start}
+.node b{font-size:13px}.node .num{font-size:11px;color:var(--mute)}.node .nsub{color:var(--mute)}
+.node.read{border-color:var(--new);background:var(--new2)}
+.node.off{opacity:.55;border-style:dashed}
+.node.on{outline:2px solid var(--ink);outline-offset:1px;opacity:1}
+.shape{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
+.tag{display:inline-block;font-size:11px;font-weight:600;border-radius:20px;padding:1px 8px;white-space:nowrap}
+.tag.same{background:var(--gy2);color:var(--gy)}.tag.new{background:var(--new2);color:var(--new);border:1px solid var(--new)}
+.tag.base{background:var(--b2);color:var(--b)}.tag.off{border:1px dashed var(--mute);color:var(--mute)}
+.tag.gr{background:var(--ok2);color:var(--ok)}.tag.illus{background:var(--sum2);color:var(--sum);border:1px solid var(--sum)}
+.legend span{display:inline-flex;align-items:center;gap:5px;margin:2px 14px 2px 0;font-size:13px}
+.sw{display:inline-block;width:14px;height:10px;border-radius:2px;border:1px solid transparent;flex:none}
+svg{max-width:100%;height:auto;display:block}
+svg text{fill:var(--ink);font:11.5px -apple-system,Helvetica,Arial,sans-serif}
+svg text.m{fill:var(--mute)}
+@media(max-width:560px){svg text{font-size:15px}}
+#btab{min-width:560px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mute);font-weight:600;font-size:12.5px}td.num{font-variant-numeric:tabular-nums}
+tr.act td,td.act{background:var(--new2)}
+.tblwrap{overflow-x:auto}
+.flow{font-family:var(--mono);font-size:12.5px;white-space:pre;overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;line-height:1.45}
+input[type=range]{width:240px;max-width:100%;vertical-align:middle}
+input:disabled{opacity:.35}
+.ctl{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:flex-end}
+.ctl label{font-size:13px;display:flex;flex-direction:column;gap:2px;max-width:100%}
+.toks{display:flex;flex-wrap:wrap;gap:8px 6px;align-items:flex-end}
+.tspan{display:inline-flex;flex-wrap:wrap;align-items:flex-end;gap:2px;border:1.5px solid var(--line);border-radius:7px;padding:2px 3px;background:var(--card)}
+.tcol{display:inline-flex;flex-direction:column;align-items:stretch}
+.cbx{display:block;height:26px;position:relative}
+.cbx i{position:absolute;left:28%;right:28%;bottom:0;background:var(--mute);border-radius:2px 2px 0 0}
+.cbx i.cutbar{background:var(--bad)}
+.cbx u{position:absolute;left:-3px;right:-3px;height:0;border-top:1.5px dashed var(--bad)}
+.tok{font-size:13px;line-height:1.3;padding:2px 5px;border-radius:5px;border:1.5px solid transparent;white-space:nowrap;text-align:center}
+.tok.need{box-shadow:0 3px 0 0 var(--bad)}
+.tok.open{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+.tok.was{border:1.5px dashed var(--ink)}
+.tok.fade{opacity:.45}
+.clab{font-size:10px;font-style:normal;color:var(--mute);align-self:center;padding:0 2px}
+.k0{background:var(--a2);border-color:var(--a)}.k1{background:var(--b2);border-color:var(--b)}.k2{background:var(--ok2);border-color:var(--ok)}
+.k3{background:var(--new2);border-color:var(--new)}.k4{background:var(--sum2);border-color:var(--sum)}.k5{background:var(--pk2);border-color:var(--pk)}
+.k6{background:var(--tl2);border-color:var(--tl)}.k7{background:var(--gy2);border-color:var(--gy)}.kx{background:var(--card);border-color:var(--line)}
+.tspan.qwin{background:var(--a2);border-color:var(--a);border-style:dashed}
+.trow{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.trow.sub{padding-left:20px;border-bottom:0;padding-top:1px;padding-bottom:1px}
+.sbar{display:inline-block;width:56px;height:8px;background:var(--line);border-radius:4px;overflow:hidden;flex:none}
+.sbar i{display:block;height:100%;background:var(--ink)}
+.pill{display:inline-block;border-radius:20px;padding:2px 10px;font-size:12.5px;border:1px solid var(--line);margin:2px 6px 2px 0;color:var(--mute)}
+.pill.yes{background:var(--ok2);color:var(--ok);border-color:var(--ok)}.pill.no{background:var(--bad2);color:var(--bad);border-color:var(--bad)}
+.msg{border-left:4px solid var(--ink);padding:4px 0 4px 10px;margin:4px 0 10px}
+.drow{border:1px solid var(--line);border-left:5px solid var(--line);border-radius:8px;background:var(--card);padding:10px 12px;margin:8px 0}
+.drow.agree{border-left-color:var(--ok)}.drow.change{border-left-color:var(--b)}.drow.question{border-left-color:var(--new)}
+.drow .opts{display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 0 6px}
+.drow .opts label{display:inline-flex;align-items:center;gap:5px;cursor:pointer}
+.drow input[type=text],textarea{width:100%;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+textarea{font:13px/1.45 var(--mono);min-height:120px}
+</style>
+</head>
+<body><main>
+<div class="note">E39 · alignment page · written 22 Nov 2026 · every rule, shape, pass mark and kill mark below comes from the experiment's frozen spec
+(written 22 Nov 2026, 19:22 UTC, and changed the same day when the author withdrew the small-scale screen); the shapes of the unchanged
+body come from the 150M family page · nothing is built or trained yet</div>
+<h1>Living concepts: check the design before it is trained</h1>
+<p class="lead"><b>The bet:</b> the reading layer should group its memory the way text is written. First into <b>spans</b>: runs of
+neighbouring tokens, cut where the meaning shifts. Then into <b>living concepts</b>: groups of spans that last for the whole document.
+Today's concept memory uses equal-size groups of scattered tokens inside fixed blocks of 512 tokens.</p>
+<ul>
+<li><b>What it should fix.</b> On questions that need several far items at once, concept memory answers 25 in 100 and the topic index
+54 in 100 (measured on the 150M models; mean of four cells of RULER, a public set of long-context retrieval tests, at 8k and 16k tokens;
+higher is better). On single lookups the two tie at 100 in 100, and on plain long text they tie as well.</li>
+<li><b>Why we think so is a hypothesis, not a measurement.</b> Equal groups can scatter the tokens of one fact over several groups, and a
+one-off fact shares its group with about 7 unrelated tokens. A check on the released model tests this before any money is spent.</li>
+<li><b>What changes.</b> Only how one layer groups and searches its memory. Same body, same 141,506,208 weights, same training recipe.
+Nothing is built yet, so nothing on this page about the new design is a result.</li>
+</ul>
+<p><b>What is needed from you:</b> step through the six parts, then mark each decision in the checklist at the bottom (agree, change or
+question) and paste the collected text into the chat.</p>
+
+<div class="bar">
+  <nav class="secnav" aria-label="Sections">
+    <a href="#s1">1 · Pipeline</a><a href="#s2">2 · Variants</a><a href="#s3">3 · Toy example</a>
+    <a href="#s4">4 · Budget</a><a href="#s5">5 · Masks</a><a href="#s6">6 · Checklist</a>
+  </nav>
+  <div class="barrow"><span class="note">Show:</span><span class="seg" id="variant"></span></div>
+</div>
+
+<!-- =============================================================== 1 -->
+<h2 id="s1">1 · The pipeline, one step at a time</h2>
+<p>The body is the one the four released 150M models share: 13 layers, of which 12 only ever see the last 128 tokens. One layer, the
+<b>reading layer</b>, may look further back, and it is the only place this design changes. Violet steps are inside the reading layer.</p>
+<div class="flow" id="flow"></div>
+<p class="note">Shapes are for one training row of 16,384 tokens ("16k"). Click a step or use the buttons. Each step is marked
+<span class="tag same">unchanged</span> <span class="tag new">new in this design</span> <span class="tag base">as built today</span> or
+<span class="tag off">not in this variant</span> for the variant chosen in the bar above.</p>
+<div id="pipe"></div>
+<p><button class="btn" id="prev" type="button">◀ Prev</button> <button class="btn primary" id="next" type="button">Next ▶</button>
+<span class="note" id="stepno"></span></p>
+<div class="grid2">
+  <div class="card"><h3 id="stitle">What happens</h3><div id="what"></div><h3 class="gap">Why</h3><div id="why"></div></div>
+  <div class="card"><h3>Shapes at a 16k row</h3><div class="shape" id="shape"></div>
+    <h3 class="gap">What information survives this stage</h3><div id="surv"></div></div>
+</div>
+
+<!-- =============================================================== 2 -->
+<h2 id="s2">2 · Three variants, one click apart</h2>
+<p>The same switch as in the bar at the top. It changes the steps above, the toy, the budget and the masks below.</p>
+<p><span class="seg" id="variant2"></span></p>
+<p id="varnote"></p>
+<div class="tblwrap"><table id="cmp"></table></div>
+
+<!-- =============================================================== 3 -->
+<h2 id="s3">3 · A worked toy example</h2>
+<p>About 60 tokens, small enough to watch every rule work. <span class="tag illus">illustrative, not trained weights</span>
+The keys are hand-built directions in a plane: one direction per sentence, with a small wobble per token. The toy has no strides,
+lets the reader open 8 tokens where the model opens 512, and keeps 2 concepts where the model keeps 32. It shows how the rules behave,
+not how well the model will do.</p>
+<div class="card">
+  <div class="ctl">
+    <div><div class="note">Question</div><span class="seg" id="tq"></span></div>
+    <label>Cut threshold: <b id="thetav">0.80</b>
+      <input type="range" id="theta" min="0" max="1" step="0.01" value="0.8" aria-label="Cut threshold"></label>
+    <label>Join threshold: <b id="lamv">0.85</b>
+      <input type="range" id="lam" min="0" max="1" step="0.01" value="0.85" aria-label="Join threshold"></label>
+  </div>
+  <p class="note" id="slnote"></p>
+  <p><button class="btn" id="tprev" type="button">◀ Step</button> <button class="btn primary" id="tplay" type="button">▶ Play</button>
+  <button class="btn" id="tnext" type="button">Step ▶</button> <button class="btn" id="treset" type="button">Reset</button>
+  <span class="note" id="tstepno"></span></p>
+  <p><span class="seg" id="tphases"></span></p>
+</div>
+<div class="grid2">
+  <div class="card">
+    <h3>The text and the question</h3>
+    <div class="toks" id="toytext"></div>
+    <p id="toyres" style="margin-top:12px"></p>
+    <div class="legend note" id="toylegend"></div>
+  </div>
+  <div class="card">
+    <h3>What just happened</h3>
+    <div class="msg" id="toymsg"></div>
+    <div id="toylist"></div>
+    <p class="note" id="toyhold"></p>
+  </div>
+</div>
+<p class="note">How to read the outcome. The toy's small budget is the same for all three variants. With its real budget of 512 tokens
+(about 64 groups), concept memory does open single facts whole: it answers 98 to 100 in 100 single lookups (measured). What the toy
+shows is the <b>cost</b>: a fact that is split over groups takes several of the reader's picks, and an answer made of several facts takes
+several times more. Whether that is what holds concept memory back on multi-item questions is the hypothesis the pre-flight check tests.
+The toy can also fall the other way: on the two-step question, one of concept memory's groups happens to hold "key", "box" and "attic"
+together, and it answers in a single pass. In pass 2 of the two-step question, the moved question is set by hand; in the model, the
+local layer inside the loop has to learn it.</p>
+
+<!-- =============================================================== 4 -->
+<h2 id="s4">4 · The budget: what one reader holds</h2>
+<p>All three variants give a reader the same exact reads: its raw window and up to 512 opened tokens. They differ in how many
+<b>summary entries</b> share the reader's attention, and in how many entries it must <b>score</b> to make its choice. The first two
+quantities do not grow with the document. The last two do, and for living concepts nobody knows yet how fast.</p>
+<div class="card">
+  <p><label>How fast the number of concepts grows past the training lengths: exponent <b id="alphav">0.75</b>
+  <input type="range" id="alpha" min="0.5" max="1" step="0.01" value="0.75" aria-label="Growth exponent"></label>
+  <span class="note">0.50 = grows with the square root of the length · 1.00 = grows as fast as the document</span></p>
+  <p class="note" id="alphanote"></p>
+  <svg id="bchart" viewBox="0 0 474 272" width="650" role="img" aria-label="Summary entries per reader against document length"></svg>
+  <div class="legend" id="blegend"></div>
+</div>
+<p>What one reader holds, for the last reader of a document of each length. The raw window and the opened tokens are read exactly.
+Fewer summary entries leave more of the reader's attention for those exact reads, and fewer entries to score make the choice cheaper.</p>
+<div class="tblwrap"><table id="btab"></table></div>
+<ul class="note">
+<li><b>Concept memory:</b> 64 groups per closed block of 512 tokens, so the count follows from the rule at any length. 1,920 and 8,064
+are the spec's figures.</li>
+<li><b>Spans only:</b> about one span per 8 tokens while the controller holds that average in training (the spec's figure for a whole 16k
+row is about 2,048 spans). At test time the count follows the text; the hard bounds allow 32 to 128 spans per 512 tokens.</li>
+<li><b>Living concepts:</b> about 64 tokens per concept at the training lengths. About 256 at 16k is the spec's figure; about 1,024 at
+64k follows from the same ratio. <b>Past 64k the count is unknown.</b> The thresholds are frozen and the count follows the text. The
+band runs from square-root growth to linear growth. The planned readout measures it: concepts per document at 128k against 64k, on 15
+held-out documents.</li>
+<li><b>Entries scored, living concepts:</b> every visible concept, plus the spans of the 32 kept ones, assuming kept concepts are of
+average size. Worked out on this page from the spec's averages; not measured.</li>
+</ul>
+<div class="card">
+  <h3>What a multi-item answer needs</h3>
+  <p><label>Values the answer is made of: <b id="itemsv">4</b>
+  <input type="range" id="items" min="1" max="16" step="1" value="4" aria-label="Number of values in the answer"></label>
+  <span class="note">each about 8 tokens long</span></p>
+  <div id="itemsout"></div>
+  <p class="note">The concept-memory row is the diagnosis behind this design, and it is a <b>hypothesis</b>: the pre-flight check counts,
+  on the released model, in how many groups the tokens of each expected answer really sit and how many of them the reader opens. A second
+  possible cause is listed in the spec as a risk: the exact reads share one softmax with the summaries (1,920 of them at 16k in concept
+  memory, about 256 with living concepts), and the topic index, which has no summaries, may win for that reason.</p>
+</div>
+
+<!-- =============================================================== 5 -->
+<h2 id="s5">5 · The masks: who may read what</h2>
+<p>The reading layer cuts every row into <b>strides</b> of 512 tokens. The rule for one reader is the same in all three variants;
+what differs is what its memory is made of. The row below holds two documents: 16 strides, 8,192 tokens.</p>
+<div class="card">
+  <p><label>Reader at token <b id="readerv">5,500</b> of the row
+  <input type="range" id="reader" min="1028" max="8191" step="1" value="5500" aria-label="Reader position" style="width:420px"></label></p>
+  <svg id="mask" viewBox="0 0 492 170" width="680" role="img" aria-label="What one reader may read, stride by stride"></svg>
+  <div class="legend" id="masklegend"></div>
+  <div id="masktext"></div>
+</div>
+<ul>
+<li><b>Own stride and the one before:</b> raw, word for word (512 to 1,023 tokens).</li>
+<li><b>Two strides back or more:</b> memory only. Up to 512 tokens opened word for word; the rest through summaries, as the memory
+stood two strides back.</li>
+<li><b>The first 4 tokens of the document</b> (the sinks, a resting place for attention): always.</li>
+<li><b>Another document's tokens:</b> never. Concepts never mix documents, and a new document starts with an empty memory.</li>
+<li><b>Tokens after the reader:</b> never.</li>
+</ul>
+<p id="maskwhy"></p>
+
+<!-- =============================================================== 6 -->
+<h2 id="s6">6 · Alignment checklist</h2>
+<p>Fourteen decisions from the spec. Mark each one, add a note where you want a change, press <b>Collect my answers</b> and paste
+the text into the chat. <span class="note" id="dcount"></span></p>
+<div id="checklist"></div>
+<div class="card">
+  <p><label>Anything else (optional)<br><input type="text" id="gnote" style="width:100%;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)" aria-label="Anything else"></label></p>
+  <p><button class="btn primary" id="collect" type="button">Collect my answers</button>
+  <button class="btn" id="copy" type="button">Copy</button> <button class="btn" id="clear" type="button">Clear all answers</button>
+  <span class="note" id="copymsg"></span></p>
+  <textarea id="out" readonly aria-label="Collected answers" placeholder="Your answers appear here as plain text."></textarea>
+</div>
+<p class="note">Sources: the experiment's frozen spec for every rule, shape, mark and measured figure about the designs; the 150M family
+page for the unchanged body. The toy, and every count past 64k tokens, are illustrations and estimates and are marked as such.</p>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => Math.round(n).toLocaleString("en-US");
+const VARS = {
+  cm: {name: "Concept memory", tail: "as built today", note: "<b>Concept memory</b> is the released 150M model and the baseline this design must beat. It is shown so that every difference is one click away."},
+  sp: {name: "Spans only", tail: "new", note: "<b>Spans only</b> uses the new spans but builds no document-wide concepts. It is the first thing built, and it is kept as a switch so that a later run could tell how much of any gain comes from the spans alone. No run of it is planned: the small-scale screen it was first meant for has been withdrawn (the author's choice)."},
+  lv: {name: "Living concepts", tail: "the bet", note: "<b>Living concepts</b> is the bet: spans, then document-wide concepts, then a two-level search. It gets the one 150M run. No small-scale screen comes before it (the author's choice); an early reading inside the run takes over part of that job."},
+};
+const U = {v: "lv", step: 0, toyQ: "A", toyStep: 0, theta: 0.8, lam: 0.85, timer: null, alpha: 0.75, reader: 5500, items: 4};
+
+function pick(x) {
+  if (x === null || typeof x !== "object") return x;
+  if (x[U.v] !== undefined) return x[U.v];
+  if (U.v !== "cm" && x.e !== undefined) return x.e;
+  return x.all;
+}
+
+// ================================================================ 1 · pipeline
+const TAGS = {same: "unchanged", new: "new in this design", base: "as built today", off: "not in this variant"};
+const LOCAL_SHAPE = "x      [16,384, 896]\nq      [16,384, 14, 64]\nk, v   [16,384, 1, 64]\neach token scores 128 keys (its window)";
+const STAGES = [
+  {id: "tokens", grp: "pre", t: "Tokens", s: "ids and document ids", tag: "same",
+   what: "The text becomes tokens from a vocabulary of 49,152 (the SmolLM2 tokenizer). Each token carries the id of its document. Short documents are packed several to a row, and no layer ever reads across a document boundary.",
+   why: "The document id is what later stops a reader from seeing another document's text, and what tells the reading layer where a new document's memory must start empty.",
+   shape: "ids       [16,384]   one whole number per token\ndoc ids   [16,384]   which document each token is in",
+   surv: "Everything. This is the text itself."},
+  {id: "input", grp: "pre", t: "Input table and map", s: "384 numbers → 896", tag: "same",
+   what: "Each token is looked up in a table of 384 numbers per word, widened to the model's width of 896 by a small gated map, and normalised. No position code is added here; positions enter later, inside attention.",
+   why: "A narrow table keeps the word list cheap, and the same table is reused by the output layer.",
+   shape: "table   [49,152, 384]   shared with the output\ne       [16,384, 384]\nx₀      [16,384, 896]   kept, so later layers can mix it back in",
+   surv: "Everything: one vector per token, and a copy (x₀) is kept."},
+  {id: "pre", grp: "pre", t: "Local layers 0–2", s: "each sees the last 128 tokens", tag: "same",
+   what: "Three layers run once. In each, a token reads only the last 128 tokens (14 query heads of 64 numbers, one shared key and value head), and a feed-forward step follows. Their outputs are also saved and handed to the last layers by skip connections.",
+   why: "They build local meaning: the phrase, the sentence. After them a token's vector says what the token is about in its context, not just which word it is. The span cuts two steps later depend on exactly this.",
+   shape: LOCAL_SHAPE,
+   surv: "Everything within reach. Three windows of 128 reach about 380 tokens back, so each token now also carries its neighbourhood."},
+  {id: "keys", grp: "loop", read: true, t: "First-pass keys", s: "questions, keys, values", tag: {cm: "base", e: "new"}, tl: {e: "same keys, new use"},
+   what: {cm: "The reading layer makes 14 questions (queries) per token and one key and one value per token. Its keys carry no position code: a key says what a token is about, not where it is. Concept memory groups these keys afresh on each of the 4 passes.",
+          e: "The reading layer makes 14 questions (queries) per token and one key and one value per token, exactly as in concept memory; its keys carry no position code. New: the keys of the <b>first</b> of the 4 passes are scaled to length 1 and become the one signal for all grouping. The first 4 tokens of a document (its sinks) and padding never join a group."},
+   why: {cm: "Keys that describe content only can be compared across the whole document, which grouping by meaning needs.",
+         e: "These keys are already put in context by layers 0–2, and they are the very vectors the reader's questions are matched against, so groups and questions live in one space. Using only the first pass lets the groups be formed once and stay put while the later passes refine what they contain."},
+   shape: {cm: "q      [16,384, 14, 64]\nk, v   [16,384, 1, 64]   no position code",
+           e: "q      [16,384, 14, 64]\nk, v   [16,384, 1, 64]   no position code\nk̂      [B, 16,384, 64]   unit keys of pass 1: the grouping signal\n(B = rows in a batch)"},
+   surv: "Everything: one key and one value per token. Nothing is grouped yet."},
+  {id: "cut", grp: "loop", read: true, t: {cm: "Equal content groups", e: "Span cuts"}, s: {cm: "64 per 512-token block", e: "where the key changes"}, tag: {cm: "base", e: "new"},
+   what: {cm: "Every closed block of 512 tokens is grouped by content into 64 equal groups of about 8 tokens, token by token (a balanced k-means; no gradient flows through it). Tokens of one group need not be neighbours. The grouping is redone on each of the 4 passes.",
+          e: "A new span starts at a token when its key stops resembling the previous token's key (their cosine falls below the <b>cut threshold</b>; cosine 1 means the same direction, 0 unrelated), when the document changes, or when a 512-token stride starts. It is one comparison per token, done for the whole row at once.<br><br><b>Bounds by construction.</b> A run longer than 16 tokens is split every 16, and a stride with more than 96 natural cuts keeps only its 96 sharpest. So a span has 1 to 16 tokens, never crosses a stride or a document, and a stride holds at most 128 spans (32 forced + 96 natural).<br><br><b>The threshold.</b> During training a slow controller nudges the cut threshold after every step so that spans average 8 tokens. The threshold is saved with the model and frozen at test time, where the number of spans then follows the text.<br><br>Only tokens that can ever be read from memory form spans: in each stride that is the last document, and only if it runs on far enough."},
+   why: {cm: "Grouping by meaning puts tokens about one thing together so that one summary can stand for them, and equal sizes stop one group from swallowing the block. The suspected cost: the tokens of one multi-token fact can land in different groups, and a one-off fact shares its group with about 7 unrelated tokens. That this is what costs concept memory the multi-item questions is a <b>hypothesis</b>; a check on the released model tests it before any paid run.",
+         e: "Text is written in runs: the tokens of one fact sit side by side. Cutting where the meaning shifts keeps them together, so they are opened together, and a one-off fact gets a group of its own. It is also cheap: about 400 small GPU operations per pass, 4 passes per forward, become a handful once per forward. The target of 8 tokens keeps the opened unit as fine as concept memory's."},
+   shape: {cm: "closed blocks   30 for the last reader of a 16k row\ngroups          30 × 64 = 1,920\nlabels          [30, 512]   one group number per token",
+           e: "cos(k̂ₜ, k̂ₜ₋₁)   [B, 16,384]   one number per token\nspan slots      32 strides × 128 = 4,096, about 2,048 used\nspan length     1–16 tokens, mean held at 8 in training"},
+   surv: {cm: "Every token is in exactly one group. What is lost is adjacency: the tokens of one fact may now be in different groups.",
+          e: "Every token that can be read from memory is in exactly one span, together with its neighbours. Nothing is dropped and adjacency is kept."}},
+  {id: "stats", grp: "loop", read: true, t: {cm: "Group statistics", e: "Span statistics"}, s: {cm: "count, mean, spread", e: "five running sums"}, tag: {cm: "base", e: "new"}, tl: {e: "new unit, same statistics"},
+   what: {cm: "Each group keeps its token count, its mean key, the spread of its keys and its mean value. These are sums over the members, so the loss still reaches every member token through them.",
+          e: "Each span keeps its token count, the sum of its keys, the sum of their squared lengths, the sum of its values, and its unit centre (the direction of its summed unit keys). All are plain sums, which is what later lets spans be added up into concepts. Each of the 4 passes recomputes them from its own keys and values; the cuts stay fixed. The loss reaches the member tokens through these sums, exactly as today."},
+   why: {cm: "Count, mean and spread are enough to estimate how much attention the whole group would get, without reading its members.",
+         e: "These are the statistics concept memory already uses, on a new unit. Count, mean and spread let a reader judge a span without opening it."},
+   shape: {cm: "count, spread          [1,920]\nmean key, mean value   [1,920, 64]",
+           e: "per span slot (4,096 slots, about 2,048 used)\ncount n, Σ|k|²      one number each\nΣk, Σv, centre û    64 numbers each"},
+   surv: {cm: "A group can still be opened word for word. If it is not, only its count, mean and spread reach the reader; its tokens can no longer be told apart.",
+          e: "A span can still be opened word for word, so nothing is lost yet. Its statistics alone carry only count, mean and spread."}},
+  {id: "concepts", grp: "loop", read: true, t: "Living concepts", s: "join or found", tag: {cm: "off", sp: "off", lv: "new"},
+   what: {cm: "Not in concept memory. Its groups end with their 512-token block, so a topic that returns in 20 blocks is 20 separate groups with 20 separate summaries.",
+          sp: "Not in this variant. Every span stays its own entry and no document-wide level is built. The variant is the first thing built, and it is kept as a switch so that a later run could tell how much of any gain comes from the spans alone.",
+          lv: "Strides are handled in reading order. Each span is compared with the concepts of its own document as they stood after the previous stride. If the cosine with its best match reaches the <b>join threshold</b>, the span <b>joins</b> that concept; otherwise it <b>founds</b> a new one. Spans of the same stride that would found near-duplicates are merged (three quick rounds in which the earliest such span leads and close ones follow it). A concept's centre is the direction of the sum of its members' unit keys, so it moves as spans join.<br><br><b>No bank, no fixed count.</b> A row has room for one concept per 16 tokens (1,024 at 16k); if that fills up, further spans join their nearest concept. Concepts never mix documents, and a new document starts with none.<br><br><b>The threshold.</b> A second slow controller holds the join threshold so that, in training, 1 span in 8 founds a concept: about 64 tokens per concept. It is frozen at test time, where the number of concepts then follows the text."},
+   why: {cm: "", sp: "",
+         lv: "Everything said about one thing anywhere in the document becomes reachable through one entry, and a one-off fact still gets an entry of its own. The number of entries can then grow more slowly than the document, which the 10M-token goal needs. Concepts that exist for the whole document are also what a later reasoner would work on; that reasoner is not part of this run."},
+   shape: {cm: "—", sp: "—",
+           lv: "concept slots    1,024 at 16k (one per 16 tokens), about 256 used\nspan → concept   one label per span slot [4,096],\n                 fixed for all 4 passes\ncost             one loop over the 32 strides, about 30 small\n                 GPU operations each, once per forward"},
+   surv: {cm: "—", sp: "—", lv: "Nothing is lost here: the step only labels each span with a concept. What a concept's summary keeps is decided at the read."}},
+  {id: "versions", grp: "loop", read: true, t: "Concept versions", s: "one per 512-token stride", tag: {cm: "off", sp: "off", lv: "new"},
+   what: {cm: "Not needed in concept memory. A group lives inside one 512-token block, and a block is read as memory only two blocks later, when it is complete. So a group is either wholly readable or not readable at all.",
+          sp: "Not needed in this variant. A span never crosses a stride, so it is either wholly readable (two strides later) or not readable at all.",
+          lv: "A reader sees its own stride and the one before it as raw tokens, and the memory as it stood two strides back. A concept keeps growing through the document, so one frozen copy would not do. Each concept keeps one <b>version per stride</b>: a running total of its sums up to that stride. Each reader uses the version that ends two strides before its own."},
+   why: {cm: "", sp: "",
+         lv: "No summary may contain a token its reader must not see: not a future token, and not one the reader already holds raw (it would be counted twice). With versions, generating text token by token gives the same numbers as the training forward."},
+   shape: {cm: "—", sp: "—",
+           lv: "Σk versions   [B, 32, 1,024, 64]   2.1M numbers at 16k\nΣv versions   [B, 32, 1,024, 64]   2.1M numbers at 16k\n(134 MB each at 64k; the loss flows through them)"},
+   surv: {cm: "—", sp: "—", lv: "Each reader gets its own causal copy of every concept: nothing from its future, nothing counted twice."}},
+  {id: "choice", grp: "loop", read: true, t: "The reader's choice", s: {cm: "largest groups first", sp: "all spans compete", lv: "32 concepts, then spans"}, tag: {cm: "base", e: "new"},
+   what: {cm: "For every reader and every group, the layer estimates how much attention the whole group would get; the estimate includes the group's size. The groups with the largest estimate are opened, best first, until the reader holds 512 tokens (about 64 groups of 8). No gradient flows through the choice.",
+          sp: "One level: every visible span competes (a flat search). Spans are ranked by how strongly an average member would be attended by the reader's question (the best of its 14 query heads, plus a term for the spread of the members). They are opened best first until the reader holds 512 tokens: up to 256 spans, the last one cut short. No gradient flows through the choice.<br><br><span class=\"note\">The span's size is left out of the score, as in the two-level search. A test switch can put the old rule back (the estimated attention with the size included), which is how the new code is checked against today's read.</span>",
+          lv: "Two levels.<br><b>Concepts first.</b> The reader scores every visible concept by how strongly an average member would be attended by its question (the best of its 14 query heads, plus a term for the spread of the members). The concept's size is left out of this score, so a big concept does not win by being big. The best <b>32</b> are kept.<br><b>Then their spans.</b> The visible spans of those 32 concepts are ranked by the same score on each span's own statistics and opened, best first, until the reader holds <b>512 tokens</b>: up to 256 spans, the last one cut short.<br><br>No gradient flows through the choice. A switch at test time lets all spans compete directly, to measure what the first level costs."},
+   why: {cm: "The estimate that summarises a group also says when a summary is not good enough: the largest contributions are read word for word, the rest coarsely.",
+         sp: "This is the same search the living-concepts model can be switched to at test time. Comparing the two tells what the concept level costs or gains.",
+         lv: "Scoring about 256 concepts and then the spans of 32 of them is less work than scoring about 2,000 entries, and the difference grows with the document. The risk is that the first level hides the right span. An earlier two-level search lost to a flat one at 30M: it recovered 3.2 points less of the gain from far context at 16k and 15.7 points less at 64k (the gain is counted from 0 = no far memory to 100 = full attention). Its first level was pages of 256 neighbouring tokens; here it is a cluster by content."},
+   shape: {cm: "scores   [16,384, 1,920]   every reader × every group\nopened   up to 512 tokens per reader and pass",
+           sp: "scores       every reader × every visible span\n             (about 1,920 at the end of a 16k row)\nopen table   [B, 16,384, 4,096] small whole numbers\n             134 MB per 16k row; 2.1 GB at 64k\nopened       up to 512 tokens, up to 256 spans",
+           lv: "level 1      every reader × every visible concept\n             (about 256 at 16k) → keep 32\nlevel 2      the visible spans of those 32\n             → open up to 512 tokens (≤ 256 spans)\nopen table   [B, 16,384, 4,096] small whole numbers\n             134 MB per 16k row; 2.1 GB at 64k"},
+   surv: {cm: "Up to 512 far tokens word for word, in whole groups of about 8.",
+          sp: "Up to 512 far tokens word for word, in whole spans (the last one may be cut short).",
+          lv: "Up to 512 far tokens word for word, in whole spans. The rest of the memory reaches the reader only through summaries."}},
+  {id: "softmax", grp: "loop", read: true, t: "One softmax", s: "sinks ‖ window ‖ opened ‖ summaries", tag: {cm: "base", e: "new"}, tl: {sp: "changed: summaries per span", lv: "changed: summaries per concept"},
+   what: {cm: "Each reader attends, in one softmax (one shared pool of attention), to four things: the first 4 tokens of its document (the sinks, a resting place for attention); its own and the previous 512-token block, word for word; its 512 opened tokens; and one summary for every group it did not open. A summary is one entry with the group's mean key and mean value, weighted by the group's size and spread.",
+          sp: "Each reader attends, in one softmax (one shared pool of attention), to: the 4 sinks of its document; its raw window (its own stride and the one before); its opened tokens; and <b>one summary for every span it did not open</b>. A summary is one entry with the span's mean key and mean value, weighted by the number of its tokens that were not opened, plus the spread term.",
+          lv: "Each reader attends, in one softmax (one shared pool of attention), to: the 4 sinks of its document; its raw window (its own stride and the one before); its opened tokens; and <b>one summary per visible concept</b>. A summary has the mean key and mean value of the concept's version, and is weighted by how many of the concept's tokens were <b>not</b> opened, plus the spread term. A concept opened whole drops out. A concept opened in part keeps a summary for the rest, which is assumed to have the same mean. Concept memory's length scale is kept (it holds the summaries' total weight steady in documents longer than 16k)."},
+   why: {cm: "Every earlier token of the document counts exactly once: in the window, opened, or inside one summary. Nothing is invisible.",
+         sp: "Every past token is still counted exactly once. This variant keeps about as many summaries as concept memory, so a difference between the two comes from the spans and the choice, not from fewer summaries.",
+         lv: "Every past token of the document is still counted exactly once: in the window, opened, or inside one summary. But the exact reads now share the softmax with about 256 summaries at 16k, where concept memory shows 1,920: about 8 times fewer. The price is that each summary is coarser, about 64 tokens against 8."},
+   shape: {cm: "entries per reader\n  4 sinks\n  512 … 1,023 raw tokens\n  up to 512 opened tokens\n  up to 1,920 summaries (end of a 16k row)",
+           sp: "entries per reader\n  4 sinks\n  512 … 1,023 raw tokens\n  up to 512 opened tokens\n  about 1,920 summaries (end of a 16k row),\n  less the spans it opened",
+           lv: "entries per reader\n  4 sinks\n  512 … 1,023 raw tokens\n  up to 512 opened tokens\n  about 256 summaries at 16k (one version of each concept)\nsummary keys      32 versions × 1,024 slots = 32,768\nremaining count   [B, 16,384, 1,024] small whole numbers"},
+   surv: {cm: "Raw and opened tokens survive exactly. An unopened group survives as a count, a mean and a spread over about 8 tokens.",
+          sp: "Raw and opened tokens survive exactly. An unopened span survives as a count, a mean and a spread over about 8 neighbouring tokens.",
+          lv: "Raw and opened tokens survive exactly. Everything else survives as one count, mean and spread per concept, with about 64 tokens behind each (concept memory: about 8). For scale: switching concept memory's summaries off costs it 0.023 nats per token at 16k and 0.068 at 64k (measured; a nat measures surprise at the next token, lower is better), so most of its gain comes from the exact reads."}},
+  {id: "l4", grp: "loop", t: "Local layer 4", s: "inside the loop", tag: "same",
+   what: "One more local layer (last 128 tokens) runs right after the reading layer, inside the loop.",
+   why: "It digests what the reading layer just brought in and mixes it with the neighbours, which prepares a sharper question for the next pass: read, think, read again.",
+   shape: LOCAL_SHAPE,
+   surv: "What was read is now part of each token's vector, and can change what the token asks next."},
+  {id: "loop", grp: "loop", t: "Loop × 4", s: "same weights, 4 passes", tag: "same",
+   what: {cm: "The reading layer and local layer 4 run 4 times with the same weights. A small learned \"pass number\" vector is added before each pass. Concept memory regroups every block on every pass, from that pass's keys.",
+          sp: "The reading layer and local layer 4 run 4 times with the same weights. A small learned \"pass number\" vector is added before each pass. The loop itself is unchanged. What is new inside it: the spans are formed <b>once</b>, from the first pass, and stay fixed. Each pass recomputes their statistics from its own keys and values, and each pass makes a fresh choice of what to open.",
+          lv: "The reading layer and local layer 4 run 4 times with the same weights. A small learned \"pass number\" vector is added before each pass. The loop itself is unchanged. What is new inside it: spans and concepts are formed <b>once</b>, from the first pass, and stay fixed. Each pass recomputes their statistics from its own keys and values, and each pass makes a fresh choice of what to open."},
+   why: {cm: "A question that needs two steps cannot be answered in one read: the first read finds where to look next. The loop gives the model 4 looks.",
+         e: "A question that needs two steps cannot be answered in one read: the first read finds where to look next. The loop gives the model 4 looks; the toy below needs 2. Forming the groups once is cheaper than regrouping 4 times and keeps the entries the same from pass to pass."},
+   shape: {cm: "pass vector   [4, 896]\ngrouping      4 × per forward\nchoice        4 × per forward",
+           sp: "pass vector                      [4, 896]\nspan cuts                        1 × per forward\nstatistics and choice            4 × per forward",
+           lv: "pass vector                      [4, 896]\ncuts and span → concept labels   1 × per forward\nstatistics and choice            4 × per forward"},
+   surv: "Each pass can open up to 512 tokens, and a later pass may open different ones. What one pass read is carried in the token vectors to the next."},
+  {id: "coda", grp: "post", t: "Layers 5–12", s: "8 local layers", tag: "same",
+   what: "Eight local layers (last 128 tokens) run once after the loop. The later ones also receive the saved outputs of the early layers through skip connections.",
+   why: "They turn what was read into a prediction of the next token. The skips hand early, exact token detail straight to the last layers.",
+   shape: LOCAL_SHAPE + "\nskips from layers 5, 4, 3, 2, 1, 0 into layers 7 … 12",
+   surv: "No new information about the far text enters here. These layers can only use what the loop read."},
+  {id: "head", grp: "post", t: "Head", s: "896 → 384 → 49,152", tag: "same",
+   what: "The final vector is normalised, projected from 896 to 384 numbers and scored against the same word table that was used at the input.",
+   why: "Sharing the table between input and output saves weights.",
+   shape: "h         [16,384, 896]\nh → 384   [16,384, 384]\nscores    [16,384, 49,152]   one per word of the vocabulary",
+   surv: "One score per possible next token."},
+  {id: "loss", grp: "post", t: "Loss", s: "next-token cross-entropy", tag: "same",
+   what: {cm: "Cross-entropy on the next token: how surprised the model is by the token that really comes next (lower is better). The scores are softly capped and a very small extra term keeps them centred.",
+          e: "Cross-entropy on the next token: how surprised the model is by the token that really comes next (lower is better). The scores are softly capped and a very small extra term keeps them centred.<br><br>The new design adds <b>no loss and no weights</b>. No gradient flows through the cuts, the join-or-found labels or the choice. The loss reaches each member token's key and value through the statistics, as in concept memory. The two thresholds are not trained by the loss: slow controllers steer them toward their targets during training."},
+   why: "The same loss and recipe as the other 150M models, so a difference in results can be laid at the reading layer's door.",
+   shape: "loss               one number per token, averaged\nweights in total   141,506,208, the same as concept memory",
+   surv: "The training signal. It shapes the keys, and the keys decide where spans end and which spans belong together."},
+];
+
+const FLOW = {
+  cm: ["4 first tokens + own & previous 512-block, word for word", "+ 512 opened tokens (whole groups) + 1 summary per other group"],
+  sp: ["4 first tokens + own & previous stride, word for word", "+ 512 opened tokens (whole spans) + 1 summary per other span"],
+  lv: ["4 first tokens + own & previous stride, word for word", "+ 512 opened tokens (spans of 32 concepts) + 1 summary per concept"],
+};
+function drawFlow() {
+  const head = "layer 3 · reading layer · ", pad = " ".repeat(head.length);
+  const W = Math.max(...Object.values(FLOW).map((f) => head.length + Math.max(f[0].length, f[1].length))) + 2;
+  const title = " pass 1…4, same weights, + pass vector ";
+  const side = Math.floor((W - title.length) / 2);
+  const line = (s) => "   │ " + s.padEnd(W - 1) + "│\n";
+  $("flow").textContent =
+    "tokens ─► input table and map (384 → 896) ─► layers 0 1 2 (local, last 128 tokens)\n" +
+    "   ┌" + "─".repeat(side) + title + "─".repeat(W - side - title.length) + "┐\n" +
+    line(head + FLOW[U.v][0]) + line(pad + FLOW[U.v][1]) + line("layer 4 · local, last 128 tokens") +
+    "   └" + "─".repeat(W) + "┘\n" +
+    "─► layers 5 … 12 (local, last 128 tokens, skips from the early layers) ─► head (896 → 384 → words) ─► loss";
+}
+function tagHTML(x) {
+  const tg = pick(x.tag);
+  return `<span class="tag ${tg}">${pick(x.tl) || TAGS[tg]}</span>`;
+}
+function renderStep() {
+  U.step = Math.max(0, Math.min(U.step, STAGES.length - 1));
+  const groups = [["pre", "Before the loop · runs once"], ["loop", "The loop · layers 3 and 4, the same weights, 4 passes"], ["post", "After the loop · runs once"]];
+  $("pipe").innerHTML = groups.map(([g, title]) => `<div class="pgroup ${g}"><h3>${title}</h3><div class="pipe">` +
+    STAGES.map((x, i) => x.grp !== g ? "" :
+      `<button type="button" class="node${x.read ? " read" : ""}${pick(x.tag) === "off" ? " off" : ""}${i === U.step ? " on" : ""}" data-i="${i}">` +
+      `<span class="num">${i + 1}${x.read ? " · reading layer" : ""}</span><b>${pick(x.t)}</b><span class="nsub">${pick(x.s)}</span>${tagHTML(x)}</button>`).join("") +
+    `</div></div>`).join("");
+  const x = STAGES[U.step];
+  $("stitle").innerHTML = `Step ${U.step + 1} · ${pick(x.t)} &nbsp;${tagHTML(x)}`;
+  $("what").innerHTML = pick(x.what);
+  $("why").innerHTML = pick(x.why) || `<span class="note">Nothing to explain: this step does not exist in this variant.</span>`;
+  $("shape").textContent = pick(x.shape);
+  $("surv").innerHTML = pick(x.surv);
+  $("stepno").textContent = `step ${U.step + 1} of ${STAGES.length} · showing: ${VARS[U.v].name.toLowerCase()}`;
+}
+
+// ================================================================ 2 · variants
+function renderVariant() {
+  const seg = (full) => Object.entries(VARS).map(([k, v]) =>
+    `<button type="button" data-v="${k}" class="${k === U.v ? "on" : ""}">${v.name}${full ? " (" + v.tail + ")" : ""}</button>`).join("");
+  $("variant").innerHTML = seg(false);
+  $("variant2").innerHTML = seg(true);
+  $("varnote").innerHTML = VARS[U.v].note;
+  drawFlow();
+  const rows = [
+    ["", "Concept memory (as built today)", "Spans only (new)", "Living concepts (the bet)"],
+    ["the unit opened word for word", "a group of about 8 tokens picked by content from anywhere in one 512-token block", "a span: 1 to 16 neighbouring tokens, 8 on average in training", "a span: 1 to 16 neighbouring tokens, 8 on average in training"],
+    ["how the units are formed", "each closed block is split into 64 equal groups; redone on each of the 4 passes", "one comparison of each token's key with the previous token's; once per forward", "the same span cuts; once per forward"],
+    ["the level above", "none", "none: every span is its own entry", "document-wide concepts: each span joins the concept it resembles or founds a new one"],
+    ["entries in a 16k row", "1,920 groups for the last reader", "about 2,048 spans", "about 2,048 spans in about 256 concepts"],
+    ["how a reader chooses", "the largest estimated attention, group size included; one level", "the best match of an average member; one level (flat)", "the best match, size left out; two levels: 32 concepts, then their spans"],
+    ["opened word for word", "up to 512 tokens", "up to 512 tokens", "up to 512 tokens"],
+    ["what stands for the rest", "one summary per unopened group", "one summary per unopened span", "one summary per concept, for what was not opened of it"],
+    ["raw window and sinks", "own and previous 512 tokens; first 4 tokens of the document", "the same", "the same"],
+    ["weights", "141,506,208", "the same; no new weights", "the same; no new weights"],
+    ["role in the experiment", "the baseline to beat (released)", "the first thing built; kept as a switch for a later run that would tell what the spans alone give; no run planned", "the model: the one 150M run, with no small-scale screen before it"],
+  ];
+  const col = {cm: 1, sp: 2, lv: 3}[U.v];
+  $("cmp").innerHTML = rows.map((r, i) => "<tr>" + r.map((c, j) =>
+    i === 0 ? `<th style="${j === col ? "color:var(--ink)" : ""}">${c}</th>` : `<td class="${j === col ? "act" : ""}">${j === 0 ? "<b>" + c + "</b>" : c}</td>`).join("") + "</tr>").join("");
+}
+
+// ================================================================ 3 · toy
+/*TOY-LOGIC-START*/
+const TOY_BASE = [["Anna hid the key in the red box", 40], ["rain fell on the old town", 160], ["Tom baked bread for the fair", 260],
+  ["the red box", 44], ["sits in the attic", 95], ["more rain fell all night", 163], ["Tom sold the bread at noon", 257],
+  ["the code is 7 4 2 9", 325], ["rain again on the town", 158]];
+const TOY_Q = {
+  A: {name: "One step", ask: "what is the code?", text: "what is the code ? it is", a: 325, q: [325, 325], hop: null,
+      chain: [{si: 7, words: ["7", "4", "2", "9"]}], ans: 0},
+  B: {name: "Two steps", ask: "where is the key?", text: "where is the key ? in the", a: 40, q: [40, 75], hop: {si: 0, words: ["key", "box"]},
+      chain: [{si: 0, words: ["key", "box"]}, {si: 4, words: ["attic"]}], ans: 1},
+};
+const TOY = {MAXSPAN: 8, BUDGET: 8, KEEP: 2, GROUP: 8};
+const tdot = (a, b) => a[0] * b[0] + a[1] * b[1];
+const tnrm = (a) => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; };
+const tvec = (d) => [Math.cos(d * Math.PI / 180), Math.sin(d * Math.PI / 180)];
+function toyTokens(qk) {
+  const toks = [];
+  [...TOY_BASE, [TOY_Q[qk].text, TOY_Q[qk].a]].forEach(([text, ang], si) => text.split(" ").forEach((w) => {
+    const i = toks.length;
+    toks.push({w, si, i, k: tvec(ang + ((i * 37) % 19 - 9)), near: si === TOY_BASE.length});
+  }));
+  return toks;
+}
+function toyStats(m) {
+  const sum = m.reduce((a, t) => [a[0] + t.k[0], a[1] + t.k[1]], [0, 0]);
+  return {m, sum, n: m.length, u: tnrm(sum)};
+}
+// Grouping. "cm": equal groups by content. "sp": spans only. "lv": spans, then join-or-found concepts.
+function toyBuild(toks, variant, theta, lam) {
+  const far = toks.filter((t) => !t.near), spans = [], concepts = [];
+  far.forEach((t) => { t.sp = -1; t.cos = null; t.cut = ""; });
+  if (variant === "cm") {
+    const ang = (t) => (Math.atan2(t.k[1], t.k[0]) * 180 / Math.PI + 360) % 360;
+    const order = far.slice().sort((a, b) => ang(a) - ang(b) || a.i - b.i);
+    let gap = -1, at = 0;
+    order.forEach((t, j) => {
+      const d = (ang(order[(j + 1) % order.length]) - ang(t) + 360) % 360;
+      if (d > gap) { gap = d; at = (j + 1) % order.length; }
+    });
+    const ring = order.slice(at).concat(order.slice(0, at));
+    const G = Math.max(1, Math.round(far.length / TOY.GROUP)), base = Math.floor(far.length / G), extra = far.length - base * G;
+    let p = 0;
+    for (let g = 0; g < G; g++) {
+      const size = base + (g >= G - extra ? 1 : 0);
+      const s = toyStats(ring.slice(p, p + size).sort((a, b) => a.i - b.i));
+      p += size; s.id = g; s.c = g; s.isNew = true; s.sim = null; s.best = -1;
+      s.m.forEach((t) => { t.sp = g; });
+      spans.push(s); concepts.push({spans: [s], sum: s.sum.slice(), n: s.n});
+    }
+    return {far, spans, concepts, variant};
+  }
+  far.forEach((t, j) => {
+    const last = spans[spans.length - 1];
+    t.cos = j ? tdot(t.k, far[j - 1].k) : null;
+    let why = "";
+    if (!last) why = "start"; else if (t.cos < theta) why = "cos"; else if (last.length >= TOY.MAXSPAN) why = "max";
+    if (why) spans.push([t]); else last.push(t);
+    t.cut = why; t.sp = spans.length - 1;
+  });
+  spans.forEach((m, j) => {
+    const s = toyStats(m); s.id = j; spans[j] = s;
+    let best = -1, bs = -2;
+    if (variant === "lv") concepts.forEach((c, k) => { const v = tdot(s.u, tnrm(c.sum)); if (v > bs) { bs = v; best = k; } });
+    if (best >= 0 && bs >= lam) {
+      const c = concepts[best];
+      c.spans.push(s); c.sum = [c.sum[0] + s.sum[0], c.sum[1] + s.sum[1]]; c.n += s.n; s.c = best; s.isNew = false;
+    } else {
+      s.c = concepts.length; s.isNew = true; concepts.push({spans: [s], sum: s.sum.slice(), n: s.n});
+    }
+    s.sim = best >= 0 ? bs : null; s.best = best;
+  });
+  return {far, spans, concepts, variant};
+}
+// One pass of one reader: score, choose, open up to the budget, count what is left as summaries.
+function toyRead(M, qdeg, variant) {
+  const q = tvec(qdeg), mean = (o) => [o.sum[0] / o.n, o.sum[1] / o.n];
+  const sMatch = M.spans.map((s) => tdot(q, mean(s)));
+  const cMatch = M.concepts.map((c) => tdot(q, mean(c)));
+  const cScore = M.concepts.map((c, j) => cMatch[j] + (variant === "cm" ? Math.log(c.n) / 4 : 0));
+  const order = M.concepts.map((c, j) => j).sort((a, b) => cScore[b] - cScore[a] || a - b);
+  const kept = variant === "lv" ? order.slice(0, TOY.KEEP) : order.slice();
+  const cand = [];
+  kept.forEach((j) => M.concepts[j].spans.forEach((s) => cand.push(s.id)));
+  if (variant !== "cm") cand.sort((a, b) => sMatch[b] - sMatch[a] || a - b);
+  let left = TOY.BUDGET;
+  const open = new Set(), units = [], sOpen = M.spans.map(() => 0), cOpen = M.concepts.map(() => 0);
+  for (const id of cand) {
+    if (left <= 0) break;
+    const s = M.spans[id], take = Math.min(left, s.n);
+    s.m.slice(0, take).forEach((t) => open.add(t.i));
+    left -= take; sOpen[id] = take; cOpen[s.c] += take; units.push({id, take, n: s.n});
+  }
+  const summaries = variant === "lv" ? M.concepts.filter((c, j) => c.n - cOpen[j] > 0).length : M.spans.filter((s, j) => s.n - sOpen[j] > 0).length;
+  const scored = variant === "lv" ? M.concepts.length + cand.length : M.spans.length;
+  return {q: qdeg, sMatch, cMatch, cScore, order, kept, cand, open, units, sOpen, cOpen, summaries, scored};
+}
+function toyRun(qk, variant, theta, lam) {
+  const Q = TOY_Q[qk], toks = toyTokens(qk), M = toyBuild(toks, variant, theta, lam);
+  const pickToks = (c) => M.far.filter((t) => t.si === c.si && c.words.includes(t.w));
+  const need = pickToks(Q.chain[Q.ans]);
+  const needAll = new Set();
+  Q.chain.forEach((c) => pickToks(c).forEach((t) => needAll.add(t.i)));
+  const p1 = toyRead(M, Q.q[0], variant);
+  const hopOk = Q.hop ? pickToks(Q.hop).every((t) => p1.open.has(t.i)) : null;
+  const moved = !!(Q.hop && hopOk);
+  const p2 = toyRead(M, moved ? Q.q[1] : Q.q[0], variant);
+  const got1 = need.filter((t) => p1.open.has(t.i)).length;
+  const got2 = need.filter((t) => p1.open.has(t.i) || p2.open.has(t.i)).length;
+  const unitIds = [...new Set(M.far.filter((t) => needAll.has(t.i)).map((t) => t.sp))];
+  const cost = unitIds.reduce((a, u) => a + M.spans[u].n, 0);
+  return {qk, Q, toks, M, need, needAll, passes: [p1, p2], hopOk, moved, got: [got1, got2],
+          found: [got1 === need.length, got2 === need.length], units: unitIds.length, cost};
+}
+/*TOY-LOGIC-END*/
+
+let TR = null, TSTEPS = [];
+const PH_LABEL = {text: "The text", group: "Equal groups", cut: "Spans", concept: "Concepts", p1: "Pass 1", p2: "Pass 2"};
+const PH_RANK = {text: 0, group: 1, cut: 1, concept: 2, p1: 3, p2: 4};
+function toySteps(R, variant) {
+  const st = [{ph: "text"}];
+  if (variant === "cm") st.push({ph: "group"});
+  else {
+    st.push({ph: "cut"});
+    if (variant === "lv") R.M.spans.forEach((s, j) => st.push({ph: "concept", j}));
+  }
+  [1, 2].forEach((p) => { st.push({ph: "p" + p, kind: "choose", p}); st.push({ph: "p" + p, kind: "read", p}); });
+  return st;
+}
+function toyPhases() {
+  const out = [];
+  TSTEPS.forEach((s, i) => {
+    if (!out.length || out[out.length - 1].ph !== s.ph) out.push({ph: s.ph, first: i, last: i}); else out[out.length - 1].last = i;
+  });
+  return out;
+}
+function toyStop() {
+  if (U.timer) { clearTimeout(U.timer); U.timer = null; }
+  $("tplay").textContent = "▶ Play";
+}
+function toyRefresh(minPh) {
+  toyStop();
+  const prev = TSTEPS.length ? TSTEPS[Math.min(U.toyStep, TSTEPS.length - 1)].ph : "text";
+  TR = toyRun(U.toyQ, U.v, U.theta, U.lam);
+  TSTEPS = toySteps(TR, U.v);
+  const want = Math.max(PH_RANK[prev], minPh ? PH_RANK[minPh] : 0);
+  let idx = 0;
+  TSTEPS.forEach((s, i) => { if (PH_RANK[s.ph] <= want) idx = i; });
+  U.toyStep = idx;
+  toyRender();
+}
+const qt = (s) => "“" + s + "”";
+const plural = (n, w) => n + " " + w + (n === 1 ? "" : "s");
+function toyUnitText(s) { return qt(s.m.map((t) => t.w).join(" ")); }
+function toyMessage(R, v, st) {
+  const M = R.M, Q = R.Q, noun = v === "cm" ? "group" : "span";
+  if (st.ph === "text") {
+    return `<b>The text.</b> Fifty tokens of far text, then the question (7 tokens, in the dashed box). The question is the reader's raw window. The far text can reach the reader only through memory. Underlined in red: the tokens the answer needs.` +
+      (v !== "cm" ? ` The bars show how much each token's key resembles the key of the token before it (tall means alike).` : ``);
+  }
+  if (st.ph === "group") {
+    const sizes = [...new Set(M.spans.map((s) => s.n))].sort().join(" or ");
+    return `<b>Equal groups.</b> The far tokens are sorted by what they are about and dealt into ${M.spans.length} equal groups of ${sizes} tokens (one colour per group). Tokens of one group need not be neighbours, so one sentence can be spread over several groups. The ${R.needAll.size} underlined tokens sit in ${plural(R.units, "group")}.`;
+  }
+  if (st.ph === "cut") {
+    const lens = M.spans.map((s) => s.n), forced = M.far.filter((t) => t.cut === "max").length;
+    return `<b>Spans.</b> One comparison per token: where a bar falls below the cut threshold (${U.theta.toFixed(2)}, the dashed line), a new span starts. Result: ${plural(M.spans.length, "span")}, ${(M.far.length / M.spans.length).toFixed(1)} tokens each on average, the longest ${Math.max(...lens)}.` +
+      (forced ? ` ${plural(forced, "cut")} forced by the toy's limit of 8 tokens per span (the real limit is 16).` : ``) +
+      (v === "sp" ? ` In this variant every span is its own memory entry.` : ` Next, each span joins a concept or founds one.`);
+  }
+  if (st.ph === "concept") {
+    const s = M.spans[st.j], last = st.j === M.spans.length - 1;
+    const head = `<b>Concepts.</b> Span ${st.j + 1} ${toyUnitText(s)} `;
+    const tail = last ? ` Done: ${plural(M.concepts.length, "concept")} from ${plural(M.spans.length, "span")}.` : ``;
+    if (s.best < 0) return head + `is the first span, so it founds concept 1.` + tail;
+    if (s.isNew) return head + `resembles concept ${s.best + 1} most, but only with cosine ${s.sim.toFixed(2)}: below the join threshold ${U.lam.toFixed(2)}. It <b>founds</b> concept ${s.c + 1}.` + tail;
+    return head + `resembles concept ${s.best + 1} with cosine ${s.sim.toFixed(2)}: at or above the join threshold ${U.lam.toFixed(2)}. It <b>joins</b> concept ${s.c + 1}.` + tail;
+  }
+  const p = st.p, P = R.passes[p - 1];
+  const ask = p === 1 ? `The reader asks ${qt(Q.ask)}` :
+    R.moved ? `The question has moved. Having read that the key is in the red box, the reader now asks where the red box is` :
+    Q.hop && !R.found[0] ? `Pass 1 did not tell the reader where to look next, so it asks the same question again` : `The reader asks the same question again`;
+  if (st.kind === "choose") {
+    if (v === "lv") return `<b>Pass ${p}: the choice.</b> ${ask}. It scores all ${plural(M.concepts.length, "concept")} by how well an average member matches the question, and keeps the best ${P.kept.length} (${P.kept.map((c) => "concept " + (c + 1)).join(" and ")}). It then ranks the ${plural(P.cand.length, "span")} of ${P.kept.length > 1 ? "those concepts" : "that concept"} by the same score.`;
+    if (v === "sp") return `<b>Pass ${p}: the choice.</b> ${ask}. It scores all ${plural(M.spans.length, "span")} by how well an average member matches the question: one level, a flat search.`;
+    return `<b>Pass ${p}: the choice.</b> ${ask}. It estimates how much attention each of the ${plural(M.spans.length, "group")} would get as a whole: the match of an average member, plus a term for the group's size.`;
+  }
+  const parts = P.units.map((u) => {
+    const name = v === "cm" ? "group " + (u.id + 1) : toyUnitText(M.spans[u.id]);
+    return u.take === u.n ? name : `${u.take} of the ${u.n} tokens of ${name}`;
+  });
+  const opened = parts.length > 1 ? parts.slice(0, -1).join(", ") + " and " + parts[parts.length - 1] : parts[0];
+  const sumNoun = v === "lv" ? "one per concept with unopened tokens" : "one per unopened " + noun;
+  let h = `<b>Pass ${p}: the read.</b> The reader opens ${opened}: ${plural(P.open.size, "token")} (the toy's budget is 8; the real one is 512). ${plural(P.summaries, "summary").replace("summarys", "summaries")} stand${P.summaries === 1 ? "s" : ""} for everything else (${sumNoun}). `;
+  const n = R.need.length, got = R.got[p - 1], word = R.qk === "A" ? `tokens of the code` : `token ${qt("attic")}`;
+  if (R.found[p - 1]) {
+    if (p === 2 && R.found[0]) h += `The answer was already found in pass 1; pass 2 adds nothing it needs.`;
+    else h += (R.qk === "A" ? `All ${n} ${word} are` : `The ${word} is`) + ` read word for word: <b>the answer is found in pass ${p}</b>.`;
+    if (v === "cm" && R.qk === "B" && p === 1) {
+      const sent = new Set(M.far.filter((t) => P.open.has(t.i)).map((t) => t.si)).size;
+      h += ` Here grouping by content worked in the reader's favour: the group it opened holds tokens from ${sent} different sentences.`;
+    }
+  } else if (R.qk === "A") {
+    h += `Only ${got} of the ${n} ${word} are read word for word. The rest reaches the reader only blended into a summary: <b>the answer is not found${p === 2 ? " in two passes" : " yet"}</b>.`;
+  } else if (p === 1) {
+    h += R.hopOk ? `It now knows the key is in the red box, but not where the box is: <b>not found yet</b>. The local layer after the read can turn this into a new question for pass 2.`
+                 : `It did not read both ${qt("key")} and ${qt("box")} of the first sentence word for word, so it does not know what to look for next: <b>not found yet</b>.`;
+  } else {
+    h += `The ${word} is not among the opened tokens: <b>the answer is not found in two passes</b> (the real model has 4).`;
+  }
+  return h;
+}
+function toyList(R, v, st, done) {
+  const M = R.M, noun = v === "cm" ? "group" : "span", MAXROWS = 10, MAXSUB = 6;
+  const sw = (k) => `<i class="sw k${k % 8}"></i>`;
+  const bar = (x) => `<span class="sbar"><i style="width:${Math.max(0, Math.min(100, Math.round((x + 1) / 2 * 100)))}%"></i></span><span class="mono">${x.toFixed(2)}</span>`;
+  const more = (n, what) => n > 0 ? `<div class="trow note">… and ${n} more ${what}</div>` : "";
+  const inPass = st.ph === "p1" || st.ph === "p2";
+  let h = "";
+  if (!inPass) {
+    if (st.ph === "text") return `<p class="note">Nothing is grouped yet. Press Play, or step.</p>`;
+    if (v === "lv" && done > 0) {
+      const nC = Math.max(...M.spans.slice(0, done).map((s) => s.c)) + 1;
+      h += `<h3>Concepts so far (${nC})</h3>`;
+      for (let c = 0; c < Math.min(nC, MAXROWS); c++) {
+        const sp = M.concepts[c].spans.filter((s) => s.id < done);
+        h += `<div class="trow">${sw(c)}<b>concept ${c + 1}</b><span>${plural(sp.reduce((a, s) => a + s.n, 0), "token")} in ${plural(sp.length, "span")}: ${sp.slice(0, MAXSUB).map(toyUnitText).join(" · ")}${sp.length > MAXSUB ? " …" : ""}</span></div>`;
+      }
+      return h + more(nC - MAXROWS, "concepts");
+    }
+    h += `<h3>${v === "cm" ? "Groups" : "Spans"} (${M.spans.length})</h3>`;
+    M.spans.slice(0, MAXROWS).forEach((s, j) => {
+      h += `<div class="trow">${v === "lv" ? "" : sw(j)}<b>${noun} ${j + 1}</b><span>${plural(s.n, "token")}: ${toyUnitText(s)}</span></div>`;
+    });
+    return h + more(M.spans.length - MAXROWS, noun + "s");
+  }
+  const P = R.passes[st.p - 1], read = st.kind === "read";
+  const openTag = (id) => { const s = M.spans[id]; return P.sOpen[id] ? `<span class="tag gr">opened${P.sOpen[id] < s.n ? " " + P.sOpen[id] + " of " + s.n : ""}</span>` : ""; };
+  if (v === "lv") {
+    h += `<h3>Concepts, best match first (bar = match, −1 to 1)</h3>`;
+    P.order.slice(0, MAXROWS).forEach((c) => {
+      const C = M.concepts[c], kept = P.kept.includes(c), rest = C.n - P.cOpen[c];
+      h += `<div class="trow">${sw(c)}<b>concept ${c + 1}</b>${bar(P.cMatch[c])}${kept ? `<span class="tag gr">kept</span>` : `<span class="tag off">not kept</span>`}` +
+        (read ? `<span class="note">${rest === 0 ? "opened whole: no summary" : P.cOpen[c] ? "one summary for its other " + plural(rest, "token") : "one summary for its " + plural(rest, "token")}</span>` : "") + `</div>`;
+      if (kept) {
+        const sp = C.spans.slice().sort((a, b) => P.sMatch[b.id] - P.sMatch[a.id] || a.id - b.id);
+        sp.slice(0, MAXSUB).forEach((s) => {
+          h += `<div class="trow sub"><span>${toyUnitText(s)}</span>${bar(P.sMatch[s.id])}${read ? (openTag(s.id) || `<span class="note">not opened</span>`) : ""}</div>`;
+        });
+        if (sp.length > MAXSUB) h += `<div class="trow sub note">… and ${sp.length - MAXSUB} more spans</div>`;
+      }
+    });
+    h += more(P.order.length - MAXROWS, "concepts, each read as one summary");
+  } else {
+    h += `<h3>${v === "cm" ? "Groups, largest estimate first" : "Spans, best match first"} (bar = match, −1 to 1)</h3>`;
+    P.order.slice(0, MAXROWS).forEach((j) => {
+      h += `<div class="trow">${sw(j)}<b>${noun} ${j + 1}</b><span>${toyUnitText(M.spans[j])}</span>${bar(P.cMatch[j])}${read ? (openTag(j) || `<span class="note">summary</span>`) : ""}</div>`;
+    });
+    h += more(P.order.length - MAXROWS, noun + "s, each read as one summary");
+  }
+  return h;
+}
+function toyRender() {
+  const R = TR, M = R.M, v = U.v;
+  U.toyStep = Math.max(0, Math.min(U.toyStep, TSTEPS.length - 1));
+  const st = TSTEPS[U.toyStep];
+  const unitsOn = U.toyStep >= 1;
+  let done = 0;
+  if (v === "lv") { for (let i = 0; i <= U.toyStep; i++) if (TSTEPS[i].ph === "concept") done++; } else if (unitsOn) done = M.spans.length;
+  const inPass = st.ph === "p1" || st.ph === "p2";
+  const P = inPass ? R.passes[st.p - 1] : null;
+  const openNow = P && st.kind === "read" ? P.open : null;
+  const openBefore = st.ph === "p2" ? R.passes[0].open : null;
+  const chip = (t, extra) => {
+    const cls = ["tok"];
+    if (extra) cls.push(extra);
+    if (R.needAll.has(t.i)) cls.push("need");
+    if (openNow && openNow.has(t.i)) cls.push("open");
+    else if (openBefore && openBefore.has(t.i)) cls.push("was");
+    else if (openNow && !t.near) cls.push("fade");
+    return `<span class="${cls.join(" ")}">${t.w}</span>`;
+  };
+  const bar = (t) => {
+    if (v === "cm" || inPass) return "";
+    const h = t.cos === null ? 0 : Math.max(2, Math.round((t.cos + 1) / 2 * 24));
+    const thr = unitsOn ? `<u style="bottom:${Math.round((U.theta + 1) / 2 * 24)}px"></u>` : "";
+    return `<span class="cbx">${t.cos === null ? "" : `<i class="${unitsOn && t.cut === "cos" ? "cutbar" : ""}" style="height:${h}px"></i>`}${thr}</span>`;
+  };
+  let html;
+  if (v === "cm") html = M.far.map((t) => `<span class="tcol">${chip(t, unitsOn ? "k" + (t.sp % 8) : "kx")}</span>`).join("");
+  else if (!unitsOn) html = M.far.map((t) => `<span class="tcol">${bar(t)}${chip(t, "kx")}</span>`).join("");
+  else html = M.spans.map((s, j) => {
+    const known = j < done;
+    const lab = known ? `<em class="clab">${v === "lv" ? "c" + (s.c + 1) : "s" + (j + 1)}</em>` : "";
+    return `<span class="tspan ${known ? "k" + (s.c % 8) : "kx"}">${lab}${s.m.map((t) => `<span class="tcol">${bar(t)}${chip(t)}</span>`).join("")}</span>`;
+  }).join("");
+  html += `<span class="tspan qwin"><em class="clab">question · raw window</em>${R.toks.filter((t) => t.near).map((t) => `<span class="tcol">${chip(t)}</span>`).join("")}</span>`;
+  $("toytext").innerHTML = html;
+
+  const i1 = TSTEPS.findIndex((s) => s.ph === "p1" && s.kind === "read"), i2 = TSTEPS.findIndex((s) => s.ph === "p2" && s.kind === "read");
+  const pill = (p, idx) => U.toyStep < idx ? `<span class="pill">Pass ${p}: not reached yet</span>` :
+    `<span class="pill ${R.found[p - 1] ? "yes" : "no"}">Pass ${p}: answer ${R.found[p - 1] ? "found" : "not found"} · ${R.got[p - 1]} of ${R.need.length} answer token${R.need.length > 1 ? "s" : ""} read</span>`;
+  $("toyres").innerHTML = pill(1, i1) + pill(2, i2);
+
+  $("toymsg").innerHTML = toyMessage(R, v, st);
+  $("toylist").innerHTML = toyList(R, v, st, done);
+  const noun = v === "cm" ? "group" : "span", nearN = R.toks.length - M.far.length;
+  let hold = "";
+  if (unitsOn) hold += `The ${R.needAll.size} underlined tokens sit in ${plural(R.units, noun)}. Opening ${R.units > 1 ? "them all" : "it"} takes ${R.cost} of a reader's tokens, ${R.cost - R.needAll.size} of them other text. `;
+  if (P && st.kind === "read") hold += `This reader's softmax now holds ${nearN} raw tokens (the question), ${plural(P.open.size, "opened token")} and ${P.summaries === 1 ? "1 summary" : P.summaries + " summaries"}. To choose, it scored ${v === "lv" ? plural(M.concepts.length, "concept") + " and then " + plural(P.cand.length, "span") : plural(M.spans.length, noun)}.`;
+  $("toyhold").textContent = hold;
+
+  $("tstepno").textContent = `step ${U.toyStep + 1} of ${TSTEPS.length}`;
+  $("tphases").innerHTML = toyPhases().map((ph) => `<button type="button" data-ph="${ph.ph}" class="${ph.ph === st.ph ? "on" : ""}">${PH_LABEL[ph.ph]}</button>`).join("");
+  $("tq").innerHTML = Object.entries(TOY_Q).map(([k, q]) => `<button type="button" data-q="${k}" class="${k === U.toyQ ? "on" : ""}">${q.name}: ${qt(q.ask)}</button>`).join("");
+  $("thetav").textContent = U.theta.toFixed(2);
+  $("lamv").textContent = U.lam.toFixed(2);
+  $("theta").disabled = v === "cm";
+  $("lam").disabled = v !== "lv";
+  $("slnote").textContent = v === "cm" ? "Concept memory has no thresholds: its groups always hold about 8 tokens. Both sliders are switched off for this variant."
+    : v === "sp" ? "Cut threshold: a new span starts where the cosine with the previous token falls below it. The join threshold is switched off: this variant builds no concepts. In the model the cut threshold is not set by hand: a controller holds spans at 8 tokens on average."
+    : "Cut threshold: a new span starts where the cosine with the previous token falls below it. Join threshold: a span joins a concept when their cosine is at least this. In the model neither is set by hand: controllers hold spans at 8 tokens on average and let 1 span in 8 found a concept.";
+  const L = [];
+  if (v !== "cm") L.push(`<span><i class="sw" style="background:var(--mute)"></i>bar: likeness to the previous token</span>`, `<span><i class="sw" style="background:var(--bad)"></i>bar below the threshold: a cut</span>`);
+  L.push(`<span><i class="sw" style="background:var(--bad);height:3px"></i>underline: a token the answer needs</span>`,
+    `<span><i class="sw" style="background:var(--ink)"></i>opened word for word in this pass</span>`,
+    `<span><i class="sw" style="border:1.5px dashed var(--ink)"></i>opened in pass 1</span>`,
+    `<span><i class="sw k${v === "cm" ? 1 : 0}"></i>colour: ${v === "lv" ? "the span's concept" : v === "sp" ? "one span" : "one group"}</span>`);
+  $("toylegend").innerHTML = L.join("");
+}
+function toyPlay() {
+  if (U.timer) { toyStop(); return; }
+  if (U.toyStep >= TSTEPS.length - 1) { U.toyStep = 0; toyRender(); }
+  const delay = () => TSTEPS[U.toyStep].ph === "concept" ? Math.max(350, Math.min(1500, 12000 / TR.M.spans.length)) : 2400;
+  const tick = () => {
+    if (U.toyStep >= TSTEPS.length - 1) { toyStop(); return; }
+    U.toyStep++; toyRender();
+    U.timer = U.toyStep >= TSTEPS.length - 1 ? null : setTimeout(tick, delay());
+    if (!U.timer) toyStop();
+  };
+  $("tplay").textContent = "❚❚ Pause";
+  U.timer = setTimeout(tick, 700);
+}
+
+// ================================================================ 4 · budget
+const LENS = [["16k", 16384], ["64k", 65536], ["1M", 1048576], ["10M", 10000000]];
+const TRAINED = 65536;
+const conceptsAt = (n, a) => n <= TRAINED ? n / 64 : (TRAINED / 64) * Math.pow(n / TRAINED, a);
+function approx(x) {
+  if (x < 10000) return fmt(x);
+  const p = Math.pow(10, Math.floor(Math.log10(x)) - 2);
+  return fmt(Math.round(x / p) * p);
+}
+function short(x) { return x >= 1e6 ? (x / 1e6).toFixed(2) + "M" : x >= 1e5 ? Math.round(x / 1e3) + "k" : x >= 1e3 ? (x / 1e3).toFixed(1) + "k" : String(Math.round(x)); }
+const groupsAt = (n) => (Math.floor(n / 512) - 2) * 64;           // 64 entries per stride the last reader reads as memory
+const scoredLv = (n, c) => c + Math.min(32, c) * ((n / 8) / c);   // all concepts, then the spans of the kept ones
+function renderBudget() {
+  const a = U.alpha, per2 = Math.pow(2, a);
+  $("alphav").textContent = a.toFixed(2);
+  $("alphanote").innerHTML = `At ${a.toFixed(2)}, the number of concepts grows <b>${per2.toFixed(2)}×</b> each time the document doubles (2.00× would be as fast as the document). ` +
+    (per2 <= 1.6 ? `That is at or under the spec's lower mark of 1.6×: concepts alone could carry the memory to long documents, and a reasoner over the concepts would come next.`
+      : per2 > 1.8 ? `That is above the spec's upper mark of 1.8×: a tree over the concepts would have to come first.`
+      : `That is between the spec's two marks (1.6× and 1.8×), a zone it does not decide in advance.`) +
+    ` Which of these is true is what the readout after training will measure; the slider only lets you see the consequences.`;
+  // chart
+  const L0 = Math.log10(16384), X = (n) => 46 + (Math.log10(n) - L0) / (7 - L0) * 316, Y = (v) => 232 - (Math.log10(Math.max(v, 100)) - 2) / 4.4 * 212;
+  const pts = (f) => LENS.map(([, n]) => X(n).toFixed(1) + "," + Y(f(n)).toFixed(1)).join(" ");
+  const W = (k) => U.v === k ? 3.6 : 2;
+  let s = "";
+  [[100, "100"], [1000, "1k"], [10000, "10k"], [100000, "100k"], [1000000, "1M"]].forEach(([v, l]) => {
+    s += `<line x1="46" x2="362" y1="${Y(v)}" y2="${Y(v)}" style="stroke:var(--line)"/><text class="m" x="41" y="${Y(v) + 4}" text-anchor="end">${l}</text>`;
+  });
+  LENS.forEach(([k, n]) => { s += `<text x="${X(n)}" y="248" text-anchor="middle">${k}</text><line x1="${X(n)}" x2="${X(n)}" y1="232" y2="236" style="stroke:var(--mute)"/>`; });
+  s += `<text class="m" x="204" y="266" text-anchor="middle">document length in tokens (both axes are log scales)</text>`;
+  s += `<line x1="${X(TRAINED)}" x2="${X(TRAINED)}" y1="20" y2="232" style="stroke:var(--mute);stroke-dasharray:3 4"/><text class="m" x="${X(TRAINED) + 4}" y="16">trained up to 64k · beyond: unknown</text>`;
+  s += `<polygon points="${X(TRAINED)},${Y(1024)} ${X(1e7)},${Y(conceptsAt(1e7, 1))} ${X(1e7)},${Y(conceptsAt(1e7, 0.5))}" style="fill:var(--new2);stroke:var(--new);stroke-width:.6;stroke-dasharray:2 3"/>`;
+  s += `<line x1="46" x2="362" y1="${Y(1023)}" y2="${Y(1023)}" style="stroke:var(--mute);stroke-width:1.4"/><text class="m" x="366" y="${Y(1023) + 1}">raw ≤ 1,023</text>`;
+  s += `<line x1="46" x2="362" y1="${Y(512)}" y2="${Y(512)}" style="stroke:var(--ok);stroke-width:1.4"/><text x="366" y="${Y(512) + 9}" style="fill:var(--ok)">opened ≤ 512</text>`;
+  s += `<polyline points="${pts(groupsAt)}" style="fill:none;stroke:var(--b);stroke-width:${W("cm")}"/>`;
+  s += `<polyline points="${pts(groupsAt)}" style="fill:none;stroke:var(--a);stroke-width:${W("sp")};stroke-dasharray:7 7"/>`;
+  s += `<polyline points="${pts((n) => conceptsAt(n, a))}" style="fill:none;stroke:var(--new);stroke-width:${W("lv")}"/>`;
+  LENS.forEach(([, n]) => { s += `<circle cx="${X(n)}" cy="${Y(conceptsAt(n, a))}" r="3" style="fill:var(--new)"/><circle cx="${X(n)}" cy="${Y(groupsAt(n))}" r="3" style="fill:var(--b)"/>`; });
+  const yTop = Y(groupsAt(1e7)), yMid = Y(conceptsAt(1e7, a)), yHi = Y(conceptsAt(1e7, 1)), yLo = Y(conceptsAt(1e7, 0.5));
+  s += `<text x="366" y="${yTop + 4}" style="fill:var(--b)">${short(groupsAt(1e7))}</text>`;
+  if (Math.abs(yHi - yMid) > 12) s += `<text class="m" x="366" y="${yHi + 4}">${short(conceptsAt(1e7, 1))}</text>`;
+  if (Math.abs(yLo - yMid) > 12) s += `<text class="m" x="366" y="${yLo + 4}">${short(conceptsAt(1e7, 0.5))}</text>`;
+  s += `<text x="366" y="${yMid + 4}" style="fill:var(--new);font-weight:700">${short(conceptsAt(1e7, a))}</text>`;
+  $("bchart").innerHTML = s;
+  $("blegend").innerHTML =
+    `<span><i class="sw" style="background:var(--b)"></i>concept memory: summaries per reader</span>` +
+    `<span><i class="sw" style="background:var(--a)"></i>spans only: about the same (dashed, on top)</span>` +
+    `<span><i class="sw" style="background:var(--new)"></i>living concepts at the slider's exponent</span>` +
+    `<span><i class="sw" style="background:var(--new2);border-color:var(--new)"></i>living concepts: the unknown, square root to linear</span>` +
+    `<span><i class="sw" style="background:var(--ok)"></i>tokens a reader may open: 512 at any length</span>`;
+  // table
+  let h = `<tr><th>document length</th><th>variant</th><th>raw window (tokens)</th><th>opened (tokens)</th><th>summary entries it reads, at most</th><th>entries it must score per pass</th></tr>`;
+  LENS.forEach(([k, n]) => {
+    const g = groupsAt(n), exact = n <= TRAINED;
+    const c = conceptsAt(n, a), lo = conceptsAt(n, 0.5), hi = conceptsAt(n, 1);
+    const lvSum = exact ? `about ${fmt(c)}` : `${approx(lo)} to ${approx(hi)}<br><span class="note">unknown; at exponent ${a.toFixed(2)}: about ${approx(c)}</span>`;
+    const lvScore = exact ? `about ${fmt(scoredLv(n, c))}` : `${approx(scoredLv(n, lo))} to ${approx(scoredLv(n, hi))}<br><span class="note">at exponent ${a.toFixed(2)}: about ${approx(scoredLv(n, c))}</span>`;
+    const rows = [["cm", "Concept memory", exact ? fmt(g) : "about " + approx(g), exact ? fmt(g) : "about " + approx(g)],
+                  ["sp", "Spans only", "about " + approx(g), "about " + approx(g)],
+                  ["lv", "Living concepts", lvSum, lvScore]];
+    rows.forEach(([key, name, sum, sc], i) => {
+      h += `<tr class="${key === U.v ? "act" : ""}">${i === 0 ? `<td rowspan="3"><b>${k}</b><br><span class="note">${fmt(n)} tokens</span></td>` : ""}<td>${name}</td><td class="num">512 to 1,023</td><td class="num">up to 512</td><td class="num">${sum}</td><td class="num">${sc}</td></tr>`;
+    });
+  });
+  $("btab").innerHTML = h;
+}
+function renderItems() {
+  const k = U.items, need = k * 8, share = need / 512 * 100, worstG = k * 8, worstT = worstG * 8;
+  const act = (v) => v === U.v ? ` class="act"` : "";
+  $("itemsv").textContent = k;
+  $("itemsout").innerHTML =
+    `<p>An answer made of <b>${k}</b> value${k > 1 ? "s" : ""} of about 8 tokens needs <b>${need} tokens</b> read word for word. That is ${share < 10 ? share.toFixed(1) : Math.round(share)}% of the 512 tokens one reader may open in one pass, so room is not the expected bottleneck. The expected bottleneck is the <b>choice</b>: each of those tokens must lie inside an entry the reader picks.</p>` +
+    `<div class="tblwrap"><table><tr><th>variant</th><th>entries the reader must pick</th><th>tokens of the 512 this uses</th></tr>` +
+    `<tr${act("cm")}><td>Concept memory</td><td>${plural(k, "group")} if every value sits whole in one group; up to ${fmt(worstG)} if equal groups scatter every token of every value (the hypothesis, at its worst)</td><td>${need} to ${fmt(worstT)}${worstT > 512 ? ": more than the 512 a reader may open, so not all in one pass" : ""}</td></tr>` +
+    `<tr${act("sp")}><td>Spans only</td><td>${plural(k, "span")}, if the cuts fall at the edges of each value; picked among about 1,920 visible spans at 16k</td><td>about ${need}</td></tr>` +
+    `<tr${act("lv")}><td>Living concepts</td><td>${plural(k, "span")}, reached through ${k === 1 ? "1" : "1 to " + Math.min(k, 32)} of the 32 kept concepts; those are picked among about 256 concepts at 16k</td><td>about ${need}</td></tr>` +
+    `</table></div>`;
+}
+
+// ================================================================ 5 · masks
+const MK = {DOC: 1024, END: 8192, members: [2.35, 3.6, 5.2, 5.75, 7.4, 9.15, 10.6, 12.3, 13.7, 15.3], opened: [2.3, 2.75, 4.2, 4.6, 6.3, 6.85, 8.2, 9.6, 11.4, 12.7]};
+function renderMask() {
+  const t = U.reader, v = U.v, tau = Math.floor(t / 512), DOC = MK.DOC, END = MK.END;
+  const X = (tok) => 60 + tok / END * 416, y0 = 44, hgt = 40;
+  const rawLo = Math.max(DOC, (tau - 1) * 512), rawN = t - rawLo + 1, memN = rawLo - DOC;
+  $("readerv").textContent = fmt(t);
+  let s = "";
+  s += `<text class="m" x="${X(DOC) - 6}" y="12" text-anchor="end">other document</text><text class="m" x="${X(DOC) + 6}" y="12">the reader's document</text>`;
+  s += `<line x1="${X(DOC)}" x2="${X(DOC)}" y1="2" y2="${y0 + hgt + 4}" style="stroke:var(--ink);stroke-width:1.2"/>`;
+  for (let i = 0; i < 16; i++) {
+    const x = X(i * 512), w = 26;
+    if (i < 2) {
+      s += `<rect x="${x + 1}" y="${y0}" width="${w - 2}" height="${hgt}" rx="3" style="fill:var(--gy2);stroke:var(--line)"/>` +
+        `<line x1="${x + 6}" y1="${y0 + 8}" x2="${x + w - 6}" y2="${y0 + hgt - 8}" style="stroke:var(--mute)"/><line x1="${x + w - 6}" y1="${y0 + 8}" x2="${x + 6}" y2="${y0 + hgt - 8}" style="stroke:var(--mute)"/>`;
+    } else if (i <= tau - 2) {
+      s += `<rect x="${x + 1}" y="${y0}" width="${w - 2}" height="${hgt}" rx="3" style="fill:var(--sum2);stroke:var(--sum)"/>`;
+    } else if (i === tau - 1) {
+      s += `<rect x="${x + 1}" y="${y0}" width="${w - 2}" height="${hgt}" rx="3" style="fill:var(--a);stroke:var(--a)"/>`;
+    } else if (i === tau) {
+      const wr = Math.max(1.5, (t - i * 512 + 1) / 512 * (w - 2));
+      s += `<rect x="${x + 1}" y="${y0}" width="${w - 2}" height="${hgt}" rx="3" style="fill:none;stroke:var(--mute);stroke-dasharray:3 3"/>` +
+        `<rect x="${x + 1}" y="${y0}" width="${wr}" height="${hgt}" rx="2" style="fill:var(--a);stroke:var(--a)"/>`;
+    } else {
+      s += `<rect x="${x + 1}" y="${y0}" width="${w - 2}" height="${hgt}" rx="3" style="fill:none;stroke:var(--mute);stroke-dasharray:3 3"/>`;
+    }
+  }
+  MK.opened.forEach((p) => { if (Math.floor(p) <= tau - 2) s += `<rect x="${X(p * 512) - 1.2}" y="${y0 + 3}" width="2.4" height="${hgt - 6}" style="fill:var(--ok)"/>`; });
+  s += `<rect x="${X(DOC) + 1}" y="${y0 - 3}" width="3.5" height="${hgt + 6}" style="fill:var(--b)"/>`;
+  const xr = X(t + 1);
+  s += `<line x1="${xr}" x2="${xr}" y1="${y0 - 8}" y2="${y0 + hgt + 8}" style="stroke:var(--ink);stroke-width:2"/>` +
+    `<text x="${xr}" y="${y0 - 11}" text-anchor="${xr > 450 ? "end" : "middle"}" style="font-weight:700">reader</text>`;
+  [0, 2048, 4096, 6144, 8192].forEach((tok) => { s += `<text class="m" x="${X(tok)}" y="${y0 + hgt + 18}" text-anchor="${tok === 0 ? "start" : tok === 8192 ? "end" : "middle"}">${fmt(tok)}</text>`; });
+  // lower strip: one concept's member spans (living), or ten units that each lie inside one stride
+  const yc = 136;
+  let inV = 0, inRaw = 0, inFut = 0;
+  MK.members.forEach((p) => {
+    const tok = p * 512, x = X(tok);
+    const state = Math.floor(p) <= tau - 2 ? "mem" : tok <= t ? "raw" : "fut";
+    if (state === "mem") inV++; else if (state === "raw") inRaw++; else inFut++;
+    const style = state === "mem" ? `fill:var(${v === "lv" ? "--new" : "--sum"});stroke:var(${v === "lv" ? "--new" : "--sum"})` : state === "raw" ? "fill:var(--a);stroke:var(--a)" : "fill:none;stroke:var(--mute);stroke-dasharray:2 2";
+    s += v === "lv" ? `<circle cx="${x}" cy="${yc}" r="5" style="${style}"/>` : `<rect x="${x - 5}" y="${yc - 4}" width="10" height="8" rx="2" style="${style}"/>`;
+  });
+  if (v === "lv" && memN > 0) {
+    const xe = X(rawLo), right = xe < 250;
+    s += `<line x1="${X(DOC)}" x2="${xe}" y1="${yc + 12}" y2="${yc + 12}" style="stroke:var(--new);stroke-width:2"/>` +
+      `<line x1="${xe}" x2="${xe}" y1="${yc + 7}" y2="${yc + 17}" style="stroke:var(--new);stroke-width:2"/>` +
+      `<text x="${right ? xe + 6 : xe}" y="${right ? yc + 16 : yc + 30}" text-anchor="${right ? "start" : "end"}" style="fill:var(--new)">${right ? "◂ this reader's version ends here" : "this reader's version ends here ▴"}</text>`;
+  }
+  s += `<text class="m" x="60" y="${yc - 12}">${v === "lv" ? "one concept: its member spans along the document" : v === "sp" ? "ten spans: each lies inside one stride" : "ten groups: each lies inside one block"}</text>`;
+  $("mask").innerHTML = s;
+  $("masklegend").innerHTML =
+    `<span><i class="sw" style="background:var(--a)"></i>raw, word for word</span>` +
+    `<span><i class="sw" style="background:var(--sum2);border-color:var(--sum)"></i>memory only</span>` +
+    `<span><i class="sw" style="background:var(--ok)"></i>opened spans (illustrative; the real choice depends on the text)</span>` +
+    `<span><i class="sw" style="background:var(--b)"></i>the 4 sinks</span>` +
+    `<span><i class="sw" style="background:var(--gy2);border-color:var(--line)"></i>✕ another document: never</span>` +
+    `<span><i class="sw" style="border:1px dashed var(--mute)"></i>after the reader: never</span>`;
+  const memWhat = v === "lv" ? `one summary per concept, each in the version that ends with token ${fmt(rawLo - 1)}` : v === "sp" ? "one summary per unopened span" : "one summary per unopened group";
+  $("masktext").innerHTML =
+    `<p>The reader is token ${fmt(t - DOC + 1)} of its document, in the stride that covers tokens ${fmt(tau * 512)} to ${fmt(tau * 512 + 511)} of the row.</p><ul>` +
+    `<li><b>Raw:</b> tokens ${fmt(rawLo)} to ${fmt(t)}, which is ${fmt(rawN)} tokens.</li>` +
+    (memN > 0 ? `<li><b>Memory only:</b> the ${fmt(memN)} tokens before that (tokens ${fmt(DOC)} to ${fmt(rawLo - 1)}, ${memN / 512} strides). Up to 512 of them are opened word for word; the rest is read as ${memWhat}.</li>`
+              : `<li><b>Memory:</b> none yet. This early in the document, everything the reader may read is still inside its raw window.</li>`) +
+    `<li><b>Sinks:</b> the document's first 4 tokens${memN > 0 ? "" : ", which here lie inside the raw window anyway"}.</li>` +
+    `<li><b>Never:</b> the ${fmt(DOC)} tokens of the other document, and the ${fmt(END - 1 - t)} tokens after the reader.</li></ul>`;
+  $("maskwhy").innerHTML = v === "lv"
+    ? `<b>Why a concept needs one version per stride.</b> The concept drawn under the row has ${MK.members.length} member spans spread over the document. This reader's summary of it may hold only the ${inV} that lie two strides back or more (violet). ${inRaw} lie${inRaw === 1 ? "s" : ""} in its raw window (blue): the reader holds them word for word, so the summary must not count them again. ${inFut} ${inFut === 1 ? "is" : "are"} not written yet (hollow): a summary that held them would show the reader its own future. So the concept keeps a running total per stride, and each reader takes the total that ends two strides before its own. Move the slider and watch the version grow.`
+    : v === "sp"
+    ? `<b>Why this variant needs no versions.</b> A span never crosses a stride (the small bars under the row), so it is complete before anyone reads it as memory: ${inV} of the ${MK.members.length} drawn are readable as memory, ${inRaw} ${inRaw === 1 ? "is" : "are"} inside the raw window, ${inFut} ${inFut === 1 ? "is" : "are"} not written yet. Switch to living concepts to see why a concept that spans the whole document needs one version per stride.`
+    : `<b>Why concept memory needs no versions.</b> Each of its groups lies inside one 512-token block (the small bars under the row), so a group is complete before anyone reads it as memory: ${inV} of the ${MK.members.length} drawn are readable as memory, ${inRaw} ${inRaw === 1 ? "is" : "are"} inside the raw window, ${inFut} ${inFut === 1 ? "is" : "are"} not written yet. Switch to living concepts to see why a concept that spans the whole document needs one version per stride.`;
+}
+
+// ================================================================ 6 · checklist
+const DECISIONS = [
+  {t: "Spans are cut on the reading layer's own first-pass keys, at the token where a key stops resembling the previous token's key.",
+   why: "These keys are already put in context and are what the reader matches against; one comparison per token is fast.",
+   alt: "Fixed runs of neighbouring tokens (the topic index pools 4), or a separate learned boundary predictor, which would add weights."},
+  {t: "A span has 1 to 16 tokens and never crosses a 512-token stride or a document; a stride holds at most 128 spans.",
+   why: "Hard bounds keep the tables a fixed size (4,096 span slots per 16k row) and make sure a span is complete before anyone reads it as memory.",
+   alt: "A longer maximum for fewer entries, or a shorter one for finer opens."},
+  {t: "The cut threshold is adjusted during training so that spans average 8 tokens, then fixed at test time.",
+   why: "8 tokens is concept memory's group size, so the opened unit stays as fine as today; without the controller the span size would drift as the keys change.",
+   alt: "A threshold fixed once from the pre-flight check, or a different average length."},
+  {t: "Each span joins the concept it resembles or founds a new one; there is no bank of concepts and no fixed count.",
+   why: "A one-off fact gets its own entry and a returning topic gets one entry for the whole document, so the number of entries follows the text.",
+   alt: "A fixed number of concepts per document, or a learned bank of concept vectors."},
+  {t: "The join threshold is adjusted during training so that 1 span in 8 founds a concept (about 64 tokens per concept), then fixed.",
+   why: "It gives about 8 times fewer summaries than concept memory at 16k (about 256 against 1,920); the opened unit stays at 8 tokens.",
+   alt: "Finer concepts (1 span in 4 founds, about 32 tokens each) or coarser ones (1 in 16, about 128 tokens)."},
+  {t: "Spans and concepts are formed once per forward, from the first pass; each of the 4 passes recomputes their statistics.",
+   why: "Cheaper than regrouping 4 times, and the entries stay the same from pass to pass.",
+   alt: "Regroup on every pass, as concept memory does today."},
+  {t: "A reader sees concepts as they stood two strides earlier: one version of every concept per stride.",
+   why: "No summary can then hold a token the reader must not see or already holds raw, and generation gives the same numbers as training.",
+   alt: "A different stride length. Dropping the versions is not an option: summaries would leak future tokens."},
+  {t: "A reader picks 32 concepts, then opens their best spans until it holds 512 tokens; the choice is by match, not by size.",
+   why: "Two levels cut the scoring work, and scoring by match stops big concepts from winning by size; a test switch measures what the first level costs.",
+   alt: "A flat search over all spans (as in the spans-only variant), or more or fewer than 32 concepts kept."},
+  {t: "One summary per concept stands for what was not opened of it.",
+   why: "Every past token is counted exactly once and a large concept can be opened in part; summaries are coarser (about 64 tokens each) but about 8 times fewer.",
+   alt: "No summaries at all (as in the topic index), or one summary per span (as in the spans-only variant)."},
+  {t: "No new weights; no reasoner over the concepts and no concept tree in this run.",
+   why: "One change at a time: the model keeps its 141,506,208 weights, so a difference in results comes from the grouping and the search.",
+   alt: "Add the reasoner now (a reasoner tied to blocks gave no gain at 30M), or the tree."},
+  {t: "Same training recipe as the other four 150M models: 11.5B tokens, rows of 4k, then 16k, then 64k tokens, seed 42, random start.",
+   why: "Same data in the same order, so results compare directly with the released models; a random start because the keys must grow up with the new grouping.",
+   alt: "Start from concept memory's weights, or add a second seed (one more run, about $350)."},
+  {t: "Before the paid run: three checks on the released concept-memory model and a short pipeline check; no small-scale screen (the author's choice). An early reading at step 2,000 of the paid run stops it if the loss is more than 0.05 nats above concept memory's at the same step.",
+   why: "The checks cost nothing and test the diagnosis itself, and the pipeline check keeps the paid run from dying on a crash. Without a screen, the first evidence that a model learns with the new grouping comes from the paid run itself; the early reading limits a bad start to about $20.",
+   alt: "Bring the small-scale screen back (slower, but it would catch a read that does not learn before any cloud money is spent), or stop for your review after the three checks.",
+   extra: `<ul class="note"><li>Check 1: do the keys show a span signal at all (are neighbouring keys more alike than keys 8 tokens apart)?</li>
+<li>Check 2: is the diagnosis right? For the questions concept memory fails: are the answer's tokens not opened (the design's target), opened but outweighed by summaries, or opened and attended and still answered wrong?</li>
+<li>Check 3: how does the number of concepts grow at 16k, 64k and 128k?</li>
+<li>The pipeline check, on a home card: a few hundred steps of each of the three training stages at a small size, and the tests run on the result. It checks that nothing crashes; it does not judge the design.</li>
+<li>The early reading: the loss is in nats per token on held-out text (lower is better), read about $20 into the run and compared with concept memory's own run at the same step.</li></ul>`},
+  {t: "The pass marks and the kill marks, written down before the run.",
+   why: "Set in advance so that the result cannot move them. Inside 64k these are no-harm and gap-closing checks; no \"beats\" claim follows from any of them.",
+   alt: "Stricter or looser numbers, or make overall retrieval or speed a deciding mark too.",
+   extra: `<p class="note" style="margin-top:8px"><b>Pass marks.</b> The bet succeeds only with all three. Scores are the share of prompts answered correctly (0 to 1, higher is better); losses are nats per token (lower is better).</p>
+<ul class="note"><li><b>Several far items</b> (S1 in the spec): the mean of four RULER cells (all values of one key, and several keys at once, at 8k and 16k) is at least <b>0.40</b>. Concept memory scores 0.25 and the topic index 0.54, so 0.40 is half of the gap.</li>
+<li><b>Long text kept</b> (S3): loss on the last 4,096 tokens of held-out long documents at most <b>2.136</b> at 16k and <b>2.313</b> at 64k. Concept memory: 2.126 and 2.293.</li>
+<li><b>Single lookups kept</b> (S4): both single-number lookups at least <b>0.95</b> at 4k, 8k, 16k and 32k (concept memory 0.98 to 1.00), and one number among distractors at 16k at least <b>0.80</b> (concept memory 0.91).</li>
+<li>Four more marks (retrieval overall, documents past the training length, general ability, speed) are reported as met or missed and do not decide the bet.</li></ul>
+<p class="note"><b>Kill marks.</b> Five now stand: K0, K2a, K2, K3 and K4. K1, a small-scale screen at 30M on the home servers, was withdrawn by the author on 22 Nov 2026.</p>
+<ul class="note"><li><b>Before any training</b> (K0): the keys show no span signal, or the failing answers turn out to be opened and attended already. Then the weak spot is not the grouping: stop and report.</li>
+<li><b>150M, step 2,000 of the first training stage</b> (K2a, about $20 spent): held-out loss more than 0.05 nats per token above concept memory's own run at the same step. Stop the machine and inspect. This reading was added when the screen was withdrawn; it is the first evidence that a model learns with the new grouping.</li>
+<li><b>150M, end of the first training stage</b> (K2, about $180 spent): held-out loss above 2.155 (concept memory 2.134). Stop before the second stage and inspect; the first stage is 53% of the run's cost.</li>
+<li><b>Speed</b> (K3): slower than 0.70 of concept memory's speed over the first 500 steps (below 74,000 tokens per second at 4k). Stop and fix.</li>
+<li><b>Money</b> (K4): the run stops if its own cost would pass $450, and nothing launches if the total would pass $5,000.</li></ul>`},
+  {t: "Budget: one 150M run capped at $450, inside the $5,000 total.",
+   why: "The run is expected to take 40 to 45 hours and cost $320 to $360 with its tests; about $3,089 was quoted as spent on 20 Nov, and the spend is read again before any launch.",
+   alt: "A different cap, or a second run (spans alone at 150M, or a second seed) at about $350 each."},
+];
+const ANS = DECISIONS.map(() => ({c: "", note: ""}));
+const STORE = "living-concepts-check-v1";
+function saveAns() { try { localStorage.setItem(STORE, JSON.stringify({a: ANS, g: $("gnote").value})); } catch (e) { /* storage may be unavailable */ } }
+function loadAns() {
+  try {
+    const d = JSON.parse(localStorage.getItem(STORE) || "null");
+    if (!d || !Array.isArray(d.a)) return "";
+    d.a.forEach((x, i) => { if (ANS[i] && x) { ANS[i].c = ["agree", "change", "question"].includes(x.c) ? x.c : ""; ANS[i].note = typeof x.note === "string" ? x.note : ""; } });
+    return typeof d.g === "string" ? d.g : "";
+  } catch (e) { return ""; }
+}
+const escAttr = (s) => String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+function renderChecklist() {
+  $("checklist").innerHTML = DECISIONS.map((d, i) =>
+    `<div class="drow ${ANS[i].c}" id="drow${i}"><h4>${i + 1}. ${d.t}</h4>` +
+    `<p><b>Why:</b> ${d.why}</p><p><b>Alternative:</b> ${d.alt}</p>${d.extra || ""}` +
+    `<div class="opts">` + [["agree", "Agree"], ["change", "Change"], ["question", "Question"]].map(([k, l]) =>
+      `<label><input type="radio" name="d${i}" value="${k}" data-i="${i}"${ANS[i].c === k ? " checked" : ""}> ${l}</label>`).join("") + `</div>` +
+    `<input type="text" data-note="${i}" value="${escAttr(ANS[i].note)}" placeholder="Note (what to change, or your question)" aria-label="Note for decision ${i + 1}"></div>`).join("");
+  countAns();
+}
+function countAns() {
+  const n = ANS.filter((a) => a.c).length;
+  $("dcount").textContent = `Answered ${n} of ${DECISIONS.length}.`;
+}
+function setAnswer(i, c) {
+  if (!ANS[i]) return;
+  ANS[i].c = c;
+  const row = $("drow" + i);
+  if (row) row.className = "drow " + c;
+  countAns(); saveAns();
+}
+function collect() {
+  const n = {agree: 0, change: 0, question: 0, none: 0};
+  const lines = ["Living concepts design check: my answers", ""];
+  DECISIONS.forEach((d, i) => {
+    const a = ANS[i];
+    n[a.c || "none"]++;
+    lines.push(`${i + 1}. [${a.c ? a.c.toUpperCase() : "NO ANSWER"}] ${d.t}`);
+    if (a.note.trim()) lines.push(`   Note: ${a.note.trim()}`);
+  });
+  lines.push("", `Totals: ${n.agree} agree, ${n.change} change, ${n.question} question, ${n.none} not answered.`);
+  const g = $("gnote").value.trim();
+  if (g) lines.push("", "Anything else: " + g);
+  $("out").value = lines.join("\n");
+  $("copymsg").textContent = "Collected. Press Copy, or select the text below.";
+}
+function clearAns() {
+  ANS.forEach((a) => { a.c = ""; a.note = ""; });
+  $("gnote").value = ""; $("out").value = "";
+  renderChecklist(); saveAns();
+  $("copymsg").textContent = "All answers cleared.";
+}
+function copyOut() {
+  const ta = $("out");
+  if (!ta.value) collect();
+  const done = (ok) => { $("copymsg").textContent = ok ? "Copied. Paste it into the chat." : "Could not copy automatically: select the text below and copy it by hand."; };
+  const fallback = () => { try { ta.focus(); ta.select(); done(document.execCommand("copy")); } catch (e) { done(false); } };
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(ta.value).then(() => done(true), fallback);
+      return;
+    }
+  } catch (e) { /* fall through */ }
+  fallback();
+}
+
+// ================================================================ wiring
+function setVariant(v) {
+  if (!VARS[v]) return;
+  U.v = v;
+  renderVariant(); renderStep(); toyRefresh(); renderBudget(); renderItems(); renderMask();
+}
+function onVariantClick(e) { const b = e.target.closest("[data-v]"); if (b) setVariant(b.dataset.v); }
+$("variant").addEventListener("click", onVariantClick);
+$("variant2").addEventListener("click", onVariantClick);
+$("pipe").addEventListener("click", (e) => { const n = e.target.closest("[data-i]"); if (n) { U.step = +n.dataset.i; renderStep(); } });
+$("prev").addEventListener("click", () => { U.step = (U.step - 1 + STAGES.length) % STAGES.length; renderStep(); });
+$("next").addEventListener("click", () => { U.step = (U.step + 1) % STAGES.length; renderStep(); });
+$("tq").addEventListener("click", (e) => { const b = e.target.closest("[data-q]"); if (b && TOY_Q[b.dataset.q]) { U.toyQ = b.dataset.q; toyRefresh(); } });
+$("theta").addEventListener("input", (e) => { U.theta = Math.max(0, Math.min(1, +e.target.value || 0)); toyRefresh("cut"); });
+$("lam").addEventListener("input", (e) => { U.lam = Math.max(0, Math.min(1, +e.target.value || 0)); toyRefresh("concept"); });
+$("tprev").addEventListener("click", () => { toyStop(); U.toyStep--; toyRender(); });
+$("tnext").addEventListener("click", () => { toyStop(); U.toyStep++; toyRender(); });
+$("treset").addEventListener("click", () => { toyStop(); U.toyStep = 0; toyRender(); });
+$("tplay").addEventListener("click", toyPlay);
+$("tphases").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-ph]"); if (!b) return;
+  const ph = toyPhases().find((p) => p.ph === b.dataset.ph);
+  if (ph) { toyStop(); U.toyStep = ph.last; toyRender(); }
+});
+$("alpha").addEventListener("input", (e) => { U.alpha = Math.max(0.5, Math.min(1, +e.target.value || 0.5)); renderBudget(); });
+$("items").addEventListener("input", (e) => { U.items = Math.max(1, Math.min(16, Math.round(+e.target.value) || 1)); renderItems(); });
+$("reader").addEventListener("input", (e) => { U.reader = Math.max(1028, Math.min(8191, Math.round(+e.target.value) || 1028)); renderMask(); });
+$("checklist").addEventListener("change", (e) => { const r = e.target; if (r && r.dataset && r.dataset.i !== undefined && r.type === "radio") setAnswer(+r.dataset.i, r.value); });
+$("checklist").addEventListener("input", (e) => { const r = e.target; if (r && r.dataset && r.dataset.note !== undefined && ANS[+r.dataset.note]) { ANS[+r.dataset.note].note = r.value; saveAns(); } });
+$("gnote").addEventListener("input", saveAns);
+$("collect").addEventListener("click", collect);
+$("copy").addEventListener("click", copyOut);
+$("clear").addEventListener("click", clearAns);
+
+$("gnote").value = loadAns();
+renderChecklist();
+setVariant(U.v);
+</script>
+</main></body>
+</html>

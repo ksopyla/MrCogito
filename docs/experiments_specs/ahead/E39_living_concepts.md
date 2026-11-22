@@ -36,8 +36,9 @@
     81 % (8 keys: 100 %); there the coarser concept was also the unit that is opened, so the open got less precise
     too. E39 keeps the opened unit at about 8 tokens and makes only the summaries coarser. At 150M, switching the
     summaries off costs 0.023 nats at 16k and 0.068 at 64k: most of the gain is the word-for-word reads.
-  - **Two-level search lost once:** the catalogue's page-first search was 3 points behind at 16k and 16 at 64k
-    (E33t). Those pages were positional (256 adjacent tokens); a page key says little about its content.
+  - **Two-level search lost once:** at 30M the catalogue's page-first search recovered 3.2 points less of the
+    window→dense gap than its flat search at 16k and 15.7 points less at 64k (E33t stage A). Those pages were
+    positional (256 adjacent tokens); a page key says little about its content.
   - **The block-bound concept reasoner gave no gain** at 30M (E37b: −0.2 points at 16k). It is not in this bet.
 
 ## Hypothesis
@@ -147,7 +148,9 @@ no index loss, no change to the loop, the skips or any other layer.
 ### Configuration (one new value of `par_global_read`; no fork)
 `par_global_read = "living"` with `living_stride 512`, `living_span_max 16`, `living_span_cap 128`,
 `living_span_target 8`, `living_found_target 0.125`, `living_keep 32`, `living_levels 2` (1 = spans only: every span
-is its own concept, flat search, one summary per unopened span), `living_search two_level | flat` (test switch),
+is its own concept, flat search by the same match score, one summary per unopened span), `living_search
+two_level | flat` (test switch), `living_score match | mass` (`mass` = the existing read's rule, the estimated
+attention mass with log n; a test switch, and what the regression test against the existing read uses),
 `living_servo on | off`, plus the existing `concept_sinks 4`, `concept_top_k 512`, `concept_variance`,
 `concept_summaries`, `concept_sum_len`. Arms in `scripts/run_e33n.py`: `living` and `living_spans`.
 
@@ -264,8 +267,8 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
   where the read needs the versioned summaries and the remaining count. No new training script.
 - **Unit tests (CPU reference path and GPU flex path):** causality (changing a token changes no earlier output, and
   no reader two strides back or less sees it through the memory); every past token counted exactly once; identical
-  member keys → the summary read equals full attention; spans-only with given labels equals the existing concept
-  read with the same labels; cached decoding equals the full forward at 4k and 16k; the bounds (span ≤ 16, ≤ 128 per
+  member keys → the summary read equals full attention; spans-only with given labels and `living_score mass` equals
+  the existing concept read with the same labels; cached decoding equals the full forward at 4k and 16k; the bounds (span ≤ 16, ≤ 128 per
   stride, no span across a stride or a document, concepts ≤ C_max, overflow joins); padding readers read zero;
   thresholds frozen in eval and moving toward their targets in training, equal on all cards; flex equals the
   reference path.
