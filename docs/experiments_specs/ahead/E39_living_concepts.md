@@ -5,6 +5,9 @@
   goal and reasoning in latent space; the looping seems helpful" · "lets start with the same training protocol as
   other 150M" · "Start Stages 1 and 2 together, I've raised the budget to $5000"). Spec written 2026-11-22
   19:22 UTC. Nothing is built yet.
+- **Changed by the author, 2026-11-22 (before any run):** the first version of this spec put a 30M screen on the
+  home servers before the paid run (kill mark K1). Asked whether to keep it, the author answered "Skip it". The
+  screen is withdrawn; an early reading inside the paid run (K2a) takes over part of its job.
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
@@ -164,8 +167,8 @@ is its own concept, flat search, one summary per unopened span), `living_search 
 ## Arms
 | arm | what | where | role |
 |---|---|---|---|
-| `living` | spans + living concepts (the bet) | 30M screen at home, then 150M on AWS | the model |
-| `living_spans` | spans only (`living_levels 1`) | 30M screen at home, if cards are free | attribution; first build milestone |
+| `living` | spans + living concepts (the bet) | 150M on AWS | the model |
+| `living_spans` | spans only (`living_levels 1`) | no run planned | first build milestone; kept as a config for attribution later |
 
 Not in this spec (each ≈ one more 150M run, about $350): a 150M run of spans alone (only if the result needs
 attribution), a second seed, the concept reasoner, the concept tree.
@@ -223,10 +226,11 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
 - **K0 (pre-flight):** P1 shows no span signal (mean adjacent cosine less than 0.05 above the lag-8 cosine), or P2
   shows the failing answers are already opened and attended → stop before the build's training and report; the
   weak spot is not the grouping.
-- **K1 (30M screen, home):** on E33p's stage-1 protocol (1.5B tokens at 4k + 0.2B at 16k, seed 42, the existing
-  window and dense controls) the share of the window→dense gap on positions ≥ 2k at 16k is below **90 %** (30M
-  concept memory 100.0 %, topic index 99.2 %), or the single needle at 4k is below 0.80 (0.94 / 0.97) → no AWS run
-  without the author's word.
+- **K1 — withdrawn** (the 30M screen at home; author, 2026-11-22: "Skip it"). The code is not reused.
+- **K2a (150M, step 2,000 of stage 1, about $20 spent):** held-out loss more than **0.05** nats above concept
+  memory's own run at the same step (read from its W&B run; the optimizer test before that run measured 2.283 at
+  step 2,000) → stop the node and inspect. Added when the screen was withdrawn: it is the first evidence that the
+  model learns with the new grouping.
 - **K2 (150M, end of stage 1):** held-out loss above **2.155** (concept memory 2.134; the four models span
   2.134–2.145) → stop before stage 2 and inspect. Stage 1 is 53 % of the run's cost.
 - **K3 (speed):** below 0.70 × concept memory's speed over the first 500 steps on the node (< 74k tokens per
@@ -237,8 +241,8 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
 ## Plan
 - **Data:** `m21mix_v2` (SmolLM2 tokens), unchanged: 8.0B tokens in 4k rows, 3.0B in 16k rows, 0.5B in 64k rows,
   the same shards in the same order as the other four models.
-- **Compute:** home servers (Odra, Polonez) for the checks, the build's GPU tests and the 30M screen, under the
-  cooling rules; one 4 × L40S spot node for the 150M run, about 40–45 hours and $320–360 with its tests.
+- **Compute:** home servers (Odra, Polonez) for the checks, the build's GPU tests and a short pipeline check, under
+  the cooling rules; one 4 × L40S spot node for the 150M run, about 40–45 hours and $320–360 with its tests.
 - **Steps:** 15,259 × 128 rows of 4k, 5,722 × 32 rows of 16k, 954 × 8 rows of 64k; Muon peak 0.01 (a tenth in the
   64k stage) + AdamW for vectors, bf16, flex attention, `--fast`, seed 42.
 - **Launch (150M):** `infra/aws/jobs/e38_board.sh 42 muon:0.01 living` through `infra/aws/keep_running.sh` with
@@ -250,8 +254,9 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
      concepts, versions, two-level choice and remaining-count summaries; cached decoding and the long-length list
      path for the tests.
   3. Unit tests, then P4 on a home card.
-  4. The 30M screen at home: `living`, and `living_spans` if two more cards are free.
-  5. The 150M run on AWS if K0 and K1 pass; K2 and K3 read during the run; the E38 tests on the 64k model.
+  4. A pipeline check on a home card, not a screen: a few hundred steps of each of the three stages at a small
+     size and the tests on the result, so the paid run cannot die on a crash (as E38's plan step 3).
+  5. The 150M run on AWS if K0 passes; K3, K2a and K2 read during the run; the E38 tests on the 64k model.
   6. Capability checks core package for the new read on the home servers (`capability-checks`), results to the
      ledger and the NAS; `experiment-track` for the registry and the run report.
 - **New foundation code:** a reusable module for the grouping and its index (`nn/living_concepts.py`), selected by
@@ -278,7 +283,10 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
 - **Stage 1 trains on 4k rows of short documents**, where few readers have any memory two strides back; the
   memory is mostly shaped in stages 2 and 3, as for the other models.
 - **Three changes land together** (spans, concepts, choice by match). That is the bet as approved; attribution comes
-  from the spans-only arm at 30M and the test switches, and from one more 150M run only if needed.
+  from the test switches, and from a spans-only run only if needed.
+- **No small-scale screen** (the author's choice, for speed): the first evidence that a model learns with the new
+  grouping comes from the paid run itself. The readings inside the run bound what a bad run can cost: about $20 at
+  K2a, about $180 at K2.
 - **One seed.** Differences of a few points on single RULER tasks are not established.
 - **Kernel work:** the versioned summary call and the remaining-count table are new flex masks; the open table
   doubles (128 slots per stride). S7 and K3 guard the cost.
