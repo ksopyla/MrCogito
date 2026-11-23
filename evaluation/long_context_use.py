@@ -80,7 +80,26 @@ def memory_mode(model, mode: str):
     Notebook read (a `memory_writer`, e.g. the E38 catalogue, 2026-11-21): 'off' is `message_override("none")` (no
     notes, so nothing opens: window only), 'nosum' is `open_override("gist_off")` (opened tokens, the notes masked);
     the catalogue's notes only choose what opens (`lm_note_read: index`, no summaries in the read), so its 'nosum' is
-    refused."""
+    refused.
+    Living read (E39, `par_global_read: living`): 'off' is `living_off`, 'nosum' turns its summaries off, and 'flat'
+    (readout R2, E39 only) lets every visible span compete instead of the spans of the 32 best concepts."""
+    living = [l.attn for l in model.layers if getattr(l.attn, "living", None) is not None]
+    if living:
+        if mode not in ("on", "off", "nosum", "flat"):
+            raise ValueError(f"memory mode {mode!r}: the living read knows on | off | nosum | flat")
+        prev_lv = [(a.living_off, a.living["summaries"], a.living["search"]) for a in living]
+        for a in living:
+            a.living_off = mode == "off"
+            a.living["summaries"] = a.living["summaries"] and mode != "nosum"
+            a.living["search"] = "flat" if mode == "flat" else a.living["search"]
+        try:
+            yield
+        finally:
+            for a, (off, s, srch) in zip(living, prev_lv):
+                a.living_off, a.living["summaries"], a.living["search"] = off, s, srch
+        return
+    if mode == "flat":
+        raise ValueError("memory mode 'flat' is the living read's (E39)")
     attns = [l.attn for l in model.layers if getattr(l.attn, "concept", None) is not None]
     lsa = [l.attn for l in model.layers if getattr(l.attn, "lsa", None) is not None]
     notes = getattr(model, "memory_writer", None) is not None and \

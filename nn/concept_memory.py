@@ -150,12 +150,15 @@ class ConceptIndex:
 
 
 def build_concepts(k: torch.Tensor, v: torch.Tensor, x: Optional[torch.Tensor], doc: torch.Tensor, sink: torch.Tensor,
-                   *, block: int, per_block: int, iters: int = 3, tau: float = 0.05) -> Optional[ConceptIndex]:
+                   *, block: int, per_block: int, iters: int = 3, tau: float = 0.05,
+                   labels: Optional[torch.Tensor] = None) -> Optional[ConceptIndex]:
     """Concepts of every block some query sees as old (block index ≤ last query's block − 2).
 
     k, v [B, S, 1, d] (the reading layer's keys after their norm, no position code), x [B, S, H] or None, doc [B, S]
     (−1 = padding), sink [B, S] bool. The grouping carries no gradient; the statistics do (through the members' k, v
-    and x)."""
+    and x). `labels` [B, nb, block] long (E39 spans-only, nn/living_concepts.py): a given grouping instead of the
+    k-means, each key's group within its block in 0 … per_block − 1, −1 = not a member; groups may be empty or of
+    any size up to 511."""
     B, S = doc.shape
     d = k.shape[-1]
     nb = (S - 1) // block - 1  # blocks with at least one query two blocks later
@@ -165,9 +168,12 @@ def build_concepts(k: torch.Tensor, v: torch.Tensor, x: Optional[torch.Tensor], 
     kk = k[:, :L, 0].float()                                                           # [B, L, d]
     vv = v[:, :L, 0].float()
     valid = ((doc >= 0) & ~sink)[:, :L]
-    unit = F.normalize(kk.detach(), dim=-1).reshape(B * nb, block, d)
-    labels = concept_labels(unit, valid.reshape(B * nb, block), per_block, iters=iters, tau=tau)
-    labels = labels.view(B, nb, block)
+    if labels is None:
+        unit = F.normalize(kk.detach(), dim=-1).reshape(B * nb, block, d)
+        labels = concept_labels(unit, valid.reshape(B * nb, block), per_block, iters=iters, tau=tau)
+        labels = labels.view(B, nb, block)
+    elif tuple(labels.shape) != (B, nb, block):
+        raise ValueError(f"labels must be [B, {nb}, {block}], got {tuple(labels.shape)}")
     onehot = (labels[..., None] == torch.arange(per_block, device=k.device)).float()  # [B, nb, block, K]
     n = onehot.sum(2)                                                                  # [B, nb, K]
     inv = 1.0 / n.clamp_min(1.0)
@@ -241,13 +247,15 @@ def summary_log_scale(ds: torch.Tensor, S: int, block: int, sum_len: int) -> Opt
 
 
 def set_concept_sum_len(model: nn.Module, sum_len: int) -> int:
-    """Eval switch: the length scale of every concept read in `model` (0 = off). Returns the layers changed."""
+    """Eval switch: the length scale of every concept read in `model` (0 = off), and of every E39 living read (the
+    same scale on its summaries). Returns the layers changed."""
     n = 0
     for m in model.modules():
-        c = getattr(m, "concept", None)
-        if isinstance(c, dict) and "summaries" in c:
-            c["sum_len"] = int(sum_len)
-            n += 1
+        for name in ("concept", "living"):
+            c = getattr(m, name, None)
+            if isinstance(c, dict) and "summaries" in c:
+                c["sum_len"] = int(sum_len)
+                n += 1
     return n
 
 
@@ -339,7 +347,7 @@ def _chosen_lookup(opened: Optional[OpenTable]):
 def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch.Tensor], doc, key_valid, backend,
                     opened: Optional[OpenTable], sink: torch.Tensor, ds: torch.Tensor, n_sinks: int,
                     summaries: bool = True, variance: bool = True, dv_tok: Optional[torch.Tensor] = None,
-                    sum_len: int = 0):
+                    sum_len: int = 0, block: int = 512):
     """The decoder's read: sinks ‖ block-aligned window ‖ opened members ‖ concept summaries, one softmax.
     q [B,S,h,d], k/v [B,S,1,d], doc [B,S] (−1 = pad), sink [B,S] bool, ds [B,S] document starts. Returns [B,S,h,d].
     `sum_len` > 0: the length scale (module docstring), log ρ added to every summary logit of the query.
@@ -354,7 +362,7 @@ def attend_concepts(q, k, v, *, cidx: Optional[ConceptIndex], dv: Optional[torch
 
     B, S, h, d = q.shape
     g = k.shape[2]
-    blk = cidx.block if cidx is not None else 512
+    blk = cidx.block if cidx is not None else int(block)   # `block`: the window's block size when there are no concepts
     use_sum = summaries and cidx is not None
     C = cidx.n_concepts if use_sum else 0
     two = dv_tok is not None
@@ -439,14 +447,54 @@ def _attend_concepts_flex(q, k, v, *, K, V, cidx, use_sum, two, doc32, sk, ds, n
     log ρ to the summary call's log-sum-exp equals adding it to every summary logit."""
     from torch.nn.attention.flex_attention import AuxRequest, create_block_mask
 
-    from nn.exact_read import open_term
-    from nn.perceiver_ar_lm import _band_block_mask, _chunked_block_mask, _CHUNKED_MASK_PAIRS, _get_flex
+    from nn.perceiver_ar_lm import _chunked_block_mask, _CHUNKED_MASK_PAIRS, _get_flex
 
     B, S, h, d = q.shape
     g = k.shape[2]
     flex = _get_flex()
     nraw = 2 * S if two else S
-    Kr, Vr = K[:, :nraw], V[:, :nraw]
+    qt = q.transpose(1, 2).contiguous()
+    o1, l1 = flex_raw_call(q, k, K[:, :nraw], V[:, :nraw], two=two, doc32=doc32, sk=sk, ds=ds, n_sinks=n_sinks,
+                           key_valid=key_valid, opened=opened, blk=blk)
+    if not use_sum:
+        return o1.transpose(1, 2)
+    Ks, Vs = K[:, nraw:], V[:, nraw:]
+    chosen = _chosen_lookup(opened)
+
+    def spred(b, hh, qi, c):
+        vis = (qi >= c_from[b, c]) & (c_doc[b, c] == doc32[b, qi]) & (doc32[b, qi] >= 0)
+        if chosen is not None:
+            vis = vis & ~chosen(b, qi, c)
+        return vis
+
+    def smod(score, b, hh, qi, c):
+        return score + logn[b, c] + qn2[b, hh, qi] * vhalf[b, c]
+
+    if S * C > _CHUNKED_MASK_PAIRS:
+        bm2 = _chunked_block_mask(spred, B=B, Q_LEN=S, KV_LEN=C, device=q.device)
+    else:
+        bm2 = create_block_mask(spred, B=B, H=None, Q_LEN=S, KV_LEN=C, device=q.device,
+                                _compile=torch.cuda.is_available())
+    o2, aux2 = flex(qt, Ks.transpose(1, 2).contiguous(), Vs.transpose(1, 2).contiguous(), block_mask=bm2,
+                    score_mod=smod, enable_gqa=(g != h), return_aux=AuxRequest(lse=True))
+    return merge_calls(o1, l1, o2, aux2.lse, logrho, q.dtype).transpose(1, 2)
+
+
+def flex_raw_call(q, k, Kr, Vr, *, two: bool, doc32, sk, ds, n_sinks: int, key_valid, opened, blk: int):
+    """The raw-token flex call of the concept read (and of E39's living read): sinks ‖ the block-aligned window (the
+    query's `blk`-token block and the one before) ‖ the opened members, no score_mod. q [B,S,h,d], k [B,S,g,d] (only
+    its head count is read), Kr / Vr [B, S or 2S, g, d] (2S with the reasoner: the second copy holds the query's own
+    block), doc32 / sk [B,S] int32 (document ids, sink flags), ds [B,S] document starts. Returns the output
+    [B,h,S,d] and its log-sum-exp [B,h,S] (−inf for a query that reads nothing)."""
+    from torch.nn.attention.flex_attention import AuxRequest
+
+    from nn.exact_read import open_term
+    from nn.perceiver_ar_lm import _band_block_mask, _get_flex
+
+    B, S, h, d = q.shape
+    g = k.shape[2]
+    flex = _get_flex()
+    nraw = 2 * S if two else S
     qt = q.transpose(1, 2).contiguous()
     term = open_term(opened.T, opened.index.codes, cap=opened.cap, raw_window=blk) if opened is not None else None
 
@@ -487,28 +535,15 @@ def _attend_concepts_flex(q, k, v, *, K, V, cidx, use_sum, two, doc32, sk, ds, n
                           extra_blocks=torch.cat(extra, dim=-1))
     o1, aux1 = flex(qt, Kr.transpose(1, 2).contiguous(), Vr.transpose(1, 2).contiguous(), block_mask=bm,
                     enable_gqa=(g != h), return_aux=AuxRequest(lse=True))
-    if not use_sum:
-        return o1.transpose(1, 2)
-    Ks, Vs = K[:, nraw:], V[:, nraw:]
-    chosen = _chosen_lookup(opened)
+    return o1, aux1.lse
 
-    def spred(b, hh, qi, c):
-        vis = (qi >= c_from[b, c]) & (c_doc[b, c] == doc32[b, qi]) & (doc32[b, qi] >= 0)
-        if chosen is not None:
-            vis = vis & ~chosen(b, qi, c)
-        return vis
 
-    def smod(score, b, hh, qi, c):
-        return score + logn[b, c] + qn2[b, hh, qi] * vhalf[b, c]
-
-    if S * C > _CHUNKED_MASK_PAIRS:
-        bm2 = _chunked_block_mask(spred, B=B, Q_LEN=S, KV_LEN=C, device=q.device)
-    else:
-        bm2 = create_block_mask(spred, B=B, H=None, Q_LEN=S, KV_LEN=C, device=q.device,
-                                _compile=torch.cuda.is_available())
-    o2, aux2 = flex(qt, Ks.transpose(1, 2).contiguous(), Vs.transpose(1, 2).contiguous(), block_mask=bm2,
-                    score_mod=smod, enable_gqa=(g != h), return_aux=AuxRequest(lse=True))
-    l1, l2 = aux1.lse.float(), aux2.lse.float()                                        # [B, h, S]
+def merge_calls(o1, l1, o2, l2, logrho, dtype, return_share: bool = False):
+    """The single softmax over two flex calls' keys, from their outputs o [B,h,S,d] and log-sum-exps l [B,h,S]:
+    (o1·e^l1 + o2·e^l2) / (e^l1 + e^l2). `logrho` [B,S] (the length scale) is added to the second call's
+    log-sum-exp, which equals adding it to every one of its logits. Returns [B,h,S,d] in `dtype`
+    (`return_share`: also the second call's share of the weight [B,h,S], 0 where nothing is read)."""
+    l1, l2 = l1.float(), l2.float()                                                    # [B, h, S]
     if logrho is not None:
         l2 = l2 + logrho[:, None, :]
     # A padding query (document id −1, e.g. RULER's left padding and the generator's future slots) reads nothing in
@@ -520,5 +555,7 @@ def _attend_concepts_flex(q, k, v, *, K, V, cidx, use_sum, two, doc32, sk, ds, n
     w2 = torch.where(torch.isfinite(l2), torch.exp(l2 - m), torch.zeros_like(l2))
     den = w1 + w2
     out = (o1.float() * w1[..., None] + o2.float() * w2[..., None]) / den.clamp_min(1e-30)[..., None]
-    out = torch.where((den > 0)[..., None], out, torch.zeros_like(out))
-    return out.to(q.dtype).transpose(1, 2)
+    out = torch.where((den > 0)[..., None], out, torch.zeros_like(out)).to(dtype)
+    if return_share:
+        return out, (w2 / den.clamp_min(1e-30)).detach()
+    return out
