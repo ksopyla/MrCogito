@@ -269,6 +269,31 @@ row asks for several far values in one answer, so no model of the family has tha
   fail with L1 passed, which would say that 3–5 % of constructed rows teach the skill but do not move RULER, and
   that a retrieval-rich final stage is the lever (a home-card test of one is under way).
 
+- **Recipe changed before any result of the run (2026-11-23, 20:10 UTC; marks unchanged).** The run on
+  `m21mix_v3` (stage 2 started 18:55:42 UTC on spot g6e.12xlarge `i-08bdd35208065be00`; speed 67.9k tokens/s over
+  its first 300 steps, held-out loss 2.306 at step 200 against the E38 run's 2.295) was stopped and its node
+  terminated at 20:10 UTC, about $9, because two home-card tests that finished at 19:29 UTC showed a better recipe:
+  - **Recall rows** (`recall_16k` / `recall_64k`: the list sets with half of the asked items written as a statement
+    to complete, "As stated above, the serials of X are" → " a, b, c."), the same fine-tune as above (Odra,
+    18:32–19:29 UTC): RULER board protocol all values 0.31 / 0.34 / 0.24 → 0.99 / 0.97 / 0.91 at 4k / 8k / 16k,
+    several keys 0.40 / 0.32 / 0.11 → 0.88 / 0.86 / 0.86; the list now begins with its first value in 86–98 % of
+    several-keys prompts (12 % at 16k before); the other 11 tasks 0.499 / 0.459 / 0.409 (E38 run 0.513 / 0.460 /
+    0.408); our list exam 0.63 all values, 0.74 several facts exact. Costs: similar-needles task (multi-key 2) at
+    16k 0.76 → 0.42 (it now picks a neighbouring key), the UUID needle 0.29 → 0.06 at 4k. Not yet measured on 64k
+    documents.
+  - **A 64k stage after the question-only fine-tune** (Polonez, 18:19–19:29 UTC, 30M tokens of 64k rows, 60 %
+    constructed): 64k documents 2.477 → 2.320 nats per token (E38 run 2.293) with the summaries useful again
+    (switching them off costs 0.069, the E38 run 0.068); multi-key 2 back to 0.94 / 0.90 / 0.81; other 11 tasks
+    0.518 / 0.481 / 0.443; several keys 0.78 / 0.74 / 0.38, all values 0.93 / 0.88 / 0.63; the UUID needle stays
+    low (0.04 / 0.05 / 0.04: the model answers " a special magic uuid. It's a unique identifier…").
+  So the run now reads **`m21mix_v4`** (`data/mix_recipes/m21_mix_v4.json`): v2 plus `recall_16k` at 3 % of
+  stage 2 and `recall_64k` at 5 % of stage 3, from the `pdfs` share; everything else as v3. Job:
+  `infra/aws/jobs/e38_lists.sh e37a m21mix_v4 recall`, folder `runs/e38/e33n_m120t_e37a_muon0.01-recall_tok8.0e9_seed42/`.
+  RULER's two several-values tasks now share their **sentence form** (a statement to complete) with training rows,
+  not their words (the banned-words check holds): report them as trained-form, as the card already does for the
+  single lookups. The marks L1–L3 and KL1–KL3 apply to this run unchanged ($220 from 20:10 UTC; the v3 attempt's
+  $9 and the start-up failures' $2.70 are outside it).
+
 **Data: `m21mix_v3`** (`data/mix_recipes/m21_mix_v3.json`) = v2 plus two constructed sets
 (`scripts/build_reasoning_rows.py --only list_16k,list_64k`): lookup rows whose question block also asks for all the
 values of one thing (2–5 values at 16k, 2–6 at 64k, each stated on its own; answer in the order of the text) and
