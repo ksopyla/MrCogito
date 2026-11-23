@@ -465,6 +465,43 @@ def summarize(records: list[dict]) -> dict:
     return out
 
 
+def cmd_table(a) -> None:
+    """The summaries of several `force` runs side by side: one line per run and task for the free answers, one per
+    run, task and number of written values for the next value."""
+    runs = []
+    for p in a.json.split(","):
+        d = json.loads(Path(p).read_text())
+        runs.append((Path(p).stem, {k: v for k, v in d.items() if k != "args"}))
+    print("FREE ANSWERS: share of the four values found (targets found 0..4 for `base`)")
+    for name, d in runs:
+        for task, t in d.items():
+            fr = t["free"]
+            print(f"  {name:10} {task:16} " + "  ".join(f"{c} {v['score']:.2f}" for c, v in fr.items())
+                  + f"   base hist {fr['base']['found_hist']}")
+    print("NEXT VALUE after j written ones: share new target / repeat / other, per condition")
+    for name, d in runs:
+        for task, t in d.items():
+            for j, tj in t["forced"].items():
+                conds = [c for c in tj if isinstance(tj[c], dict)]
+                line = "  ".join(f"{c} {tj[c]['new']:.2f}/{tj[c]['repeat']:.2f}/{tj[c]['other']:.2f}" for c in conds)
+                pf = (f"  p(first digit) written {tj['p_first_written']} unwritten {tj['p_first_unwritten']}"
+                      if tj.get("p_first_written") is not None else f"  p(first digit) {tj['p_first_unwritten']}")
+                print(f"  {name:10} {task:16} j={j} own pick before {tj['own_pick_before']:.2f}  {line}{pf}")
+    print("FAR READ at the deciding position (base), last loop pass: best head's weight on the first digit of the "
+          "written / unwritten / chosen values; sources window, sinks, opened, summaries")
+    for name, d in runs:
+        for task, t in d.items():
+            for j, rj in t["read"].items():
+                if not rj:
+                    continue
+                last = rj[max(rj, key=int)]
+                first = rj[min(rj, key=int)]
+                print(f"  {name:10} {task:16} j={j} last pass: written {last['first_max_written']} unwritten "
+                      f"{last['first_max_unwritten']} chosen {last['first_max_chosen']} readable "
+                      f"{last['readable_unwritten']} src {last['src_window_sinks_opened_summaries']} | first pass: "
+                      f"written {first['first_max_written']} unwritten {first['first_max_unwritten']}")
+
+
 def cmd_summary(a) -> None:
     for p in a.raw.split(","):
         recs = torch.load(p, weights_only=True)
@@ -532,6 +569,9 @@ def main() -> None:
     p = sub.add_parser("summary")
     p.add_argument("--raw", required=True, help="comma-separated .pt files of force runs")
     p.set_defaults(fn=cmd_summary)
+    p = sub.add_parser("table")
+    p.add_argument("--json", required=True, help="comma-separated .json files of force runs")
+    p.set_defaults(fn=cmd_table)
     p = sub.add_parser("weights")
     p.add_argument("--checkpoints", required=True, help="name=path,name=path")
     p.set_defaults(fn=cmd_weights)
