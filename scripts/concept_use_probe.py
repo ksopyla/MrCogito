@@ -1,0 +1,542 @@
+"""Root-cause probe (2026-11-23): why do the 150M models read several far values and write one of them again?
+
+RULER's "all values of one key" and "several keys asked at once" need four far values written one after another.
+The saved replies (docs/release/hf_card_concept_memory_150m/ruler/*_answers.jsonl) show every model of the family
+writing one value and then looping; the E39 pre-flight (scripts/e39_preflight.py ruler) showed that the missed values
+are opened and attended. This probe separates the remaining causes by handing the model its answer so far and
+looking at the one decision that matters, the next value:
+
+  force    Per prompt (through lm-eval, cached decoding, one prompt at a time), with the prompt read once:
+           * free answers as the board scores them, with switches on the far read: as trained (`base`), summaries
+             out (`nosum`), sharper weights (`temp1.5`, `temp2`: the match part of every logit times 1.5 / 2), and
+             `ior`: once the answer holds a value, that value's tokens leave the far read (an oracle "do not read
+             again what you have copied");
+           * the next value after j written ones, j = 0 … 3. The answer so far is forced: ":" then the j values and
+             ", " — the model's own picks while they are new targets, otherwise the next target in document order.
+             Conditions: `base`; `hide_written` (the written values' tokens leave the far read at this step);
+             `only_new` (the far read holds only the unwritten values and the 16 tokens before each, no summaries);
+             `nosum`; `temp2`; `far_off` (window and sinks only: what the local text alone would write).
+             Recorded: the 7-digit number written (a new target / a repeat / something else), the probability of
+             each value's first digit, and at the deciding position the far read's weights on each value (per loop
+             pass: best head, head mean, on the first digit and on all digits) and its sources (window, sinks, opened
+             tokens, summaries).
+           Works for the concept-memory, full-attention and topic-index models; the switches other than
+           `hide_written` exist for the concept read only.
+  weights  The numbers of a checkpoint that set how sharp and how loud each attention is: the query and key norm
+           gains (the largest match a query can reach), each layer's residual weights (alpha, beta, sigma), the
+           loop's round offsets, the sizes of the read's projections.
+  summary  Re-print the tables of saved `force` runs.
+
+Usage (a home GPU, from the checkout; RULER needs wonderwords):
+  uv run --no-sync --with wonderwords python scripts/concept_use_probe.py force --checkpoint CK --length 8192 \
+      --tasks niah_multivalue,niah_multiquery --limit 50 --out Cache/use_probe/cm_8k
+  .venv/bin/python scripts/concept_use_probe.py weights --checkpoints cm=CK1,fa=CK2
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import re
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from nn.incremental import IncrementalDecoder  # noqa: E402
+
+NEG = float("-inf")
+FREE = ("base", "nosum", "temp1.5", "temp2", "ior")
+FORCED = ("base", "hide_written", "only_new", "nosum", "temp2", "far_off")
+
+
+def log(*a) -> None:
+    print(f"[{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}]", *a, file=sys.stderr, flush=True)
+
+
+# ------------------------------------------------------------------------------------------ the decoder with switches
+class ProbeDecoder(IncrementalDecoder):
+    """The cached decoder with switches on the far read of the answer positions (`kn`) and a recorder (`rec`).
+
+    kn: hide [S] bool (keys the far read may not use), only [S] bool (the only far keys it may use; summaries
+    out), nosum, far_off, temp (the match part of every logit × temp), rec_t (record only this position)."""
+
+    _SHARED = IncrementalDecoder._SHARED + ("kn", "rec", "vals")
+
+    def __init__(self, model):
+        super().__init__(model)
+        self.kn: dict = {}
+        self.rec = None
+        self.vals: list = []
+
+    def _record(self, r, t, p, n, win, sink, opened):
+        """p [h, n (+ C)] the read's weights of position t on pass r; the masks [n] bool."""
+        if self.rec is None or (self.kn.get("rec_t") is not None and t != self.kn["rec_t"]):
+            return
+        raw = p[:, :n]
+        top_p, top_i = raw.max(-1)
+        rec = {"r": r, "t": t,
+               "src": [float((raw * m).sum(-1).mean()) for m in (win, sink & ~win, opened)]
+               + [float(p[:, n:].sum(-1).mean())],
+               "top_i": top_i.tolist(), "top_p": [round(float(x), 4) for x in top_p],
+               "all_max": [], "all_mean": [], "first_max": [], "first_mean": [], "first_head": [], "readable": []}
+        for A in self.vals:
+            A = A[A < n]
+            if A.numel() == 0:
+                for k_ in ("all_max", "all_mean", "first_max", "first_mean"):
+                    rec[k_].append(0.0)
+                rec["first_head"].append(-1)
+                rec["readable"].append(False)
+                continue
+            ma, mf = raw[:, A].sum(-1), raw[:, A[0]]
+            rec["all_max"].append(float(ma.max()))
+            rec["all_mean"].append(float(ma.mean()))
+            rec["first_max"].append(float(mf.max()))
+            rec["first_mean"].append(float(mf.mean()))
+            rec["first_head"].append(int(mf.argmax()))
+            rec["readable"].append(bool((win | sink | opened)[A[0]]))
+        self.rec.append(rec)
+
+    def _concept_read(self, q, K, V, r, t, att):
+        """`IncrementalDecoder._concept_read` with the switches; with no switch it computes the same read."""
+        from nn.concept_memory import summary_log_scale, summary_logit
+        from nn.exact_read import ORD_MOD, choose
+
+        kn = self.kn
+        c = att.concept
+        blk, cap = int(c["block"]), int(c["top_k"])
+        B, _, h, d = q.shape
+        n = t + 1
+        jpos = torch.arange(n, device=q.device)
+        doc, doc_t, ds = self.doc[:, :n], self.doc[:, t], self._ds
+        own_lo = (t // blk) * blk
+        sink = ((jpos[None] - ds[:, :n]) < int(c["sinks"])) & (doc >= 0)
+        win = (jpos >= own_lo - blk)[None].expand(B, n)
+        keep = win | sink
+        opened = torch.zeros_like(keep)
+        vt = V[:, :n]
+        ks, vs, sbias = None, None, None
+        built = self.cc[r]
+        if built is not None and not kn.get("far_off"):
+            cidx, dv, dv_tok = built
+            gi = cidx.groups
+            G = gi.n_groups
+            score = summary_logit(q, cidx, variance=bool(c["variance"])).amax(2)
+            visible = (gi.g_close[:, None, :] <= t) & torch.isfinite(score)
+            ids, off = choose(torch.nan_to_num(score, neginf=-1e30), visible, gi,
+                              torch.tensor([t], device=q.device), m=int(c["width"]), cap=cap, raw_window=blk)
+            row = torch.full((B, G), cap, dtype=torch.int32, device=q.device)
+            row.scatter_(1, ids[:, 0], off[:, 0].to(torch.int32))
+            codes = gi.codes[0, :, :n].long()
+            g = torch.div(codes, ORD_MOD, rounding_mode="floor")
+            hit = (codes >= 0) & (row.gather(1, g.clamp(0, G - 1)) + (codes - g * ORD_MOD) < cap)
+            opened = hit & ((t - jpos) >= blk)[None] & ~keep
+            keep = keep | opened
+            if dv_tok is not None:
+                vt = torch.where((jpos < own_lo)[None, :, None, None], vt + dv_tok[:, :n].to(vt.dtype), vt)
+            if c["summaries"] and not kn.get("nosum") and kn.get("only") is None:
+                C = cidx.n_concepts
+                vis = ((t >= (cidx.block_of + 2) * blk)[None] & (cidx.c_doc == doc_t[:, None])
+                       & (doc_t >= 0)[:, None] & ~(row[:, :C] < cap))
+                logn = torch.where(cidx.n > 0, cidx.n.clamp_min(1.0).log(), torch.zeros_like(cidx.n))
+                vhalf = 0.5 * cidx.var if c["variance"] else torch.zeros_like(cidx.var)
+                qn2 = (q.float() ** 2).sum(-1)[:, 0] / d
+                sb = logn[:, None, :].float() + qn2[..., None] * vhalf[:, None, :].float()
+                lr = summary_log_scale(ds[:, :n], n, blk, int(c.get("sum_len", 0) or 0))
+                if lr is not None:
+                    sb = sb + lr[:, t][:, None, None]
+                sbias = sb.masked_fill(~vis[:, None, :], NEG)
+                ks = cidx.mu_k[:, :, None].to(K.dtype)
+                vs = (cidx.mu_v if dv is None else cidx.mu_v + dv.to(cidx.mu_v.dtype))[:, :, None].to(V.dtype)
+        same = (doc == doc_t[:, None]) & (doc_t >= 0)[:, None]
+        far = ~(win | sink)
+        if kn.get("only") is not None:  # the far read holds these keys and no others (opened by the choice or not)
+            only = kn["only"][None, :n]
+            keep = (keep & ~far) | (only & far)
+            opened = only & far
+        if kn.get("hide") is not None:
+            keep = keep & ~(kn["hide"][None, :n] & far)
+        mask = keep & same
+        temp = float(kn.get("temp", 1.0))
+        kk, vv = K[:, :n, 0].float(), vt[:, :, 0].float()
+        lg = torch.einsum("bhd,bkd->bhk", q[:, 0].float(), kk) / math.sqrt(d) * temp
+        lg = lg + torch.zeros(B, n, device=q.device).masked_fill(~mask, NEG)[:, None]
+        if sbias is not None:
+            lg = torch.cat([lg, torch.einsum("bhd,bkd->bhk", q[:, 0].float(), ks[:, :, 0].float())
+                            / math.sqrt(d) * temp + sbias], -1)
+            vv = torch.cat([vv, vs[:, :, 0].float()], 1)
+        p = torch.softmax(lg, -1)
+        self._record(r, t, p[0], n, (win & same)[0], (sink & same)[0], (opened & mask)[0])
+        return torch.einsum("bhk,bkd->bhd", p, vv)[:, None].to(q.dtype)
+
+    def _window_read(self, q, K, V, t, w):
+        """Full attention's reading layer (w = t + 1) with `hide` and the recorder; local layers unchanged."""
+        if self.kind != "dense" or w != t + 1 or (self.kn.get("hide") is None and self.rec is None):
+            return super()._window_read(q, K, V, t, w)
+        n = t + 1
+        d = q.shape[-1]
+        mask = self.doc[:, :n] == self.doc[:, t:t + 1]
+        if self.kn.get("hide") is not None:
+            mask = mask & ~self.kn["hide"][None, :n]
+        lg = torch.einsum("bhd,bkd->bhk", q[:, 0].float(), K[:, :n, 0].float()) / math.sqrt(d)
+        p = torch.softmax(lg + torch.zeros_like(lg[:, 0]).masked_fill(~mask, NEG)[:, None], -1)
+        z = torch.zeros(n, dtype=torch.bool, device=q.device)
+        self._record(0, t, p[0], n, z, z, mask[0])
+        return torch.einsum("bhk,bkd->bhd", p, V[:, :n, 0].float())[:, None].to(q.dtype)
+
+    def _lsa_read(self, q, K, V, r, t, att):
+        """The topic-index read with `hide` (the hidden keys are not readable, chosen or not)."""
+        if self.kn.get("hide") is None:
+            return super()._lsa_read(q, K, V, r, t, att)
+        from nn.lsa_buckets import lsa_open_table
+        from nn.perceiver_ar_lm import attend_list
+
+        c = att.lsa
+        opened = None
+        built = self.lsa_groups[r]
+        if not att.lsa_off and built is not None:
+            centroids, gidx, members = built
+            opened = lsa_open_table(q, centroids, gidx, top_k=c["top_k"], width=c["width"], raw_window=c["window"],
+                                    impl="list", q_offset=t, members=members)
+        kv = (~self.kn["hide"])[None].expand(self.B, -1)
+        return attend_list(q, K, V, opened=opened, raw_window=c["window"], tag=self.doc, key_valid=kv,
+                           ds=self._ds, n_sinks=c["sinks"], valid_query=True, q_offset=t)
+
+
+def _next_logits(model, h):
+    logits = F.linear(h, model.lm_head.weight).float()
+    cap = model.config.logit_softcap
+    return cap * torch.tanh(logits / cap) if cap else logits
+
+
+@torch.no_grad()
+def free_answer(dec: ProbeDecoder, h, new: int, eos: int, tok, L0: int, stops, ior=None) -> str:
+    """Greedy answer from the current state (as `IncrementalDecoder._decode`), stop strings as the harness. `ior`:
+    (reference strings, their token positions) — once the answer holds a reference, its tokens leave the far read."""
+    out = dec.buf
+    t = int(dec.t)
+    hidden: set = set()
+    for it in range(int(new)):
+        if it:
+            h = dec.step(out[:, t - 1])
+        nxt = _next_logits(dec.m, h).argmax(-1)
+        out[:, t] = nxt
+        t += 1
+        text = tok.decode(out[0, L0:t].tolist())
+        if int(nxt[0]) == eos or any(s in text for s in stops):
+            break
+        if ior is not None:
+            refs, poss = ior
+            for i, ref in enumerate(refs):
+                if i not in hidden and ref in text:
+                    hidden.add(i)
+                    hide = dec.kn.get("hide")
+                    if hide is None:
+                        hide = torch.zeros(dec.S, dtype=torch.bool, device=out.device)
+                    hide = hide.clone()
+                    hide[poss[i]] = True
+                    dec.kn["hide"] = hide
+    return tok.decode(out[0, L0:t].tolist())
+
+
+def knobs(cond: str, S: int, dev, values, written, t_rec=None) -> dict:
+    kn: dict = {"rec_t": t_rec}
+    if cond == "nosum":
+        kn["nosum"] = True
+    elif cond.startswith("temp"):
+        kn["temp"] = float(cond[4:])
+    elif cond == "far_off":
+        kn["far_off"] = True
+    elif cond == "hide_written":
+        hide = torch.zeros(S, dtype=torch.bool, device=dev)
+        for i in written:
+            hide[values[i]] = True
+        kn["hide"] = hide
+    elif cond == "only_new":
+        only = torch.zeros(S, dtype=torch.bool, device=dev)
+        for i, A in enumerate(values):
+            if i not in written and A.numel():
+                only[max(0, int(A[0]) - 16):int(A[-1]) + 1] = True
+        kn["only"] = only
+    return kn
+
+
+# ------------------------------------------------------------------------------------------ force
+def cmd_force(a) -> None:
+    import lm_eval
+    from lm_eval.models.utils import handle_stop_sequences, normalize_gen_kwargs, postprocess_generated_text
+    from lm_eval.tasks import TaskManager
+
+    from evaluation.lm_eval_perceiver_ar import PerceiverARLMEval
+
+    L = int(a.length)
+    records: list[dict] = []
+    raw_path = Path(str(a.out) + ".pt")
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    free_conds = [c for c in a.free.split(",") if c]
+    forced_conds = [c for c in a.forced.split(",") if c]
+
+    class Probe(PerceiverARLMEval):
+        def generate_until(self, requests, disable_tqdm: bool = False):
+            res = []
+            tok = self.tokenizer
+            eos_s = self.tok_decode(self.eot_token_id, skip_special_tokens=False)
+            eos = tok.eos_token_id
+            t_start = time.time()
+            for i, req in enumerate(requests):
+                ctx, gk = req.args
+                kwargs = normalize_gen_kwargs(gk, self.max_gen_toks)
+                until = handle_stop_sequences(kwargs.pop("until", None), eos=eos_s)
+                new = int(kwargs.pop("max_gen_toks"))
+                enc, _ = self.tok_batch_encode([ctx], left_truncate_len=self.max_length - new,
+                                               truncation=self.truncation)
+                enc = enc.to(self.device)
+                L0 = enc.shape[1]
+                ids = enc[0].tolist()
+                pieces = [tok.decode([x]) for x in ids]
+                offs = np.cumsum([0] + [len(p) for p in pieces])
+                text = "".join(pieces)
+                outs = [str(o) for o in req.doc["outputs"]]
+                values = []
+                for ref in outs:
+                    toks, at = set(), text.find(ref)
+                    while at >= 0:
+                        lo = int(np.searchsorted(offs, at, side="right")) - 1
+                        hi = int(np.searchsorted(offs, at + len(ref), side="left"))
+                        toks.update(range(lo, hi))
+                        at = text.find(ref, at + 1)
+                    values.append(torch.tensor(sorted(toks), dtype=torch.long, device=self.device))
+                Lb = -(-(L0 + new) // self.GEN_PAD) * self.GEN_PAD
+                buf = torch.full((1, Lb), eos, dtype=enc.dtype, device=self.device)
+                buf[:, :L0] = enc
+                doc = torch.full((1, Lb), -1, dtype=torch.long, device=self.device)
+                doc[:, :L0] = 0
+                stops = [s for s in until if s]
+                nv = len(outs)
+                order = sorted(range(nv), key=lambda v_: int(values[v_][0]) if values[v_].numel() else 1 << 40)
+                dec = ProbeDecoder(self.model)
+                dec.vals = values
+                h0 = dec.prefill(buf, doc, L0)
+                S = dec.S
+                snap0 = dec.snapshot()
+                rec = {"task": req.task_name, "doc_id": req.doc_id, "length": L, "L0": L0, "outputs": outs,
+                       "values": [v.tolist() for v in values], "order": order, "free": {}, "forced": [],
+                       "kind": dec.kind}
+                # free answers
+                for cond in free_conds:
+                    if dec.kind != "concept" and cond not in ("base", "ior"):
+                        continue
+                    dec.restore(snap0)
+                    dec.rec = None
+                    dec.kn = knobs(cond, S, self.device, values, [])
+                    h = h0 if cond in ("base", "ior") else dec._position(L0 - 1)
+                    reply = free_answer(dec, h, min(new, a.new), eos, tok, L0, stops,
+                                        ior=(outs, values) if cond == "ior" else None)
+                    reply = postprocess_generated_text(generation=reply, stop=until, think_end_token=None)
+                    rec["free"][cond] = {"reply": reply, "found": [o in reply for o in outs]}
+                # the next value after j written ones
+                digit = [tok(o[0], add_special_tokens=False)["input_ids"][0] for o in outs]
+                ten = [tok(str(x), add_special_tokens=False)["input_ids"][0] for x in range(10)]
+                written: list[int] = []
+                for j in range(nv):
+                    prefix = ":" + "".join(f" {outs[v_]}," for v_ in written) + " "
+                    ptoks = torch.tensor(tok(prefix, add_special_tokens=False)["input_ids"], device=self.device)
+                    if i == 0 and j == 1:
+                        log("forced prefix tokens:", [tok.decode([x]) for x in ptoks.tolist()])
+                    dec.restore(snap0)
+                    dec.kn, dec.rec = {}, None
+                    if ptoks.numel() > 1:
+                        dec.feed(ptoks[:-1])
+                    snap_j = dec.snapshot()
+                    t_dec = int(dec.t)
+                    row = {"j": j, "written": list(written), "res": {}}
+                    for cond in forced_conds:
+                        if j == 0 and cond == "hide_written":
+                            continue
+                        if dec.kind != "concept" and cond not in ("base", "hide_written"):
+                            continue
+                        dec.restore(snap_j)
+                        dec.kn = knobs(cond, S, self.device, values, written, t_rec=t_dec)
+                        dec.rec = [] if cond in ("base", "hide_written") else None
+                        h = dec.feed(ptoks[-1:])
+                        pr = torch.softmax(_next_logits(self.model, h), -1)[0]
+                        p_first = [float(pr[dg]) for dg in digit]
+                        p_digit = float(pr[ten].sum())
+                        trace = dec.rec
+                        dec.rec = None
+                        t0 = int(dec.t)
+                        t1 = dec._decode(h, 9, eos)
+                        cont = tok.decode(dec.buf[0, t0:t1].tolist())
+                        m = re.match(r"\s*(\d+)", cont)
+                        num = m.group(1) if m else ""
+                        new_t = [outs[v_] for v_ in range(nv) if v_ not in written]
+                        cls = ("new" if num in new_t else "repeat" if num in [outs[v_] for v_ in written]
+                               else "other")
+                        row["res"][cond] = {"num": num, "cls": cls, "cont": cont, "p_first": p_first,
+                                            "p_digit": p_digit, "trace": trace}
+                    rec["forced"].append(row)
+                    base = row["res"]["base"]
+                    nxt = outs.index(base["num"]) if base["cls"] == "new" else next(
+                        v_ for v_ in order if v_ not in written)
+                    row["own_pick"] = base["cls"] == "new"
+                    written.append(nxt)
+                records.append(rec)
+                res.append(rec["free"].get("base", {}).get("reply", ""))
+                if (i + 1) % 10 == 0 or i + 1 == len(requests):
+                    torch.save(records, raw_path)
+                    log(f"{i + 1}/{len(requests)} prompts, {time.time() - t_start:.0f}s")
+            return res
+
+    lm = Probe(pretrained=a.checkpoint, tokenizer=a.checkpoint, attn_backend=a.backend, max_length=L + 2 * 128,
+               batch_size=1, device=a.device)
+    tasks = [t for t in a.tasks.split(",") if t]
+    lm_eval.simple_evaluate(model=lm, tasks=tasks, limit=a.limit if a.limit > 0 else None, log_samples=False,
+                            task_manager=TaskManager(metadata={"tokenizer": a.checkpoint, "max_seq_lengths": [L]}),
+                            bootstrap_iters=0)
+    torch.save(records, raw_path)
+    summ = summarize(records)
+    summ["args"] = {"length": L, "limit": a.limit, "checkpoint": a.checkpoint}
+    Path(str(a.out) + ".json").write_text(json.dumps(summ, indent=1))
+    print(json.dumps(summ, indent=1))
+
+
+def summarize(records: list[dict]) -> dict:
+    """Per task: the free answers' score per switch; per j the share of new / repeat / other per condition; the
+    probability of the first digit of the written against the unwritten values; the far read's weight on the first
+    digit of the value the model then wrote, of the other unwritten values and of the written ones (base)."""
+    out: dict = {}
+    for task in sorted({r["task"] for r in records}):
+        rs = [r for r in records if r["task"] == task]
+        t: dict = {"prompts": len(rs), "kind": rs[0].get("kind"), "free": {}, "forced": {}, "read": {}}
+        for cond in rs[0]["free"]:
+            f = [np.mean(r["free"][cond]["found"]) for r in rs]
+            hist = np.bincount([int(sum(r["free"][cond]["found"])) for r in rs], minlength=5).tolist()
+            t["free"][cond] = {"score": round(float(np.mean(f)), 3), "found_hist": hist}
+        nv = max(len(r["forced"]) for r in rs)
+        for j in range(nv):
+            rows = [r["forced"][j] for r in rs if len(r["forced"]) > j]
+            tj: dict = {"own_pick_before": round(float(np.mean([x.get("own_pick", False) for x in
+                                                                [r["forced"][j - 1] for r in rs
+                                                                 if len(r["forced"]) > j]])) if j else 1.0, 3)}
+            for cond in rows[0]["res"]:
+                xs = [x["res"][cond] for x in rows if cond in x["res"]]
+                tj[cond] = {k: round(float(np.mean([x["cls"] == k for x in xs])), 3) for k in ("new", "repeat", "other")}
+                tj[cond]["p_digit"] = round(float(np.mean([x["p_digit"] for x in xs])), 3)
+            # first-digit probability: written against unwritten values (base)
+            pw, pn = [], []
+            for x in rows:
+                pf = x["res"]["base"]["p_first"]
+                pw += [pf[v] for v in x["written"]]
+                pn += [pf[v] for v in range(len(pf)) if v not in x["written"]]
+            tj["p_first_written"] = round(float(np.mean(pw)), 4) if pw else None
+            tj["p_first_unwritten"] = round(float(np.mean(pn)), 4) if pn else None
+            t["forced"][str(j)] = tj
+            # the far read at the deciding position (base): weight on first digits, by loop pass
+            rd: dict = {}
+            for x, r in zip(rows, [r for r in rs if len(r["forced"]) > j]):
+                tr = x["res"]["base"].get("trace") or []
+                outs = r["outputs"]
+                num = x["res"]["base"]["num"]
+                for e in tr:
+                    d = rd.setdefault(e["r"], {"written": [], "unwritten": [], "chosen": [], "src": [],
+                                               "readable_unwritten": []})
+                    for v in range(len(outs)):
+                        key = "written" if v in x["written"] else "unwritten"
+                        d[key].append(e["first_max"][v])
+                        if key == "unwritten":
+                            d["readable_unwritten"].append(e["readable"][v])
+                        if outs[v] == num:
+                            d["chosen"].append(e["first_max"][v])
+                    d["src"].append(e["src"])
+            t["read"][str(j)] = {str(rr): {"first_max_written": round(float(np.mean(d["written"])), 4) if d["written"] else None,
+                                           "first_max_unwritten": round(float(np.mean(d["unwritten"])), 4) if d["unwritten"] else None,
+                                           "first_max_chosen": round(float(np.mean(d["chosen"])), 4) if d["chosen"] else None,
+                                           "readable_unwritten": round(float(np.mean(d["readable_unwritten"])), 3) if d["readable_unwritten"] else None,
+                                           "src_window_sinks_opened_summaries": [round(float(z), 3) for z in np.mean(d["src"], 0)]}
+                                 for rr, d in sorted(rd.items())}
+        out[task] = t
+    return out
+
+
+def cmd_summary(a) -> None:
+    for p in a.raw.split(","):
+        recs = torch.load(p, weights_only=True)
+        print(p)
+        print(json.dumps(summarize(recs), indent=1))
+
+
+# ------------------------------------------------------------------------------------------ weights
+def cmd_weights(a) -> None:
+    from safetensors.torch import load_file
+
+    for item in a.checkpoints.split(","):
+        name, path = item.split("=", 1)
+        sd = load_file(str(Path(path) / "model.safetensors"))
+        cfg = json.loads((Path(path) / "config.json").read_text())
+        print(f"== {name}: {path}")
+        print("   read:", cfg.get("par_global_read"), "| nope:", cfg.get("global_nope", cfg.get("par_global_nope")),
+              "| heads:", cfg.get("num_attention_heads"), "kv heads:", cfg.get("num_kv_heads"), "head dim:",
+              cfg.get("head_dim"), "| logit scale:", cfg.get("global_logit_scale"))
+        layers = sorted({int(k.split(".")[1]) for k in sd if k.startswith("layers.")})
+        print("   layer  alpha   beta  sigma | q gain mean/max  k gain mean/max  max match | |wq|   |wk|   |wv|   |wo|  "
+              "|mlp.down|")
+        for i in layers:
+            g = lambda k: sd.get(f"layers.{i}.{k}")  # noqa: E731
+            qg, kg = g("attn.q_norm.weight").float(), g("attn.k_norm.weight").float()
+            d = qg.numel()
+            # RMSNorm outputs have mean square gain²: the largest q·k/√d puts all of both on the best dimension
+            reach = float((qg.abs() * kg.abs()).max()) * math.sqrt(d)
+            typical = float((qg.abs() * kg.abs()).mean()) * math.sqrt(d)
+            sig = g("sigma")
+            print(f"   {i:5d} {float(g('alpha')):6.3f} {float(g('beta')):6.3f} "
+                  f"{(f'{float(sig):6.3f}' if sig is not None else '     -')} | "
+                  f"{float(qg.abs().mean()):5.2f}/{float(qg.abs().max()):5.2f}     "
+                  f"{float(kg.abs().mean()):5.2f}/{float(kg.abs().max()):5.2f}     {typical:5.1f}/{reach:5.1f} | "
+                  + " ".join(f"{float(g(f'attn.{w}.weight').float().norm()):6.1f}" for w in ("wq", "wk", "wv", "wo"))
+                  + f" {float(g('mlp.down.weight').float().norm()):6.1f}")
+        for k in ("loop_emb", "loop_gate"):
+            if k in sd:
+                v = sd[k].float()
+                print(f"   {k}: norms {[round(float(x), 3) for x in (v.norm(dim=-1) if v.dim() > 1 else v.reshape(-1))]}")
+        extra = [k for k in sd if not k.startswith(("layers.", "embed.", "lm_head.")) and sd[k].numel() <= 16]
+        for k in extra:
+            print(f"   {k}: {[round(float(x), 4) for x in sd[k].float().reshape(-1)]}")
+        small = [k for k in sd if k.startswith("layers.") and sd[k].numel() <= 16
+                 and not k.endswith((".alpha", ".beta", ".sigma"))]
+        for k in small:
+            print(f"   {k}: {[round(float(x), 4) for x in sd[k].float().reshape(-1)]}")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("force")
+    p.add_argument("--checkpoint", required=True)
+    p.add_argument("--length", type=int, default=8192)
+    p.add_argument("--tasks", default="niah_multivalue,niah_multiquery")
+    p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--new", type=int, default=64, help="tokens of a free answer (four values need 36)")
+    p.add_argument("--free", default=",".join(FREE))
+    p.add_argument("--forced", default=",".join(FORCED))
+    p.add_argument("--backend", default="flex")
+    p.add_argument("--device", default="cuda")
+    p.add_argument("--out", required=True)
+    p.set_defaults(fn=cmd_force)
+    p = sub.add_parser("summary")
+    p.add_argument("--raw", required=True, help="comma-separated .pt files of force runs")
+    p.set_defaults(fn=cmd_summary)
+    p = sub.add_parser("weights")
+    p.add_argument("--checkpoints", required=True, help="name=path,name=path")
+    p.set_defaults(fn=cmd_weights)
+    a = ap.parse_args()
+    a.fn(a)
+
+
+if __name__ == "__main__":
+    main()
