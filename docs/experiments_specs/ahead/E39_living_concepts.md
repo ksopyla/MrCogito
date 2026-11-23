@@ -223,6 +223,13 @@ On the released concept-memory model (the author's own weights, public Hub repos
 
   The third loop pass does the opening; summaries off moves no score beyond the ±0.09 noise. The typical 8k failure
   is one value written and then repeated. This is the third outcome above: **use, not memory → K0 tripped.**
+- **P4 — speed: passed (2026-11-23 08:35–08:49 UTC, Odra, one RTX 3090, the 150M model, Muon, gradient
+  checkpointing, `--fast`, the same settings for both).** Tokens per second, living concepts against concept
+  memory: **10,956 against 10,442 at 4k (r = 1.05)** and **7,644 against 7,239 at 16k (1.06)**; peak memory the
+  same (3.2 / 4.3 GB at 2 and 1 rows per pass). K3 and S7, read as ratios on the home card for an H100 run: met.
+  Unit tests: 19 on the CPU, the cached-decoding suite for both arms, 17 on Odra's GPUs (flex equals the streamed
+  read at the 150M shapes at 4k and 16k, cached decoding equals the flex forward across a stride end, two cards
+  hold the same thresholds); 141,506,208 parameters for both arms.
 - **Overridden by the author, 2026-11-23** (quoted in Status): E39 is trained as a different architecture and
   compared, not as a fix of concept memory's grouping. The probe of the topic-index model through the same record
   (`probe_prompt_lsa`, written and tested) was not run.
