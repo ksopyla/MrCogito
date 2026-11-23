@@ -10,8 +10,10 @@ set -uo pipefail
 cd "$(dirname "$0")/../../.." || exit 1
 source /etc/mrcogito.env
 export PATH="$HOME/.local/bin:$PATH"
-V2="s3://$MC_BUCKET/data/m21mix_v2"; V3="s3://$MC_BUCKET/data/m21mix_v3"; D="$MC_DISK/data/m21mix_v3"
-SETS=(list_16k list_64k)
+# M21_NEW (m21v4_data_build.sh: m21mix_v4), M21_NEW_SETS and M21_NEW_RECIPE pick another mix of the same kind
+NEW="${M21_NEW:-m21mix_v3}"
+V2="s3://$MC_BUCKET/data/m21mix_v2"; V3="s3://$MC_BUCKET/data/$NEW"; D="$MC_DISK/data/$NEW"
+read -r -a SETS <<< "${M21_NEW_SETS:-list_16k list_64k}"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 mkdir -p "$D/_logs"
 # The node's role may not read object tags, which `aws s3 sync` between two S3 folders asks for on large files
@@ -44,5 +46,6 @@ done
 aws s3 cp --only-show-errors "$D/_logs/list_rows.log" "$V3/_logs/list_rows.log" || true
 echo "[m21v3] $(now) the list sets are in $V3; writing mix.json for the v3 recipe"
 source infra/aws/jobs/hf_env.sh
-export M21_GATED_OK=1 M21_PULL=1 M21_RECIPE=data/mix_recipes/m21_mix_v3.json M21_DATA="$D" M21_S3="$V3"
+export M21_GATED_OK=1 M21_PULL=1 M21_RECIPE="${M21_NEW_RECIPE:-data/mix_recipes/m21_mix_v3.json}" M21_DATA="$D" \
+  M21_S3="$V3"
 exec bash infra/aws/jobs/m21_data_build.sh 1
