@@ -4,14 +4,19 @@
   grouping; it needs to be fast on contextualised token vectors. At the same time, please remember our 10M context
   goal and reasoning in latent space; the looping seems helpful" · "lets start with the same training protocol as
   other 150M" · "Start Stages 1 and 2 together, I've raised the budget to $5000"). Spec written 2026-11-22
-  19:22 UTC. Nothing is built yet.
+  19:22 UTC.
+- **Pre-flight done, 2026-11-22 (Odra, $0):** P1 and P3 passed; P2 tripped K0 (the failing answers are already
+  opened and attended). **The author overrode K0 on 2026-11-23** (design session): "no, this is different arch and
+  approach that in my opinion is not promising as concepts. ... Lets train 150M and compare, 150M is already cheap
+  model". So the build and the 150M run go ahead; K2a, K2, K3 and K4 still stand. Results below, under Pre-flight
+  checks. Built 2026-11-23 (`E39_plan.md`).
 - **Changed by the author, 2026-11-22 (before any run):** the first version of this spec put a 30M screen on the
   home servers before the paid run (kill mark K1). Asked whether to keep it, the author answered "Skip it". The
   screen is withdrawn; an early reading inside the paid run (K2a) takes over part of its job.
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
-- **Implementation plan:** `E39_plan.md` (to be written by the build session before code, `implementation-plan`).
+- **Implementation plan:** `E39_plan.md`.
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-11-22 · closed —
 - **New family, not a flavour of E37:** the author asked to "treat it as a new architecture". E39 was free on every
   branch and worktree on 2026-11-22 (checked `origin/dev`, `arch-10m`, `eng-100m`, `e37-sft`, `e33t-capability`,
@@ -194,6 +199,34 @@ On the released concept-memory model (the author's own weights, public Hub repos
 - **P4 — speed and parity** of the built read on one home card: tokens per second at 4k and 16k against the
   concept-memory arm at the same size; the unit tests below.
 
+### Pre-flight results (2026-11-22, Odra, the released concept-memory model; `scripts/e39_preflight.py`)
+- **P1 — span signal: present.** First-pass keys of 112 held-out 16k rows of the seven long sources: adjacent
+  cosine 0.653 against 0.361 at lag 8 (K0 needs a gap of at least 0.05; it is 0.29). θ for a mean span of 8:
+  **0.486** (0.475–0.504 per source); there 9 % of spans have 1 token and 22 % reach 16, a stride holds 64 spans
+  (p95 89, max 107), none reaches the 128 cap. The cuts do not follow words (50 % on a word start against 58 % of
+  tokens): they isolate rare, content-heavy tokens such as names and identifiers.
+- **P3 — concept growth: at the mark.** λ for 1 span in 8 founding: **0.652** at 16k, 0.702 at 64k. With 0.702
+  the concepts grow 1.58× from 64k to 128k (15 documents, median 1.59, range 1.21–1.89; linear = 2.0), with 0.652
+  1.51×: R1's 1.6 mark sits right at what these keys give. **Skew:** the largest concept holds 41 % of a 16k
+  document's tokens (20 % at 64k) and about half of the concepts hold a single span; leader centres drift toward
+  the average key.
+- **P2 — the diagnosis: not confirmed (K0's second condition).** RULER, 100 prompts per task. Concept memory puts
+  a value's tokens in about 2.5 groups, E39's spans in about 1.1. But the missed values are already read word for
+  word and get as much attention as the found ones:
+
+  | length, task | score | summaries off | missed values fully held by some reader | best-pass attention, missed vs found |
+  |---|---|---|---|---|
+  | 8k several keys | 0.328 | 0.35 | 96 % | 0.075 vs 0.071 |
+  | 8k all values of one key | 0.445 | 0.407 | 100 % | 0.113 vs 0.107 |
+  | 16k several keys | 0.05 | 0.022 | 93 % | 0.059 vs 0.04 |
+  | 16k all values of one key | 0.203 | 0.235 | 100 % | 0.099 vs 0.069 |
+
+  The third loop pass does the opening; summaries off moves no score beyond the ±0.09 noise. The typical 8k failure
+  is one value written and then repeated. This is the third outcome above: **use, not memory → K0 tripped.**
+- **Overridden by the author, 2026-11-23** (quoted in Status): E39 is trained as a different architecture and
+  compared, not as a fix of concept memory's grouping. The probe of the topic-index model through the same record
+  (`probe_prompt_lsa`, written and tested) was not run.
+
 ## Success criteria (set BEFORE running; 150M, seed 42, the E38 tests unchanged)
 Ceilings are the measured scores of the topic index (retrieval) and of concept memory (long text) on the same data.
 Run-to-run noise of one RULER task at 100 prompts is ±0.09; of the mean of 13 about ±0.02.
@@ -225,6 +258,10 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
 - **R4:** the grouping's own numbers through training — mean span length, share of spans at 16 tokens and at 1,
   spans per stride, share of strides that hit the cap, concepts per document, share of single-span concepts, the
   largest concept's share, θ and λ, tokens opened per reader, share of attention on opened / summaries / window.
+  **Watched: the largest concept's share of tokens** (W&B `living/largest_share`, with `living/single_span_share`).
+  On concept memory's frozen keys P3 measured 41 % of a 16k document and 20 % at 64k, with about half the concepts
+  a single span; in training the controllers and the keys growing up with the grouping should break it up.
+  Reported at step 2,000 with K2a (added 2026-11-23 at the starting session's request).
 
 ## Kill criteria (set BEFORE running)
 - **K0 (pre-flight):** P1 shows no span signal (mean adjacent cosine less than 0.05 above the lag-8 cosine), or P2
