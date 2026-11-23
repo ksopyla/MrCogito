@@ -294,6 +294,26 @@ row asks for several far values in one answer, so no model of the family has tha
   single lookups. The marks L1–L3 and KL1–KL3 apply to this run unchanged ($220 from 20:10 UTC; the v3 attempt's
   $9 and the start-up failures' $2.70 are outside it).
 
+- **Home-card check of the v4 recipe, all release tests (2026-11-23, 20:12–22:33 UTC; diagnostic, not the run).**
+  The recall fine-tune above plus a 64k stage (Polonez, 20:12–21:16 UTC, same 64k stage as the question-only
+  model), then the release protocol (Polonez: list exam, start probe, RULER 4k–16k; Odra: documents, core, RULER
+  32k), against the E38 run:
+  - RULER 13-task mean 0.594 / 0.556 / 0.501 / 0.451 at 4k / 8k / 16k / 32k (E38 run 0.488 / 0.439 / 0.373 /
+    0.319); the other 11 tasks 0.532 / 0.492 / 0.439 / 0.382 (0.513 / 0.460 / 0.408 / 0.347), better at every
+    length; several keys 0.89 / 0.84 / 0.83 / 0.82, all values 0.97 / 0.97 / 0.86 / 0.84 — the gains hold at 32k,
+    a length no training row has; multi-key 2 back to 0.93 / 0.79 / 0.75 / 0.52 (0.92 / 0.84 / 0.76 / 0.41).
+  - Cost: the UUID needle 0.10 / 0.15 / 0.03 / 0.07 (0.29 / 0.27 / 0.07 / 0.07). The control fine-tune with
+    single-value lookup rows loses it too (0.04 at 4k), so it comes from fine-tuning on a large constructed share,
+    not from the list rows; 80 of 100 replies at 4k begin " a unique identifier that is …" instead of the ID (an
+    answer-start failure; 10 of the 20 IDs written are exact). This run mixes the rows at 3–5 % from the start of
+    stage 2, as v2 did.
+  - Documents (nats per token, lower is better): 64k 2.319 (2.293, +1.1 %), 16k 2.147 (2.126), 128k 2.450 (2.451,
+    a tie; past 61k tokens of context the full context is now 0.030 worse than a 61k cut, the E38 run 0.060);
+    summaries useful again (switched off: +0.069 at 64k, +0.071 at 128k). WikiText 0.972 bits per byte (0.964).
+    Core 7 mean, the card's metrics: 46.9 (46.2).
+  - Our list exam at 16k: single 0.93, all values 0.59, several facts exact 0.72 (L1 asks 0.90 / 0.65 / 0.70).
+  As a fine-tune it misses only L3's document marks, by about 0.01 nats, and the UUID mark; the run is the test.
+
 **Data: `m21mix_v3`** (`data/mix_recipes/m21_mix_v3.json`) = v2 plus two constructed sets
 (`scripts/build_reasoning_rows.py --only list_16k,list_64k`): lookup rows whose question block also asks for all the
 values of one thing (2–5 values at 16k, 2–6 at 64k, each stated on its own; answer in the order of the text) and
