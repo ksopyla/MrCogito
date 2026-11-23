@@ -132,6 +132,12 @@ LIST_SETS: dict[str, dict] = {
                  "list_values": (2, 6), "multi": (2, 3), "multi_keys": (2, 4), "spans_per_book": 3,
                  "buckets": {"val": (6, 26), "train": (26, 56)}},
 }
+# Recall sets: a list set in which half of the asked items are a statement to complete instead of a question
+# ("As stated above, the badge number of X is" -> " 4412."), so far facts are also needed when the text goes on in
+# prose. Why: after the list fine-tune the 150M concept-memory model lists well once its answer has begun, but on a
+# statement-style prompt it often does not begin (RULER several keys at 16k: 32 of 50 answers start no list).
+LIST_SETS["recall_16k"] = {**LIST_SETS["list_16k"], "statements": 0.5}
+LIST_SETS["recall_64k"] = {**LIST_SETS["list_64k"], "statements": 0.5}
 P_REVISED = 0.15       # share of planted facts stated twice (the later statement wins)
 P_MISSING_ROW = 0.15   # share of lookup rows with 1-2 questions about something never planted
 
@@ -1261,7 +1267,8 @@ LIST_SEP = ", "
 def list_templates() -> list[str]:
     """Every fixed string of the list questions and their statements."""
     return sorted({t for f in LIST_FAMILIES.values() for t in f["statements"] + f["questions"]} | set(MULTI_QUESTIONS)
-                  | {a for f in LIST_FAMILIES.values() for a in f.get("attrs", [])} | set(_LIST_HOUSES))
+                  | {a for f in LIST_FAMILIES.values() for a in f.get("attrs", [])} | set(_LIST_HOUSES)
+                  | set(RECALL_LEADS) | set(LIST_LABELS.values()) | {"are, in that order,"})
 
 
 def _list_value(kind: str, rng: random.Random, names: _Names) -> str:
@@ -1309,6 +1316,31 @@ def make_multi_question(rng: random.Random, planted: list[Fact], picks: list[int
     answer = LIST_SEP.join(f'"{planted[i].answer}"' if planted[i].kind == "phrase" else planted[i].answer
                            for i in picks)
     return Fact("multi", {}, [], [], question, answer, planted[picks[0]].subject, refs=list(picks))
+
+
+# Recall statements (recall sets): an asked item written as a statement to complete instead of a question, so the
+# far facts are also needed when the text simply goes on in prose ("As stated above, the badge number of X is" ->
+# " 4412."). {l}: the item's noun phrase(s).
+RECALL_LEADS = ["To recall: ", "As stated above, ", "For the record, ", "In short, ", "Summing up, ", ""]
+LIST_LABELS = {"numbers": "the {a}s of {e}", "codes": "the {a}s of {e}", "things": "the things {e} owns"}
+
+
+def recall_stem(rng: random.Random, f: Fact, planted: list[Fact]) -> tuple[str, str] | None:
+    """(the statement up to its value, the value text with the full stop) for an asked item, or None for an item
+    that stays a question (something the text never states)."""
+    if f.refs:
+        labels = [FAMILIES[planted[i].kind]["label"].format(**planted[i].fields) for i in f.refs]
+        stem = ", ".join(labels[:-1]) + " and " + labels[-1] + " are, in that order,"
+    elif f.kind.startswith("list_"):
+        stem = LIST_LABELS[f.kind[5:]].format(**f.fields) + " are"
+    elif f.values:
+        stem = FAMILIES[f.kind]["label"].format(**f.fields) + " is"
+    else:
+        return None
+    lead = rng.choice(RECALL_LEADS)
+    stem = lead + (stem if lead else _cap(stem))
+    value = f'"{f.answer}"' if f.kind == "phrase" else f.answer
+    return (None if banned_in(stem) else (stem, value + "."))
 
 
 def make_list_row_facts(rng: random.Random, cfg: dict) -> tuple[list[Fact], list[Fact], list[Fact], set[int]]:
@@ -1557,7 +1589,14 @@ def lookup_rows(doc_id: str, text: str, ids: list[int], offsets: list[tuple[int,
         asked = [f for fi, f in enumerate(planted) if fi not in grouped] + missing + multis
         rng.shuffle(asked)
         q_pieces = [f"\n\nQuestion: {f.question}\nAnswer:" for f in asked]
-        enc = tok.encode_batch(pieces + q_pieces + [" " + f.answer for f in asked])
+        a_texts = [" " + f.answer for f in asked]
+        forms = ["question"] * len(asked)
+        if cfg.get("statements"):  # a recall set: this share of the items is a statement to complete
+            for k, f in enumerate(asked):
+                st = recall_stem(rng, f, planted) if rng.random() < cfg["statements"] else None
+                if st is not None:
+                    q_pieces[k], a_texts[k], forms[k] = "\n\n" + st[0], " " + st[1], "statement"
+        enc = tok.encode_batch(pieces + q_pieces + a_texts)
         s_ids, q_ids, a_ids = enc[: len(pieces)], enc[len(pieces): len(pieces) + len(asked)], enc[-len(asked):]
         budget = S - 1 - len(final) - sum(len(x) for x in enc)
         span = _choose_span(text, starts, ends, j * seg, (j + 1) * seg, budget, rng, tok)
@@ -1589,9 +1628,9 @@ def lookup_rows(doc_id: str, text: str, ids: list[int], offsets: list[tuple[int,
         q_char = sum(len(x) for x in texts)
         index = {id(f): fi for fi, f in enumerate(planted)}
         qa = []
-        for f, q, a, qp in zip(asked, q_ids, a_ids, q_pieces):
+        for f, q, a, qp, a_text, form in zip(asked, q_ids, a_ids, q_pieces, a_texts, forms):
             parts += [q, a]
-            texts += [qp, " " + f.answer]
+            texts += [qp, a_text]
             ans, fi = pos + len(q), index.get(id(f))
             last = None if fi is None else s_end[fi, len(f.statements) - 1]
             ends_f = [] if fi is None else [s_end[fi, si] for si in range(len(f.statements))]
@@ -1608,6 +1647,8 @@ def lookup_rows(doc_id: str, text: str, ids: list[int], offsets: list[tuple[int,
             if f.refs:
                 qa[-1].update({"values": [planted[ri].answer for ri in f.refs],
                                "subjects": [planted[ri].subject for ri in f.refs]})
+            if form == "statement":  # the text before the value, and the value as written (with its full stop)
+                qa[-1].update({"form": "statement", "question": qp.strip(), "written": a_text.strip()})
             pos = ans + len(a)
         parts.append(final)
         texts.append("\n\n")

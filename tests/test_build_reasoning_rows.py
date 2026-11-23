@@ -470,7 +470,8 @@ LIST = {"kind": "lookup", "seq_len": 2048, "tokens": 2048 * 9, "facts": (4, 8), 
 
 
 def test_list_facts_and_templates():
-    assert set(b.LIST_SETS) == {"list_16k", "list_64k"} and not set(b.LIST_SETS) & set(b.SETS)
+    assert set(b.LIST_SETS) == {"list_16k", "list_64k", "recall_16k", "recall_64k"}
+    assert not set(b.LIST_SETS) & set(b.SETS)
     for s in b.list_templates():
         assert b.banned_in(s) is None, s
     rng = random.Random(3)
@@ -525,6 +526,35 @@ def test_list_rows_fake_tokenizer():
         again = _lookup(FakeTok(), cfg, book, doc_id=f"b{i}")
         assert all((x.ids == y.ids).all() and x.text == y.text for x, y in zip(rows, again))
     assert lists >= 24 and multis >= 20
+
+
+def test_recall_rows_fake_tokenizer():
+    """A recall set: about half of the asked items are a statement to complete; the value follows the statement,
+    with a full stop, where the row says its answer is."""
+    tok, cfg = FakeTok(), {**LIST, "statements": 0.5}
+    assert b.LIST_SETS["recall_16k"]["statements"] == 0.5 and "statements" not in b.LIST_SETS["list_16k"]
+    n_st = n_all = kinds = 0
+    seen = set()
+    for i in range(6):
+        book = book_text(i, 6500)
+        for row in _lookup(tok, cfg, book, doc_id=f"b{i}"):
+            body = row.ids[1: row.n].tolist()
+            assert tok.encode(row.text) == body and tok.decode(body) == row.text and row.text.endswith("\n\n")
+            assert b.banned_in(row.text) is None
+            for m in row.qa:
+                n_all += 1
+                written = m.get("written", m["answer"])
+                a = tok.encode(" " + written)
+                assert row.ids[m["answer_pos"]: m["answer_pos"] + len(a)].tolist() == a
+                if m.get("form") == "statement":
+                    n_st += 1
+                    seen.add("multi" if m["kind"] == "multi" else "list" if m["kind"].startswith("list_") else "single")
+                    assert m["values"] and written.replace('"', "") == m["answer"].replace('"', "") + "."
+                    assert f"\n\n{m['question']} {written}\n\n" in row.text
+                    assert "Question:" not in m["question"]
+                else:
+                    assert f"\n\nQuestion: {m['question']}\nAnswer: {m['answer']}\n\n" in row.text
+    assert 0.3 < n_st / n_all < 0.6 and seen == {"single", "list", "multi"}
 
 
 def test_book_split_rule():
