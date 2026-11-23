@@ -101,6 +101,12 @@ class ProbeDecoder(IncrementalDecoder):
             rec["first_mean"].append(float(mf.mean()))
             rec["first_head"].append(int(mf.argmax()))
             rec["readable"].append(bool((win | sink | opened)[A[0]]))
+        for name, P in (self.kn.get("marks") or {}).items():  # named sets of positions: weight on them, share readable
+            P = P[P < n]
+            if P.numel():
+                mm = raw[:, P].sum(-1)
+                rec["mark_" + name] = {"max": float(mm.max()), "mean": float(mm.mean()),
+                                       "readable": float((win | sink | opened)[P].float().mean())}
         self.rec.append(rec)
 
     def _concept_read(self, q, K, V, r, t, att):
@@ -160,6 +166,11 @@ class ProbeDecoder(IncrementalDecoder):
             only = kn["only"][None, :n]
             keep = (keep & ~far) | (only & far)
             opened = only & far
+        if kn.get("also") is not None:  # these keys are readable whatever the choice (their summaries stay as well)
+            also = kn["also"][None, :n] & far
+            keep, opened = keep | also, opened | also
+        if kn.get("dense"):  # every earlier token of the document word for word, no summaries: full attention
+            keep, opened, sbias = torch.ones_like(keep), far, None
         if kn.get("hide") is not None:
             keep = keep & ~(kn["hide"][None, :n] & far)
         mask = keep & same
@@ -246,6 +257,91 @@ def free_answer(dec: ProbeDecoder, h, new: int, eos: int, tok, L0: int, stops, i
     return tok.decode(out[0, L0:t].tolist())
 
 
+START = ("base", "nosum", "far_off", "open_needles", "dense", "only_needles")
+
+
+@torch.no_grad()
+def start_probe(model, tok, dec: ProbeDecoder, snap0: dict, L0: int, values: list) -> dict:
+    """The first token of the answer (the reader is the prompt's last token): the probability of ":" and the three
+    likeliest tokens, with the far read as trained and with switches: summaries out, the far read off, the needle
+    sentences always readable (`open_needles`: each value and the 16 tokens before it), every earlier token readable
+    word for word and no summaries (`dense`: full attention with these weights), only the needle sentences far
+    (`only_needles`). Recorded per loop pass: the read's weight on the ":" before each value, on the values' first
+    digits and on the needle sentences, and how much of each the read could see word for word."""
+    S, dev = dec.S, dec.buf.device
+    colon = tok(":", add_special_tokens=False)["input_ids"][0]
+    need = torch.zeros(S, dtype=torch.bool, device=dev)
+    for A in values:
+        if A.numel():
+            need[max(0, int(A[0]) - 16):int(A[-1]) + 1] = True
+    has = [A for A in values if A.numel() and int(A[0]) >= 2]
+    marks = {"needle": need.nonzero().flatten()}
+    if has:
+        marks["colon"] = torch.stack([A[0] - 2 for A in has])
+        marks["digit1"] = torch.stack([A[0] for A in has])
+    out = {"colon_tokens": [tok.decode([int(dec.buf[0, int(A[0]) - 2])]) for A in has]}
+    for cond in START:
+        if dec.kind != "concept" and cond != "base":
+            continue
+        dec.restore(snap0)
+        kn: dict = {"rec_t": L0 - 1, "marks": marks}
+        if cond == "nosum":
+            kn["nosum"] = True
+        elif cond == "far_off":
+            kn["far_off"] = True
+        elif cond == "open_needles":
+            kn["also"] = need
+        elif cond == "dense":
+            kn["dense"] = True
+        elif cond == "only_needles":
+            kn["only"] = need
+        dec.kn, dec.rec = kn, []
+        h = dec._position(L0 - 1)
+        pr = torch.softmax(_next_logits(model, h), -1)[0]
+        top = pr.topk(3)
+        out[cond] = {"p_colon": float(pr[colon]), "top": [(tok.decode([int(i)]), round(float(p), 3))
+                                                           for p, i in zip(top.values, top.indices)],
+                     "trace": dec.rec}
+        dec.rec = None
+    return out
+
+
+def summarize_start(records: list[dict]) -> dict:
+    out: dict = {}
+    for task in sorted({r["task"] for r in records}):
+        rs = [r for r in records if r["task"] == task and "start" in r]
+        if not rs:
+            continue
+        t: dict = {"prompts": len(rs), "kind": rs[0].get("kind")}
+        for cond in START:
+            xs = [r["start"][cond] for r in rs if cond in r["start"]]
+            if not xs:
+                continue
+            c = {"p_colon": round(float(np.mean([x["p_colon"] for x in xs])), 3),
+                 "colon_first": round(float(np.mean([x["top"][0][0] == ":" for x in xs])), 3),
+                 "top": collections_top([x["top"][0][0] for x in xs])}
+            last = [x["trace"][-1] for x in xs if x.get("trace")]
+            first = [x["trace"][0] for x in xs if x.get("trace")]
+            for name in ("colon", "digit1", "needle"):
+                k = "mark_" + name
+                if last and all(k in e for e in last):
+                    c[name] = {"weight_best_head_last_pass": round(float(np.mean([e[k]["max"] for e in last])), 4),
+                               "weight_head_mean_last_pass": round(float(np.mean([e[k]["mean"] for e in last])), 4),
+                               "weight_best_head_first_pass": round(float(np.mean([e[k]["max"] for e in first])), 4),
+                               "readable": round(float(np.mean([e[k]["readable"] for e in last])), 3)}
+            if last:
+                c["src_window_sinks_opened_summaries"] = [round(float(z), 3) for z in np.mean([e["src"] for e in last], 0)]
+            t[cond] = c
+        out[task] = t
+    return out
+
+
+def collections_top(xs: list, n: int = 4) -> list:
+    import collections
+
+    return collections.Counter(xs).most_common(n)
+
+
 def knobs(cond: str, S: int, dev, values, written, t_rec=None) -> dict:
     kn: dict = {"rec_t": t_rec}
     if cond == "nosum":
@@ -329,6 +425,14 @@ def cmd_force(a) -> None:
                 rec = {"task": req.task_name, "doc_id": req.doc_id, "length": L, "L0": L0, "outputs": outs,
                        "values": [v.tolist() for v in values], "order": order, "free": {}, "forced": [],
                        "kind": dec.kind}
+                if a.mode == "start":  # the first token of the answer only
+                    rec["start"] = start_probe(self.model, tok, dec, snap0, L0, values)
+                    records.append(rec)
+                    res.append("")
+                    if (i + 1) % 10 == 0 or i + 1 == len(requests):
+                        torch.save(records, raw_path)
+                        log(f"{i + 1}/{len(requests)} prompts, {time.time() - t_start:.0f}s")
+                    continue
                 # free answers
                 for cond in free_conds:
                     if dec.kind != "concept" and cond not in ("base", "ior"):
@@ -401,8 +505,8 @@ def cmd_force(a) -> None:
                             task_manager=TaskManager(metadata={"tokenizer": a.checkpoint, "max_seq_lengths": [L]}),
                             bootstrap_iters=0)
     torch.save(records, raw_path)
-    summ = summarize(records)
-    summ["args"] = {"length": L, "limit": a.limit, "checkpoint": a.checkpoint}
+    summ = summarize_start(records) if a.mode == "start" else summarize(records)
+    summ["args"] = {"length": L, "limit": a.limit, "checkpoint": a.checkpoint, "mode": a.mode}
     Path(str(a.out) + ".json").write_text(json.dumps(summ, indent=1))
     print(json.dumps(summ, indent=1))
 
@@ -667,6 +771,8 @@ def main() -> None:
     p.add_argument("--length", type=int, default=8192)
     p.add_argument("--tasks", default="niah_multivalue,niah_multiquery")
     p.add_argument("--limit", type=int, default=50)
+    p.add_argument("--mode", default="force", choices=("force", "start"),
+                   help="start: only the first token of the answer (does the model begin a list?), with switches")
     p.add_argument("--new", type=int, default=64, help="tokens of a free answer (four values need 36)")
     p.add_argument("--free", default=",".join(FREE))
     p.add_argument("--forced", default=",".join(FORCED))
