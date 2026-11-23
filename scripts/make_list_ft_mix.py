@@ -46,10 +46,15 @@ def main() -> None:
             dst.unlink()
         os.symlink(src, dst)
 
+    # the replay mix's own supply report: a source with no row at this phase's length is left out (small builds)
+    have = {s["name"]: s.get("rows_available") for s in ph.get("supply", [])}
+    have_ev = {s["name"]: s.get("rows_available") for s in ph.get("eval_supply", [])}
     train = []
     for s in ph["train"]:
         files = sorted(glob.glob(str(replay / f"{s['name']}_train_*.bin")))
         if not files or s["name"] in sets:  # a constructed set of the same name comes from --extra, at --weight
+            continue
+        if s["name"] in have and not have[s["name"]]:
             continue
         for f in files:
             link(Path(f), out / Path(f).name)
@@ -61,7 +66,7 @@ def main() -> None:
     ev = []
     for s in ph.get("eval", []):
         files = sorted(glob.glob(str(replay / f"{s['name']}_val_*.bin")))
-        if files:
+        if files and (s["name"] not in have_ev or have_ev[s["name"]]):
             for f in files:
                 link(Path(f), out / Path(f).name)
             ev.append({"name": s["name"], "rows": int(s["rows"])})
