@@ -500,6 +500,10 @@ def cmd_force(a) -> None:
 
     lm = Probe(pretrained=a.checkpoint, tokenizer=a.checkpoint, attn_backend=a.backend, max_length=L + 2 * 128,
                batch_size=1, device=a.device)
+    if a.sum_len >= 0:  # the summaries' total weight held at the level of a document of this length (0 = off)
+        from nn.concept_memory import set_concept_sum_len
+
+        log(f"length scale of the summaries set to {a.sum_len} on {set_concept_sum_len(lm.model, a.sum_len)} layer(s)")
     tasks = [t for t in a.tasks.split(",") if t]
     lm_eval.simple_evaluate(model=lm, tasks=tasks, limit=a.limit if a.limit > 0 else None, log_samples=False,
                             task_manager=TaskManager(metadata={"tokenizer": a.checkpoint, "max_seq_lengths": [L]}),
@@ -773,6 +777,9 @@ def main() -> None:
     p.add_argument("--limit", type=int, default=50)
     p.add_argument("--mode", default="force", choices=("force", "start"),
                    help="start: only the first token of the answer (does the model begin a list?), with switches")
+    p.add_argument("--sum_len", type=int, default=-1,
+                   help="concept read: hold the summaries' total weight at the level of a document of this many "
+                        "tokens (the model's own setting when not given; 0 = no length scale)")
     p.add_argument("--new", type=int, default=64, help="tokens of a free answer (four values need 36)")
     p.add_argument("--free", default=",".join(FREE))
     p.add_argument("--forced", default=",".join(FORCED))
