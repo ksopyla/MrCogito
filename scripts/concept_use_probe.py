@@ -767,6 +767,39 @@ def cmd_weights(a) -> None:
             print(f"   {k}: {[round(float(x), 4) for x in sd[k].float().reshape(-1)]}")
 
 
+def cmd_diff(a) -> None:
+    """Where two checkpoints of the same model differ (a fine-tune against its start): the relative change
+    |after − before| / |before| of every weight matrix, per layer and part, and the scalars that moved."""
+    from safetensors.torch import load_file
+
+    w0 = load_file(str(Path(a.before) / "model.safetensors"))
+    w1 = load_file(str(Path(a.after) / "model.safetensors"))
+    rows = []
+    for k, v0 in w0.items():
+        if k not in w1 or w1[k].shape != v0.shape:
+            continue
+        v0f, v1f = v0.float(), w1[k].float()
+        if v0f.numel() <= 16:
+            if float((v1f - v0f).abs().max()) > 1e-4:
+                rows.append((k, None, [round(float(x), 4) for x in v0f.reshape(-1)[:4]],
+                             [round(float(x), 4) for x in v1f.reshape(-1)[:4]]))
+            continue
+        rows.append((k, float((v1f - v0f).norm() / v0f.norm().clamp_min(1e-12)), None, None))
+    print("relative change of each layer's parts (|after - before| / |before|, per cent)")
+    parts = ("attn.wq", "attn.wk", "attn.wv", "attn.wo", "attn.q_norm", "attn.k_norm", "mlp.gate", "mlp.up", "mlp.down")
+    print("   layer " + " ".join(f"{p.split('.')[-1]:>7}" for p in parts))
+    layers = sorted({int(k.split(".")[1]) for k, *_ in rows if k.startswith("layers.")})
+    rel = {k: r for k, r, *_ in rows if r is not None}
+    for i in layers:
+        print(f"   {i:5d} " + " ".join(f"{100 * rel.get(f'layers.{i}.{p}.weight', float('nan')):7.2f}" for p in parts))
+    other = sorted(((r, k) for k, r in rel.items() if not k.startswith("layers.")), reverse=True)
+    print("   other:", ", ".join(f"{k} {100 * r:.2f}" for r, k in other[:8]))
+    print("scalars that moved (before -> after):")
+    for k, r, b, c in rows:
+        if r is None:
+            print(f"   {k}: {b} -> {c}")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -790,6 +823,10 @@ def main() -> None:
     p = sub.add_parser("summary")
     p.add_argument("--raw", required=True, help="comma-separated .pt files of force runs")
     p.set_defaults(fn=cmd_summary)
+    p = sub.add_parser("diff")
+    p.add_argument("--before", required=True)
+    p.add_argument("--after", required=True)
+    p.set_defaults(fn=cmd_diff)
     p = sub.add_parser("examples")
     p.add_argument("--raw", required=True)
     p.add_argument("--n", type=int, default=8)
