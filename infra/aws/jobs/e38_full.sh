@@ -24,6 +24,9 @@ case "$OPT" in
   muon:*) OPT_FLAGS="--optimizer muon --muon_peak ${OPT#muon:}"; TAG="muon${OPT#muon:}" ;;
   *) echo "[e38_full] unknown E38_OPT=$OPT"; exit 2 ;;
 esac
+# E38_TAG (e38_lists.sh: "lists"): one more word in the run name, so a second run of the same arm, size, optimizer
+# and seed (another data mix) keeps its own folder. E38_PLAIN_NOTE: the same in plain words for the W&B name.
+[ -n "${E38_TAG:-}" ] && TAG="${TAG:+$TAG-}$E38_TAG"
 # rows per pass and card: the E37 runs' own (4 at 4k, 1 at 16k on a 48 GB card; twice that on 80 GB). On one L40S
 # with --fast, 4 / 6 / 8 / 10 rows at 4k all give 29-30.5k tokens/s (old settings: 20.3k) and 1 / 2 rows at 16k
 # both ~20.3k (old: 15.2k), so larger passes only cost memory (eng_check_node.sh, us-west-2, 2026-11-14)
@@ -44,7 +47,7 @@ for ARM in "$@"; do
   case "$ARM" in e37a) ARMP="concept memory";; lsa) ARMP="LSA port";; catalogue_reuse_n4) ARMP="catalogue";;
     dense_rope) ARMP="fair full attention";; dense) ARMP="full attention";; window) ARMP="window only";;
     living) ARMP="living concepts";; living_spans) ARMP="living spans";; *) ARMP="$ARM";; esac
-  export E33N_PLAIN="$SZP $ARMP, $OPTP"
+  export E33N_PLAIN="$SZP $ARMP${E38_PLAIN_NOTE:+ $E38_PLAIN_NOTE}, $OPTP"
   export MC_WANDB_TAGS="$EXPT,$SIZE,$MIX,$ARM,opt-$OPT,seed$SEED${E38_BOARD:+,leaderboard}"
   export MC_WANDB_NOTES="$SZP $ARMP, $OPTP${E38_BOARD:+, for the Tiny-ML leaderboard}. Code: arm $ARM, size $SIZE, mix $MIX, optimizer $OPT, seed $SEED, run $RUN."
   R="$MC_DISK/runs/$RUN"; S3R="s3://$MC_BUCKET/runs/$EXPL/$RUN"
