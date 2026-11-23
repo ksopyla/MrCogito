@@ -11,11 +11,20 @@ source /etc/mrcogito.env
 ARM="${1:-e37a}"
 SRC="s3://$MC_BUCKET/runs/e38/e33n_m120t_${ARM}_muon0.01_tok8.0e9_seed42"
 DST="s3://$MC_BUCKET/runs/e38/e33n_m120t_${ARM}_muon0.01-lists_tok8.0e9_seed42"
-if ! aws s3 ls "$DST/trunk/" 2>/dev/null | grep -q .; then
-  echo "[e38_lists] $(date -u +%Y-%m-%dT%H:%M:%SZ) stage-1 weights from $SRC"
-  aws s3 sync --only-show-errors "$SRC/trunk/" "$DST/trunk/" --exclude "*/checkpoint-*" || exit 3
-fi
-aws s3 ls --recursive "$DST/trunk/" | grep -q "final/model.safetensors" \
-  || { echo "[e38_lists] no stage-1 weights under $DST/trunk/"; exit 3; }
+# The listing goes into a variable and is matched there: `aws s3 ls | grep -q` under pipefail fails whenever grep
+# stops reading at its first match (2026-11-23 18:44 UTC: "Broken pipe", the weights were there). The node's role
+# may not copy between S3 folders either (no object-tag permission), so the stage-1 weights are put there
+# beforehand from the laptop (the sync below, run with the admin profile); here the copy is only a fallback.
+have=$(aws s3 ls --recursive "$DST/trunk/" 2>/dev/null || true)
+case "$have" in
+  *final/model.safetensors*) ;;
+  *) echo "[e38_lists] $(date -u +%Y-%m-%dT%H:%M:%SZ) stage-1 weights from $SRC"
+     aws s3 sync --only-show-errors --copy-props none "$SRC/trunk/" "$DST/trunk/" --exclude "*/checkpoint-*" || true
+     have=$(aws s3 ls --recursive "$DST/trunk/" 2>/dev/null || true) ;;
+esac
+case "$have" in
+  *final/model.safetensors*) echo "[e38_lists] stage-1 weights are in $DST/trunk/" ;;
+  *) echo "[e38_lists] no stage-1 weights under $DST/trunk/"; exit 3 ;;
+esac
 export E38_MIX=m21mix_v3 E38_TAG=lists E38_PLAIN_NOTE="with list questions"
 exec bash "$(cd "$(dirname "$0")" && pwd)/e38_board.sh" 42 muon:0.01 "$ARM"
