@@ -595,6 +595,20 @@ def cmd_table(a) -> None:
                       f"written {first['first_max_written']} unwritten {first['first_max_unwritten']}")
 
 
+def cmd_examples(a) -> None:
+    """What the model wrote at each forced step of the first prompts of a saved `force` run (per task)."""
+    recs = torch.load(a.raw, weights_only=True)
+    for task in sorted({r["task"] for r in recs}):
+        print("==", task)
+        for r in [x for x in recs if x["task"] == task][: a.n]:
+            print(f"  targets {r['outputs']}  free: {r['free']['base']['reply'][:90]!r}")
+            for row in r["forced"]:
+                w = [r["outputs"][v] for v in row["written"]]
+                line = "  ".join(f"{c}: {x['num'] or x['cont'][:12]!r} ({x['cls']})" for c, x in row["res"].items()
+                                 if c in a.conds.split(","))
+                print(f"    j={row['j']} written {w} -> {line}")
+
+
 def cmd_summary(a) -> None:
     for p in a.raw.split(","):
         recs = torch.load(p, weights_only=True)
@@ -662,6 +676,11 @@ def main() -> None:
     p = sub.add_parser("summary")
     p.add_argument("--raw", required=True, help="comma-separated .pt files of force runs")
     p.set_defaults(fn=cmd_summary)
+    p = sub.add_parser("examples")
+    p.add_argument("--raw", required=True)
+    p.add_argument("--n", type=int, default=8)
+    p.add_argument("--conds", default="base,hide_written")
+    p.set_defaults(fn=cmd_examples)
     p = sub.add_parser("rows")
     p.add_argument("--checkpoint", required=True)
     p.add_argument("--shard", required=True, help="a val shard of scripts/build_reasoning_rows.py (lookup or list set)")
