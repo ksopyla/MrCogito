@@ -15,12 +15,15 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WANDB_MODE=disabled
 R="$PWD/Cache/list_ft/$NAME"
 mkdir -p "$R"
 say() { echo "[list_ft $NAME $(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" | tee -a "$R/events.log"; }
+# REPLAY_PHASE (default decay: rows of 16k; long: rows of 64k) picks the replay mix's phase and so the row length;
+# ROWS_PER_CARD (default 2; use 1 at 64k) rows per card and optimizer step. SET and EXTRA_DIR may be comma lists.
 uv run --no-sync python scripts/make_list_ft_mix.py --replay "$REPLAY" --extra "$EXTRA_DIR" --set "$SET" \
-  --out "$R/mix" --weight "$WEIGHT" --tokens "$TOKENS" >> "$R/events.log" 2>&1 || { say "the mix failed"; exit 1; }
+  --out "$R/mix" --weight "$WEIGHT" --tokens "$TOKENS" --phase "${REPLAY_PHASE:-decay}" >> "$R/events.log" 2>&1 \
+  || { say "the mix failed"; exit 1; }
 n=$(echo "$GPUS" | tr ',' '\n' | grep -c .)
 # shellcheck disable=SC2086
 CMD=$(uv run --no-sync python scripts/run_e33n.py cmd --arm "$ARM" --size m120t --phase decay --data "$R" --out "$R" \
-  --init "$INIT" --mix "$R/mix" --mix_lenient --rows $((2 * n)) --micro 1 --gpus "$n" --grad_ckpt \
+  --init "$INIT" --mix "$R/mix" --mix_lenient --rows $(( ${ROWS_PER_CARD:-2} * n )) --micro 1 --gpus "$n" --grad_ckpt \
   --optimizer muon --lr "${LR:-0.001}" --muon_adamw_lr "${ADAMW_LR:-6e-5}" --eval_every "${EVAL_EVERY:-100}" \
   --save_every 200 --fast ${EXTRA:-}) || { say "the command failed"; exit 1; }
 echo "$CMD" > "$R/train.cmd"

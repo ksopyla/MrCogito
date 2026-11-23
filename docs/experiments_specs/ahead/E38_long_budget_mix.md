@@ -258,6 +258,17 @@ row asks for several far values in one answer, so no model of the family has tha
   needle fell (0.29 → 0.02 at 4k). The list rows belong in stages 2 and 3 at a few per cent, not in a heavy
   afterthought.
 
+- **Added 18:10 UTC, twelve minutes after the launch and before any result of the run (marks unchanged): the
+  control changes how RULER reads.** The same fine-tune with single-value lookup rows in place of the list rows
+  (Polonez, 16:52–17:44 UTC): our list exam stays at 0.00 / 0.00 (single-value 0.95), so the list skill comes from
+  the list rows. But RULER rises almost as much as with the list rows (board protocol at 4k: all values 0.31 →
+  0.74, several keys 0.40 → 0.52; the list fine-tune 0.82 and 0.62), and the UUID needle falls the same way
+  (0.29 → 0.04). The released model had already read more lookup tokens (115M at 3–5 % of its rows) than either
+  fine-tune added (30M at 50 %), so RULER's two tests mostly follow how strongly the END of training is tuned to
+  copying from far context, not the list skill. Consequence for this run: L1 is the test of the list rows; L2 may
+  fail with L1 passed, which would say that 3–5 % of constructed rows teach the skill but do not move RULER, and
+  that a retrieval-rich final stage is the lever (a home-card test of one is under way).
+
 **Data: `m21mix_v3`** (`data/mix_recipes/m21_mix_v3.json`) = v2 plus two constructed sets
 (`scripts/build_reasoning_rows.py --only list_16k,list_64k`): lookup rows whose question block also asks for all the
 values of one thing (2–5 values at 16k, 2–6 at 64k, each stated on its own; answer in the order of the text) and
