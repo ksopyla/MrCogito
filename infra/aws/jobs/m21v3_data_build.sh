@@ -14,9 +14,13 @@ V2="s3://$MC_BUCKET/data/m21mix_v2"; V3="s3://$MC_BUCKET/data/m21mix_v3"; D="$MC
 SETS=(list_16k list_64k)
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 mkdir -p "$D/_logs"
-echo "[m21v3] $(now) copying $V2 to $V3 (server side)"
-aws s3 sync --only-show-errors "$V2/" "$V3/" --exclude "mix.json" --exclude "_logs/*" --exclude "_raw*" \
-  || { echo "[m21v3] $(now) !! the copy failed"; exit 3; }
+# The node's role may not read object tags, which `aws s3 sync` between two S3 folders asks for on large files
+# (2026-11-23 17:01 UTC: every shard over 8 MB failed with AccessDenied on GetObjectTagging). So the copy is made
+# beforehand from the laptop (the same command with the admin profile); here it only fills in what is missing,
+# without the tags, and a failure is reported but does not stop the build of the list sets.
+echo "[m21v3] $(now) copying what $V3 still lacks from $V2 (server side)"
+aws s3 sync --only-show-errors --copy-props none "$V2/" "$V3/" --exclude "mix.json" --exclude "_logs/*" \
+  --exclude "_raw*" || echo "[m21v3] $(now) !! the copy reported errors (see above); continuing"
 for n in "${SETS[@]}"; do   # a relaunch: a set already in S3 is skipped
   [ -f "$D/$n.done.json" ] || aws s3 cp --only-show-errors "$V3/$n.done.json" "$D/$n.done.json" 2>/dev/null || true
 done
