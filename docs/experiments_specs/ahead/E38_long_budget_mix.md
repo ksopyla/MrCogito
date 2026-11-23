@@ -305,8 +305,11 @@ row asks for several far values in one answer, so no model of the family has tha
   - Cost: the UUID needle 0.10 / 0.15 / 0.03 / 0.07 (0.29 / 0.27 / 0.07 / 0.07). The control fine-tune with
     single-value lookup rows loses it too (0.04 at 4k), so it comes from fine-tuning on a large constructed share,
     not from the list rows; 80 of 100 replies at 4k begin " a unique identifier that is …" instead of the ID (an
-    answer-start failure; 10 of the 20 IDs written are exact). This run mixes the rows at 3–5 % from the start of
-    stage 2, as v2 did.
+    answer-start failure). Across the saved replies of the E38 run and this model at 4k–32k, every reply that
+    begins with an ID begins with the right one (105 of 105; full attention 145 of 146): the far read finds the
+    36-character ID whenever the answer starts, and the score is the share of replies that start (E38 run 29 / 27
+    / 7 / 7 %, full attention 71 / 69 % at 4k / 8k). Our rows never say "uuid" and their IDs are 6–10
+    characters. This run mixes the rows at 3–5 % from the start of stage 2, as v2 did.
   - Documents (nats per token, lower is better): 64k 2.319 (2.293, +1.1 %), 16k 2.147 (2.126), 128k 2.450 (2.451,
     a tie; past 61k tokens of context the full context is now 0.030 worse than a 61k cut, the E38 run 0.060);
     summaries useful again (switched off: +0.069 at 64k, +0.071 at 128k). WikiText 0.972 bits per byte (0.964).
