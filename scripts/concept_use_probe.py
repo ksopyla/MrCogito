@@ -465,6 +465,99 @@ def summarize(records: list[dict]) -> dict:
     return out
 
 
+# ------------------------------------------------------------------------------------------ rows exam
+_MULTI_MARKS = ("in this order", "in the order asked", "in that order", "One after another", "keeping this order")
+
+
+def question_kind(question: str, answer: str) -> str:
+    """single / list (all the values of one thing) / multi (several facts in one question), from the wording of
+    scripts/build_reasoning_rows.py's list sets."""
+    if any(m in question for m in _MULTI_MARKS):
+        return "multi"
+    return "list" if ", " in answer else "single"
+
+
+@torch.no_grad()
+def cmd_rows(a) -> None:
+    """The questions of held-out lookup / list rows (scripts/build_reasoning_rows.py val shards), answered one at a
+    time: the row is read once up to the first `Answer:`, the model writes its answer (greedy, to the end of the
+    line), then the row's own answer is put in its place and the next question follows. Per kind of question: exact
+    answers, the share of the answer's values found, answers with every value, answers that write a value twice."""
+    from transformers import AutoTokenizer
+
+    from data.bin_token_dataset import open_shard
+    from evaluation.lm_eval_perceiver_ar import load_perceiver_ar_for_eval
+
+    tok = AutoTokenizer.from_pretrained(a.checkpoint)
+    model = load_perceiver_ar_for_eval(a.checkpoint, device=a.device, attn_backend=a.backend)
+    dev = next(model.parameters()).device
+    S = int(a.seq_len)
+    rows = np.asarray(open_shard(a.shard)).reshape(-1, S)[: a.limit if a.limit > 0 else None]
+    eos = tok.eos_token_id
+    out_rows, t_start = [], time.time()
+    for ri, row in enumerate(rows):
+        pad = np.flatnonzero(row[1:] == eos)
+        n = int(pad[0]) + 1 if pad.size else S
+        ids = row[:n].astype(np.int64)
+        pieces = [tok.decode([int(x)]) for x in ids[1:]]
+        offs = np.cumsum([0] + [len(p) for p in pieces])           # character offset of token 1 + i
+        text = "".join(pieces)
+        qas = []
+        for m in re.finditer(r"\n\nQuestion: (.*)\nAnswer:( .*)", text):
+            a0 = int(np.searchsorted(offs, m.start(2), side="left")) + 1     # first token of the answer
+            a1 = int(np.searchsorted(offs, m.end(2), side="left")) + 1       # first token after it
+            qas.append((m.group(1), m.group(2).strip(), a0, a1))
+        if not qas:
+            continue
+        Lb = -(-(n + 64) // 256) * 256
+        gold = torch.from_numpy(ids).to(dev)
+        L0 = qas[0][2]
+        buf = torch.full((1, Lb), eos, dtype=torch.long, device=dev)   # as the harness: nothing after the prompt
+        buf[0, :L0] = gold[:L0]
+        doc = torch.full((1, Lb), -1, dtype=torch.long, device=dev)
+        doc[0, :L0] = 0
+        dec = ProbeDecoder(model)
+        h = dec.prefill(buf, doc, L0)
+        res = []
+        for qi, (question, answer, a0, a1) in enumerate(qas):
+            if qi:
+                h = dec.feed(gold[int(dec.t):a0])
+            snap = dec.snapshot()
+            t0 = int(dec.t)
+            new = (a1 - a0) + 12
+            t = t0
+            for it in range(new):
+                if it:
+                    h = dec.step(dec.buf[:, t - 1])
+                nxt = _next_logits(model, h).argmax(-1)
+                dec.buf[:, t] = nxt
+                t += 1
+                if "\n" in tok.decode(dec.buf[0, t0:t].tolist()) or int(nxt[0]) == eos:
+                    break
+            pred = tok.decode(dec.buf[0, t0:t].tolist()).split("\n")[0].strip()
+            dec.restore(snap)
+            kind = question_kind(question, answer)
+            vals = answer.split(", ") if kind != "single" else [answer]
+            written = [w.strip() for w in pred.split(", ")]
+            res.append({"kind": kind, "question": question, "answer": answer, "pred": pred, "exact": pred == answer,
+                        "found": [v in pred for v in vals], "repeat": len(written) != len(set(written)),
+                        "answer_pos": a0})
+        out_rows.append(res)
+        if (ri + 1) % 8 == 0 or ri + 1 == len(rows):
+            log(f"{ri + 1}/{len(rows)} rows, {time.time() - t_start:.0f}s")
+    summ: dict = {"checkpoint": a.checkpoint, "shard": a.shard, "rows": len(out_rows)}
+    for kind in ("single", "list", "multi"):
+        xs = [q for r in out_rows for q in r if q["kind"] == kind]
+        if xs:
+            summ[kind] = {"questions": len(xs), "exact": round(float(np.mean([q["exact"] for q in xs])), 3),
+                          "values_found": round(float(np.mean([np.mean(q["found"]) for q in xs])), 3),
+                          "all_values": round(float(np.mean([all(q["found"]) for q in xs])), 3),
+                          "writes_a_value_twice": round(float(np.mean([q["repeat"] for q in xs])), 3)}
+    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+    Path(a.out).write_text(json.dumps({"summary": summ, "rows": out_rows}, indent=1))
+    print(json.dumps(summ, indent=1))
+
+
 def cmd_table(a) -> None:
     """The summaries of several `force` runs side by side: one line per run and task for the free answers, one per
     run, task and number of written values for the next value."""
@@ -569,6 +662,15 @@ def main() -> None:
     p = sub.add_parser("summary")
     p.add_argument("--raw", required=True, help="comma-separated .pt files of force runs")
     p.set_defaults(fn=cmd_summary)
+    p = sub.add_parser("rows")
+    p.add_argument("--checkpoint", required=True)
+    p.add_argument("--shard", required=True, help="a val shard of scripts/build_reasoning_rows.py (lookup or list set)")
+    p.add_argument("--seq_len", type=int, default=16384)
+    p.add_argument("--limit", type=int, default=64)
+    p.add_argument("--backend", default="flex")
+    p.add_argument("--device", default="cuda")
+    p.add_argument("--out", required=True)
+    p.set_defaults(fn=cmd_rows)
     p = sub.add_parser("table")
     p.add_argument("--json", required=True, help="comma-separated .json files of force runs")
     p.set_defaults(fn=cmd_table)
