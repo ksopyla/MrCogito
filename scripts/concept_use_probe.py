@@ -563,7 +563,8 @@ def cmd_table(a) -> None:
     run, task and number of written values for the next value."""
     runs = []
     for p in a.json.split(","):
-        d = json.loads(Path(p).read_text())
+        # a .pt file: the raw records of a run (also of one still running: saved every 10 prompts)
+        d = summarize(torch.load(p, weights_only=True)) if p.endswith(".pt") else json.loads(Path(p).read_text())
         runs.append((Path(p).stem, {k: v for k, v in d.items() if k != "args"}))
     print("FREE ANSWERS: share of the four values found (targets found 0..4 for `base`)")
     for name, d in runs:
