@@ -29,7 +29,8 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens) and reads one summary per concept for what it did not open. No new weights; the loop of 4 passes stays;
   the concept reasoner and the concept tree are later stages. Same recipe as the other four 150M models
   (`m21mix_v2`, 11.5B tokens, seed 42). Before the paid run: three checks on the released concept-memory model (is
-  there a span signal, is the diagnosis right, how do concepts grow) and a 30M screen at home. Pass marks: the four
+  there a span signal, is the diagnosis right, how do concepts grow); the 30M screen first planned was withdrawn by
+  the author the same day ("Skip it"), an early reading at step 2,000 of the paid run stands in. Pass marks: the four
   multi-item RULER cells at 8k and 16k ≥ 0.40 (concept memory 0.25, topic index 0.54), long-document loss within
   0.010 / 0.020 nats of concept memory at 16k / 64k, single needles kept. Budget cap raised to $5,000. Spec
   [E39](../experiments_specs/ahead/E39_living_concepts.md).
