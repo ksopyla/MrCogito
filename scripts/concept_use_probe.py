@@ -209,6 +209,7 @@ class ProbeDecoder(IncrementalDecoder):
                            ds=self._ds, n_sinks=c["sinks"], valid_query=True, q_offset=t)
 
 
+@torch.no_grad()
 def _next_logits(model, h):
     logits = F.linear(h, model.lm_head.weight).float()
     cap = model.config.logit_softcap
