@@ -210,7 +210,8 @@ Run-to-run noise of one RULER task at 100 prompts is ±0.09; of the mean of 13 a
   **0.031** nats worse than the last 61k alone (concept memory +0.060; topic index +0.031; full attention +0.014).
 - **S6 (general ability unchanged):** BLiMP ≥ 79.6 (80.56) and the 7-task mean ≥ 45.2 (46.2).
 - **S7 (cost):** training speed at least 0.85 × concept memory's on the same node: ≥ 90k tokens per second at 4k,
-  ≥ 59k at 16k, ≥ 18k at 64k (105.6k / 69.7k / 21.6k on 4 × L40S).
+  ≥ 59k at 16k, ≥ 18k at 64k (105.6k / 69.7k / 21.6k on 4 × L40S). If the run trains on an H100, where concept
+  memory was never timed, S7 and K3 are read as the same ratios against concept memory on one home card (P4).
 
 The bet **succeeds** with S1 and S3 and S4; S2, S5, S6, S7 are reported as met or missed. No "beats" claim follows
 from any of them: inside 64k these are no-harm and gap-closing checks.
@@ -245,7 +246,17 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
 - **Data:** `m21mix_v2` (SmolLM2 tokens), unchanged: 8.0B tokens in 4k rows, 3.0B in 16k rows, 0.5B in 64k rows,
   the same shards in the same order as the other four models.
 - **Compute:** home servers (Odra, Polonez) for the checks, the build's GPU tests and a short pipeline check, under
-  the cooling rules; one 4 × L40S spot node for the 150M run, about 40–45 hours and $320–360 with its tests.
+  the cooling rules. For the 150M run (author, 2026-11-23: "Lets try on just one H100, 8 maybe to much ... i don't
+  want to spent to much money"): **one spot H100 first** (`p5.4xlarge`, us-east-1, the cheapest zones first: in
+  the week to 23 Nov 06:05 UTC, 1c median $3.54/h and 1f $3.70/h, the other zones $4.67/h), **never on demand**
+  ($6.88/h: dearer than the L40S node at any plausible speed). Our models have never been timed on an H100; the
+  estimate is 1.5–2.5× one L40S card, i.e. 0.40–0.68 of the 4 × L40S node: about 62–103 h with tests and $225–480,
+  against about 42–49 h and $250–365 on the node (week medians $6.12–7.45/h). **Money rule:** after the first 300
+  optimizer steps the run compares its own speed per dollar with the node's: it stays on the H100 only if
+  tokens/s ≥ (H100 price ÷ node price, both read at launch) × 105.6k × r, r = E39's speed ÷ concept memory's on the
+  same home card (P4); otherwise it checkpoints, stops the H100 (a few dollars lost) and resumes on the 4 × L40S
+  spot node. If no spot H100 comes within 6 hours of launch readiness, it takes the node. Checkpoints every 400
+  steps on the H100 (800 steps there would be about two hours of work).
 - **Steps:** 15,259 × 128 rows of 4k, 5,722 × 32 rows of 16k, 954 × 8 rows of 64k; Muon peak 0.01 (a tenth in the
   64k stage) + AdamW for vectors, bf16, flex attention, `--fast`, seed 42.
 - **Launch (150M):** `infra/aws/jobs/e38_board.sh 42 muon:0.01 living` through `infra/aws/keep_running.sh` with
