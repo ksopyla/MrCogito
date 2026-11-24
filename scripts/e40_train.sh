@@ -43,8 +43,15 @@ part() {  # part <phase> <init> <steps> <rows per step> <eval every>
         --fast --workers "${WORKERS:-2}" "${EXTRA[@]}" 2>> "$OUT/$ph.log") || { say "$ph: the command failed"; return 1; }
   echo "$cmd" > "$OUT/$ph.cmd"
   say "$ph start on GPU $GPU: $steps steps x $rows rows of $seq = $tokens tokens, from $init"
-  CUDA_VISIBLE_DEVICES="$GPU" bash -c "$cmd" >> "$OUT/$ph.log" 2>&1
-  rc=$?
+  # its own process group (the pipeline's kill mark stops it by that id); the exit code lands in a file
+  rm -f "$OUT/$ph.rc"
+  CUDA_VISIBLE_DEVICES="$GPU" setsid bash -c 'echo $$ > "$1"; bash "$2"; echo $? > "$3"' _ "$OUT/$ph.pgid" \
+      "$OUT/$ph.cmd" "$OUT/$ph.rc" >> "$OUT/$ph.log" 2>&1 &
+  wait $!
+  sleep 2
+  local pg; pg=$(cat "$OUT/$ph.pgid" 2>/dev/null)
+  while [[ -n $pg ]] && kill -0 "$pg" 2>/dev/null; do sleep 30; done
+  rc=$(cat "$OUT/$ph.rc" 2>/dev/null || echo 143)
   say "$ph end, exit $rc: $(ls -d "$OUT/$ph"/*/final 2>/dev/null | tail -1)"
   return $rc
 }
