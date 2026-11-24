@@ -15,6 +15,20 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-24] - Spot keeper: a failed node query no longer reads as "node gone"
+
+**Why:**
+- At 14:41 UTC `DescribeInstances` failed once with AuthFailure (the login check had passed seconds before); the
+  recall run's keeper read the empty answer as "no node" and tried to launch a second node while its node trained.
+  Only the full G spot quota stopped it. Two nodes of one name would resume the same checkpoint and write the same
+  run folder in S3.
+
+**What changed:**
+- [fixed] `infra/aws/keep_running.sh` - `alive()` checks each region query's exit code: a failed query counts the
+  node as alive (logged with the error, retried next interval); only answers from every region with no instance id
+  read as gone. Tested with a fake `aws` (failing, empty, one node, second region failing); the old check returned
+  "gone" on a failing query.
+
 ## [2026-11-22] - E39 spec (living concepts); AWS budget cap $5,000
 
 **Why:**
