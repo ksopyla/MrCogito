@@ -98,6 +98,17 @@ Released weights: `Cache/e38_board/e37a_m120t_final` (the folder the release car
   the control exactly: max |logit difference| 0 (logits at every 16th position, final hidden states everywhere).
   PASS (by construction: the mixes are written as stream + Σ (b' + gate) ⊙ column, exact zeros at the start).
 
+- **P4 (18:29–18:49 UTC; each arm alone on one card, 40 steps of 4 × 16k rows on card 0, 12 steps of one 64k row
+  on card 2, the run's settings).** Tokens per second at 16k, steps 11–40: control 7,704, depth-mixed read 7,426
+  (**0.964×**, S5's mark 0.95), 2-DCA everywhere 6,811 (0.884×). At 64k, first ten steps (with compilation): 3,283 /
+  2,775 / 2,947. Training loss at steps 10–40 within 0.0005 of the control for both arms (1.8126 / 1.8131 / 1.8127
+  at step 40). A first try with the gate reading the sum over dimensions (18:21 UTC) ran 0.01–0.025 above the control
+  from step 10 with 3–9× larger gradients, and the uncompiled mixes ran at 0.85× / 0.67×: both fixed before the run.
+  Three cards at full load reached 79 °C within six minutes: `scripts/heat_guard.sh` pauses our job on a card at
+  79 °C and resumes it at 72 °C.
+- **Retrofit launched 2026-11-24 18:50:13 UTC** (`scripts/e40_pipeline.sh`, Odra): 2-DCA everywhere on card 0, the
+  depth-mixed read on card 1, the control on card 2; K2 checked automatically at step 1,144.
+
 ### Build decisions (2026-11-24, build session)
 
 - **Component:** `nn/depth_mix.py`, `par_depth_mix: none | read | dca2` (arms `e40_read`, `e40_dca2` in
