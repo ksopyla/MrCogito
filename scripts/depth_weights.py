@@ -41,10 +41,8 @@ def _layer_key(sd: dict, i: int, name: str):
 
 
 def wiring(sd: dict, cfg: dict) -> dict:
-    n = int(cfg.get("num_hidden_layers", 0)) + int(cfg.get("pre_layers", 0)) + int(cfg.get("global_layers", 0)) \
-        if cfg else 0
-    if not n:
-        n = 1 + max(int(m.group(1)) for k in sd if (m := re.search(r"layers\.(\d+)\.alpha$", k)))
+    # the layer count from the weights (configs name their layer fields differently across versions)
+    n = 1 + max(int(m.group(1)) for k in sd if (m := re.search(r"(?:^|\.)layers\.(\d+)\.alpha$", k)))
     n_skip = n // 2
     gi = int(cfg.get("pre_layers", 0)) if cfg else None
     loop_span = int(cfg.get("message_loop_span", 1) or 1) if cfg else 1
