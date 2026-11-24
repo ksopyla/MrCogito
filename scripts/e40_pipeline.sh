@@ -15,6 +15,9 @@ DATA="${LONGDOCS:-$HOME/dev/MrCogito-lsa/Cache/e33n_data/longdocs_lite_gpt2}"
 export LONGCTX="${LONGCTX:-$HOME/dev/MrCogito-eng/Cache/e38_board/longctx}"   # retokenised documents + 64k spans
 mkdir -p "$R" Cache/e40/evals
 echo $$ > Cache/e40/pipeline.pid
+if ! { [[ -f Cache/heat_guard.pid ]] && kill -0 "$(cat Cache/heat_guard.pid)" 2>/dev/null; }; then
+  setsid nohup bash scripts/heat_guard.sh > /dev/null 2>&1 < /dev/null &   # pauses our jobs on a card >= 79 C
+fi
 say() { echo "[$(date -u +%FT%TZ)] $*" | tee -a "$EV"; }
 
 nth_eval() {  # nth_eval <log> <n>: the n-th held-out loss in a trainer log (empty until it exists)
@@ -47,9 +50,10 @@ k2_watch() {
 }
 
 if [[ -z ${ONLY_EVALS:-} ]]; then
-  say "training start: control on GPU 0, depth-mixed read on GPU 1, 2-DCA everywhere on GPU 2"
+  # the heaviest arm on the coolest card (2026-11-24: card 2 ran hottest); the heat guard pauses a hot card's job
+  say "training start: 2-DCA everywhere on GPU 0, depth-mixed read on GPU 1, control on GPU 2"
   pids=()
-  for a in e37a:0 e40_read:1 e40_dca2:2; do
+  for a in e40_dca2:0 e40_read:1 e37a:2; do
     bash scripts/e40_train.sh "${a%%:*}" "${a##*:}" "$R/${a%%:*}" > /dev/null 2>&1 &
     pids+=($!)
   done

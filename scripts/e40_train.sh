@@ -10,7 +10,8 @@
 # Usage (Odra, repo root): setsid nohup bash scripts/e40_train.sh ARM GPU [OUT] > /dev/null 2>&1 < /dev/null &
 #   events (UTC): OUT/events.log; logs: OUT/{decay,long}.log; weights: OUT/{decay,long}/<run>/final
 #   Waits until card GPU runs no compute process (other sessions' jobs included), checking once a minute.
-#   STOP_AFTER=decay ends after part 1. TOKENS_SCALE (default 1) scales both parts (pipeline checks only).
+#   STOP_AFTER=decay ends after part 1; ONLY_PART=long runs part 2 alone from INIT (speed checks). TOKENS_SCALE
+#   (default 1) scales both parts (pipeline checks only).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 ARM="$1"; GPU="$2"; OUT="${3:-Cache/e40/runs/$ARM}"
@@ -58,6 +59,9 @@ part() {  # part <phase> <init> <steps> <rows per step> <eval every>
 S=${TOKENS_SCALE:-1}
 ds=$(python3 -c "print(max(1, round($DECAY_STEPS * $S)))"); ls_=$(python3 -c "print(max(1, round($LONG_STEPS * $S)))")
 de=$(python3 -c "print(max(1, round($DECAY_EVAL * $S)))"); le=$(python3 -c "print(max(1, round($LONG_EVAL * $S)))")
+if [[ ${ONLY_PART:-} == long ]]; then   # speed checks: the 64k part alone, from INIT
+  part long "$INIT" "$ls_" 1 "$le"; exit $?
+fi
 part decay "$INIT" "$ds" 4 "$de" || exit 1
 [[ ${STOP_AFTER:-} == decay ]] && exit 0
 D_FINAL=$(ls -d "$OUT"/decay/*/final 2>/dev/null | tail -1)
