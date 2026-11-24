@@ -73,6 +73,53 @@ one RTX 3090, at least 150M tokens, from the released recipe's stage-3 mix (`m21
 - **P3 — identity:** each arm's logits equal the released model's at step 0 (fp32, max abs difference < 1e-4).
 - **P4 — speed:** tokens per second of arms 2 and 3 against the control on one home card at 16k.
 
+### Pre-flight results (2026-11-24, Odra, $0; build session)
+
+Released weights: `Cache/e38_board/e37a_m120t_final` (the folder the release card was scored from). Files in Odra
+`~/dev/MrCogito-e40/Cache/e40/preflight/`.
+
+- **P1 (18:01–18:18 UTC; `long_context_use.py --modes off,nosum,sumonly`, the release settings, contexts 1k and
+  whole only).** The card's numbers reproduce exactly (64k: whole document 2.293, last 1k 2.441, summaries off
+  +0.068, memory off +0.287; 16k: 2.126, +0.094, +0.023, +0.271). **Summaries only** (nothing opened, every old
+  concept a summary): 64k 2.529 (+0.236 [0.176, 0.306] against the whole read), 16k 2.332 (+0.207). Share of the
+  memory read's benefit (memory off − whole) that the summaries carry alone, (off − sumonly) / (off − whole):
+  **18 % [15, 21] at 64k, 24 % [21, 27] at 16k**. Summaries alone score worse than the last-1k cut (2.529 against
+  2.441), while removing them from the full read costs 0.068: they work as a complement to the word-for-word reads,
+  not as a carrier of the far past by themselves. By source at 64k (1k / whole / off / summaries only): US GPO 2.021 /
+  1.642 / 2.192 / 2.098; arXiv 1.221 / 0.930 / 1.404 / 1.301; DOAB 2.300 / 2.148 / 2.593 / 2.535; books 2.987 /
+  2.916 / 3.046 / 3.007; Hansard 2.593 / 2.533 / 2.650 / 2.629.
+- **P2 (`scripts/depth_weights.py`).** U-net skips σ (into ← from): layer 9 ← reading layer **+0.738**, layer 8 ←
+  layer 4 (looped with the reading layer) **−0.296**, layer 7 ← 5 −0.076, layers 10–12 ← 2, 1, 0: +0.024, +0.015,
+  −0.015. Input mix α / β: reading layer 0.529 / +0.094, its looped partner 0.564 / +0.007 (each loop pass keeps
+  ~30 % of the stream it got), layers 0–2 0.71 / −0.29, 0.53 / +0.21, 0.58 / −0.01, layers 5–12 0.66–1.05, β −0.31
+  to +0.25. Loop markers' norms 1.81, 2.34, 1.64, 0.82. Same pattern as the sibling models and DCA's learned
+  weights: the read's output is amplified into the upper stack, nothing routes around it.
+- **P3 (18:20 UTC; `scripts/e40_identity.py`, fp32, 2 held-out rows each at 16k and 64k).** Both mixed arms equal
+  the control exactly: max |logit difference| 0 (logits at every 16th position, final hidden states everywhere).
+  PASS (by construction: the mixes are written as stream + Σ (b' + gate) ⊙ column, exact zeros at the start).
+
+### Build decisions (2026-11-24, build session)
+
+- **Component:** `nn/depth_mix.py`, `par_depth_mix: none | read | dca2` (arms `e40_read`, `e40_dca2` in
+  `scripts/run_e33n.py`); cached decoding supports it (`nn/incremental.py`). Block wiring as the paper's code: the
+  query mix also feeds the feed-forward input (g_q + attention); the stream continues as mix(x) + attention +
+  feed-forward, so each column is a run's increment. 2-DCA columns as the paper's text (input, sum of the middle,
+  last two; the unofficial code drops the middle instead).
+- **The gate weight w:** the paper starts it at 0 under relu, where its gradient is 0, so it could never learn; the
+  unofficial code starts it at noise (std 0.01), which breaks the exact start. Here: w = 0 and a relu whose gradient
+  at 0 is 1, so the start is exact and w learns. rms-normalised columns feed the gate (as the unofficial code).
+- **Data at home, no AWS:** the 16k and 64k phases' sources of `m21mix_v2` rebuilt on Odra from the public sources
+  at small scales (`scripts/e40_data_build.sh`, 18:03–18:13 UTC, 602 MB): the same files in the release build's
+  order and the same held-out documents, so the rows are a subset of what the release run read (a replay, the same
+  for every arm). One pass holds 130M tokens of 16k rows and 62M of 64k rows.
+- **Schedule:** 1,430 steps of 4 rows of 16k (93.7M tokens, the stage-2 mix), then 920 steps of one 64k row
+  (60.3M tokens, the stage-3 mix), 154M tokens per arm, ending on 64k rows (a 16k-only fine-tune undid the 64k
+  stage's calibration on 2026-11-23). 65,536 tokens per step, so the new weights take ~2,350 steps. Rates constant:
+  Muon 1e-4 on the matrices, AdamW 6e-6 on the rest (the released stage 3's final rates).
+- **Deviation: the new weights' rate is 1e-3, not 1e-4.** Adam moves a weight by at most its rate per step, so at
+  1e-4 a mix that starts at 1 could move by at most 0.24 over the run, too little to learn the depth patterns the
+  paper reports; 1e-3 is the released stage 3's starting matrix rate. Same rate for both mixed arms. K2 guards harm.
+
 ## Pass marks (set before running; paired differences on the same documents, 95 % bootstrap intervals)
 
 - **S1 (the read carries more):** arm 2's far-context gain at 64k (loss with the last 1k only minus loss with the whole
