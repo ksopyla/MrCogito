@@ -115,6 +115,13 @@ Released weights: `Cache/e38_board/e37a_m120t_final` (the folder the release car
   step 0 on card 0 at 19:08:15 UTC (69–70 °C on both cards, no pause since). 2-DCA trains next, on card 2 beside an
   idle card 1, while the first two arms take the release tests on card 0. Same rows, order, seed and schedule.
 
+- **K2 passed (2026-11-24 21:52:17 UTC).** Held-out loss of part 1 (16k rows) at steps 286 / 572 / 858 / 1,144:
+  control 1.9275 / 1.9257 / 1.9241 / 1.9228, depth-mixed read 1.9278 / 1.9262 / 1.9244 / 1.9231: **+0.0003** at the
+  halfway point (stop above +0.02). The mixes at step 1,144 (`checkpoint-1144`) have moved little from the identity:
+  per-column mean of b − 1 within ±0.03, largest single |b − 1| 0.07–0.12 (the rate allowed up to 1.1), gate
+  weights |w| 0.7–2.8 (gates of order 0.1 or less); the one consistent shift is the values' mix taking less of the
+  embedding column (b − 1 −0.015 to −0.022 on all four passes).
+
 ### Build decisions (2026-11-24, build session)
 
 - **Component:** `nn/depth_mix.py`, `par_depth_mix: none | read | dca2` (arms `e40_read`, `e40_dca2` in
