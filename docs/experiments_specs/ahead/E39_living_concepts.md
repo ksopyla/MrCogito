@@ -13,6 +13,20 @@
 - **Changed by the author, 2026-11-22 (before any run):** the first version of this spec put a 30M screen on the
   home servers before the paid run (kill mark K1). Asked whether to keep it, the author answered "Skip it". The
   screen is withdrawn; an early reading inside the paid run (K2a) takes over part of its job.
+- **Changed by the author, 2026-11-24 (stage 1 under way, before any result): stages 2 and 3 read `m21mix_v4`.**
+  Asked whether E39's stages 2 and 3 should use the recipe with recall questions (v2 plus `recall_16k` at 3 % of
+  stage 2 and `recall_64k` at 5 % of stage 3, taken from the `pdfs` share; E38 spec, "List questions run"), the
+  author answered: "yes, wait, and then switch to check and compare". Stage 1 started on v2 at 05:50:09 UTC on spot
+  g6e.12xlarge `i-0f37f2a0aec00a51b` (the 4 × L40S fallback: no spot H100 from 15:26 to 20:22 UTC on 2026-11-23).
+  Stage 1 is the same under both mixes (same phase, sources and shard files, checked 2026-11-24), so the switch is a
+  restart of the node from its newest stage-1 checkpoint with `infra/aws/jobs/e39_board.sh` reading v4: when the
+  recall run's result is in, or before E39's stage 1 ends, whichever comes first; if the recall run has tripped a
+  stop mark by then, E39 stays on v2 and the author is asked. W&B names of stages 2 and 3 end "with recall
+  questions". **Reference for stages 2–3 and the tests: the E38 recall run** (concept memory, same stage-1 recipe,
+  same v4 stages; `runs/e38/e33n_m120t_e37a_muon0.01-recall_tok8.0e9_seed42/`), test by test. S1–S7 below were set
+  against models trained on v2 and are kept as written; with v4, S1's four cells are in a trained form for both
+  models, so they compare the two groupings under the same training. K2a, K2, K3 and K4 (stage 1, speed, money)
+  are unchanged.
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
@@ -288,7 +302,8 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
 
 ## Plan
 - **Data:** `m21mix_v2` (SmolLM2 tokens), unchanged: 8.0B tokens in 4k rows, 3.0B in 16k rows, 0.5B in 64k rows,
-  the same shards in the same order as the other four models.
+  the same shards in the same order as the other four models. Stages 2 and 3 on `m21mix_v4` since 2026-11-24 (see
+  Status): the E38 recall run's recipe.
 - **Compute:** home servers (Odra, Polonez) for the checks, the build's GPU tests and a short pipeline check, under
   the cooling rules. For the 150M run (author, 2026-11-23: "Lets try on just one H100, 8 maybe to much ... i don't
   want to spent to much money"): **one spot H100 first** (`p5.4xlarge`, us-east-1, the cheapest zones first: in
