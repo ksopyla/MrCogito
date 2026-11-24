@@ -27,6 +27,15 @@
   against models trained on v2 and are kept as written; with v4, S1's four cells are in a trained form for both
   models, so they compare the two groupings under the same training. K2a, K2, K3 and K4 (stage 1, speed, money)
   are unchanged.
+- **Stage 1 readings, 2026-11-24:** K3 met at 06:21 UTC (median 109.9k tokens per second over ~340 steps;
+  concept memory 105.6k). **K2a met at 08:37 UTC:** held-out loss at step 2,000 2.318 against concept memory's own
+  run 2.317 (limit 2.367); steps 500, 1,000 and 1,500 within 0.004 of it too. **R4 at step 2,000 (4k rows):** the
+  largest concept holds 64 % of a document's memory tokens, up from 28 % at step 400 (P3 on frozen keys: 41 % at
+  16k); 40 % of concepts are a single span (21 % at step 600); about 23 concepts per document; spans 7.9 tokens and
+  12 % of spans founding, so both controllers hold their targets. The biggest concept wins the joins: its centre,
+  the normalised sum of many unit keys, leans to the keys' common direction and matches new spans best. At 4k the
+  reader keeps 32 concepts and a document has about 23, so it reads all of them and the grouping cannot cost
+  anything yet; stage 2 (16k) is the first place it can, read there with R3.
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
