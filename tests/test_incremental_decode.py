@@ -28,7 +28,8 @@ from tests.test_note_open import make as make_notes
 CAT_REUSE = dict(CAT, lm_open_new_per_pass=False)
 DEEP = dict(pre_layers=2, stack_layers=3)
 REASONER = dict(concept_reasoner_layers=1, concept_reasoner_dim=16, concept_reasoner_heads=2)
-ARMS = ["dense", "dense_rope", "lsa", "catalogue", "notes", "concept", "concept_reasoner", "concept_scaled"]
+ARMS = ["dense", "dense_rope", "lsa", "catalogue", "notes", "concept", "concept_reasoner", "concept_scaled",
+        "concept_dmread", "concept_dca2", "concept_sumonly"]
 
 
 class _Tok:
@@ -57,6 +58,8 @@ def _model(arm, deep=False):
             kw.update(REASONER)
         if arm == "concept_scaled":  # the length scale acts past 48 tokens
             kw.update(concept_sum_len=48)
+        if arm in ("concept_dmread", "concept_dca2"):  # E40 depth mixes, moved off their identity start
+            kw.update(par_depth_mix="read" if arm == "concept_dmread" else "dca2")
         torch.manual_seed(3)
         m = PerceiverARLM(lm_base_cfg(**kw)).eval()
         for layer in m.layers:
@@ -65,6 +68,11 @@ def _model(arm, deep=False):
         rs = m.layers[m.config.global_layer_index].attn.concept_reasoner
         if rs is not None:
             rs.out.weight.data.normal_(0, 0.2)
+        if m.depth_mix is not None:
+            for prm in m.depth_mix.parameters():
+                prm.data.normal_(0, 0.3)
+        if arm == "concept_sumonly":  # E40 eval switch: nothing opened, every old concept a summary
+            m.layers[m.config.global_layer_index].attn.concept["open"] = False
         return m
     raise ValueError(arm)
 

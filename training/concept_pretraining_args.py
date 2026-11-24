@@ -496,6 +496,9 @@ class ModelArguments:
     concept_reasoner_dim: int = field(default=512, metadata={"help": "E37: concept reasoner width."})
     concept_reasoner_heads: int = field(default=8, metadata={"help": "E37: concept reasoner heads."})
     concept_reasoner_loops: int = field(default=2, metadata={"help": "E37: concept reasoner loops."})
+    par_depth_mix: str = field(default="none", metadata={
+        "help": "E40 (nn/depth_mix.py): none | read (GRN-v3 query/key/value depth mixes on the reading layer's runs) "
+                "| dca2 (2-DCA on every layer run). Identity at initialisation, so a warm start is unchanged."})
     par_cut_gap_min: int = field(default=0, metadata={"help": "E37c: shortest gap between training cuts, tokens."})
     par_cut_gap_max: int = field(default=0, metadata={
         "help": "E37c two-agent split training: longest gap between cuts (0 = no cuts). Gaps are log-uniform in "
@@ -760,6 +763,11 @@ class OptimizerArguments:
         default=False,
         metadata={"help": "Muon only: the AdamW fallback LR follows the LR schedule (warm-up, decay). Default off: "
                           "constant fallback LR, as every Muon run before 2026-11-14."},
+    )
+    depth_mix_lr: Optional[float] = field(
+        default=None,
+        metadata={"help": "E40, Muon only: AdamW LR of the depth-mix weights (`depth_mix.*`), constant, no weight "
+                          "decay. None: they share the AdamW fallback's rate and decay."},
     )
     muon_decay_1d: bool = field(
         default=True,

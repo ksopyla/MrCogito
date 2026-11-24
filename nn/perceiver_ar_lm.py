@@ -301,6 +301,10 @@ class PerceiverARConfig(PretrainedConfig):
         concept_reasoner_dim: int = 512,  # E37: reasoner width
         concept_reasoner_heads: int = 8,  # E37: reasoner heads
         concept_reasoner_loops: int = 2,  # E37: reasoner loops (input injection each loop)
+        # E40 (docs/experiments_specs/ahead/E40_depth_mixed_read.md, nn/depth_mix.py): DeepCrossAttention's GRN-v3
+        # mixes over the stream's depth increments for a layer's query, key and value inputs. "read" = the reading
+        # layer's runs only (every loop pass), "dca2" = 2-DCA on every layer run. Exact identity at initialisation.
+        par_depth_mix: str = "none",
         # E37c two-agent split training (docs/experiments_specs/done_failed/E37c_two_agent_split_training.md): rows are cut
         # at random points in training. A local layer reads its own side of a cut only; layers with the full pattern
         # (the reading layer) keep reading the whole document. Off by default; nothing is cut in eval unless asked.
@@ -478,6 +482,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.concept_reasoner_dim = int(concept_reasoner_dim)
         self.concept_reasoner_heads = int(concept_reasoner_heads)
         self.concept_reasoner_loops = int(concept_reasoner_loops)
+        self.par_depth_mix = str(par_depth_mix or "none")
         self.par_cut_gap_min = int(par_cut_gap_min or 0)
         self.par_cut_gap_max = int(par_cut_gap_max or 0)
         self.par_cut_prob = float(par_cut_prob)
@@ -733,6 +738,12 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("concept_top_k in [1, 32767], concept_sinks >= 0, concept_iters >= 1")
             if self.concept_reasoner_layers and self.concept_reasoner_dim % self.concept_reasoner_heads:
                 raise ValueError("concept_reasoner_heads must divide concept_reasoner_dim")
+        if self.par_depth_mix not in ("none", "read", "dca2"):
+            raise ValueError(f"par_depth_mix must be none | read | dca2, got {self.par_depth_mix!r}")
+        if self.par_depth_mix != "none" and (self.message_enabled or int(self.message_read_rounds or 1) != 1):
+            raise ValueError("par_depth_mix: models without a notebook / message read and one read round only")
+        if self.par_depth_mix == "read" and self.global_layers != 1:
+            raise ValueError("par_depth_mix='read' needs exactly one reading (global) layer")
         if self.par_global_read == "lsa":
             if self.message_enabled:
                 raise ValueError("par_global_read='lsa' is the no-notebook LSA arm: turn the message boundary off")
@@ -2760,11 +2771,13 @@ class Attention(nn.Module):
                 and getattr(cfg, "message_enabled", False)):
             self.note_counter = NoteCounter(cfg, cfg.hidden_size, self.dh)
 
-    def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
-        """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor."""
+    def kv_raw(self, x: torch.Tensor, ids: Optional[torch.Tensor] = None,
+               xv: Optional[torch.Tensor] = None) -> tuple[torch.Tensor, torch.Tensor]:
+        """(k before k_norm, v incl. the value-embedding term) — the pooling inputs of the compressor. `xv`: the
+        values' own input (E40 depth mixes: keys from `x`, values from `xv`); default `x`."""
         B, S, _ = x.shape
         k_raw = self.wk(x).view(B, S, self.g, self.dh)
-        v = self.wv(x).view(B, S, self.g, self.dh)
+        v = self.wv(x if xv is None else xv).view(B, S, self.g, self.dh)
         if self.value_embed is not None and ids is not None:
             ve = self.value_proj(self.value_embed(ids)).view(B, S, self.g, self.dh)
             v = v + self.value_lambda * ve
@@ -2839,10 +2852,13 @@ class Attention(nn.Module):
         return out
 
     def forward(self, x, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None,
-                message: Optional[MessageCtx] = None, rope_theta: float = 500000.0):
+                message: Optional[MessageCtx] = None, rope_theta: float = 500000.0, x_kv: Optional[tuple] = None):
+        """`x_kv` = (keys' input, values' input), normed (E40 depth mixes); default: both from `x`."""
         B, S, _ = x.shape
         q = self.q_norm(self.wq(x).view(B, S, self.h, self.dh))
-        k_raw, v = self.kv_raw(x, ids)
+        if x_kv is not None and (message is not None or self.compressor is not None):
+            raise NotImplementedError("separate key / value inputs (E40) on a notebook or compressed read")
+        k_raw, v = self.kv_raw(x if x_kv is None else x_kv[0], ids, xv=None if x_kv is None else x_kv[1])
         k_un = self.k_norm(k_raw)
         extra = int(getattr(message, "extra_slot_attends", 0) or 0) if message is not None else 0
         update_kv = bool(getattr(message, "update_slot_kv", False)) if message is not None else False
@@ -3016,8 +3032,8 @@ class Attention(nn.Module):
             )
         if self.lsa is not None:
             o = self._lsa_read(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
-        elif self.concept is not None:
-            o = self._concept_read(q, k, v, x, doc_ids=doc_ids, key_valid=key_valid)
+        elif self.concept is not None:  # the reasoner (if any) reads the keys' input, the concepts' own states
+            o = self._concept_read(q, k, v, x if x_kv is None else x_kv[0], doc_ids=doc_ids, key_valid=key_valid)
         else:
             if self.flow is not None and self.pattern == "full":
                 self.flow.reading_dense(self, q=q, k=k, v=v, doc_ids=doc_ids, key_valid=key_valid)
@@ -3155,7 +3171,13 @@ class Block(nn.Module):
         return x
 
     def forward(self, x, x0, skip, *, ids, cos, sin, key_valid, doc_ids, cu_seqlens, block_masks=None, sink_pos=None, pos=None,
-                message=None, rope_theta=500000.0):
+                message=None, rope_theta=500000.0, depth=None):
+        if depth is not None:  # E40: a callable giving this run's (g_q, g_k, g_v), or None (no mixes on this run)
+            din = depth()
+            if din is not None:
+                return self._forward_mixed(x, x0, skip, din, ids=ids, cos=cos, sin=sin, key_valid=key_valid,
+                                           doc_ids=doc_ids, cu_seqlens=cu_seqlens, block_masks=block_masks,
+                                           sink_pos=sink_pos, pos=pos, message=message, rope_theta=rope_theta)
         x = self.mix(x, x0, skip)
         self._round_outs = []
         rounds = self.read_rounds if message is not None else 1
@@ -3187,6 +3209,32 @@ class Block(nn.Module):
 
 
 _EVAL_FFN_CHUNK = 1 << 17  # tokens per feed-forward piece without gradient (E33t stage C, 1M-token rows)
+
+
+def _block_forward_mixed(self, x, x0, skip, din, **kw):
+    """E40 (nn/depth_mix.py): attention reads its query from g_q, keys from g_k, values from g_v (each through the
+    block's own input mix and norm); the feed-forward reads g_q + attention; the stream continues as
+    mix(x) + attention + feed-forward. With g_q = g_k = g_v = x (the mixes at their start) this is `Block.forward`."""
+    if self.read_rounds != 1 or self.round_emb is not None:
+        raise NotImplementedError("E40 depth mixes with read rounds inside a block")
+    xin = self.mix(x, x0, skip)
+    gq, gk, gv = din
+    xq, xk, xv = self.mix(gq, x0, skip), self.mix(gk, x0, skip), self.mix(gv, x0, skip)
+    a = self.attn(self.attn_norm(xq), x_kv=(self.attn_norm(xk), self.attn_norm(xv)), **kw)
+    if self.flow is not None:
+        self.flow.sublayer(self.layer_idx, "attn", xq, a)
+    h = xq + a
+    if torch.is_grad_enabled() or h.shape[1] <= _EVAL_FFN_CHUNK:
+        f = self.mlp(self.mlp_norm(h))
+    else:
+        f = torch.cat([self.mlp(self.mlp_norm(h[:, i:i + _EVAL_FFN_CHUNK]))
+                       for i in range(0, h.shape[1], _EVAL_FFN_CHUNK)], dim=1)
+    if self.flow is not None:
+        self.flow.sublayer(self.layer_idx, "ffn", h, f)
+    return xin + a + f
+
+
+Block._forward_mixed = _block_forward_mixed
 
 
 def _call_block(layer, x, x0, skip, **kwargs):
@@ -3429,6 +3477,12 @@ class PerceiverARLM(PreTrainedModel):
             if self.memory_writer is not None and float(getattr(cfg, "lm_readback_aux", 0.0) or 0.0) > 0 else None
         )
         self._readback_inputs = None
+        # E40: DeepCrossAttention depth mixes for the query / key / value inputs (nn/depth_mix.py); identity at init
+        self.depth_mix = None
+        if str(getattr(cfg, "par_depth_mix", "none") or "none") != "none":
+            from nn.depth_mix import DepthMix
+
+            self.depth_mix = DepthMix(cfg)
         # E33a: tied loop over [global read + span layers]. Zero-init loop marker → R = 1 is today's stack.
         self.loop_rounds = int(getattr(cfg, "message_loop_rounds", 1) or 1)
         self.loop_emb = nn.Parameter(torch.zeros(self.loop_rounds, cfg.hidden_size)) if self.loop_rounds > 1 else None
@@ -4024,16 +4078,35 @@ class PerceiverARLM(PreTrainedModel):
         if cfg.swa_sink and local_doc is not None:
             local_pos = pos0 if local_doc is doc_ids else self._positions(S, B, local_doc, input_ids.device)
             sink_pos = (torch.arange(S, device=input_ids.device)[None].expand(B, S) - local_pos)
+        dstate = None
+        if self.depth_mix is not None:  # E40: the stream state entering every run, for the depth mixes
+            if capture_input_of is not None or self._collect_loop_states or self._collect_name_states:
+                raise NotImplementedError("E40 depth mixes: no input capture or loop-exit states")
+            from nn.depth_mix import DepthState
+
+            dstate = DepthState(self.depth_mix)
+
         def run_layer(i, x, skips):
             layer = self.layers[i]
             skip = skips.pop() if (i >= n - n_skip and skips) else None
+            depth_kw = {}
+            if dstate is not None:
+                rt = dstate.start(x)
+                if self.depth_mix.schedule[rt] != i:
+                    raise RuntimeError(f"E40 depth mixes: run {rt} is layer {i}, the schedule says "
+                                       f"{self.depth_mix.schedule[rt]}")
+                if self.depth_mix.mixed(rt):
+                    # computed inside the block (recomputed under gradient checkpointing, never stored): the states
+                    # it reads are the inputs of earlier runs, which the forward keeps anyway
+                    states = list(dstate.states)
+                    depth_kw["depth"] = partial(self.depth_mix.inputs, states, rt)
             is_global = layer.attn.pattern == "full" and (
                 layer.attn.compressor is not None or self.memory_writer is not None
             )
             kwargs = dict(ids=input_ids, cos=cos, sin=sin, key_valid=key_valid,
                           doc_ids=(doc_ids if (is_global or (cut and layer.attn.pattern == "full")) else local_doc),
                           cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos,
-                          message=(msg if is_global else None), rope_theta=cfg.rope_theta)
+                          message=(msg if is_global else None), rope_theta=cfg.rope_theta, **depth_kw)
             if self.gradient_checkpointing and self.training:
                 fn = partial(_call_block, layer, **kwargs)
                 if kwargs["message"] is not None:

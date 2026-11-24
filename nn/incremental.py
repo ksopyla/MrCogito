@@ -252,11 +252,14 @@ class IncrementalDecoder:
 
         def hook(mod, args, kwargs):
             x = args[0]
-            k_raw, v = mod.kv_raw(x, kwargs.get("ids"))
+            xkv = kwargs.get("x_kv")  # E40 depth mixes: the keys' and the values' own inputs
+            k_raw, v = mod.kv_raw(x if xkv is None else xkv[0], kwargs.get("ids"),
+                                  xv=None if xkv is None else xkv[1])
             k = mod.k_norm(k_raw)
             if mod.use_rope:
                 k = apply_rope(k, kwargs["cos"], kwargs["sin"])
-            calls.append((mod.layer_idx, k, v, x if (keep_x and mod.layer_idx == self.gi) else None))
+            xr = x if xkv is None else xkv[0]  # the reasoner reads the keys' input (as `_concept_read`)
+            calls.append((mod.layer_idx, k, v, xr if (keep_x and mod.layer_idx == self.gi) else None))
             if kwargs.get("message") is not None:
                 msgs[mod.layer_idx] = kwargs["message"]
 
@@ -464,12 +467,28 @@ class IncrementalDecoder:
         n = len(m.layers)
         n_skip = n // 2
 
+        dstate = None
+        if m.depth_mix is not None:  # E40: the same depth mixes as the forward, for this one position
+            from nn.depth_mix import DepthState
+
+            dstate = DepthState(m.depth_mix)
+
         def run(i, x, skips, r):
             layer = m.layers[i]
             skip = skips.pop() if (i >= n - n_skip and skips) else None
-            x = layer.mix(x, x0, skip)
-            x = x + self._attn(i, r, layer.attn, layer.attn_norm(x), ids, cos, sin, pos, t)
-            x = x + layer.mlp(layer.mlp_norm(x))
+            din = None
+            if dstate is not None:
+                din = dstate.inputs(dstate.start(x))
+            if din is None:
+                x = layer.mix(x, x0, skip)
+                x = x + self._attn(i, r, layer.attn, layer.attn_norm(x), ids, cos, sin, pos, t)
+                x = x + layer.mlp(layer.mlp_norm(x))
+            else:  # as `Block._forward_mixed`
+                xin = layer.mix(x, x0, skip)
+                xq, xk, xv = (layer.mix(g, x0, skip) for g in din)
+                a = self._attn(i, r, layer.attn, layer.attn_norm(xq), ids, cos, sin, pos, t,
+                               h_kv=(layer.attn_norm(xk), layer.attn_norm(xv)))
+                x = xin + a + layer.mlp(layer.mlp_norm(xq + a))
             if i < n_skip:
                 skips.append(x)
             return x
@@ -496,10 +515,10 @@ class IncrementalDecoder:
                 x = run(i, x, skips, 0)
         return m.final_norm(x)[:, 0]
 
-    def _attn(self, i, r, att, h, ids, cos, sin, pos, t):
+    def _attn(self, i, r, att, h, ids, cos, sin, pos, t, h_kv=None):
         B = h.shape[0]
         q = att.q_norm(att.wq(h).view(B, 1, att.h, att.dh))
-        k_raw, v = att.kv_raw(h, ids)
+        k_raw, v = att.kv_raw(h if h_kv is None else h_kv[0], ids, xv=None if h_kv is None else h_kv[1])
         k = att.k_norm(k_raw)
         if att.use_rope:
             q, k = apply_rope(q, cos, sin), apply_rope(k, cos, sin)
@@ -508,7 +527,7 @@ class IncrementalDecoder:
         K[:, t] = k[:, 0]
         V[:, t] = v[:, 0]
         if (i, r) in self.X:
-            self.X[(i, r)][:, t] = h[:, 0]
+            self.X[(i, r)][:, t] = (h if h_kv is None else h_kv[0])[:, 0]
         if att.pattern == "swa":
             o = self._window_read(q, K, V, t, int(att.window))
         elif self.kind == "dense":
@@ -571,16 +590,17 @@ class IncrementalDecoder:
             cidx, dv, dv_tok = built
             gi = cidx.groups
             G = gi.n_groups
-            score = summary_logit(q, cidx, variance=bool(c["variance"])).amax(2)          # [B, 1, C]
-            visible = (gi.g_close[:, None, :] <= t) & torch.isfinite(score)
-            ids, off = choose(torch.nan_to_num(score, neginf=-1e30), visible, gi,
-                              torch.tensor([t], device=q.device), m=int(c["width"]), cap=cap, raw_window=blk)
             row = torch.full((B, G), cap, dtype=torch.int32, device=q.device)              # the table's row of t
-            row.scatter_(1, ids[:, 0], off[:, 0].to(torch.int32))
-            codes = gi.codes[0, :, :n].long()
-            g = torch.div(codes, ORD_MOD, rounding_mode="floor")
-            hit = (codes >= 0) & (row.gather(1, g.clamp(0, G - 1)) + (codes - g * ORD_MOD) < cap)
-            keep = keep | (hit & ((t - jpos) >= blk)[None])
+            if c.get("open", True):  # E40 eval switch off ("summaries only"): nothing opened, the row stays empty
+                score = summary_logit(q, cidx, variance=bool(c["variance"])).amax(2)      # [B, 1, C]
+                visible = (gi.g_close[:, None, :] <= t) & torch.isfinite(score)
+                ids, off = choose(torch.nan_to_num(score, neginf=-1e30), visible, gi,
+                                  torch.tensor([t], device=q.device), m=int(c["width"]), cap=cap, raw_window=blk)
+                row.scatter_(1, ids[:, 0], off[:, 0].to(torch.int32))
+                codes = gi.codes[0, :, :n].long()
+                g = torch.div(codes, ORD_MOD, rounding_mode="floor")
+                hit = (codes >= 0) & (row.gather(1, g.clamp(0, G - 1)) + (codes - g * ORD_MOD) < cap)
+                keep = keep | (hit & ((t - jpos) >= blk)[None])
             if dv_tok is not None:
                 vt = torch.where((jpos < own_lo)[None, :, None, None], vt + dv_tok[:, :n].to(vt.dtype), vt)
             if c["summaries"]:

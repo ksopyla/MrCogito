@@ -41,6 +41,7 @@ class PerceiverDenoiseTrainer(Trainer):
         muon_momentum: float = 0.95,
         muon_follow_schedule: bool = False,
         muon_decay_1d: bool = True,
+        depth_mix_lr: Optional[float] = None,
         batch_packing_mode: str = "none",
         train_lengths=None,
         length_group_mega_batch_mult: int = 20,
@@ -70,6 +71,7 @@ class PerceiverDenoiseTrainer(Trainer):
         self.muon_momentum = muon_momentum
         self.muon_follow_schedule = bool(muon_follow_schedule)
         self.muon_decay_1d = bool(muon_decay_1d)
+        self.depth_mix_lr = depth_mix_lr
         self.batch_packing_mode = batch_packing_mode
         self.train_lengths = train_lengths
         self.length_group_mega_batch_mult = length_group_mega_batch_mult
@@ -206,8 +208,19 @@ class PerceiverDenoiseTrainer(Trainer):
                 )
             from nn.muon import Muon
 
+            params = self.model.parameters()
+            if self.depth_mix_lr is not None:
+                # E40: the depth mixes (b' per column and dimension, the gate weights w) as their own AdamW group at
+                # a constant rate without weight decay; everything else as before
+                named = [(n, p) for n, p in self.model.named_parameters() if p.requires_grad]
+                mix = [p for n, p in named if "depth_mix." in n]
+                if not mix:
+                    raise ValueError("depth_mix_lr is set but the model has no depth_mix parameters")
+                params = [{"params": [p for n, p in named if "depth_mix." not in n]},
+                          {"params": mix, "adamw_lr": float(self.depth_mix_lr), "weight_decay": 0.0,
+                           "follow_schedule": False, "max_aspect": 0.0}]
             self.optimizer = Muon(
-                self.model.parameters(),
+                params,
                 lr=self.args.learning_rate,
                 momentum=self.muon_momentum,
                 adamw_lr=self.muon_adamw_lr,

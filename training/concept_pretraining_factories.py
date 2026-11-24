@@ -460,6 +460,8 @@ def _plain_loop_kwargs(model_args) -> dict:
                       "concept_reasoner_layers", "concept_reasoner_dim", "concept_reasoner_heads",
                       "concept_reasoner_loops"):
                 out[k] = getattr(model_args, k)
+    if str(getattr(model_args, "par_depth_mix", "none") or "none") != "none":  # E40
+        out["par_depth_mix"] = str(model_args.par_depth_mix)
     if int(getattr(model_args, "par_cut_gap_max", 0) or 0) > 0:  # E37c: cut rows in training
         for k in ("par_cut_gap_min", "par_cut_gap_max", "par_cut_prob"):
             out[k] = getattr(model_args, k)
@@ -626,6 +628,7 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
                           "keyread_",  # lm_key_grad=address: the key's own read (zero output projection)
                           "note_order_gate",  # E33i: the order switch starts nearly off
                           "loop_control.",  # E33c: the question control (its gate starts at 0)
+                          "depth_mix.",  # E40: the depth mixes start as the identity (b = 1, w = 0)
                           *skip)
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:

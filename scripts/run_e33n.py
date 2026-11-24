@@ -126,6 +126,11 @@ ARMS = {
                   "concept_block": 512, "concept_per_block": 4, "concept_sinks": 4, "concept_top_k": 512},
 }
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
+# E40 (docs/experiments_specs/ahead/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
+# mixes for the query, key and value inputs (nn/depth_mix.py): the reading layer's runs only, or 2-DCA on every run.
+# Identity at initialisation: a warm start from e37a's weights is e37a at step 0.
+ARMS["e40_read"] = {**ARMS["e37a"], "par_depth_mix": "read"}
+ARMS["e40_dca2"] = {**ARMS["e37a"], "par_depth_mix": "dca2"}
 ARMS["catalogue_reuse"] = {**ARMS["catalogue"], "lm_open_new_per_pass": False}  # every pass may re-open any note
 # E33t stage B (approved by the author 2026-11-08): note and page sizes around catalogue_reuse; the read's budget stays
 # 512 tokens (up to 128 notes still fills it at 4 tokens per note); the filing cap 16 is exact at 16 tokens per note
@@ -384,7 +389,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               workers: int = 6, fast: bool = False, mix: str | None = None,
               save_every: int | None = None, mix_lenient: bool = False, optimizer: str = "adam",
               muon_adamw_lr: float | None = None, warmup: int | None = None,
-              muon_peak: float | None = None, cut: tuple[int, int] = (32, 4096)) -> list[str]:
+              muon_peak: float | None = None, cut: tuple[int, int] = (32, 4096), constant_lr: bool = False,
+              depth_mix_lr: float | None = None) -> list[str]:
     liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
@@ -448,7 +454,9 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
     cmd = ["uv", "run", *launch, "training/train_concept_pretraining.py"]
     for k, v in args.items():
         cmd += [f"--{k}", str(v)]
-    if phase == "trunk":
+    if constant_lr:  # E40 retrofit: the rate held constant from the first step (no warm-up, no decay)
+        sched = ["--lr_scheduler_type", "constant"]
+    elif phase == "trunk":
         sched = ["--lr_scheduler_type", "constant_with_warmup",
                  "--warmup_steps", str(warmup if warmup is not None else max(1, int(0.01 * steps)))]
     else:  # decay: peak → 10 % of it; long: 10 % → 1 % of the peak (min_lr_ratio is relative to its own start)
@@ -482,6 +490,10 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
             raise ValueError("--optimizer muon needs its own --lr or --muon_peak (e.g. 0.01-0.02)")
         cmd += ["--optimizer", "muon", "--muon_adamw_lr", str(muon_adamw_lr or z["lr"]),
                 "--muon_follow_schedule", "True", "--muon_decay_1d", "False"]
+        if depth_mix_lr is not None:  # E40: the depth mixes' own AdamW rate (constant, no weight decay)
+            cmd += ["--depth_mix_lr", str(depth_mix_lr)]
+    elif depth_mix_lr is not None:
+        raise ValueError("--depth_mix_lr is a Muon-run option (its own AdamW group)")
     if compile != "off":  # the whole model through torch.compile (the attention kernel is compiled either way)
         cmd += ["--model_compile", compile]
     if fast:  # the 2026-11-14 speed settings: Liger's fused loss (above) and the compiled concept grouping
@@ -553,7 +565,10 @@ def main() -> None:
     c.add_argument("--fast", action="store_true",
                    help="the speed settings measured 2026-11-14: --liger plus the compiled concept grouping (E37 "
                         "arms); same loss function and same concepts, pair it with a larger --micro")
-    c.add_argument("--rows", type=int, help="speed checks only: rows per optimizer step instead of the size's")
+    c.add_argument("--rows", type=int, help="rows per optimizer step instead of the size's (speed checks; E40's "
+                                             "retrofit: 65,536 tokens per step)")
+    c.add_argument("--constant_lr", action="store_true", help="E40 retrofit: the rate held constant, no warm-up or decay")
+    c.add_argument("--depth_mix_lr", type=float, help="E40, Muon: the depth mixes' own AdamW rate (constant)")
     c.add_argument("--workers", type=int, default=6, help="dataloader worker processes per GPU")
     c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
     c.add_argument("--cut_min", type=int, default=32, help="E37c split phase: shortest gap between cuts, tokens")
@@ -602,7 +617,7 @@ def main() -> None:
                     grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
                     fast=a.fast, mix=a.mix, save_every=a.save_every, mix_lenient=a.mix_lenient,
                     optimizer=a.optimizer, muon_adamw_lr=a.muon_adamw_lr, warmup=a.warmup, muon_peak=a.muon_peak,
-                    cut=(a.cut_min, a.cut_max))
+                    cut=(a.cut_min, a.cut_max), constant_lr=a.constant_lr, depth_mix_lr=a.depth_mix_lr)
     print(shlex.join(cmd))
 
 
