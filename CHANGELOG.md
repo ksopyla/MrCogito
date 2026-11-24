@@ -15,6 +15,38 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-24] - E40 depth-mixed read: pre-flight, the depth-mix component, home data and the retrofit pipeline
+
+**Why:**
+- The author asked whether the concepts are the main source of the far past, given the skip connections, and to
+  test DeepCrossAttention's depth mixes (spec `docs/experiments_specs/ahead/E40_depth_mixed_read.md`). Home cards
+  only, no AWS money.
+
+**What changed:**
+- [added] `nn/depth_mix.py` - DeepCrossAttention's GRN-v3 mixes over the stream's depth increments for a layer's
+  query, key and value inputs (`par_depth_mix`: `read` = the reading layer's four loop passes, `dca2` = 2-DCA on
+  every layer run). Written as stream + Σ (b' + gate) ⊙ column, so a warm start is exactly unchanged (fp32 logits
+  identical at 16k and 64k); the gate is relu with gradient 1 at 0 (the paper's zero start could never learn) and
+  reads the mean over dimensions (with the sum, one Adam step moved it by ~0.7); the three mixes of a run share
+  each column's work, compiled in training (`DEPTH_MIX_COMPILE=1`).
+- [changed] `nn/perceiver_ar_lm.py` - config `par_depth_mix`; `Block._forward_mixed` (query / key / value from the
+  three mixes, the feed-forward reads the query mix + attention, as the paper); `Attention.forward(x_kv=)` and
+  `kv_raw(xv=)` for separate key and value inputs; the concept read's eval switch `concept["open"]` (summaries only).
+- [changed] `nn/incremental.py` - cached decoding with depth mixes, and with the summaries-only switch.
+- [changed] `training/` - `--par_depth_mix`, warm start allows the fresh `depth_mix.*` weights, `--depth_mix_lr`
+  (the mixes' own constant AdamW group under Muon).
+- [changed] `scripts/run_e33n.py` - arms `e40_read`, `e40_dca2`; `--constant_lr`, `--depth_mix_lr`.
+- [changed] `evaluation/long_context_use.py` - memory mode `sumonly` (nothing opened, every concept a summary).
+- [added] `scripts/depth_weights.py` (α, β, σ and the mixes' weights of a checkpoint), `scripts/e40_identity.py`
+  (P3), `scripts/e40_longctx_summary.py` (one model or two paired by document, the summaries' share of the read),
+  `scripts/e40_data_build.sh` (the 16k and 64k phases' sources of `m21mix_v2` rebuilt at home at small scales),
+  `scripts/e40_train.sh` (one arm: 16k rows then 64k rows, constant rates), `scripts/e40_pipeline.sh` (three arms,
+  the halfway kill mark, the release tests), `scripts/heat_guard.sh` (pauses our own GPU jobs on a card at 79 °C,
+  resumes at 72 °C, by PID).
+- [added] tests: `tests/test_depth_mix.py` (identity, gradients, causality, checkpointing, the shared kernel, CUDA
+  compiled = eager), the mixed arms and summaries-only in `tests/test_incremental_decode.py`, summaries-only in
+  `tests/test_long_context_use_switch.py`.
+
 ## [2026-11-22] - E39 spec (living concepts); AWS budget cap $5,000
 
 **Why:**
