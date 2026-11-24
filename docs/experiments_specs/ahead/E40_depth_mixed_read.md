@@ -108,6 +108,12 @@ Released weights: `Cache/e38_board/e37a_m120t_final` (the folder the release car
   79 °C and resumes it at 72 °C.
 - **Retrofit launched 2026-11-24 18:50:13 UTC** (`scripts/e40_pipeline.sh`, Odra): 2-DCA everywhere on card 0, the
   depth-mixed read on card 1, the control on card 2; K2 checked automatically at step 1,144.
+- **Two cards at a time (19:07:49 UTC).** With card 1 busy, card 2 went from 69 to 81 °C within five seconds of each
+  resume, so the heat guard could not hold it under 80 °C (the control ran at half speed); with card 1 idle, card 2
+  had held 72 °C (P4). The control (step ~60) and 2-DCA (step ~90) were stopped by PID and set aside
+  (`Cache/e40/runs/stopped_20261124/`); the depth-mixed read kept training on card 1; the control restarted from
+  step 0 on card 0 at 19:08:15 UTC (69–70 °C on both cards, no pause since). 2-DCA trains next, on card 2 beside an
+  idle card 1, while the first two arms take the release tests on card 0. Same rows, order, seed and schedule.
 
 ### Build decisions (2026-11-24, build session)
 
