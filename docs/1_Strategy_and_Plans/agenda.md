@@ -20,6 +20,15 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-24 — E40, depth-mixed read: does Google's DeepCrossAttention help the concept read? (asked for by the
+  author; home cards only, no AWS money).** Our trained skip weights show the skips amplify the far read rather
+  than bypass it, and switching the summaries off costs 0.068 nats at 64k (0.023 at 16k) out of a 0.148 far-context
+  gain, so the concepts carry part of the far past and the exact reads most of it. E40 first measures the concepts
+  alone (summaries only, nothing opened), then retrofits the released 150M concept-memory model, starting exactly
+  at its outputs, with separate depth mixes for the reading layer's question, keys and values (the part of DCA its
+  ablation credits most), against a paired control and against Google's recipe on every layer. Pass mark: the
+  far-context gain at 64k rises by at least 0.010 nats. Spec
+  [E40](../experiments_specs/ahead/E40_depth_mixed_read.md).
 - **2026-11-22 — E39, living concepts: a new reading-layer memory at 150M (approved by the author for build,
   pre-flight checks and training; nothing built yet).** Concept memory ties the topic index on single needles and
   on long text but loses when one answer needs several far items (all values of one key 0.34 against 0.64 at 8k).
