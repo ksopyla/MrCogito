@@ -2,7 +2,7 @@
 
 Loads the released concept-memory weights into the control (e37a) and into the two mixed arms (the depth mixes left at
 their start, b = 1, w = 0), scores the same held-out rows (fp32, flex attention, one GPU) and prints the largest
-logit difference of each arm against the control, and whether the training command builder's arms build the same
+logit difference of each arm against the control (logits at every 16th position, final hidden states at all), and whether the training command builder's arms build the same
 models (parameter names). Usage:
   python scripts/e40_identity.py --checkpoint DIR --data Cache/e40/m21v2_e40 [--lengths 16384,65536]
 """
@@ -63,14 +63,22 @@ def main() -> None:
         for i, ids in enumerate(rows(Path(a.data), L, a.rows)):
             x = ids[None].cuda()
             with torch.no_grad():
-                ref = models["e37a"](x, doc_ids=torch.zeros_like(x)).logits.float()
+                def logits_of(m):  # final hidden states at every position, logits at every 16th (64k x V is 13 GB)
+                    h = m.hidden_states(x, doc_ids=torch.zeros_like(x))
+                    lg = m.lm_head(h[:, ::16]).float()
+                    if m.config.logit_softcap:
+                        lg = m.config.logit_softcap * torch.tanh(lg / m.config.logit_softcap)
+                    return h.float(), lg
+
+                h_ref, ref = logits_of(models["e37a"])
                 for arm in ("e40_read", "e40_dca2"):
-                    got = models[arm](x, doc_ids=torch.zeros_like(x)).logits.float()
+                    h, got = logits_of(models[arm])
                     d = float((got - ref).abs().max())
+                    dh = float((h - h_ref).abs().max())
                     res[f"{arm}_{L}_{i}"] = d
                     print(f"length {L} row {i}: {arm} max |logit difference| = {d:.3e} "
-                          f"({'PASS' if d < 1e-4 else 'FAIL'} < 1e-4)", flush=True)
-            del ref
+                          f"({'PASS' if d < 1e-4 else 'FAIL'} < 1e-4), hidden states {dh:.3e}", flush=True)
+            del ref, h_ref
             torch.cuda.empty_cache()
     if a.json:
         Path(a.json).write_text(json.dumps(res, indent=1))
