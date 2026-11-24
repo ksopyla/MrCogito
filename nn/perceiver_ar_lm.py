@@ -2729,7 +2729,10 @@ class Attention(nn.Module):
                                 iters=int(cfg.concept_iters), tau=float(cfg.concept_tau), sinks=int(cfg.concept_sinks),
                                 top_k=int(cfg.concept_top_k), width=int(cfg.concept_width),
                                 summaries=bool(cfg.concept_summaries), variance=bool(cfg.concept_variance),
-                                sum_len=int(getattr(cfg, "concept_sum_len", 0) or 0))
+                                sum_len=int(getattr(cfg, "concept_sum_len", 0) or 0),
+                                # E40 eval switch ("summaries only"): False = nothing is opened, every old concept
+                                # is read as its summary (no open table is built, so no zero budget reaches it)
+                                open=True)
             if int(getattr(cfg, "concept_reasoner_layers", 0) or 0) > 0:
                 from nn.concept_memory import ConceptReasoner
 
@@ -3082,7 +3085,9 @@ class Attention(nn.Module):
                 if self.concept_reasoner is not None:
                     dv = self.concept_reasoner(cidx.z, cidx.block_of, cidx.c_doc)
                     dv_tok = token_update(cidx, dv, S)
-                opened = concept_open_table(q, cidx, top_k=c["top_k"], width=c["width"], variance=c["variance"])
+                if c.get("open", True):
+                    opened = concept_open_table(q, cidx, top_k=c["top_k"], width=c["width"],
+                                                variance=c["variance"])
         if self.concept_stats is not None and cidx is not None:
             self.concept_stats = _concept_read_stats(q, cidx, opened, c)
         if self.flow is not None:

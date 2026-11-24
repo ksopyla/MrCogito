@@ -13,8 +13,9 @@ and re-encoded with the checkpoint's own tokenizer.
    different document of the same source. If the own-document full context beats this, the gain is the document's
    content, not a generic "more text before" effect.
 3. **Memory off** (concept models): the reading layer's `concept_off` switch (sinks + own and previous 512-token
-   block only: no opened tokens, no summaries) and `summaries off` (opened tokens kept, the coarse summaries removed),
-   on the full span, loss by position bucket.
+   block only: no opened tokens, no summaries), `summaries off` (opened tokens kept, the coarse summaries removed)
+   and `summaries only` (E40, 2026-11-24: nothing opened, every old concept read as its summary: what the concept
+   vectors carry by themselves), on the full span, loss by position bucket.
 
 Every variant starts with the document-start token, then the span; one document per row (the read is
 document-masked). Positions: the reading layer has no position code (global_nope) and the local layers' rotary
@@ -73,9 +74,10 @@ def load_docs(data: Path, src: str, tok, eot: int, min_len: int, cache: Path) ->
 
 @contextmanager
 def memory_mode(model, mode: str):
-    """'on' (the model as trained), 'off' (sinks + window only), 'nosum' (opened tokens, no summaries).
+    """'on' (the model as trained), 'off' (sinks + window only), 'nosum' (opened tokens, no summaries), 'sumonly'
+    (E40, concept read only: nothing opened, every old concept read as its summary, next to the sinks and window).
 
-    Concept read: `concept_off` / `concept["summaries"]`. LSA read (`par_global_read: lsa`, 2026-11-18): `lsa_off`
+    Concept read: `concept_off` / `concept["summaries"]` / `concept["open"]`. LSA read (`par_global_read: lsa`, 2026-11-18): `lsa_off`
     keeps its sinks + 512-token window; it has no summaries, so 'nosum' is refused rather than silently a no-op.
     Notebook read (a `memory_writer`, e.g. the E38 catalogue, 2026-11-21): 'off' is `message_override("none")` (no
     notes, so nothing opens: window only), 'nosum' is `open_override("gist_off")` (opened tokens, the notes masked);
@@ -85,6 +87,10 @@ def memory_mode(model, mode: str):
     lsa = [l.attn for l in model.layers if getattr(l.attn, "lsa", None) is not None]
     notes = getattr(model, "memory_writer", None) is not None and \
         str(getattr(model.config, "message_override", "real")) == "real"
+    if mode not in ("on", "off", "nosum", "sumonly"):
+        raise ValueError(f"unknown memory mode {mode!r} (on | off | nosum | sumonly)")
+    if mode == "sumonly" and not attns:
+        raise ValueError("'sumonly' needs a concept read (summaries of concepts); this model has none")
     if mode == "nosum" and lsa and not attns:
         raise ValueError("'nosum' needs a concept read; the LSA read has no summaries (use --modes off)")
     if mode == "nosum" and notes and not attns and str(getattr(model.config, "lm_note_read", "gist")) == "index":
@@ -92,11 +98,12 @@ def memory_mode(model, mode: str):
                          "(use --modes off)")
     if mode != "on" and not attns and not lsa and not notes:
         raise ValueError(f"memory mode {mode!r}: the checkpoint has no concept, LSA or notebook read to switch")
-    prev = [(a.concept_off, a.concept["summaries"]) for a in attns]
+    prev = [(a.concept_off, a.concept["summaries"], a.concept.get("open", True)) for a in attns]
     prev_lsa = [a.lsa_off for a in lsa]
     for a in attns:
         a.concept_off = mode == "off"
         a.concept["summaries"] = mode != "nosum"
+        a.concept["open"] = mode != "sumonly"
     for a in lsa:
         a.lsa_off = mode == "off"
     stack = ExitStack()
@@ -108,8 +115,8 @@ def memory_mode(model, mode: str):
         with stack:
             yield
     finally:
-        for a, (off, s) in zip(attns, prev):
-            a.concept_off, a.concept["summaries"] = off, s
+        for a, (off, s, o) in zip(attns, prev):
+            a.concept_off, a.concept["summaries"], a.concept["open"] = off, s, o
         for a, v in zip(lsa, prev_lsa):
             a.lsa_off = v
 
@@ -205,7 +212,8 @@ def main() -> None:
     ap.add_argument("--contexts", default="1024,4096,16384", help="context lengths C before the target (+ full)")
     ap.add_argument("--docs", type=int, default=16, help="documents per source, at most")
     ap.add_argument("--swap", action="store_true", help="also score with a different document's far past")
-    ap.add_argument("--modes", default="off,nosum", help="memory switches on the full span: off, nosum")
+    ap.add_argument("--modes", default="off,nosum",
+                    help="memory switches on the full span: off, nosum, sumonly (concept read: nothing opened)")
     ap.add_argument("--cache", default="Cache/e38_board/longctx")
     ap.add_argument("--device", default="cuda")
     a = ap.parse_args()
