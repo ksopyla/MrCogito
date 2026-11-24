@@ -166,3 +166,45 @@ def test_config_round_trip_and_refusals():
     _, b = _pair("read")
     with pytest.raises(NotImplementedError):
         b._run_layers(_ids(), None, None, None, capture_input_of=1)
+
+
+# ------------------------------------------------------------------ the shared three-mix kernel
+@pytest.mark.parametrize("J", [1, 4, 10])
+def test_mix3_equals_three_grn3(J):
+    from nn.depth_mix import mix3
+
+    torch.manual_seed(J)
+    d = 16
+    g = [GRN3(J, d) for _ in range(3)]
+    for m in g:
+        m.b_delta.data.normal_(0, 0.3)
+        m.w.data.normal_(0, 2.0)
+    cols = [torch.randn(2, 5, d) * (j + 1) for j in range(J)]
+    x = sum(cols)
+    want = [m(cols, x) for m in g]
+    got = mix3(x, torch.stack([m.w for m in g]), torch.stack([m.b_delta for m in g]), cols)
+    for a, b in zip(got, want):
+        torch.testing.assert_close(a, b, atol=1e-5, rtol=1e-5)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA")
+@pytest.mark.parametrize("J", [4, 10])
+def test_mix3_compiled_matches_eager_with_gradients(J, monkeypatch):
+    import nn.depth_mix as dm
+
+    torch.manual_seed(0)
+    d, S = 64, 256
+    W = (torch.randn(3, d, device="cuda") * 2).requires_grad_()
+    Bd = (torch.randn(3, J, d, device="cuda") * 0.3).requires_grad_()
+    cols = [torch.randn(2, S, d, device="cuda", requires_grad=True) for _ in range(J)]
+    x = sum(cols).detach().requires_grad_()
+    res = []
+    for flag in ("0", "1"):
+        monkeypatch.setenv("DEPTH_MIX_COMPILE", flag)
+        for t in (W, Bd, x, *cols):
+            t.grad = None
+        out = dm.mix3(x, W, Bd, cols)
+        (sum(o.pow(2).sum() for o in out)).backward()
+        res.append(([o.detach() for o in out], [t.grad.clone() for t in (W, Bd, x, *cols)]))
+    for a, b in zip(res[0][0] + res[0][1], res[1][0] + res[1][1]):
+        torch.testing.assert_close(a, b, atol=1e-3, rtol=1e-3)
