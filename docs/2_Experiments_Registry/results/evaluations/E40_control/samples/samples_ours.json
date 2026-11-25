@@ -1,0 +1,51 @@
+{
+  "model": "Cache/e40/runs/e37a/long/perceiver_ar_perceiver_H896L3g1s9N128_20261124_233256/final",
+  "new_tokens": 60,
+  "start_tokens": [
+    0
+  ],
+  "sample": {
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "repetition_penalty": 1.1,
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "beam": {
+    "beams": 4,
+    "no_repeat_ngram": 3
+  },
+  "date_utc": "2026-11-25 07:30 UTC",
+  "prompts": [
+    {
+      "prompt": "The capital of France is",
+      "sample": {
+        "0": " Paris. It is the largest city in France and the capital of France. The capital of France is Paris. The capital of France is Paris. The capital of France is Paris. The capital of France is Paris. The capital of France is Paris. The capital of France is Paris. The capital of",
+        "1": " Paris. It is one of the world's most important cities, and is a hub for all sorts of activities. In addition to being a city, it is also a gateway to the world.\n\nThe French capital is also one of the most important international institutions.\n\nA lot of people",
+        "2": " Paris, the capital of France. It is a city with a population of 47.9 million people, the largest in France, and the largest in the world.\n\nThe capital of France is Paris, the capital of France. It is a city with a population of 47"
+      },
+      "beam": " Paris. It is the largest city in France. It has a population of 1.5 million people. Paris is the second-largest city in the world after London.\n\nParis is the capital of the French Republic. The capital is located in the city of Paris, France. The city"
+    },
+    {
+      "prompt": "In 1905, Albert Einstein published",
+      "sample": {
+        "0": " his famous theory of general relativity, which was later later developed by Wolfgang Pauli. Einstein used this theory to describe the universe and to explain how light behaves at different scales.\n\nThe first major experimental study of light was done by Albert Einstein in 1905. He was looking at",
+        "1": " a book called \"The Theory of Relativity\". It was an enormous success and has since been translated into 35 languages.\n\nIn 1948, the French mathematician Gilles de Laplace published the famous mathematical formula for the speed of light.\n\nIn 194",
+        "2": " his famous theory of General Relativity. The theory was a model of the universe that described the motion of our universe. He believed that our universe was a complex system composed of many parts. His theory of General Relativity was a step forward in understanding the universe.\n\nThis video shows Einstein's theory of"
+      },
+      "beam": " his famous theory of general relativity. The theory is based on the assumption that the speed of light is related to the mass of the universe.\n\nThe theory was developed by Albert Einstein in 1895, and it has since become one of the most influential theories in the history of science"
+    },
+    {
+      "prompt": "def fibonacci(n):",
+      "sample": {
+        "0": "\n    \"\"\"\n    Compute the Fibonacci sequence.\n\n    Parameters\n    ----------\n    n : int\n        The number of the input sequence.\n\n    Returns\n    -------\n    Fibonacci sequence\n    \"\"\"\n    if n <= 0:\n        return []\n    if n == 1:\n        return [0, 0,",
+        "1": "\ndef fibonacci(n):\nreturn fibonacci(n-1) + fibonacci(n-2)\n\nThis is the same as the Fibonacci sequence. But there are a few important differences.\n\nThe first few terms of the Fibonacci sequence are:\n\nfib",
+        "2": "\n    fib = [0, 1]\n    fib.append(n)\n    for i in range(1, n + 1):\n        fib.append(fib[-1] + fib[i - 1])\n    return fib\n\ndef fibonacci(n):\n    fib ="
+      },
+      "beam": "\n    fib = [0, 1]\n    for i in range(1, n + 1):\n        fib.append(fib[-1] + fib[i - 1])\n    return fib\n\ndef fib(x):\n    if x == 0:\n        return 0"
+    }
+  ]
+}

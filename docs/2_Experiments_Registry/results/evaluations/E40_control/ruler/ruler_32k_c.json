@@ -1,0 +1,47 @@
+{
+  "checkpoint": "Cache/e40/runs/e37a/long/perceiver_ar_perceiver_H896L3g1s9N128_20261124_233256/final",
+  "suite": "ruler",
+  "lengths": [
+    32768
+  ],
+  "limit": 100,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "max_gen_toks": "task default",
+  "results": {
+    "32768": {
+      "ruler_cwe": {
+        "alias": "ruler_cwe",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.10099999999999999,
+        "32768_stderr,none": "N/A"
+      },
+      "ruler_fwe": {
+        "alias": "ruler_fwe",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.17,
+        "32768_stderr,none": "N/A"
+      },
+      "ruler_qa_hotpot": {
+        "alias": "ruler_qa_hotpot",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.2,
+        "32768_stderr,none": "N/A"
+      },
+      "ruler_qa_squad": {
+        "alias": "ruler_qa_squad",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "32768,none": 0.15333333333333335,
+        "32768_stderr,none": "N/A"
+      }
+    }
+  },
+  "mean": {
+    "32768": 0.15608333333333335
+  },
+  "seconds": 1375.8
+}

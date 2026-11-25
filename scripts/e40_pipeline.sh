@@ -1,5 +1,5 @@
 #!/bin/bash
-# E40 on Odra, hands-off (docs/experiments_specs/ahead/E40_depth_mixed_read.md): the three arms of the retrofit
+# E40 on Odra, hands-off (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): the three arms of the retrofit
 # (scripts/e40_train.sh), the halfway kill mark K2 on the depth-mixed read, and the release tests of each arm
 # (scripts/release_evals.sh, long-document modes off, summaries off and summaries only).
 #

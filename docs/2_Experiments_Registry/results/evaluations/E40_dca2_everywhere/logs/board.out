@@ -1,0 +1,13 @@
+Passed argument batch_size = auto. Detecting largest batch size
+Determined Largest batch size: 19
+Passed argument batch_size = auto:1. Detecting largest batch size
+Determined largest batch size: 64
+
+=== lm-eval suite: e40_dca2_final (Cache/e40/runs/e40_dca2/long/perceiver_ar_perceiver_H896L3g1s9N128_20261125_083536/final) — 7.2 min ===
+  blimp              acc               80.23 ± 0.14
+  arc_easy           acc               48.44 ± 1.03
+  wikitext           byte_perplexity      1.95
+  avg_acc            (1 tasks)       48.44
+  Tiny-ML board: overall 75.94, efficiency 77.43, would rank 26 (board snapshot 2026-11-14, 141745440 parameters)
+  json: Cache/e40/evals/e40_dca2/eval_results/e40_dca2_final.json
+  csv : Cache/e40/evals/e40_dca2/eval_results/summary.csv

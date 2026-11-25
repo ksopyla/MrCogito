@@ -1,6 +1,6 @@
 """E40 — depth-mixed attention inputs: DeepCrossAttention's GRN-v3 mixes for a layer's query, key and value inputs.
 
-Spec: docs/experiments_specs/ahead/E40_depth_mixed_read.md. Source: Heddes et al., "DeepCrossAttention: Supercharging
+Spec: docs/experiments_specs/done_failed/E40_depth_mixed_read.md. Source: Heddes et al., "DeepCrossAttention: Supercharging
 Transformer Residual Connections", ICML 2025, arXiv 2502.06785 (literature: docs/literature_review/
 depth_wise_residual_connections.md).
 

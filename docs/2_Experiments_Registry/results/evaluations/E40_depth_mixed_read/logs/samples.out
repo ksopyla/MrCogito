@@ -1,0 +1,27 @@
+{
+ "prompt": "The capital of France is",
+ "sample": {
+  "0": " Paris, the capital of France, and the capital of France.\n\nThe capital of France is Paris, the capital of France, and the capital of France.\n\nParis is a city that has been in existence since the 14th century. Paris is a city that has been in",
+  "1": " Paris. It is one of the world's most important cities, and is a hub for all sorts of activities. In addition to being a city, it is also a gateway to the world.\n\nThe French capital is also a key component in the French-speaking world. The city has a",
+  "2": " Paris, the capital of France. It is a city with a population of 47.9 million people, the largest in France, and a GDP of 11 billion francs. Paris is a metropolitan area with an average of 183,359 residents.\n\n"
+ },
+ "beam": " Paris. It is the largest city in France, with a population of over 1.5 million people. The capital is located in the northern part of the country, just north of Paris.\n\nParis is a city with a rich history. It was founded in the 12th century"
+}
+{
+ "prompt": "In 1905, Albert Einstein published",
+ "sample": {
+  "0": " his famous work, The Theory of Relativity. Einstein believed that the theory of relativity was a way of explaining the way the universe works. He claimed that the theory of relativity was a way of explaining the way the universe worked. The theory of relativity states that the motion of a body must be equal in",
+  "1": " a book called \"The Theory of Relativity\". It was an enormous success and has since been translated into 35 languages.\n\nIn 1948, the French mathematician Giacomo Puccini published a paper in the Journal of Mathematics that was the most important contribution to the theory",
+  "2": " his famous theory of general relativity. It was based on the concept that all objects have a velocity that is equal to the speed of light.\n\nThe concept of general relativity is based on the assumption that all objects have an equal mass and that their motion is proportional to their velocity.\n\nIn"
+ },
+ "beam": " his famous theory of general relativity. The theory is based on the assumption that the speed of light is related to the mass of the universe.\n\nThe theory was developed by Albert Einstein in 1895, and it has since become one of the most influential theories in the history of science"
+}
+{
+ "prompt": "def fibonacci(n):",
+ "sample": {
+  "0": "\n    \"\"\"\n    Compute the Fibonacci sequence.\n\n    Parameters\n    ----------\n    n : int\n        The number of the input sequence.\n\n    Returns\n    -------\n    Fibonacci sequence\n    \"\"\"\n    if n <= 0:\n        return []\n    if n == 1:\n        return [0, 0,",
+  "1": "\ndef fibonacci(n):\nreturn fibonacci(n-1) + fibonacci(n-2)\n\"\"\"\ndef fibonacci(n):\n\"\"\"\nReturns the sum of the first n natural numbers.\n\"\"\"\ndef fibonacci(n):\n\"\"\"\nReturns the",
+  "2": "\n    fib = [0, 1]\n    fib.append(n)\n    for i in range(1, n + 1):\n        fib.append(fib[-1] + fib[i - 1])\n    return fib\n\ndef fibonacci(n):\n    fib ="
+ },
+ "beam": "\n    fib = [0, 1]\n    for i in range(1, n + 1):\n        fib.append(fib[-1] + fib[i - 1])\n    return fib\n\ndef fib(x):\n    if x == 0:\n        return 0"
+}

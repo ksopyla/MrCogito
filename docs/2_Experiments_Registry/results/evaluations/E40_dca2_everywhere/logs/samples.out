@@ -1,0 +1,27 @@
+{
+ "prompt": "The capital of France is",
+ "sample": {
+  "0": " Paris, the capital of France, and the principal of the French state. The capital of France is Paris, the capital of France, and the principal of the French state.\n\nThe capital of France is Paris, the capital of France, and the principal of the French state.\n\nThe",
+  "1": " Paris. It is one of the world's most important cities, and is a hub for all sorts of activities. In addition to being a city, it is also a gateway to the world.\n\nLike all the rest of the world, Paris is a large urban area. But unlike most of",
+  "2": " Paris, the capital of France. It is a city with a population of 47.9 million people, the largest city in France. Paris is also a major tourist destination, and it offers a wide range of activities such as shopping, dining, and entertainment.\n\nParis is also a"
+ },
+ "beam": " Paris. It is the largest city in France, with a population of over 1.5 million people. The city is located in the north of France and is surrounded by the French Alps.\n\nThe city is known for its rich history and culture, and it is home to some of the"
+}
+{
+ "prompt": "In 1905, Albert Einstein published",
+ "sample": {
+  "0": " his famous work, The Theory of Relativity. Einstein believed that the theory of relativity was a way of understanding the way the universe works and how it operates. The theory of relativity is based on the idea that the speed of light is related to the speed of the gravitational field. In other words, if",
+  "1": " a book called \"The Theory of Relativity\". It was an enormous success and has since been translated into 35 languages.\n\nIn 1948, the French mathematician Gilles de Laplace published the famous mathematical formula for the circumference of a circle.\n\nA mathematician named Gott",
+  "2": " his famous book \"The Theory of Relativity\". The book was a huge success and was followed by the book \"General Relativity\" which is still widely used today. The book was written in German.\n\nThe theory of relativity was formulated in 1905 by Albert Einstein. It is based"
+ },
+ "beam": " his famous theory of general relativity. The theory is based on the assumption that the speed of light is related to the mass and energy of the universe.\n\nThe theory was developed by Albert Einstein in 1895, and it has since become one of the most influential theories in physics."
+}
+{
+ "prompt": "def fibonacci(n):",
+ "sample": {
+  "0": "\n    \"\"\"\n    Compute the Fibonacci sequence.\n\n    Parameters\n    ----------\n    n : int\n        The number of the input sequence.\n\n    Returns\n    -------\n    Fibonacci sequence\n    \"\"\"\n    if n == 0:\n        return []\n    if n == 1:\n        return [0, 0,",
+  "1": "\ndef fibonacci(n):\nreturn fibonacci(n-1) + fibonacci(n-2)\n\nThis is the same as the recursive function above. But there is a slight difference between the two.\n\nIn the first function, the argument is a list of numbers",
+  "2": "\n    fib = [0, 1]\n    fib.append(n)\n    for i in range(1, n + 1):\n        fib.append(fib[-1] + fib[i - 1])\n    return fib\n\ndef fibonacci(n):\n    fib ="
+ },
+ "beam": "\n    if n == 0:\n        return 0\n    return fib(n - 1)\n\ndef fib(a, b):\n    return a * b\n\nprint(fib(10))  # prints 100\n```\n\nThe Fibonacci sequence is a"
+}

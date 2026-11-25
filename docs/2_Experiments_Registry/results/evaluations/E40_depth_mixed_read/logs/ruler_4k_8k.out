@@ -1,0 +1,59 @@
+Max length 500 | Current length 324 | Noises: 5
+Max length 500 | Current length 436 | Noises: 10
+Max length 500 | Current length 556 | Noises: 15
+Num noises: 10
+Max length 4096 | Current length 848 | Noises: 10
+Max length 4096 | Current length 1098 | Noises: 20
+Max length 4096 | Current length 1348 | Noises: 30
+Max length 4096 | Current length 1594 | Noises: 40
+Max length 4096 | Current length 1847 | Noises: 50
+Max length 4096 | Current length 2096 | Noises: 60
+Max length 4096 | Current length 2348 | Noises: 70
+Max length 4096 | Current length 2599 | Noises: 80
+Max length 4096 | Current length 2854 | Noises: 90
+Max length 4096 | Current length 3098 | Noises: 100
+Max length 4096 | Current length 3345 | Noises: 110
+Max length 4096 | Current length 3599 | Noises: 120
+Max length 4096 | Current length 3849 | Noises: 130
+Max length 4096 | Current length 4100 | Noises: 140
+Num noises: 130
+Max length 500 | Current length 328 | Noises: 5
+Max length 500 | Current length 431 | Noises: 10
+Max length 500 | Current length 559 | Noises: 15
+Num noises: 10
+Max length 8192 | Current length 851 | Noises: 10
+Max length 8192 | Current length 1099 | Noises: 20
+Max length 8192 | Current length 1347 | Noises: 30
+Max length 8192 | Current length 1608 | Noises: 40
+Max length 8192 | Current length 1854 | Noises: 50
+Max length 8192 | Current length 2101 | Noises: 60
+Max length 8192 | Current length 2350 | Noises: 70
+Max length 8192 | Current length 2606 | Noises: 80
+Max length 8192 | Current length 2844 | Noises: 90
+Max length 8192 | Current length 3099 | Noises: 100
+Max length 8192 | Current length 3343 | Noises: 110
+Max length 8192 | Current length 3596 | Noises: 120
+Max length 8192 | Current length 3842 | Noises: 130
+Max length 8192 | Current length 4105 | Noises: 140
+Max length 8192 | Current length 4350 | Noises: 150
+Max length 8192 | Current length 4596 | Noises: 160
+Max length 8192 | Current length 4849 | Noises: 170
+Max length 8192 | Current length 5094 | Noises: 180
+Max length 8192 | Current length 5349 | Noises: 190
+Max length 8192 | Current length 5600 | Noises: 200
+Max length 8192 | Current length 5855 | Noises: 210
+Max length 8192 | Current length 6101 | Noises: 220
+Max length 8192 | Current length 6347 | Noises: 230
+Max length 8192 | Current length 6609 | Noises: 240
+Max length 8192 | Current length 6856 | Noises: 250
+Max length 8192 | Current length 7094 | Noises: 260
+Max length 8192 | Current length 7353 | Noises: 270
+Max length 8192 | Current length 7604 | Noises: 280
+Max length 8192 | Current length 7847 | Noises: 290
+Max length 8192 | Current length 8103 | Noises: 300
+Max length 8192 | Current length 8356 | Noises: 310
+Num noises: 300
+{
+ "4096": 0.4904230769230769,
+ "8192": 0.4633205128205128
+}

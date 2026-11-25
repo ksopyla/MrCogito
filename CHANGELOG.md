@@ -19,7 +19,7 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 **Why:**
 - The author asked whether the concepts are the main source of the far past, given the skip connections, and to
-  test DeepCrossAttention's depth mixes (spec `docs/experiments_specs/ahead/E40_depth_mixed_read.md`). Home cards
+  test DeepCrossAttention's depth mixes (spec `docs/experiments_specs/done_failed/E40_depth_mixed_read.md`). Home cards
   only, no AWS money.
 
 **What changed:**
@@ -46,6 +46,13 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 - [added] tests: `tests/test_depth_mix.py` (identity, gradients, causality, checkpointing, the shared kernel, CUDA
   compiled = eager), the mixed arms and summaries-only in `tests/test_incremental_decode.py`, summaries-only in
   `tests/test_long_context_use_switch.py`.
+- [added] `scripts/e40_compare_arms.py` (the arms' marks from their release-test folders); results in
+  `docs/2_Experiments_Registry/results/evaluations/E40_*`, run report
+  `docs/2_Experiments_Registry/run_reports/e40_depth_mixed_read_20261125.md`.
+
+**Result (2026-11-25):** E40 closed in `done_failed/` (K3 tripped, verdict Watch): both mixed arms tie the paired
+control on 64k documents; the concepts' summaries alone carry 18 % of the memory read at 64k. The depth-mix
+component stays in the code (off by default) for a later from-scratch test.
 
 ## [2026-11-22] - E39 spec (living concepts); AWS budget cap $5,000
 

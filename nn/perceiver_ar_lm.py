@@ -301,7 +301,7 @@ class PerceiverARConfig(PretrainedConfig):
         concept_reasoner_dim: int = 512,  # E37: reasoner width
         concept_reasoner_heads: int = 8,  # E37: reasoner heads
         concept_reasoner_loops: int = 2,  # E37: reasoner loops (input injection each loop)
-        # E40 (docs/experiments_specs/ahead/E40_depth_mixed_read.md, nn/depth_mix.py): DeepCrossAttention's GRN-v3
+        # E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md, nn/depth_mix.py): DeepCrossAttention's GRN-v3
         # mixes over the stream's depth increments for a layer's query, key and value inputs. "read" = the reading
         # layer's runs only (every loop pass), "dca2" = 2-DCA on every layer run. Exact identity at initialisation.
         par_depth_mix: str = "none",

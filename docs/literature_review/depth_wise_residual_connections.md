@@ -1,7 +1,7 @@
 # Depth-wise residual connections
 
 How a layer's input is built from the outputs of the layers below it, beyond the plain residual sum. Reviewed for
-E40 (`docs/experiments_specs/ahead/E40_depth_mixed_read.md`).
+E40 (`docs/experiments_specs/done_failed/E40_depth_mixed_read.md`).
 
 ## DeepCrossAttention: Supercharging Transformer Residual Connections
 
@@ -64,3 +64,9 @@ the concept read rather than through it, and the expected gain at width 896 is s
 concept idea is the query/key/value split for the reading layer: memory keys and values from early, identity-rich
 depths, the question from the current pass. Verdict: **Adapt** for the reading layer only, **Watch** for the trunk;
 tested as a retrofit in E40.
+
+**E40 result (2026-11-25): Watch for both.** As a 154M-token retrofit of the trained 150M concept-memory model, the
+reading-layer query/key/value mixes and 2-DCA on every layer run both tie a paired control on 64k documents (whole
+document and far-context gain within ±0.003 nats per token); the mixes stayed near the identity. Two practical notes
+for any later use: the paper's zero-initialised gate cannot learn under relu (its gradient at 0 is 0; E40 uses a relu
+with gradient 1 at 0), and a gate that sums over the width moves ~d times faster than b under Adam (E40 averages).

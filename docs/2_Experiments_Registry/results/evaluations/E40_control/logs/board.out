@@ -1,0 +1,13 @@
+Passed argument batch_size = auto. Detecting largest batch size
+Determined Largest batch size: 19
+Passed argument batch_size = auto:1. Detecting largest batch size
+Determined largest batch size: 64
+
+=== lm-eval suite: e37a_final (Cache/e40/runs/e37a/long/perceiver_ar_perceiver_H896L3g1s9N128_20261124_233256/final) — 6.0 min ===
+  blimp              acc               80.18 ± 0.14
+  arc_easy           acc               48.57 ± 1.03
+  wikitext           byte_perplexity      1.95
+  avg_acc            (1 tasks)       48.57
+  Tiny-ML board: overall 75.97, efficiency 77.46, would rank 26 (board snapshot 2026-11-14, 141506208 parameters)
+  json: Cache/e40/evals/e37a/eval_results/e37a_final.json
+  csv : Cache/e40/evals/e37a/eval_results/summary.csv

@@ -1,5 +1,5 @@
 #!/bin/bash
-# E40 retrofit (docs/experiments_specs/ahead/E40_depth_mixed_read.md): one arm on one card, from the released
+# E40 retrofit (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): one arm on one card, from the released
 # concept-memory weights, the same rows, order, seed, schedule and tokens for every arm:
 #   part 1  rows of 16,384 from m21mix_v2's stage-2 mix  (DECAY_STEPS x 4 rows = 65,536 tokens per step)
 #   part 2  rows of 65,536 from m21mix_v2's stage-3 mix  (LONG_STEPS x 1 row), from part 1's final weights

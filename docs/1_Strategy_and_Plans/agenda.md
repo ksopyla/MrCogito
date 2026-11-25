@@ -20,15 +20,13 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
-- **2026-11-24 — E40, depth-mixed read: does Google's DeepCrossAttention help the concept read? (asked for by the
-  author; home cards only, no AWS money).** Our trained skip weights show the skips amplify the far read rather
-  than bypass it, and switching the summaries off costs 0.068 nats at 64k (0.023 at 16k) out of a 0.148 far-context
-  gain, so the concepts carry part of the far past and the exact reads most of it. E40 first measures the concepts
-  alone (summaries only, nothing opened), then retrofits the released 150M concept-memory model, starting exactly
-  at its outputs, with separate depth mixes for the reading layer's question, keys and values (the part of DCA its
-  ablation credits most), against a paired control and against Google's recipe on every layer. Pass mark: the
-  far-context gain at 64k rises by at least 0.010 nats. Spec
-  [E40](../experiments_specs/ahead/E40_depth_mixed_read.md).
+- **2026-11-25 — E40, depth-mixed read: closed, K3 tripped (verdict Watch; home cards, $0).** DeepCrossAttention's
+  depth mixes do not help the trained 150M concept-memory model as a retrofit: both the reading-layer-only mixes and
+  Google's 2-DCA on every layer tie a paired control on 64k documents (all differences under 0.003 nats per token).
+  The author's question is answered by the pre-flight: the concepts' summaries alone carry 18 % of what the memory
+  read is worth at 64k (24 % at 16k), the word-for-word reads the rest, and the skips amplify the read. No
+  from-scratch run. Spec [E40](../experiments_specs/done_failed/E40_depth_mixed_read.md) · report
+  [e40_depth_mixed_read_20261125.md](../2_Experiments_Registry/run_reports/e40_depth_mixed_read_20261125.md).
 - **2026-11-22 — E39, living concepts: a new reading-layer memory at 150M (approved by the author for build,
   pre-flight checks and training; nothing built yet).** Concept memory ties the topic index on single needles and
   on long text but loses when one answer needs several far items (all values of one key 0.34 against 0.64 at 8k).
@@ -236,6 +234,16 @@ We still follow the [Vision](vision_and_goals.md): compress sequences into conce
   tokens ≥ 10% of the weighted loss). The number goes into the spec's Plan before the run starts.
 
 ## What we've explored so far
+- **2026-11-24 → 25 — E40, depth-mixed read (DeepCrossAttention as a retrofit of the 150M concept-memory model;
+  Odra, 154M tokens per arm, $0): closed, K3 tripped.**
+  - Concepts alone (summaries, nothing opened): 18 % of the memory read's benefit at 64k, 24 % at 16k, worse than a
+    1k cut; switching only them off still costs 0.06. They complement the exact reads, they do not carry the far past.
+  - Skips: the reading layer feeds layer 9 at +0.74, the rest near zero; the skips amplify the read.
+  - Query / key / value depth mixes on the reading layer, and 2-DCA on every layer: whole-document loss and far-past
+    gain at 64k within ±0.003 of the control; the mixes stayed near the identity. No harm, 0.96× speed.
+  - Hints in both mixed arms, no marks: RULER multi-query +0.06 / +0.12 at 16k, 128k documents 0.005–0.008 better.
+  - Spec [E40](../experiments_specs/done_failed/E40_depth_mixed_read.md) · report
+    [e40_depth_mixed_read_20261125.md](../2_Experiments_Registry/run_reports/e40_depth_mixed_read_20261125.md).
 - **2026-10-17 → 11-21 — E33 multi-hop on the text world, and E33s (written reasoning at 100M): closed; E33s canceled 2026-11-21.**
   - **What worked (30M, warm starts from one E33 run, one run each).** Each loop round trained to name the word its hop finds: compose 8 → 94 %, deduce 13 → 99 % at 4k. With no generator labels, answers that write their steps out, the steps then removed in stages: compose 92 %, deduce 99 %, latest 78 / 92 % at 4k / 16k (R2 and the written route, 19 Oct). Diagnosis note: [e33_text_multihop_diagnosis_20261017.md](../4_Research_Notes/e33_text_multihop_diagnosis_20261017.md).
   - **What did not:** count (17–31 % in every recipe); 3-hop compose (0 %); new sentence shapes (compose 5 %); far quotes (lost in the reasoning line). Nothing was trained from scratch.

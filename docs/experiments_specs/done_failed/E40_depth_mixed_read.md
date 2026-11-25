@@ -1,15 +1,17 @@
 # E40 — Depth-mixed read: DeepCrossAttention's query/key/value split for the concept read (150M retrofit)
 
-- **Status:** asked for by the author (2026-11-24: "Asses value of it and Spin another experiment if needed to test
-  the recent findings by google about DeepCrossAttention and how this can help in our concept model, we have a few
-  skip attention but the concepts should be the main source of important information and now I'm not sure if they
-  actually are"). Spec written 2026-11-24 ~06:45 UTC. Nothing built. Home cards only, no AWS money.
+- **Status:** **done_failed — K3 tripped, verdict Watch (closed 2026-11-25 15:40 UTC).** Asked for by the author
+  (2026-11-24: "Asses value of it and Spin another experiment if needed to test the recent findings by google about
+  DeepCrossAttention and how this can help in our concept model, we have a few skip attention but the concepts should
+  be the main source of important information and now I'm not sure if they actually are"). Spec written 2026-11-24
+  ~06:45 UTC; built, pre-flighted, trained and tested 2026-11-24 17:52 UTC → 2026-11-25 15:36 UTC on Odra, $0 of AWS.
+  Result below; run report [e40_depth_mixed_read_20261125.md](../../2_Experiments_Registry/run_reports/e40_depth_mixed_read_20261125.md).
 - **Serves:** the vision's claim that concepts carry the document (10M-context goal; reasoning in latent space
   needs concepts that hold content, not only pointers), and a cheap read on a 2025–2026 trunk upgrade.
 - **New family:** a different object from E39 (it changes how every layer, or the reading layer, takes its input
   from depth, not how the memory is grouped). E40 was free on every branch on 2026-11-24 (all `refs/remotes/origin`
   and local heads checked).
-- **Owner / dates:** Krzysztof Sopyla · opened 2026-11-24 · closed —
+- **Owner / dates:** Krzysztof Sopyla · opened 2026-11-24 · closed 2026-11-25
 
 ## Source (literature review: `docs/literature_review/depth_wise_residual_connections.md`)
 
@@ -202,3 +204,32 @@ cards (card 2 is faulty until the author reboots it). AWS: none.
 
 Input-dependent weights beyond GRN-v3's one scalar per column (the paper's ablation found them worth −0.02);
 attention over depth (Kimi's Attention Residuals); any change to the concept grouping (E39 tests that).
+
+## Result (2026-11-25, build session)
+
+**K3 tripped: DeepCrossAttention does not help this model as a retrofit. Verdict Watch; no from-scratch run.**
+Against the paired control (the released weights trained on the same 154M tokens), 64k documents, nats per token:
+depth-mixed read whole −0.0005 [−0.0017, +0.0006], far-context gain +0.0013 [+0.0003, +0.0025]; 2-DCA everywhere
+whole −0.0001 [−0.0013, +0.0010], gain +0.0024 [+0.0013, +0.0034]: all four inside ±0.005.
+
+| Mark | Result |
+|---|---|
+| S1 (gain at 64k ≥ control + 0.010) | missed: +0.0013 |
+| S2 (summaries matter more) | missed: summaries-off cost −0.0005 [−0.0029, +0.0020]; summaries only 0.0016 better |
+| S3 (2-DCA whole ≥ 0.010 better at 16k and 64k) | missed: 64k −0.0001, 16k +0.0028 [+0.0022, +0.0034] worse |
+| S4 (no harm) | depth-mixed read met (RULER 4k–16k +0.018, BLiMP −0.01, core 7 −0.08); 2-DCA: BLiMP +0.05, core 7 −0.08, RULER +0.026, outside the band on the good side |
+| S5 (speed ≥ 0.95×) | met: 0.964× |
+| K1 / K2 | not tripped (identity exact; halfway +0.0003) |
+| K3 | tripped |
+
+- **The author's question:** the concepts are not the main source. Their summaries alone carry 18 % (64k) / 24 %
+  (16k) of what the memory read is worth (P1); the word-for-word reads carry the rest; the skips amplify the read
+  (layer 9 ← reading layer +0.74, P2). Depth mixes leave the summaries' share where it was (16.8 % → 17.6 % at 64k).
+- **The mixes stayed near the identity** (per-column means of b − 1 within ±0.035, gates ≤ ~0.15): the trained
+  wiring already holds the depth pattern DCA learns.
+- **Hints, no marks, the same in both mixed arms:** 128k documents (15) 0.008 / 0.005 better; RULER multi-query
+  +0.06 / +0.12 at 16k (about two standard errors each); the 8k lead is mostly the UUID needle (an answer-start
+  effect).
+- Results: `docs/2_Experiments_Registry/results/evaluations/E40_{control,depth_mixed_read,dca2_everywhere,preflight}`;
+  weights on Odra `~/dev/MrCogito-e40/Cache/e40/runs/<arm>/long/*/final`.
+

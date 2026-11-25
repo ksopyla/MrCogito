@@ -126,7 +126,7 @@ ARMS = {
                   "concept_block": 512, "concept_per_block": 4, "concept_sinks": 4, "concept_top_k": 512},
 }
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
-# E40 (docs/experiments_specs/ahead/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
+# E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
 # mixes for the query, key and value inputs (nn/depth_mix.py): the reading layer's runs only, or 2-DCA on every run.
 # Identity at initialisation: a warm start from e37a's weights is e37a at step 0.
 ARMS["e40_read"] = {**ARMS["e37a"], "par_depth_mix": "read"}

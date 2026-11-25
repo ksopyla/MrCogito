@@ -1,0 +1,110 @@
+{
+ "n_layers": 13,
+ "reading_layer": 3,
+ "loop_rounds": 4,
+ "layers": [
+  {
+   "layer": 0,
+   "role": "local",
+   "alpha": 0.7074780464172363,
+   "beta": -0.29252615571022034
+  },
+  {
+   "layer": 1,
+   "role": "local",
+   "alpha": 0.5324041247367859,
+   "beta": 0.20463544130325317
+  },
+  {
+   "layer": 2,
+   "role": "local",
+   "alpha": 0.57862788438797,
+   "beta": -0.012070785276591778
+  },
+  {
+   "layer": 3,
+   "role": "reading layer",
+   "alpha": 0.529205858707428,
+   "beta": 0.09369561821222305
+  },
+  {
+   "layer": 4,
+   "role": "local, looped with the reading layer",
+   "alpha": 0.5644497871398926,
+   "beta": 0.007295430172234774
+  },
+  {
+   "layer": 5,
+   "role": "local",
+   "alpha": 0.89897221326828,
+   "beta": 0.038512684404850006
+  },
+  {
+   "layer": 6,
+   "role": "local",
+   "alpha": 0.8084836602210999,
+   "beta": 0.25170910358428955
+  },
+  {
+   "layer": 7,
+   "role": "local",
+   "alpha": 0.9087907075881958,
+   "beta": 0.23560720682144165,
+   "sigma": -0.07580951601266861,
+   "skip_from": 5,
+   "skip_from_role": "local"
+  },
+  {
+   "layer": 8,
+   "role": "local",
+   "alpha": 0.8701668381690979,
+   "beta": -0.21230114996433258,
+   "sigma": -0.29580557346343994,
+   "skip_from": 4,
+   "skip_from_role": "local, looped with the reading layer"
+  },
+  {
+   "layer": 9,
+   "role": "local",
+   "alpha": 0.6632000803947449,
+   "beta": 0.00657070055603981,
+   "sigma": 0.7382202744483948,
+   "skip_from": 3,
+   "skip_from_role": "reading layer"
+  },
+  {
+   "layer": 10,
+   "role": "local",
+   "alpha": 1.0493366718292236,
+   "beta": -0.14418552815914154,
+   "sigma": 0.023720555007457733,
+   "skip_from": 2,
+   "skip_from_role": "local"
+  },
+  {
+   "layer": 11,
+   "role": "local",
+   "alpha": 0.8418052792549133,
+   "beta": 0.2422526478767395,
+   "sigma": 0.015115082263946533,
+   "skip_from": 1,
+   "skip_from_role": "local"
+  },
+  {
+   "layer": 12,
+   "role": "local",
+   "alpha": 0.9864425659179688,
+   "beta": -0.30627381801605225,
+   "sigma": -0.015235253609716892,
+   "skip_from": 0,
+   "skip_from_role": "local"
+  }
+ ],
+ "loop_emb_norms": [
+  1.8055062294006348,
+  2.3370184898376465,
+  1.6414676904678345,
+  0.8152655959129333
+ ],
+ "mixes": {}
+}

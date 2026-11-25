@@ -2,7 +2,7 @@
 
 Reads, per arm folder: long_context/real_docs_{64k,16k}.json (evaluation/long_context_use.py with modes off, nosum,
 sumonly), ruler/ruler_{4k_8k,16k}.json, eval_results/<tag>_final.json (BLiMP, ARC-Easy, WikiText-2) and
-<tag>_core7.json. Prints the measures and the spec's marks (docs/experiments_specs/ahead/E40_depth_mixed_read.md):
+<tag>_core7.json. Prints the measures and the spec's marks (docs/experiments_specs/done_failed/E40_depth_mixed_read.md):
   S1  depth-mixed read: far-context gain at 64k (loss with the last 1k only − whole document) ≥ control + 0.010,
       95 % interval above zero
   S2  depth-mixed read: the cost of switching the summaries off at 64k higher than the control's, and its

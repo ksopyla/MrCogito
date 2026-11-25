@@ -1,0 +1,18 @@
+Passed argument batch_size = auto. Detecting largest batch size
+Determined Largest batch size: 19
+Passed argument batch_size = auto:1. Detecting largest batch size
+Determined largest batch size: 57
+bootstrapping for stddev: perplexity
+
+=== lm-eval suite: e40_dca2_core7 (Cache/e40/runs/e40_dca2/long/perceiver_ar_perceiver_H896L3g1s9N128_20261125_083536/final) — 4.1 min ===
+  arc_challenge      acc_norm          25.26 ± 1.27
+  arc_easy           acc_norm          42.17 ± 1.01
+  hellaswag          acc_norm          33.79 ± 0.47
+  lambada_openai     acc               32.04 ± 0.65
+  piqa               acc_norm          62.13 ± 1.13
+  sciq               acc_norm          69.90 ± 1.45
+  winogrande         acc               52.01 ± 1.40
+  wikitext           word_perplexity     35.54
+  avg_acc            (7 tasks)       45.33
+  json: Cache/e40/evals/e40_dca2/eval_results/e40_dca2_core7.json
+  csv : Cache/e40/evals/e40_dca2/eval_results/summary.csv

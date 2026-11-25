@@ -1,4 +1,4 @@
-"""E40 — depth-mixed attention inputs (nn/depth_mix.py; spec docs/experiments_specs/ahead/E40_depth_mixed_read.md).
+"""E40 — depth-mixed attention inputs (nn/depth_mix.py; spec docs/experiments_specs/done_failed/E40_depth_mixed_read.md).
 
 What must hold:
   D1  the run schedule unrolls the reading layer's loop; 'read' mixes only its runs, over every earlier column;
