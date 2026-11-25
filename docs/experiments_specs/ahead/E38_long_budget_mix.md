@@ -339,6 +339,30 @@ row asks for several far values in one answer, so no model of the family has tha
   - **L1 met (06:17 UTC):** our list exam at 16k (48 held-out list rows): single-value answers 0.94, all-values
     answers 0.67 (values found 0.91), several facts exact 0.85 (L1 asks 0.90 / 0.65 / 0.70; the released model 0.00
     on both list forms; the home-card fine-tunes 0.63 / 0.59 all values, 0.74 / 0.72 several facts).
+  - **The card's protocol, all release tests (Polonez, 06:17–08:05 UTC; `scripts/compare_release_evals.py
+    --before docs/release/hf_card_concept_memory_150m`; copies in `Cache/results/recall_release/`).** RULER at
+    4k / 8k / 16k / 32k against the card: 13-task mean 0.567 / 0.527 / 0.392 / 0.362 (0.488 / 0.439 / 0.373 /
+    0.319); the other 11 tasks 0.567 / 0.530 / 0.398 / 0.381 (0.513 / 0.460 / 0.408 / 0.347); all values 0.59 /
+    0.43 / 0.35 / 0.36 (0.31 / 0.34 / 0.24 / 0.24); several keys 0.54 / 0.60 / 0.36 / 0.16 (0.40 / 0.32 / 0.11 /
+    0.09); the UUID needle 0.97 / 0.88 / 0.46 / 0.53 (0.29 / 0.27 / 0.07 / 0.07); word counting (fwe) 0.20 / 0.27 /
+    0.12 / 0.17 (0.15 / 0.16 / 0.02 / 0.06); common words (cwe) 0.56 / 0.52 / 0.35 / 0.17 (0.52 / 0.42 / 0.27 /
+    0.13). **The cost: multi-key 2 (one number among similar keys) 0.72 / 0.63 / 0.26 / 0.20 (0.92 / 0.84 / 0.76 /
+    0.41).** Of its wrong replies, 26 of 28 at 4k, 35 of 37 at 8k and 64 of 74 at 16k are a 7-digit number (the
+    form of a value in the text, so most likely a neighbouring key's), the rest invented ("123456789",
+    "1000…"); every wrong reply of the released model is a 7-digit number. The single-value needles 1.00 / 1.00 at
+    4k–16k, 0.92 at 32k on the second one (0.98).
+  - Documents (nats per token, lower is better): 64k 2.291 (2.293), 16k 2.125 (2.126), 128k 2.461 (2.451, +0.4 %;
+    past 61k tokens of context the full context is now 0.072 worse than a 61k cut, the released model 0.060).
+    Summaries off costs +0.067 at 64k (+0.068) and +0.022 at 16k (+0.023): unchanged. Core 7 mean (acc) 46.37
+    (46.22); WikiText 0.964 bits per byte (0.964); BLiMP 79.9 (80.6, −0.7 points; not a mark). Tiny-ML board
+    place 26th (the card's 24th).
+  - **L2 missed on all values, met on several keys:** all values 0.59 / 0.43 / 0.35 (asks ≥ 0.60 / 0.60 / 0.40),
+    several keys 0.54 / 0.60 (asks ≥ 0.50 / 0.40). This is the outcome the 18:10 UTC note above foresaw for
+    3–5 % of constructed rows: L1 passed and RULER's all-values task moved less than with a retrieval-rich end of
+    training (the home-card v4 check: 0.97 / 0.97 / 0.86).
+  - **L3 met:** 64k documents 2.291 ≤ 2.305, 16k 2.125 ≤ 2.137; the other 11 tasks +0.054 / +0.070 / −0.010 at
+    4k / 8k / 16k (within 0.03 or better); the UUID needle at 4k 0.97 ≥ 0.19; core 46.37 ≥ 45.7; held-out losses
+    as above. Not covered by L3 and lost: multi-key 2 at 16k (0.76 → 0.26) and 32k (0.41 → 0.20).
 
 **Data: `m21mix_v3`** (`data/mix_recipes/m21_mix_v3.json`) = v2 plus two constructed sets
 (`scripts/build_reasoning_rows.py --only list_16k,list_64k`): lookup rows whose question block also asks for all the

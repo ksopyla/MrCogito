@@ -48,6 +48,14 @@
   (`i-0ac835358ee4e95df`, us-east-1) and **stage 2 started on v4 at 06:03:31 UTC** from the stage-1 final weights
   (168 shards, `recall_16k` at 3 % of rows; the same stage-2 manifest as the E38 recall run). About $25 of node
   time was lost. Spend on E39's nodes at 06:18 UTC: $174 of $450 (K4), about $340 expected at the end.
+- **Stage 2 on v4, first readings (2026-11-25 08:13 UTC, ~13 % of stage 2, 87 log lines).** Speed: median 67.5k
+  tokens per second at 16k (S7 asks ≥ 59k; the E38 recall run 69.5k on the same node type). Held-out loss at 16k
+  against the E38 recall run at the same step: 2.286 / 2.249 / 2.221 against 2.255 / 2.223 / 2.195 at epochs
+  0.065 / 0.097 / 0.129, **+0.026 to +0.031 behind**, where stage 1 ended a tie (+0.003 at 4k). No stop mark is set
+  for stage 2; S3 reads it at the end. R4 at 16k: the largest concept's share of a document's memory tokens fell to
+  33 % (46 % at the first step of stage 2; 75–80 % at the end of stage 1 at 4k); about 193 concepts per document
+  (the reader keeps 32, so at 16k it must choose, unlike at 4k); 48 % single-span; spans 8.3 tokens;
+  `living/summary_weight` 0.36 → 0.26.
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
