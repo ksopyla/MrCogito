@@ -317,6 +317,26 @@ row asks for several far values in one answer, so no model of the family has tha
   - Our list exam at 16k: single 0.93, all values 0.59, several facts exact 0.72 (L1 asks 0.90 / 0.65 / 0.70).
   As a fine-tune it misses only L3's document marks, by about 0.01 nats, and the UUID mark; the run is the test.
 
+- **The recall run, training and its AWS tests (done 2026-11-25 03:07 UTC; read 06:20 UTC).** Spot g6e.12xlarge,
+  one interruption (~11:30 UTC 11-24, resumed from its checkpoint). Nodes $149.27 of $220 (KL3 met); KL1 and KL2
+  met during stage 2 (see above). Against the E38 run ("the released model"), same job, same scripts and settings:
+  - Held-out loss at the end of stage 2 1.996 (1.996; L3 asks ≤ 2.001) and of stage 3 1.938 (1.936; ≤ 1.941):
+    met. Core 7 mean, the card's metrics (acc): 46.27 (46.23; ≥ 45.7): met. WikiText 0.964 bits per byte (0.964).
+  - Long-document loss (the job's test: longdocs-lite, 7 sources, nats per token): 2.066 / 1.890 / 1.881 / 1.775
+    at 4k / 16k / 64k / 128k (2.067 / 1.888 / 1.879 / 1.775), a tie at every length.
+  - RULER as the job runs it (100 prompts, cached decoding; not the card's per-task answer lengths), 4k / 8k /
+    16k / 32k: 13-task mean 0.572 / 0.526 / 0.405 / 0.360 (0.433 / 0.397 / 0.339 / 0.304); the other 11 tasks
+    0.569 / 0.530 / 0.419 / 0.377 (0.456 / 0.413 / 0.372 / 0.333); all values 0.59 / 0.41 / 0.35 / 0.38 (0.29 /
+    0.31 / 0.20 / 0.21); several keys 0.58 / 0.59 / 0.29 / 0.15 (0.33 / 0.29 / 0.10 / 0.07); the UUID needle 0.97 /
+    0.91 / 0.44 / 0.59 (0.02 / 0.02 / 0.00 / 0.00); multi-key 3 0.34 / 0.15 / 0.08 / 0.02 (0.00 / 0.01 / 0.01 /
+    0.00). **The cost: multi-key 2 (similar needles) 0.73 / 0.62 / 0.25 / 0.13 (0.92 / 0.85 / 0.67 / 0.42).** The
+    home-card check had it back after its 64k stage; the full run, with recall rows from the start of stage 2, has
+    not.
+  - L1, L2 and the document, other-11 and UUID items of L3 are set on the card's protocol (list exam; RULER with
+    each task's own answer length, every reply saved; the card's 64k and 16k document tests): run on Polonez from
+    06:11 UTC on the run's final weights (`scripts/release_evals.sh`, cards 1 and 3; list exam and first-token
+    probe on card 0).
+
 **Data: `m21mix_v3`** (`data/mix_recipes/m21_mix_v3.json`) = v2 plus two constructed sets
 (`scripts/build_reasoning_rows.py --only list_16k,list_64k`): lookup rows whose question block also asks for all the
 values of one thing (2–5 values at 16k, 2–6 at 64k, each stated on its own; answer in the order of the text) and

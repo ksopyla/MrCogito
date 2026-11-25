@@ -36,6 +36,18 @@
   the normalised sum of many unit keys, leans to the keys' common direction and matches new spans best. At 4k the
   reader keeps 32 concepts and a document has about 23, so it reads all of them and the grouping cannot cost
   anything yet; stage 2 (16k) is the first place it can, read there with R3.
+- **Stage 1 done, 2026-11-25 02:16 UTC. K2 met:** held-out loss at the last evaluation of stage 1 2.138 against
+  concept memory's 2.135 at the same step (limit 2.155), a tie. R4 at the end of stage 1: the largest concept holds
+  75–80 % of a document's memory tokens (flat since about step 4,000), 53 % of concepts are a single span, 18–25
+  concepts per document, spans 8.0 tokens, 12 % founding.
+- **The switch to v4 came late (2026-11-25).** The trigger fired at 00:28 UTC (stage 1 at step 13,821), but the
+  session that acts on it was not woken until 05:49 UTC, so stage 2 started on v2 at 02:16 UTC. At 05:51 UTC the
+  branch moved to v4; the keeper was stopped by PID and the node terminated (05:58 UTC); stage 2 on v2 (about
+  1,290 of 5,722 steps, held-out loss 2.185, no result used) was moved out of the run folder to
+  `runs/e39/aside/e33n_m120t_living_muon0.01_tok8.0e9_seed42_stage2_on_v2/`; the keeper relaunched
+  (`i-0ac835358ee4e95df`, us-east-1) and **stage 2 started on v4 at 06:03:31 UTC** from the stage-1 final weights
+  (168 shards, `recall_16k` at 3 % of rows; the same stage-2 manifest as the E38 recall run). About $25 of node
+  time was lost. Spend on E39's nodes at 06:18 UTC: $174 of $450 (K4), about $340 expected at the end.
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
