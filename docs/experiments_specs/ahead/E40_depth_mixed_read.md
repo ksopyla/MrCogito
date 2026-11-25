@@ -135,6 +135,17 @@ Released weights: `Cache/e38_board/e37a_m120t_final` (the folder the release car
   rise); memory off +0.0009; summaries' share of the read 17.6 % (control 16.8 %). Every difference under 0.002 nats
   per token: within K3's ±0.005 band for this arm.
 
+- **Depth-mixed read, the rest of the release tests (2026-11-25 11:47 UTC, all 12 jobs done):** RULER 13-task
+  mean 0.490 / 0.463 / 0.385 / 0.335 at 4k / 8k / 16k / 32k against the control's 0.478 / 0.431 / 0.374 / 0.336:
+  +0.018 over 4k–16k (inside S4's ±0.02; about one standard error at 100 prompts per task, a hint, not a gain); the
+  largest task gains multi-key 2 (+0.06 at 4k and 16k), multi-query (+0.07 at 16k), common words (+0.05). BLiMP
+  80.17 (control 80.18), 7-task core 46.44 (46.52), ARC-Easy 48.65 (48.57), WikiText-2 byte perplexity 1.949 (1.949):
+  **S4 met**. 16k documents (120): whole document +0.0008 [0.0004, 0.0013], far-context gain −0.0002. 128k documents (15,
+  twice the training length): whole document **−0.0080 [−0.0125, −0.0037]** (better on 80 % of documents), memory
+  off costs +0.0078 more and summaries off +0.0102 [−0.0010, 0.0218] more than in the control: past the training
+  length the mixed read uses its memory a little more (a hint on 15 documents, no mark for it). **S5 met** (P4,
+  0.964×).
+
 ### Build decisions (2026-11-24, build session)
 
 - **Component:** `nn/depth_mix.py`, `par_depth_mix: none | read | dca2` (arms `e40_read`, `e40_dca2` in
