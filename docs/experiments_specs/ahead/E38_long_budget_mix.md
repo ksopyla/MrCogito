@@ -336,6 +336,9 @@ row asks for several far values in one answer, so no model of the family has tha
     each task's own answer length, every reply saved; the card's 64k and 16k document tests): run on Polonez from
     06:11 UTC on the run's final weights (`scripts/release_evals.sh`, cards 1 and 3; list exam and first-token
     probe on card 0).
+  - **L1 met (06:17 UTC):** our list exam at 16k (48 held-out list rows): single-value answers 0.94, all-values
+    answers 0.67 (values found 0.91), several facts exact 0.85 (L1 asks 0.90 / 0.65 / 0.70; the released model 0.00
+    on both list forms; the home-card fine-tunes 0.63 / 0.59 all values, 0.74 / 0.72 several facts).
 
 **Data: `m21mix_v3`** (`data/mix_recipes/m21_mix_v3.json`) = v2 plus two constructed sets
 (`scripts/build_reasoning_rows.py --only list_16k,list_64k`): lookup rows whose question block also asks for all the
