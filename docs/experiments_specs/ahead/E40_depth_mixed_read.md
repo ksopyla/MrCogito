@@ -122,6 +122,19 @@ Released weights: `Cache/e38_board/e37a_m120t_final` (the folder the release car
   weights |w| 0.7–2.8 (gates of order 0.1 or less); the one consistent shift is the values' mix taking less of the
   embedding column (b − 1 −0.015 to −0.022 on all four passes).
 
+- **Training ended:** depth-mixed read 2026-11-25 03:35:24 UTC, control 03:40:48 UTC (both exit 0); final held-out
+  loss of part 1: 1.92148 / 1.92146. 2-DCA everywhere: part 1 03:41–07:35 UTC (held-out 1.9285 / 1.9262 / 1.9246 /
+  1.9237 at steps 286–1,144, control 1.9275 / 1.9257 / 1.9241 / 1.9228), part 2 from 07:35 UTC.
+- **The retrofit itself (control against the released model, 64k documents, paired):** whole document +0.0081
+  [0.0062, 0.0101] worse, far-context gain −0.0055, summaries-off cost −0.0046; RULER 13-task mean 0.478 / 0.431 /
+  0.374 / 0.336 at 4k / 8k / 16k / 32k (card 0.488 / 0.439 / 0.373 / 0.319); BLiMP 80.18 (80.56); 7-task core 46.52
+  (46.22); 16k documents 2.128 (2.126). Every arm is judged against this retrained control.
+- **Depth-mixed read against the control, 64k documents (55, paired; 2026-11-25 07:56 UTC):** whole document −0.0005
+  [−0.0017, +0.0006]; far-context gain +0.0013 [+0.0003, +0.0025] (**S1 mark +0.010: missed**); summaries-off cost
+  −0.0005 [−0.0029, +0.0020] and summaries only −0.0016 [−0.0024, −0.0008] better (**S2: missed**, the cost did not
+  rise); memory off +0.0009; summaries' share of the read 17.6 % (control 16.8 %). Every difference under 0.002 nats
+  per token: within K3's ±0.005 band for this arm.
+
 ### Build decisions (2026-11-24, build session)
 
 - **Component:** `nn/depth_mix.py`, `par_depth_mix: none | read | dca2` (arms `e40_read`, `e40_dca2` in
