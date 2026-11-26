@@ -235,5 +235,17 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   row is the slow kind (1.3 × a flat row; a cut row is 2–8 × faster). For run 2 the read type is drawn per step,
   the same on every card.
 
+- **2026-11-26 23:05 UTC, K2 passed:** median 51.9k tokens/s over stage-2 log lines 4–33 (mark 48.6k; the recall run
+  69.7k). Step 200: held-out loss 2.339 (the recall run 2.308 at the same step).
+- **2026-11-26 23:02 UTC, two home retrofits started** (Odra cards 0–1, `scripts/e40_train.sh`, E40's rows, order and
+  schedule from the released model, the reasoner at its own AdamW rate 6e-4): `tree` (run 1's recipe) and
+  `tree_soft` (70 % as normal, 15 % bounded, 15 % cut). Reference: E40's control. They pick run 2's row draw.
+- **2026-11-26 23:04–23:33 UTC, the first lookup past 128k on any 150M model** (released concept memory through the
+  tree view, Polonez card 0, `scripts/e41_long_needle.py`: RULER's number needle in held-out text, 4 depths per
+  length, peak 9.1 GB): at 64k the flat read finds 3 of 4, 16 per level 3 of 4, 64 per level 2 of 4, 16 per level by
+  a node's own estimate 0 of 4 (first digit right 4 of 4); at 256k every read finds 0 of 4 (72–106 s per row). The
+  released model does not look up past its training length whichever way it reads; the trained tree model gets
+  the same test (S4), and rows longer than 64k in training (stage 4) are the likely requirement.
+
 ## Result
 <Filled in after, by experiment-track.>
