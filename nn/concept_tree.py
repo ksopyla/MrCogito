@@ -735,7 +735,7 @@ class TreeReasoner(nn.Module):
             return
         for name in ("c", "f"):
             pend = getattr(self, f"pend_{name}")
-            tot = pend.clone()
+            tot = pend.float().clone()
             if torch.distributed.is_available() and torch.distributed.is_initialized():
                 torch.distributed.all_reduce(tot, op=torch.distributed.ReduceOp.SUM)
             pend.zero_()
@@ -745,32 +745,34 @@ class TreeReasoner(nn.Module):
             if float(cnt.sum()) <= 0:
                 continue
             a = self.code_decay
-            count.mul_(a).add_((1 - a) * cnt)
-            hit = cnt > 0
-            new = F.normalize(a * book + (1 - a) * F.normalize(vec, dim=-1), dim=-1)
-            book.copy_(torch.where(hit[:, None], new, book))
-            dead = (count < 0.05 * float(count.mean())) & (scnt > 0)                      # nothing assigned for long
-            book.copy_(torch.where(dead[:, None], F.normalize(spare, dim=-1), book))
-            count.copy_(torch.where(dead, count.mean().expand_as(count), count))
+            cf = count.float() * a + (1 - a) * cnt
+            bf = book.float()
+            new = F.normalize(a * bf + (1 - a) * F.normalize(vec, dim=-1), dim=-1)
+            bf = torch.where((cnt > 0)[:, None], new, bf)
+            dead = (cf < 0.05 * float(cf.mean())) & (scnt > 0)                            # nothing assigned for long
+            bf = torch.where(dead[:, None], F.normalize(spare, dim=-1), bf)
+            cf = torch.where(dead, cf.mean().expand_as(cf), cf)
+            book.copy_(bf.to(book.dtype))
+            count.copy_(cf.to(count.dtype))
 
     @torch.no_grad()
     def codes(self, z: torch.Tensor, valid: torch.Tensor, name: str) -> torch.Tensor:
         """Each node's code. z [B, N, H], valid [B, N] → [B, N] long (−1 where not valid); in training the sums for
         the next codebook update are kept (overwritten by every call: the last one counts)."""
-        book = getattr(self, f"book_{name}")
+        book = getattr(self, f"book_{name}").float()                                     # fp32 whatever the model's type
         e = F.normalize(z.detach().float() @ self.code_proj.float(), dim=-1)             # [B, N, cd]
         code = (e @ book.t()).argmax(-1)
         if self.training:
             K, cd = book.shape
             ef = e[valid]
             cf = code[valid]
-            pend = torch.zeros(K, 2 * cd + 2, device=z.device)
+            pend = torch.zeros(K, 2 * cd + 2, device=z.device, dtype=torch.float32)
             pend[:, :cd].index_add_(0, cf, ef)
             pend[:, cd].index_add_(0, cf, torch.ones_like(cf, dtype=torch.float32))
             slot = torch.arange(ef.shape[0], device=z.device) % K                        # a spare vector per code
             pend[:, cd + 1:2 * cd + 1].index_add_(0, slot, ef)
             pend[:, 2 * cd + 1].index_add_(0, slot, torch.ones_like(slot, dtype=torch.float32))
-            getattr(self, f"pend_{name}").copy_(pend)
+            getattr(self, f"pend_{name}").copy_(pend.to(getattr(self, f"pend_{name}").dtype))
         return torch.where(valid, code, torch.full_like(code, -1))
 
     # -- forward -----------------------------------------------------------------------------------------
@@ -816,7 +818,7 @@ class TreeReasoner(nn.Module):
         pooled = pooled / ok2.sum(-1, keepdim=True).clamp_min(1).to(hn.dtype)
         plan = self.plan(pooled) if self.plan is not None else None
         aux = torch.zeros(2, device=dev, dtype=torch.float32)
-        if self.next_concept:
+        if self.next_concept and self.training:  # the prediction is a training signal only
             code_c = self.codes(zu[:, :nb * P], ok[:, :nb * P], "c").view(B, nb, P)      # level-2 nodes
             code_f = self.codes(z1, tree.n[:, :C1] > 0, "f").view(B, nb, -1)             # concepts
             pr = F.silu(self.pred(pooled))

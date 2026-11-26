@@ -511,6 +511,29 @@ def test_the_list_switch_reads_the_same(kw):
     torch.testing.assert_close(got, want, atol=2e-4, rtol=1e-3)
 
 
+def test_a_model_cast_to_another_float_type_still_reads_and_decodes():
+    """Generation casts the model (bf16 on a GPU); buffers and fp32 intermediates must not clash. Here: fp64."""
+    from nn.incremental import IncrementalDecoder
+
+    m = _model(warm=True, **{**TREE, **REASON, **AUX, "tree_follow": 2, "tree_token_update": True}).double()
+    ids = _ids(S=224, B=2)
+    with torch.no_grad():
+        out = m(ids).logits
+        assert torch.isfinite(out).all()
+        dec = IncrementalDecoder(m)
+        buf = torch.zeros(2, 232, dtype=torch.long)
+        buf[:, :224] = ids
+        doc = torch.full((2, 232), -1, dtype=torch.long)
+        doc[:, :224] = 0
+        dec.prefill(buf, doc, 224)
+        h = dec.step(torch.tensor([5, 9]))
+        assert torch.isfinite(h).all()
+    m.train()                                                                            # and it still trains
+    loss = m(ids, labels=ids).loss
+    loss.backward()
+    assert torch.isfinite(loss)
+
+
 def test_short_rows_run_and_keep_the_reasoner_in_the_graph():
     m = _model(**{**TREE, **REASON, **AUX})
     rs = m.layers[m.config.global_layer_index].attn.tree_reasoner
