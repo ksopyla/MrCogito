@@ -107,6 +107,24 @@
     span competing the model is still 0.038 behind concept memory on 64k documents and 0.029 on RULER at 16k: trained
     behind a narrow first level, it learned less from far context (its 64k stage lowered the held-out loss by 0.014,
     concept memory's by 0.060).
+- **Verdict (card protocol complete, 2026-11-26 07:54 UTC): the bet fails.** S1 met at the mark (0.41, from the
+  recall rows); **S2 missed** (13-task mean 0.436 / 0.387 / 0.269 / 0.201 at 4k–32k; asks ≥ 0.49 / 0.41 at 8k /
+  16k); **S3 missed** (16k documents 2.161, asks ≤ 2.136; 64k 2.388, asks ≤ 2.313); **S4 missed** (one number in an
+  essay 0.48 / 0.31 at 16k / 32k, among distractor keys 0.55 / 0.31; asks ≥ 0.95 and ≥ 0.80 at 16k); S5 met as
+  written (the whole 127k is 0.013 worse than the last 61k, asks ≤ 0.031; but the whole-document loss 2.487 is the
+  highest of the six models: concept memory 2.451, full attention 2.421, topic index 2.426, catalogue 2.441, and a
+  16k cut is 0.035 better than the whole); **S6 met** (BLiMP 79.77, asks ≥ 79.6; 7-task mean 46.61, asks ≥ 45.2);
+  S7 and K4 met. Cross-model test: 61k-context long documents 0.827 bits per byte (concept memory 0.795), gain from
+  far context 1k → most 0.020 bits per byte (concept memory 0.051, full attention 0.037, topic index 0.049,
+  catalogue 0.042). WikiText 0.965 bits per byte (0.964). Tiny-ML board place 22nd (concept memory 24th; ARC-Easy
+  50.9 against 49.0).
+- **What it says for the next step.** The grouping trains (stage 1 a tie; 50 % single-span concepts, the largest
+  12 % at 64k), but a fixed number of concepts per reader cannot hold as concepts grow with length; R1 on the
+  training numbers (23 → 210 → 881 concepts per document at 4k / 16k / 64k, linear) points to the concept tree
+  before the reasoner. The flat search fixes single lookups at test time but costs a score over every span per
+  reader, which does not scale to 10M tokens. The open question for a flavour: trained with every span competing
+  in stages 2–3 (from this run's stage-1 weights, where the first level cost nothing), does the grouping match the
+  recall run on long text?
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
