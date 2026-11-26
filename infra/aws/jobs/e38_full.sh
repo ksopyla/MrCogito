@@ -49,7 +49,9 @@ for ARM in "$@"; do
     living) ARMP="living concepts";; living_spans) ARMP="living spans";;
     living_flat) ARMP="living concepts, every span competing";;
     tree) ARMP="tree concept model";; tree_noaux) ARMP="tree concept model, no extra losses";;
-    tree_read) ARMP="tree read on concept memory";; *) ARMP="$ARM";; esac
+    tree_read) ARMP="tree read on concept memory";; tree_flat) ARMP="tree concept model, every row read as normal";;
+    tree_soft) ARMP="tree concept model, fewer closed-book rows";;
+    tree_step) ARMP="tree concept model, read drawn per step";; *) ARMP="$ARM";; esac
   export E33N_PLAIN="$SZP $ARMP${E38_PLAIN_NOTE:+ $E38_PLAIN_NOTE}, $OPTP"
   export MC_WANDB_TAGS="$EXPT,$SIZE,$MIX,$ARM,opt-$OPT,seed$SEED${E38_BOARD:+,leaderboard}"
   export MC_WANDB_NOTES="$SZP $ARMP, $OPTP${E38_BOARD:+, for the Tiny-ML leaderboard}. Code: arm $ARM, size $SIZE, mix $MIX, optimizer $OPT, seed $SEED, run $RUN."

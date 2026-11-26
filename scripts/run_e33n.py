@@ -154,6 +154,9 @@ ARMS["tree"] = {**ARMS["tree_noaux"], "tree_next_concept": 0.1, "tree_route_loss
 # recipe variants (home retrofits pick run 2's): fewer closed-book rows; the read drawn per step (several cards)
 ARMS["tree_soft"] = {**ARMS["tree"], "tree_row_mix": "0.7,0.15,0.15"}
 ARMS["tree_step"] = {**ARMS["tree"], "tree_row_draw": "step"}
+# every row read as normal (no closed-book or bounded rows): the reasoner, the plan and the two losses on the
+# recall recipe's own read; with `tree` it separates what the closed-book rows do from what the reasoner does
+ARMS["tree_flat"] = {**ARMS["tree"], "tree_row_mix": ""}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
 # E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
 # mixes for the query, key and value inputs (nn/depth_mix.py): the reading layer's runs only, or 2-DCA on every run.
@@ -189,7 +192,7 @@ TINY_OPEN["tree_read"] = {**TINY_OPEN["e37a"], "tree_probes": 2, "tree_fan": 2, 
 TINY_OPEN["tree_noaux"] = {**TINY_OPEN["tree_read"], "tree_reasoner_dim": 64, "tree_reasoner_heads": 2}
 TINY_OPEN["tree"] = {**TINY_OPEN["tree_noaux"], "tree_codes_coarse": 64, "tree_codes_fine": 128, "tree_code_dim": 16,
                      "tree_route_queries": 32}
-TINY_OPEN["tree_soft"] = TINY_OPEN["tree_step"] = TINY_OPEN["tree"]
+TINY_OPEN["tree_soft"] = TINY_OPEN["tree_step"] = TINY_OPEN["tree_flat"] = TINY_OPEN["tree"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}
