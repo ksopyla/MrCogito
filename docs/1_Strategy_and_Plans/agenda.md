@@ -20,6 +20,19 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-26 — E41, the tree concept model (asked for by the author: "Build and train 150M … go all in", AWS up
+  to $2,000; in build and checks, first 150M run next).** Concept memory's concepts become the leaves of a tree of
+  exact summaries (512 → 4k → 32k … tokens per container); a reader walks it top-down and reads what it does not
+  follow as summaries; a small reasoner over the tree's nodes corrects summaries, writes a plan and predicts the next
+  block's concept codes; training rows close the book at a drawn level (NCM's nested dropout). Every new part starts
+  as an identity, so run 1 trains stages 2–3 from concept memory's stage-1 weights on the recall recipe and compares
+  like for like with the recall run. First readout on the released model, no training (16k rows): the tree read with
+  every node followed is concept memory exactly; following 16 nodes per level keeps about 90 % of the far read's
+  value with 173 summary entries instead of about 930. Pass marks: 64k documents ≤ 2.281 (recall run 2.291), RULER
+  13-task mean ≥ the best of our models at each length. Spec
+  [E41](../experiments_specs/ahead/E41_tree_concept_model.md) · plan
+  [E41_plan](../experiments_specs/ahead/E41_plan.md) · alignment page
+  [e41_architecture.html](../3_Evaluations_and_Baselines/e41_architecture.html).
 - **2026-11-26 — E37f, closed-book practice (spec written at the author's request; waiting for the alignment
   checklist; nothing built).** Measured against cutting the document to its last 1k tokens, concept memory's
   summaries alone are worth −0.091 nats per token at 64k: worse than no far past, while the exact rereads make the far

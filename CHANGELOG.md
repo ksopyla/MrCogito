@@ -15,6 +15,48 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-26] - E41 tree concept model: the concept tree over the concept read
+
+**Why:**
+- The author asked for a new architecture built around a tree of learned summaries, read from trunk to leaves, with
+  NCM's training signals, a next-concept loss and a thin decoder's access to every level (spec
+  `docs/experiments_specs/ahead/E41_tree_concept_model.md`, plan `E41_plan.md`, alignment page
+  `docs/3_Evaluations_and_Baselines/e41_architecture.html`). AWS money up to $2,000.
+
+**What changed:**
+- [added] `nn/concept_tree.py` - levels of exact summaries above the concept read's concepts (`build_tree`: 8 nodes
+  per container, containers of 512 → 4k → 32k … tokens; statistics add, no weights), the top-down choice with
+  per-row budgets (`tree_choice`, scores `lookahead` and `descent`), the read (`attend_tree`: dense reference and a
+  flex path of two calls merged by log-sum-exp), the closed-book row draw (`row_reads`), the reasoner over the
+  tree's nodes (`TreeReasoner`: key and value corrections, a plan per block, next-concept prediction on codes of a
+  fixed random projection with moving-average codebooks), the route loss, probe scalars (`read_stats`).
+- [changed] `nn/perceiver_ar_lm.py` - `concept_tree` and 18 `tree_*` config fields over `par_global_read concept`
+  (all off = the concept read, unchanged); `Attention._tree_read`; the reading block may return auxiliary losses as
+  a second output (`_call_block_aux`), so they train under gradient checkpointing; `pop_train_stats` reports
+  `tree/next_word_loss`, `tree/next_concept_*`, `tree/route`.
+- [changed] `nn/incremental.py` - cached decoding of the tree read (per-pass tree with the reasoner's corrections,
+  the one-query top-down read, the plan); refuses when a tree probe is armed.
+- [changed] `training/concept_pretraining_args.py`, `training/concept_pretraining_factories.py` - the fields and
+  their pass-through; a warm start may add `tree_reasoner.` weights (fresh, zero outputs).
+- [changed] `scripts/run_e33n.py` - arms `tree` (148.9M at m120t), `tree_noaux`, `tree_read`, their tiny sizes, `tree`
+  in the 150M size check.
+- [changed] `evaluation/long_context_use.py` - memory modes `tree<N>`, `descent<N>` (bounded reads), `cut<M>`
+  (nothing below level M read, no token opened).
+- [added] `scripts/e41_tree_view.py` - a tree-read view of a concept-memory checkpoint and its check table.
+- [added] `infra/aws/jobs/e41_tree.sh` (stages 2–3 from concept memory's stage 1 on `m21mix_v4`, experiment E41),
+  `infra/aws/watch_run.sh` (a run's watcher: loss and speed marks, a money cap per run); plain W&B names for the
+  tree arms in `e38_full.sh`.
+- [added] `tests/test_concept_tree.py` (32), `tests/test_concept_tree_cuda.py` (17), three tree arms in
+  `tests/test_incremental_decode.py`.
+- [merged] `origin/claude/concept-use-fix` (E39 living concepts, recall recipes `m21mix_v3` / `v4`, shared read
+  helpers) into `tree-concept`; `tests/test_long_context_use_switch.py` uses a mode name no read knows.
+
+**Checked:** with every node followed the read equals the concept read (CPU tests, flex on an RTX 3090, and the
+released 150M weights at 16k: hidden states identical); flex = reference forward and backward for bounded, cut and
+training rows; cached decoding = full forward to 6e-7.
+
+---
+
 ## [2026-11-24] - E40 depth-mixed read: pre-flight, the depth-mix component, home data and the retrofit pipeline
 
 **Why:**
