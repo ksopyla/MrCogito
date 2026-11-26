@@ -642,6 +642,7 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
                           "note_order_gate",  # E33i: the order switch starts nearly off
                           "loop_control.",  # E33c: the question control (its gate starts at 0)
                           "depth_mix.",  # E40: the depth mixes start as the identity (b = 1, w = 0)
+                          "tree_reasoner.",  # E41: the tree's reasoner writes zero at the start (= concept memory)
                           *skip)
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:
