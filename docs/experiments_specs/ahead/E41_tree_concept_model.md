@@ -206,5 +206,34 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   at the 5th held-out evaluation of stage 2 (K1), reports below 48.6k tokens/s (K2), stops at $220 for this run
   (K3). Family spend before the launch $3,684 (the E39a node still running); E41 spend so far $0.
 
+- **2026-11-26 22:00 UTC, the pipeline check's test stage passes with the fix** (`scripts/e41_check_tests.sh`, Odra
+  card 2: long-document loss, RULER quick form with cached decoding and its old-loop check, core).
+- **2026-11-26 21:50–22:57 UTC, the baselines for S3 and S4: the released concept memory read through the tree, card
+  protocol** (Odra cards 0–1; `evaluation/long_context_use.py` on the tree view; nats per token on the last 4,096
+  tokens; files `docs/2_Experiments_Registry/results/evaluations/E41_released_tree_view/`):
+
+  | read (no training for it) | 16k, 120 documents | 64k, 55 documents |
+  |---|---|---|
+  | whole document, every node followed | 2.1257 | 2.2933 |
+  | 64 followed per level | +0.0009 | +0.0141 |
+  | 16 followed per level | +0.0086 | +0.0506 |
+  | 16 per level, scored by a node's own estimate | +0.0231 | +0.0906 |
+  | no summaries (opened tokens only) | +0.0225 | +0.0675 |
+  | closed book: concept summaries only (cut 1) | +0.2066 | +0.2358 |
+  | level-2 summaries only (cut 2) | +0.2774 | +0.3107 |
+  | level-3 summaries only (cut 3) | +0.2908 | +0.3931 |
+  | no far read | +0.2710 | +0.2869 |
+  | last 1k tokens only (the document cut) | +0.0942 | +0.1477 |
+
+  The whole-document figures reproduce the card (2.126 and 2.293). Notebook value at 64k (document cut minus
+  summaries only): concepts −0.088 (E37f measured −0.091), level 2 −0.163, level 3 −0.245: the untrained upper
+  levels are worse than the untrained concepts. S4 asks the trained model to bring "16 per level" from +0.051 to
+  within 0.010 of its flat read.
+- **2026-11-26 21:51 UTC, stage 2 started on the node.** First log lines: next-word loss on the mixed rows 2.49 →
+  2.42, next-concept loss off chance (coarse 6.90 → 6.56, chance 6.93), route 0.17; 52k tokens/s (0.75 × the recall
+  run; a home card gave 0.88 ×). Likely cause: with four cards every step waits for the slowest card, and a bounded
+  row is the slow kind (1.3 × a flat row; a cut row is 2–8 × faster). For run 2 the read type is drawn per step,
+  the same on every card.
+
 ## Result
 <Filled in after, by experiment-track.>
