@@ -815,6 +815,12 @@ class OptimizerArguments:
         metadata={"help": "E40, Muon only: AdamW LR of the depth-mix weights (`depth_mix.*`), constant, no weight "
                           "decay. None: they share the AdamW fallback's rate and decay."},
     )
+    tree_reasoner_lr: Optional[float] = field(
+        default=None,
+        metadata={"help": "E41, Muon only: AdamW LR of the tree reasoner's weights (`tree_reasoner.*`), constant, no "
+                          "weight decay (a retrofit, where the body trains at tiny rates). None: they train as the "
+                          "body does (Muon on the matrices), the setting of a full stage."},
+    )
     muon_decay_1d: bool = field(
         default=True,
         metadata={"help": "Muon only: weight decay on 1-D params (norms, biases). False: no decay there, as HF AdamW."},

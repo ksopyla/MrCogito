@@ -535,6 +535,7 @@ def main():
         muon_follow_schedule=optim_args.muon_follow_schedule,
         muon_decay_1d=optim_args.muon_decay_1d,
         depth_mix_lr=optim_args.depth_mix_lr,
+        tree_reasoner_lr=getattr(optim_args, "tree_reasoner_lr", None),
         batch_packing_mode=data_args.batch_packing_mode,
         train_lengths=train_lengths,
         length_group_mega_batch_mult=data_args.length_group_mega_batch_mult,

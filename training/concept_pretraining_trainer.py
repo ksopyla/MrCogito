@@ -42,6 +42,7 @@ class PerceiverDenoiseTrainer(Trainer):
         muon_follow_schedule: bool = False,
         muon_decay_1d: bool = True,
         depth_mix_lr: Optional[float] = None,
+        tree_reasoner_lr: Optional[float] = None,
         batch_packing_mode: str = "none",
         train_lengths=None,
         length_group_mega_batch_mult: int = 20,
@@ -72,6 +73,7 @@ class PerceiverDenoiseTrainer(Trainer):
         self.muon_follow_schedule = bool(muon_follow_schedule)
         self.muon_decay_1d = bool(muon_decay_1d)
         self.depth_mix_lr = depth_mix_lr
+        self.tree_reasoner_lr = tree_reasoner_lr
         self.batch_packing_mode = batch_packing_mode
         self.train_lengths = train_lengths
         self.length_group_mega_batch_mult = length_group_mega_batch_mult
@@ -214,16 +216,21 @@ class PerceiverDenoiseTrainer(Trainer):
             from nn.muon import Muon
 
             params = self.model.parameters()
-            if self.depth_mix_lr is not None:
-                # E40: the depth mixes (b' per column and dimension, the gate weights w) as their own AdamW group at
-                # a constant rate without weight decay; everything else as before
+            # Fresh parts added to a trained model get their own AdamW group at a constant rate without weight
+            # decay; everything else as before. E40: the depth mixes (`depth_mix.`); E41: the tree's reasoner
+            # (`tree_reasoner.`) in a retrofit, where the body trains at the released model's tiny final rates.
+            own = [(tag, lr) for tag, lr in (("depth_mix.", self.depth_mix_lr),
+                                             ("tree_reasoner.", self.tree_reasoner_lr)) if lr is not None]
+            if own:
                 named = [(n, p) for n, p in self.model.named_parameters() if p.requires_grad]
-                mix = [p for n, p in named if "depth_mix." in n]
-                if not mix:
-                    raise ValueError("depth_mix_lr is set but the model has no depth_mix parameters")
-                params = [{"params": [p for n, p in named if "depth_mix." not in n]},
-                          {"params": mix, "adamw_lr": float(self.depth_mix_lr), "weight_decay": 0.0,
-                           "follow_schedule": False, "max_aspect": 0.0}]
+                tags = tuple(t for t, _ in own)
+                params = [{"params": [p for n, p in named if not any(t in n for t in tags)]}]
+                for tag, lr in own:
+                    grp = [p for n, p in named if tag in n]
+                    if not grp:
+                        raise ValueError(f"a learning rate is set for {tag!r} but the model has no such parameters")
+                    params.append({"params": grp, "adamw_lr": float(lr), "weight_decay": 0.0,
+                                   "follow_schedule": False, "max_aspect": 0.0})
             self.optimizer = Muon(
                 params,
                 lr=self.args.learning_rate,

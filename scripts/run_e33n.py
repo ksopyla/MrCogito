@@ -151,6 +151,9 @@ ARMS["tree_read"] = {**ARMS["e37a"], "concept_tree": "true", "tree_row_mix": "0.
 ARMS["tree_noaux"] = {**ARMS["tree_read"], "tree_reasoner_layers": 2, "tree_reasoner_dim": 384,
                       "tree_reasoner_heads": 6, "tree_reasoner_loops": 2, "tree_plan": "true"}
 ARMS["tree"] = {**ARMS["tree_noaux"], "tree_next_concept": 0.1, "tree_route_loss": 0.1}
+# recipe variants (home retrofits pick run 2's): fewer closed-book rows; the read drawn per step (several cards)
+ARMS["tree_soft"] = {**ARMS["tree"], "tree_row_mix": "0.7,0.15,0.15"}
+ARMS["tree_step"] = {**ARMS["tree"], "tree_row_draw": "step"}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
 # E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
 # mixes for the query, key and value inputs (nn/depth_mix.py): the reading layer's runs only, or 2-DCA on every run.
@@ -186,6 +189,7 @@ TINY_OPEN["tree_read"] = {**TINY_OPEN["e37a"], "tree_probes": 2, "tree_fan": 2, 
 TINY_OPEN["tree_noaux"] = {**TINY_OPEN["tree_read"], "tree_reasoner_dim": 64, "tree_reasoner_heads": 2}
 TINY_OPEN["tree"] = {**TINY_OPEN["tree_noaux"], "tree_codes_coarse": 64, "tree_codes_fine": 128, "tree_code_dim": 16,
                      "tree_route_queries": 32}
+TINY_OPEN["tree_soft"] = TINY_OPEN["tree_step"] = TINY_OPEN["tree"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}
@@ -428,7 +432,7 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
               save_every: int | None = None, mix_lenient: bool = False, optimizer: str = "adam",
               muon_adamw_lr: float | None = None, warmup: int | None = None,
               muon_peak: float | None = None, cut: tuple[int, int] = (32, 4096), constant_lr: bool = False,
-              depth_mix_lr: float | None = None) -> list[str]:
+              depth_mix_lr: float | None = None, tree_reasoner_lr: float | None = None) -> list[str]:
     liger = liger or fast
     z = SIZES[size]
     args, n = fit(arm, size)
@@ -530,6 +534,8 @@ def train_cmd(arm: str, size: str, phase: str, *, data: Path, out: Path, init: s
                 "--muon_follow_schedule", "True", "--muon_decay_1d", "False"]
         if depth_mix_lr is not None:  # E40: the depth mixes' own AdamW rate (constant, no weight decay)
             cmd += ["--depth_mix_lr", str(depth_mix_lr)]
+        if tree_reasoner_lr is not None:  # E41 retrofits: the tree reasoner's own AdamW rate (constant)
+            cmd += ["--tree_reasoner_lr", str(tree_reasoner_lr)]
     elif depth_mix_lr is not None:
         raise ValueError("--depth_mix_lr is a Muon-run option (its own AdamW group)")
     if compile != "off":  # the whole model through torch.compile (the attention kernel is compiled either way)
@@ -607,6 +613,7 @@ def main() -> None:
                                              "retrofit: 65,536 tokens per step)")
     c.add_argument("--constant_lr", action="store_true", help="E40 retrofit: the rate held constant, no warm-up or decay")
     c.add_argument("--depth_mix_lr", type=float, help="E40, Muon: the depth mixes' own AdamW rate (constant)")
+    c.add_argument("--tree_reasoner_lr", type=float, help="E41, Muon: the tree reasoner's own AdamW rate (constant)")
     c.add_argument("--workers", type=int, default=6, help="dataloader worker processes per GPU")
     c.add_argument("--grad_ckpt", action="store_true", help="recompute each layer in the backward (less memory)")
     c.add_argument("--cut_min", type=int, default=32, help="E37c split phase: shortest gap between cuts, tokens")
@@ -655,7 +662,8 @@ def main() -> None:
                     grad_ckpt=a.grad_ckpt, compile=a.compile, liger=a.liger, rows=a.rows, workers=a.workers,
                     fast=a.fast, mix=a.mix, save_every=a.save_every, mix_lenient=a.mix_lenient,
                     optimizer=a.optimizer, muon_adamw_lr=a.muon_adamw_lr, warmup=a.warmup, muon_peak=a.muon_peak,
-                    cut=(a.cut_min, a.cut_max), constant_lr=a.constant_lr, depth_mix_lr=a.depth_mix_lr)
+                    cut=(a.cut_min, a.cut_max), constant_lr=a.constant_lr, depth_mix_lr=a.depth_mix_lr,
+                    tree_reasoner_lr=a.tree_reasoner_lr)
     print(shlex.join(cmd))
 
 
