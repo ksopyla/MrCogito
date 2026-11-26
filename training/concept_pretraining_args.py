@@ -472,7 +472,8 @@ class ModelArguments:
     lm_index_negatives: int = field(default=32, metadata={"help": "E33t: sampled unchosen notes per query."})
     par_global_read: str = field(default="dense", metadata={"help": "E33p: dense | lsa (LSA's released flat read on "
                                                                      "the global layer, nn/lsa_buckets.py) | concept "
-                                                                     "(E37 concept memory, nn/concept_memory.py)."})
+                                                                     "(E37 concept memory, nn/concept_memory.py) | "
+                                                                     "living (E39, nn/living_concepts.py)."})
     lsa_window: int = field(default=512, metadata={"help": "LSA read: raw window."})
     lsa_sinks: int = field(default=4, metadata={"help": "LSA read: first tokens of each document, always read."})
     lsa_block: int = field(default=512, metadata={"help": "LSA read: keys per clustered block."})
@@ -499,6 +500,20 @@ class ModelArguments:
     par_depth_mix: str = field(default="none", metadata={
         "help": "E40 (nn/depth_mix.py): none | read (GRN-v3 query/key/value depth mixes on the reading layer's runs) "
                 "| dca2 (2-DCA on every layer run). Identity at initialisation, so a warm start is unchanged."})
+    living_stride: int = field(default=512, metadata={"help": "E39 living concepts: tokens per stride."})
+    living_span_max: int = field(default=16, metadata={"help": "E39: longest span, tokens."})
+    living_span_cap: int = field(default=128, metadata={"help": "E39: most spans per stride."})
+    living_span_target: float = field(default=8.0, metadata={"help": "E39: mean span length θ is held at."})
+    living_found_target: float = field(default=0.125, metadata={"help": "E39: share of spans founding (λ's target)."})
+    living_keep: int = field(default=32, metadata={"help": "E39: concepts kept by the first level of the search."})
+    living_width: int = field(default=256, metadata={"help": "E39: spans a query opens, at most."})
+    living_levels: int = field(default=2, metadata={"help": "E39: 1 = spans only, 2 = spans + document concepts."})
+    living_search: str = field(default="two_level", metadata={"help": "E39: two_level | flat (test switch)."})
+    living_score: str = field(default="match", metadata={"help": "E39: match | mass (+ log n; test switch)."})
+    living_servo: bool = field(default=True, metadata={"help": "E39: θ and λ held by controllers in training."})
+    living_theta: float = field(default=0.49, metadata={"help": "E39: starting cut threshold (P1)."})
+    living_lam: float = field(default=0.65, metadata={"help": "E39: starting join threshold (P3)."})
+    living_servo_step: float = field(default=1e-3, metadata={"help": "E39: a threshold's largest move per forward."})
     par_cut_gap_min: int = field(default=0, metadata={"help": "E37c: shortest gap between training cuts, tokens."})
     par_cut_gap_max: int = field(default=0, metadata={
         "help": "E37c two-agent split training: longest gap between cuts (0 = no cuts). Gaps are log-uniform in "

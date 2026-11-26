@@ -4,14 +4,132 @@
   grouping; it needs to be fast on contextualised token vectors. At the same time, please remember our 10M context
   goal and reasoning in latent space; the looping seems helpful" · "lets start with the same training protocol as
   other 150M" · "Start Stages 1 and 2 together, I've raised the budget to $5000"). Spec written 2026-11-22
-  19:22 UTC. Nothing is built yet.
+  19:22 UTC.
+- **Pre-flight done, 2026-11-22 (Odra, $0):** P1 and P3 passed; P2 tripped K0 (the failing answers are already
+  opened and attended). **The author overrode K0 on 2026-11-23** (design session): "no, this is different arch and
+  approach that in my opinion is not promising as concepts. ... Lets train 150M and compare, 150M is already cheap
+  model". So the build and the 150M run go ahead; K2a, K2, K3 and K4 still stand. Results below, under Pre-flight
+  checks. Built 2026-11-23 (`E39_plan.md`).
 - **Changed by the author, 2026-11-22 (before any run):** the first version of this spec put a 30M screen on the
   home servers before the paid run (kill mark K1). Asked whether to keep it, the author answered "Skip it". The
   screen is withdrawn; an early reading inside the paid run (K2a) takes over part of its job.
+- **Changed by the author, 2026-11-24 (stage 1 under way, before any result): stages 2 and 3 read `m21mix_v4`.**
+  Asked whether E39's stages 2 and 3 should use the recipe with recall questions (v2 plus `recall_16k` at 3 % of
+  stage 2 and `recall_64k` at 5 % of stage 3, taken from the `pdfs` share; E38 spec, "List questions run"), the
+  author answered: "yes, wait, and then switch to check and compare". Stage 1 started on v2 at 05:50:09 UTC on spot
+  g6e.12xlarge `i-0f37f2a0aec00a51b` (the 4 × L40S fallback: no spot H100 from 15:26 to 20:22 UTC on 2026-11-23).
+  Stage 1 is the same under both mixes (same phase, sources and shard files, checked 2026-11-24), so the switch is a
+  restart of the node from its newest stage-1 checkpoint with `infra/aws/jobs/e39_board.sh` reading v4: when the
+  recall run's result is in, or before E39's stage 1 ends, whichever comes first; if the recall run has tripped a
+  stop mark by then, E39 stays on v2 and the author is asked. W&B names of stages 2 and 3 end "with recall
+  questions". **Reference for stages 2–3 and the tests: the E38 recall run** (concept memory, same stage-1 recipe,
+  same v4 stages; `runs/e38/e33n_m120t_e37a_muon0.01-recall_tok8.0e9_seed42/`), test by test. S1–S7 below were set
+  against models trained on v2 and are kept as written; with v4, S1's four cells are in a trained form for both
+  models, so they compare the two groupings under the same training. K2a, K2, K3 and K4 (stage 1, speed, money)
+  are unchanged.
+- **Stage 1 readings, 2026-11-24:** K3 met at 06:21 UTC (median 109.9k tokens per second over ~340 steps;
+  concept memory 105.6k). **K2a met at 08:37 UTC:** held-out loss at step 2,000 2.318 against concept memory's own
+  run 2.317 (limit 2.367); steps 500, 1,000 and 1,500 within 0.004 of it too. **R4 at step 2,000 (4k rows):** the
+  largest concept holds 64 % of a document's memory tokens, up from 28 % at step 400 (P3 on frozen keys: 41 % at
+  16k); 40 % of concepts are a single span (21 % at step 600); about 23 concepts per document; spans 7.9 tokens and
+  12 % of spans founding, so both controllers hold their targets. The biggest concept wins the joins: its centre,
+  the normalised sum of many unit keys, leans to the keys' common direction and matches new spans best. At 4k the
+  reader keeps 32 concepts and a document has about 23, so it reads all of them and the grouping cannot cost
+  anything yet; stage 2 (16k) is the first place it can, read there with R3.
+- **Stage 1 done, 2026-11-25 02:16 UTC. K2 met:** held-out loss at the last evaluation of stage 1 2.138 against
+  concept memory's 2.135 at the same step (limit 2.155), a tie. R4 at the end of stage 1: the largest concept holds
+  75–80 % of a document's memory tokens (flat since about step 4,000), 53 % of concepts are a single span, 18–25
+  concepts per document, spans 8.0 tokens, 12 % founding.
+- **The switch to v4 came late (2026-11-25).** The trigger fired at 00:28 UTC (stage 1 at step 13,821), but the
+  session that acts on it was not woken until 05:49 UTC, so stage 2 started on v2 at 02:16 UTC. At 05:51 UTC the
+  branch moved to v4; the keeper was stopped by PID and the node terminated (05:58 UTC); stage 2 on v2 (about
+  1,290 of 5,722 steps, held-out loss 2.185, no result used) was moved out of the run folder to
+  `runs/e39/aside/e33n_m120t_living_muon0.01_tok8.0e9_seed42_stage2_on_v2/`; the keeper relaunched
+  (`i-0ac835358ee4e95df`, us-east-1) and **stage 2 started on v4 at 06:03:31 UTC** from the stage-1 final weights
+  (168 shards, `recall_16k` at 3 % of rows; the same stage-2 manifest as the E38 recall run). About $25 of node
+  time was lost. Spend on E39's nodes at 06:18 UTC: $174 of $450 (K4), about $340 expected at the end.
+- **Stage 2 on v4, first readings (2026-11-25 08:13 UTC, ~13 % of stage 2, 87 log lines).** Speed: median 67.5k
+  tokens per second at 16k (S7 asks ≥ 59k; the E38 recall run 69.5k on the same node type). Held-out loss at 16k
+  against the E38 recall run at the same step: 2.286 / 2.249 / 2.221 against 2.255 / 2.223 / 2.195 at epochs
+  0.065 / 0.097 / 0.129, **+0.026 to +0.031 behind**, where stage 1 ended a tie (+0.003 at 4k). No stop mark is set
+  for stage 2; S3 reads it at the end. R4 at 16k: the largest concept's share of a document's memory tokens fell to
+  33 % (46 % at the first step of stage 2; 75–80 % at the end of stage 1 at 4k); about 193 concepts per document
+  (the reader keeps 32, so at 16k it must choose, unlike at 4k); 48 % single-span; spans 8.3 tokens;
+  `living/summary_weight` 0.36 → 0.26.
+- **Training done, AWS-job tests read (2026-11-26).** Stage 2 ended 19:36 UTC 11-25, stage 3 02:11 UTC 11-26, the
+  job's tests 03:36 UTC; the node powered itself off (no node left running at 06:05 UTC; this laptop's AWS login had
+  expired 02:18–06:04 UTC, so the keeper only waited). **K4 met:** nodes $324.56 of $450; the family $3,578.44 of
+  $5,000. **S7 met:** 67.6k tokens per second at 16k (≥ 59k), 21.4k at 64k (≥ 18k). Against the E38 recall run
+  (concept memory on the same v4 stages 2–3) and concept memory itself (the E38 run), same job and scripts:
+  - Held-out loss at the end of stage 2 (16k) **2.017** (1.996 / 1.996) and of stage 3 (64k) **2.003** (1.938 /
+    1.936). The gap to concept memory grows with the row length: +0.003 at the end of stage 1 (4k), +0.021 (16k),
+    +0.065 (64k); the 64k stage lowered E39's loss by 0.014, concept memory's by 0.060.
+  - Long-document loss (the job's test, 7 sources, nats per token) 2.069 / 1.910 / 1.940 / 1.936 / 1.840 at 4k /
+    16k / 32k / 64k / 128k (recall run 2.066 / 1.890 / 1.904 / 1.881 / 1.775). Core 7 mean (acc) 46.52 (46.28 /
+    46.23); WikiText 0.965 bits per byte (0.964).
+  - RULER as the job runs it, 4k / 8k / 16k / 32k: 13-task mean 0.436 / 0.384 / 0.266 / 0.194 (recall run 0.572 /
+    0.526 / 0.405 / 0.360; concept memory 0.433 / 0.397 / 0.339 / 0.304); the other 11 0.409 / 0.359 / 0.262 / 0.195
+    (0.569 / 0.530 / 0.419 / 0.377; 0.456 / 0.413 / 0.372 / 0.333); all values 0.59 / 0.54 / 0.28 / 0.29 (0.59 /
+    0.41 / 0.35 / 0.38); several keys 0.58 / 0.51 / 0.29 / 0.08 (0.58 / 0.59 / 0.29 / 0.15). **Single lookups fall
+    past 8k:** one number in an essay (niah_single_2) 0.98 / 0.99 / **0.47 / 0.28** (concept memory 1.00 / 1.00 /
+    1.00 / 0.97); one number among distractor keys (multikey 1) 0.86 / 0.70 / **0.50** / 0.32 (0.98 / 0.93 / 0.85 /
+    0.80); SQuAD 0.24 / 0.07 / 0.03 / 0.04 (0.34 / 0.19 / 0.21 / 0.22); the noise-haystack needle stays 1.00. Similar
+    keys (multikey 2) 0.19 / 0.11 / 0.14 / 0.04; the UUID needle 0.12 / 0.15 / 0.02 / 0.02.
+  - R4 at the end of stage 2 (16k): 210 concepts per document, the largest 32 % of memory tokens, 50 % single-span,
+    spans 8.3; at the end of stage 3 (64k): **881 concepts per document**, the largest 12 %, 50 % single-span, spans
+    8.5. Concepts grow linearly with length (23 at 4k → 210 → 881) while the reader keeps 32, so the share of a
+    document a reader can open shrinks as the text grows: the catalogue's lesson in the Risks ("the first level may
+    hide the right span"), and the failure pattern fits it (single lookups in an essay fail, in noise they do not).
+  - **Early marks on the job's protocol** (the card's protocol decides; it runs on Polonez from 06:09 UTC): S4
+    missed (asks ≥ 0.95 and ≥ 0.80 at 16k); S2 missed (asks ≥ 0.49 / 0.41 at 8k / 16k); S3 very likely missed (the
+    job's 64k loss is 0.055 above concept memory's, S3 allows 0.02); S1 at the mark (0.405, asks ≥ 0.40), the same
+    as the recall run's 0.41, so it comes from the recipe, not the grouping; S6 core met; S7 and K4 met. The bet
+    needs S1, S3 and S4.
+  - R2 (flat search, every visible span competes, set in a copy of the config) runs on card 0: RULER 16k and the
+    64k documents.
+- **The card's protocol (Polonez, from 06:09 UTC 11-26; first results 07:04 UTC; `Cache/aws_runs/e39_release`, the
+  flat copy `e39_release_flat`).** RULER (each task's own answer length) 13-task mean 0.436 / 0.387 / 0.269 at 4k /
+  8k / 16k (concept memory 0.488 / 0.439 / 0.373; the E38 recall run 0.567 / 0.527 / 0.392; full attention 0.459 /
+  0.407 / 0.255; topic index 0.541 / 0.540 / 0.439; catalogue 0.433 / 0.407 / 0.356). 64k documents **2.388** nats
+  per token (concept memory 2.293, recall run 2.291; the worst of the six models on the same data); switching the far
+  read off costs +0.184 (concept memory +0.287), and a 16k cut is only 0.006 worse than the whole 64k (concept
+  memory 0.061): past 16k the read adds almost nothing. Our list exam at 16k: single-value 0.71, all values 0.35,
+  several facts exact 0.28 (recall run 0.94 / 0.67 / 0.85); 63 % of list answers write a value twice (28 %).
+  - **S1 met at the mark:** all values 0.57 / 0.30 and several keys 0.52 / 0.26 at 8k / 16k, mean 0.41 (asks ≥ 0.40;
+    concept memory 0.25; the recall run, same recipe, 0.44): the recall rows, not the grouping.
+  - **S2 missed** (0.387 / 0.269, asks ≥ 0.49 / 0.41). **S3 missed at 64k** (2.388, asks ≤ 2.313; 16k pending).
+    **S4 missed at 16k:** one number in an essay 0.48 (asks ≥ 0.95), one number among distractor keys 0.55 (asks
+    ≥ 0.80); 32k pending. **The bet fails: it needs S1, S3 and S4.**
+  - **R2, what the first level costs (flat search at test time, same weights):** RULER at 16k 0.269 → **0.344**; one
+    number in an essay 0.48 → **1.00**; among distractor keys 0.55 → **0.84**; similar keys 0.10 → 0.16; all values
+    0.30 → 0.27; several keys 0.26 → 0.30. 64k documents 2.388 → **2.331**, a 16k cut now 0.040 worse than the whole
+    64k. So the concept choice (32 kept of ~210 at 16k, ~880 at 64k) is what drops the single lookups; with every
+    span competing the model is still 0.038 behind concept memory on 64k documents and 0.029 on RULER at 16k: trained
+    behind a narrow first level, it learned less from far context (its 64k stage lowered the held-out loss by 0.014,
+    concept memory's by 0.060).
+- **Verdict (card protocol complete, 2026-11-26 07:54 UTC): the bet fails.** S1 met at the mark (0.41, from the
+  recall rows); **S2 missed** (13-task mean 0.436 / 0.387 / 0.269 / 0.201 at 4k–32k; asks ≥ 0.49 / 0.41 at 8k /
+  16k); **S3 missed** (16k documents 2.161, asks ≤ 2.136; 64k 2.388, asks ≤ 2.313); **S4 missed** (one number in an
+  essay 0.48 / 0.31 at 16k / 32k, among distractor keys 0.55 / 0.31; asks ≥ 0.95 and ≥ 0.80 at 16k); S5 met as
+  written (the whole 127k is 0.013 worse than the last 61k, asks ≤ 0.031; but the whole-document loss 2.487 is the
+  highest of the six models: concept memory 2.451, full attention 2.421, topic index 2.426, catalogue 2.441, and a
+  16k cut is 0.035 better than the whole); **S6 met** (BLiMP 79.77, asks ≥ 79.6; 7-task mean 46.61, asks ≥ 45.2);
+  S7 and K4 met. Cross-model test: 61k-context long documents 0.827 bits per byte (concept memory 0.795), gain from
+  far context 1k → most 0.020 bits per byte (concept memory 0.051, full attention 0.037, topic index 0.049,
+  catalogue 0.042). WikiText 0.965 bits per byte (0.964). Tiny-ML board place 22nd (concept memory 24th; ARC-Easy
+  50.9 against 49.0).
+- **What it says for the next step.** The grouping trains (stage 1 a tie; 50 % single-span concepts, the largest
+  12 % at 64k), but a fixed number of concepts per reader cannot hold as concepts grow with length; R1 on the
+  training numbers (23 → 210 → 881 concepts per document at 4k / 16k / 64k, linear) points to the concept tree
+  before the reasoner. The flat search fixes single lookups at test time but costs a score over every span per
+  reader, which does not scale to 10M tokens. The open question for a flavour: trained with every span competing
+  in stages 2–3 (from this run's stage-1 weights, where the first level cost nothing), does the grouping match the
+  recall run on long text? **Asked and approved 2026-11-26 ("Rerun stages 2–3"): flavour
+  [E39a](E39a_living_flat.md).**
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
-- **Implementation plan:** `E39_plan.md` (to be written by the build session before code, `implementation-plan`).
+- **Implementation plan:** `E39_plan.md`.
 - **Owner / dates:** Krzysztof Sopyla · opened 2026-11-22 · closed —
 - **New family, not a flavour of E37:** the author asked to "treat it as a new architecture". E39 was free on every
   branch and worktree on 2026-11-22 (checked `origin/dev`, `arch-10m`, `eng-100m`, `e37-sft`, `e33t-capability`,
@@ -194,6 +312,41 @@ On the released concept-memory model (the author's own weights, public Hub repos
 - **P4 — speed and parity** of the built read on one home card: tokens per second at 4k and 16k against the
   concept-memory arm at the same size; the unit tests below.
 
+### Pre-flight results (2026-11-22, Odra, the released concept-memory model; `scripts/e39_preflight.py`)
+- **P1 — span signal: present.** First-pass keys of 112 held-out 16k rows of the seven long sources: adjacent
+  cosine 0.653 against 0.361 at lag 8 (K0 needs a gap of at least 0.05; it is 0.29). θ for a mean span of 8:
+  **0.486** (0.475–0.504 per source); there 9 % of spans have 1 token and 22 % reach 16, a stride holds 64 spans
+  (p95 89, max 107), none reaches the 128 cap. The cuts do not follow words (50 % on a word start against 58 % of
+  tokens): they isolate rare, content-heavy tokens such as names and identifiers.
+- **P3 — concept growth: at the mark.** λ for 1 span in 8 founding: **0.652** at 16k, 0.702 at 64k. With 0.702
+  the concepts grow 1.58× from 64k to 128k (15 documents, median 1.59, range 1.21–1.89; linear = 2.0), with 0.652
+  1.51×: R1's 1.6 mark sits right at what these keys give. **Skew:** the largest concept holds 41 % of a 16k
+  document's tokens (20 % at 64k) and about half of the concepts hold a single span; leader centres drift toward
+  the average key.
+- **P2 — the diagnosis: not confirmed (K0's second condition).** RULER, 100 prompts per task. Concept memory puts
+  a value's tokens in about 2.5 groups, E39's spans in about 1.1. But the missed values are already read word for
+  word and get as much attention as the found ones:
+
+  | length, task | score | summaries off | missed values fully held by some reader | best-pass attention, missed vs found |
+  |---|---|---|---|---|
+  | 8k several keys | 0.328 | 0.35 | 96 % | 0.075 vs 0.071 |
+  | 8k all values of one key | 0.445 | 0.407 | 100 % | 0.113 vs 0.107 |
+  | 16k several keys | 0.05 | 0.022 | 93 % | 0.059 vs 0.04 |
+  | 16k all values of one key | 0.203 | 0.235 | 100 % | 0.099 vs 0.069 |
+
+  The third loop pass does the opening; summaries off moves no score beyond the ±0.09 noise. The typical 8k failure
+  is one value written and then repeated. This is the third outcome above: **use, not memory → K0 tripped.**
+- **P4 — speed: passed (2026-11-23 08:35–08:49 UTC, Odra, one RTX 3090, the 150M model, Muon, gradient
+  checkpointing, `--fast`, the same settings for both).** Tokens per second, living concepts against concept
+  memory: **10,956 against 10,442 at 4k (r = 1.05)** and **7,644 against 7,239 at 16k (1.06)**; peak memory the
+  same (3.2 / 4.3 GB at 2 and 1 rows per pass). K3 and S7, read as ratios on the home card for an H100 run: met.
+  Unit tests: 19 on the CPU, the cached-decoding suite for both arms, 17 on Odra's GPUs (flex equals the streamed
+  read at the 150M shapes at 4k and 16k, cached decoding equals the flex forward across a stride end, two cards
+  hold the same thresholds); 141,506,208 parameters for both arms.
+- **Overridden by the author, 2026-11-23** (quoted in Status): E39 is trained as a different architecture and
+  compared, not as a fix of concept memory's grouping. The probe of the topic-index model through the same record
+  (`probe_prompt_lsa`, written and tested) was not run.
+
 ## Success criteria (set BEFORE running; 150M, seed 42, the E38 tests unchanged)
 Ceilings are the measured scores of the topic index (retrieval) and of concept memory (long text) on the same data.
 Run-to-run noise of one RULER task at 100 prompts is ±0.09; of the mean of 13 about ±0.02.
@@ -225,6 +378,10 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
 - **R4:** the grouping's own numbers through training — mean span length, share of spans at 16 tokens and at 1,
   spans per stride, share of strides that hit the cap, concepts per document, share of single-span concepts, the
   largest concept's share, θ and λ, tokens opened per reader, share of attention on opened / summaries / window.
+  **Watched: the largest concept's share of tokens** (W&B `living/largest_share`, with `living/single_span_share`).
+  On concept memory's frozen keys P3 measured 41 % of a 16k document and 20 % at 64k, with about half the concepts
+  a single span; in training the controllers and the keys growing up with the grouping should break it up.
+  Reported at step 2,000 with K2a (added 2026-11-23 at the starting session's request).
 
 ## Kill criteria (set BEFORE running)
 - **K0 (pre-flight):** P1 shows no span signal (mean adjacent cosine less than 0.05 above the lag-8 cosine), or P2
@@ -244,7 +401,8 @@ from any of them: inside 64k these are no-harm and gap-closing checks.
 
 ## Plan
 - **Data:** `m21mix_v2` (SmolLM2 tokens), unchanged: 8.0B tokens in 4k rows, 3.0B in 16k rows, 0.5B in 64k rows,
-  the same shards in the same order as the other four models.
+  the same shards in the same order as the other four models. Stages 2 and 3 on `m21mix_v4` since 2026-11-24 (see
+  Status): the E38 recall run's recipe.
 - **Compute:** home servers (Odra, Polonez) for the checks, the build's GPU tests and a short pipeline check, under
   the cooling rules. For the 150M run (author, 2026-11-23: "Lets try on just one H100, 8 maybe to much ... i don't
   want to spent to much money"): **one spot H100 first** (`p5.4xlarge`, us-east-1, the cheapest zones first: in

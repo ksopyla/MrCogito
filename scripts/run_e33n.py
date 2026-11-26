@@ -124,7 +124,21 @@ ARMS = {
                  "concept_block": 512, "concept_per_block": 16, "concept_sinks": 4, "concept_top_k": 512},
     "e37a_c128": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "concept",
                   "concept_block": 512, "concept_per_block": 4, "concept_sinks": 4, "concept_top_k": 512},
+    # E39 (docs/experiments_specs/ahead/E39_living_concepts.md): living concepts on the dense arm's reading layer —
+    # contiguous spans cut where adjacent keys stop resembling each other (mean 8 tokens), document-wide concepts that
+    # each span joins or founds (1 span in 8 founds), concepts first then their spans by match, 512 opened tokens, one
+    # summary per concept for what was not opened; living_spans: every span its own concept, searched flat
+    "living": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "living",
+               "living_stride": 512, "living_span_max": 16, "living_span_cap": 128, "living_keep": 32,
+               "living_levels": 2, "concept_sinks": 4, "concept_top_k": 512},
+    "living_spans": {"par_mode": "perceiver", "message_boundary_token_id": -1, **_LOOP, "par_global_read": "living",
+                     "living_stride": 512, "living_span_max": 16, "living_span_cap": 128, "living_levels": 1,
+                     "concept_sinks": 4, "concept_top_k": 512},
 }
+# E39a (docs/experiments_specs/ahead/E39a_living_flat.md, author 2026-11-26): living concepts with every visible span
+# competing for the 512 opened tokens in training too (the test switch of E39's R2); same weights shape, so stages 2-3
+# start from E39's stage-1 weights
+ARMS["living_flat"] = {**ARMS["living"], "living_search": "flat"}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
 # E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
 # mixes for the query, key and value inputs (nn/depth_mix.py): the reading layer's runs only, or 2-DCA on every run.
@@ -148,7 +162,13 @@ TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"
                               "lm_stride": 64, "lm_open_pages": 2},
              "e37a": {"concept_block": 64, "concept_per_block": 8, "concept_top_k": 64},
              "e37b": {"concept_block": 64, "concept_per_block": 8, "concept_top_k": 64, "concept_reasoner_dim": 64,
-                      "concept_reasoner_heads": 2}}
+                      "concept_reasoner_heads": 2},
+             # E39 tiny (laptop pipeline checks, sdpa): 64-token strides of spans up to 8 tokens
+             "living": {"living_stride": 64, "living_span_max": 8, "living_span_cap": 16, "living_keep": 8,
+                        "living_width": 16, "concept_top_k": 64},
+             "living_spans": {"living_stride": 64, "living_span_max": 8, "living_span_cap": 16, "living_width": 16,
+                              "concept_top_k": 64}}
+TINY_OPEN["living_flat"] = TINY_OPEN["living"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}
@@ -176,9 +196,10 @@ def model_args(arm: str, size: str, ffn: int | None = None) -> dict:
             a["lm_read_topk"] = 4
     if size == "tiny" and arm in TINY_OPEN:
         a.update(TINY_OPEN[arm])
-    if a.get("par_global_read") == "concept":
+    if a.get("par_global_read") in ("concept", "living"):
         # E37 length scale (2026-11-08): past the long decay's row length the summaries' total weight is held at
         # that length's level, so the trained model reads longer documents without the fade. Inert in training.
+        # E39 keeps it unchanged (the spec: the length scale is one of the parts kept on purpose).
         a.setdefault("concept_sum_len", decay_len(size))
     a["num_attention_heads"] = z["hidden"] // a["head_dim"]
     a["intermediate_size"] = ffn or max(64, round(z["hidden"] * 8 / 3 / 64) * 64)

@@ -305,6 +305,23 @@ class PerceiverARConfig(PretrainedConfig):
         # mixes over the stream's depth increments for a layer's query, key and value inputs. "read" = the reading
         # layer's runs only (every loop pass), "dca2" = 2-DCA on every layer run. Exact identity at initialisation.
         par_depth_mix: str = "none",
+        # E39 living concepts (par_global_read="living", nn/living_concepts.py): contiguous spans + document-wide
+        # concepts; the read shares concept_sinks / concept_top_k / concept_summaries / concept_variance / concept_sum_len
+        living_stride: int = 512,         # E39: tokens per stride (the window is the query's stride + the one before)
+        living_span_max: int = 16,        # E39: longest span, tokens
+        living_span_cap: int = 128,       # E39: most spans per stride (forced + natural cuts)
+        living_span_target: float = 8.0,  # E39: mean span length the cut threshold θ is held at in training
+        living_found_target: float = 0.125,  # E39: share of spans founding a concept the join threshold λ is held at
+        living_keep: int = 32,            # E39: concepts kept by the first level of the search
+        living_width: int = 256,          # E39: spans a query opens, at most
+        living_levels: int = 2,           # E39: 1 = spans only (every span its own concept, flat), 2 = + concepts
+        living_search: str = "two_level",  # E39: "flat" = every visible span competes (test switch)
+        living_score: str = "match",      # E39: "mass" = + log n, the concept read's choice rule (test switch; with
+                                          # living_levels 1 it is the concept read with span labels, exactly)
+        living_servo: bool = True,        # E39: the thresholds' controllers act in training
+        living_theta: float = 0.49,       # E39: starting cut threshold (cosine of adjacent first-pass keys; P1)
+        living_lam: float = 0.65,         # E39: starting join threshold (cosine of span and concept centres; P3)
+        living_servo_step: float = 1e-3,  # E39: a threshold's largest move per training forward
         # E37c two-agent split training (docs/experiments_specs/done_failed/E37c_two_agent_split_training.md): rows are cut
         # at random points in training. A local layer reads its own side of a cut only; layers with the full pattern
         # (the reading layer) keep reading the whole document. Off by default; nothing is cut in eval unless asked.
@@ -483,6 +500,20 @@ class PerceiverARConfig(PretrainedConfig):
         self.concept_reasoner_heads = int(concept_reasoner_heads)
         self.concept_reasoner_loops = int(concept_reasoner_loops)
         self.par_depth_mix = str(par_depth_mix or "none")
+        self.living_stride = int(living_stride)
+        self.living_span_max = int(living_span_max)
+        self.living_span_cap = int(living_span_cap)
+        self.living_span_target = float(living_span_target)
+        self.living_found_target = float(living_found_target)
+        self.living_keep = int(living_keep)
+        self.living_width = int(living_width)
+        self.living_levels = int(living_levels)
+        self.living_search = str(living_search or "two_level")
+        self.living_score = str(living_score or "match")
+        self.living_servo = bool(living_servo)
+        self.living_theta = float(living_theta)
+        self.living_lam = float(living_lam)
+        self.living_servo_step = float(living_servo_step)
         self.par_cut_gap_min = int(par_cut_gap_min or 0)
         self.par_cut_gap_max = int(par_cut_gap_max or 0)
         self.par_cut_prob = float(par_cut_prob)
@@ -721,8 +752,29 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("lm_filing_iters >= 0 and lm_filing_cap in [1, 511]")
             if self.lm_filing_cap * int(self.lm_latents) < int(self.lm_window):
                 raise ValueError("lm_filing_cap · lm_latents must be >= lm_window (every token needs a note)")
-        if self.par_global_read not in ("dense", "lsa", "concept"):
-            raise ValueError(f"par_global_read must be dense | lsa | concept, got {self.par_global_read!r}")
+        if self.par_global_read not in ("dense", "lsa", "concept", "living"):
+            raise ValueError(f"par_global_read must be dense | lsa | concept | living, got {self.par_global_read!r}")
+        if self.par_global_read == "living":
+            if self.message_enabled:
+                raise ValueError("par_global_read='living' (E39) is its own memory: turn the message boundary off")
+            if not self.global_nope or self.num_kv_heads != 1:
+                raise ValueError("par_global_read='living' needs global_nope=True and num_kv_heads=1")
+            if self.attn_backend == "flash" or self.par_mode != "perceiver" or self.global_layers < 1:
+                raise ValueError("par_global_read='living' needs perceiver mode with a global layer, flex or sdpa")
+            if not 2 <= self.living_stride <= 512 or self.living_stride % self.living_span_max:
+                raise ValueError("living_stride in [2, 512] (member rank code), a multiple of living_span_max")
+            if self.living_span_cap <= self.living_stride // self.living_span_max or self.living_span_cap > 511:
+                raise ValueError("living_span_cap must be > living_stride / living_span_max (room for natural cuts)")
+            if self.attn_backend == "flex" and self.living_stride % 128:
+                raise ValueError("the flex living read needs living_stride in whole 128-token blocks")
+            if self.living_levels not in (1, 2) or self.living_search not in ("two_level", "flat"):
+                raise ValueError("living_levels in (1, 2), living_search two_level | flat")
+            if self.living_score not in ("match", "mass"):
+                raise ValueError("living_score match | mass")
+            if self.living_keep < 1 or self.living_width < 1 or not 1 <= self.concept_top_k <= 32767:
+                raise ValueError("living_keep >= 1, living_width >= 1, concept_top_k in [1, 32767]")
+            if not (self.living_span_target >= 1 and 0 < self.living_found_target <= 1):
+                raise ValueError("living_span_target >= 1, living_found_target in (0, 1]")
         if self.par_global_read == "concept":
             if self.message_enabled:
                 raise ValueError("par_global_read='concept' (E37) is its own memory: turn the message boundary off")
@@ -2751,6 +2803,28 @@ class Attention(nn.Module):
                     cfg.hidden_size, g * dh, dim=int(cfg.concept_reasoner_dim),
                     layers=int(cfg.concept_reasoner_layers), heads=int(cfg.concept_reasoner_heads),
                     loops=int(cfg.concept_reasoner_loops))
+        # E39: living concepts on the global layer (nn/living_concepts.py): spans + document-wide concepts
+        self.living = None
+        self.living_off = False      # eval switch: sinks + window only
+        self._living_index = None    # this forward's grouping: None = not built yet, False = the row has no memory
+        self._living_share = None    # a list while the flex read should report the summaries' share of the weight
+        if pattern == "full" and str(getattr(cfg, "par_global_read", "dense") or "dense") == "living":
+            from nn.living_concepts import STAT_KEYS
+
+            self.living = dict(stride=int(cfg.living_stride), span_max=int(cfg.living_span_max),
+                               span_cap=int(cfg.living_span_cap), span_target=float(cfg.living_span_target),
+                               found_target=float(cfg.living_found_target), keep=int(cfg.living_keep),
+                               width=int(cfg.living_width), levels=int(cfg.living_levels),
+                               search=str(cfg.living_search), score=str(getattr(cfg, "living_score", "match")),
+                               servo=bool(cfg.living_servo),
+                               step=float(cfg.living_servo_step), sinks=int(cfg.concept_sinks),
+                               top_k=int(cfg.concept_top_k), summaries=bool(cfg.concept_summaries),
+                               variance=bool(cfg.concept_variance),
+                               sum_len=int(getattr(cfg, "concept_sum_len", 0) or 0))
+            # the two thresholds: saved with the model, moved only by their controllers in training
+            self.register_buffer("living_theta", torch.tensor(float(cfg.living_theta)))
+            self.register_buffer("living_lam", torch.tensor(float(cfg.living_lam)))
+            self.register_buffer("living_acc", torch.zeros(len(STAT_KEYS)), persistent=False)
         self.flow = None  # E33p instrumentation (nn/flow_stats.FlowRecorder), set on the reading layer when armed
         # E33t: the catalogue read's learned empty slots (keys through k_norm, values from zero) and the index loss's
         # temperature, on the reading layer only
@@ -3034,6 +3108,8 @@ class Attention(nn.Module):
             o = self._lsa_read(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
         elif self.concept is not None:  # the reasoner (if any) reads the keys' input, the concepts' own states
             o = self._concept_read(q, k, v, x if x_kv is None else x_kv[0], doc_ids=doc_ids, key_valid=key_valid)
+        elif self.living is not None:
+            o = self._living_read(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
         else:
             if self.flow is not None and self.pattern == "full":
                 self.flow.reading_dense(self, q=q, k=k, v=v, doc_ids=doc_ids, key_valid=key_valid)
@@ -3111,6 +3187,107 @@ class Attention(nn.Module):
         return attend_concepts(q, k, v, cidx=cidx, dv=dv, doc=doc, key_valid=key_valid, backend=self.backend,
                                opened=opened, sink=sink, ds=ds, n_sinks=c["sinks"], summaries=c["summaries"],
                                variance=c["variance"], dv_tok=dv_tok, sum_len=c.get("sum_len", 0))
+
+
+    def _living_read(self, q, k, v, *, doc_ids, key_valid):
+        """E39: this forward's spans and concepts (built on the first call, from that call's keys), this pass's
+        statistics, each query's choice, and one softmax over sinks ‖ the query's stride and the one before ‖ opened
+        tokens ‖ one summary per concept (nn/living_concepts.py). `living_levels 1`: every span its own concept,
+        searched flat; with `living_score mass` the span labels go behind the concept read (nn/concept_memory.py),
+        unchanged otherwise (the equality test against that read)."""
+        from nn.exact_read import _FLEX_MAX_NUMEL, doc_starts
+        from nn.living_concepts import (attend_living, build_living, living_numbers, living_open_table,
+                                        living_read_stream, living_stats, servo_step)
+
+        B, S = q.shape[:2]
+        c = self.living
+        doc = doc_ids.long() if doc_ids is not None else torch.zeros(B, S, dtype=torch.long, device=q.device)
+        if key_valid is not None:
+            doc = doc.masked_fill(~key_valid.bool(), -1)
+        ds = doc_starts(doc)
+        pos = torch.arange(S, device=q.device)[None]
+        sink = (pos - ds < c["sinks"]) & (doc >= 0)
+        lidx = None
+        if not self.living_off:
+            if self._living_index is None:  # the first reading-layer call of this forward: the first loop pass
+                built = build_living(k, doc, sink, stride=c["stride"], span_max=c["span_max"],
+                                     span_cap=c["span_cap"], theta=self.living_theta, lam=self.living_lam,
+                                     levels=c["levels"])
+                self._living_index = built if built is not None else False
+                # also without a memory: the controllers' counters are summed over the cards in every forward
+                self._living_account(built, c, servo_step, living_numbers)
+            lidx = self._living_index or None
+        if c["levels"] < 2 and c["score"] == "mass":
+            from nn.concept_memory import attend_concepts, build_concepts, concept_open_table
+
+            cidx, opened = None, None
+            if lidx is not None:
+                cidx = build_concepts(k, v, None, doc, sink, block=c["stride"], per_block=c["span_cap"],
+                                      labels=lidx.labels)
+                opened = concept_open_table(q, cidx, top_k=c["top_k"], width=c["width"], variance=c["variance"])
+            return attend_concepts(q, k, v, cidx=cidx, dv=None, doc=doc, key_valid=key_valid, backend=self.backend,
+                                   opened=opened, sink=sink, ds=ds, n_sinks=c["sinks"], summaries=c["summaries"],
+                                   variance=c["variance"], sum_len=c["sum_len"], block=c["stride"])
+        st = living_stats(k, v, lidx) if lidx is not None else None
+        # the tables of the flex read: T [B, S, G] must fit one flex buffer; longer rows (and the list switch) read
+        # through the streamed path, which is also the sdpa backend's
+        stream = self.backend != "flex" or self.open_impl == "list" or (
+            lidx is not None and not torch.is_grad_enabled() and B * S * lidx.groups.n_groups > _FLEX_MAX_NUMEL)
+        if stream:
+            return living_read_stream(q, k, v, lidx=lidx, st=st, doc=doc, ds=ds, n_sinks=c["sinks"],
+                                      key_valid=key_valid, top_k=c["top_k"], width=c["width"], keep=c["keep"],
+                                      stride=c["stride"], summaries=c["summaries"], variance=c["variance"],
+                                      search=c["search"], score=c["score"], sum_len=c["sum_len"])
+        opened, n_open = None, None
+        if lidx is not None:
+            opened, n_open = living_open_table(q, lidx, st, doc, top_k=c["top_k"], width=c["width"], keep=c["keep"],
+                                               variance=c["variance"], search=c["search"], score=c["score"])
+        share = [] if (self.training and lidx is not None and c["summaries"]) else None
+        out = attend_living(q, k, v, lidx=lidx, st=st, opened=opened, n_open=n_open, doc=doc, sink=sink, ds=ds,
+                            n_sinks=c["sinks"], key_valid=key_valid, stride=c["stride"], summaries=c["summaries"],
+                            variance=c["variance"], sum_len=c["sum_len"], share=share)
+        if share:
+            with torch.no_grad():
+                ok = (doc >= 0) & (pos >= 2 * c["stride"])                               # readers that have a memory
+                self.living_acc[12] += (share[0].mean(1) * ok).sum()
+                self.living_acc[13] += ok.sum()
+        return out
+
+    @torch.no_grad()
+    def _living_account(self, lidx, c, servo_step, living_numbers) -> None:
+        """Once per forward, after the grouping (`lidx` None: the row has no memory stride): the thresholds'
+        controllers (training only; counters summed over the cards in every training forward, so every card holds
+        the same thresholds and calls the same collectives) and the running sums of the grouping's own numbers."""
+        if self.training and c["servo"]:
+            dev = self.living_theta.device
+            if lidx is not None:
+                cnt = torch.stack([lidx.tokens.float(), lidx.spans.float(),
+                                   (lidx.founders if lidx.founders is not None else lidx.spans).float()])
+            else:
+                cnt = torch.zeros(3, device=dev)
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                torch.distributed.all_reduce(cnt, op=torch.distributed.ReduceOp.SUM)
+            tokens, spans, founders = cnt[0], cnt[1], cnt[2]
+            enough = tokens >= 256                                                       # too few members: no move
+            new_t = servo_step(self.living_theta, spans / tokens.clamp_min(1.0), 1.0 / c["span_target"], c["step"])
+            self.living_theta.copy_(torch.where(enough, new_t, self.living_theta))
+            if c["levels"] >= 2:
+                new_l = servo_step(self.living_lam, founders / spans.clamp_min(1.0), c["found_target"], c["step"])
+                self.living_lam.copy_(torch.where(enough & (spans > 0), new_l, self.living_lam))
+        if self.training and lidx is not None:
+            nums = living_numbers(lidx)
+            self.living_acc[: nums.numel()] += nums
+            self.living_acc[14] += 1
+
+    def pop_living_stats(self) -> dict:
+        """The grouping's own numbers since the last call (readout R4), as `living/…` scalars; {} when none."""
+        from nn.living_concepts import stats_report
+
+        if self.living is None:
+            return {}
+        out = stats_report(self.living_acc, float(self.living_theta), float(self.living_lam))
+        self.living_acc.zero_()
+        return out
 
 
 @torch.no_grad()
@@ -3713,6 +3890,15 @@ class PerceiverARLM(PreTrainedModel):
             for a, v in zip(attns, prev):
                 a.open_impl = v
 
+    def pop_train_stats(self) -> dict:
+        """Scalars a read keeps about itself between two training logs (E39: the grouping's own numbers); the
+        trainer merges them into its periodic log. {} for every other model."""
+        out = {}
+        for layer in self.layers:
+            if getattr(layer.attn, "living", None) is not None:
+                out.update(layer.attn.pop_living_stats())
+        return out
+
     def _set_flow(self, rec) -> None:
         for layer in self.layers:
             layer.flow = rec
@@ -3998,6 +4184,9 @@ class PerceiverARLM(PreTrainedModel):
                     prefix_embeds: Optional[torch.Tensor] = None, cut_ids: Optional[torch.Tensor] = None):
         cfg = self.config
         B, S = input_ids.shape
+        for layer in self.layers:  # E39: the grouping is built by the first reading-layer call of each forward
+            if getattr(layer.attn, "living", None) is not None:
+                layer.attn._living_index = None
         key_valid = None
         if self._needs_key_mask(attention_mask, cfg.block_attention_mode == "causal"):
             key_valid = attention_mask.bool()

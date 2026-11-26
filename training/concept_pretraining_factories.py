@@ -460,6 +460,12 @@ def _plain_loop_kwargs(model_args) -> dict:
                       "concept_reasoner_layers", "concept_reasoner_dim", "concept_reasoner_heads",
                       "concept_reasoner_loops"):
                 out[k] = getattr(model_args, k)
+        if str(model_args.par_global_read) == "living":  # E39: its own fields plus the concept read's shared ones
+            for k in ("concept_sinks", "concept_top_k", "concept_summaries", "concept_variance", "concept_sum_len",
+                      "living_stride", "living_span_max", "living_span_cap", "living_span_target",
+                      "living_found_target", "living_keep", "living_width", "living_levels", "living_search",
+                      "living_score", "living_servo", "living_theta", "living_lam", "living_servo_step"):
+                out[k] = getattr(model_args, k)
     if str(getattr(model_args, "par_depth_mix", "none") or "none") != "none":  # E40
         out["par_depth_mix"] = str(model_args.par_depth_mix)
     if int(getattr(model_args, "par_cut_gap_max", 0) or 0) > 0:  # E37c: cut rows in training

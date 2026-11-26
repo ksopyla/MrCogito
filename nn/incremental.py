@@ -140,6 +140,12 @@ def decode_kind(model: PerceiverARLM) -> str:
     att = m.layers[gi].attn
     if att.pattern != "full":
         _refuse("the global layer is not a full read")
+    if getattr(att, "living", None) is not None:
+        if m.memory_writer is not None or att.compressor is not None:
+            _refuse("the living read with a notebook or a compressor")
+        if int(att.living["levels"]) < 2 and att.living["score"] == "mass":
+            _refuse("the spans-only read scored by mass (the concept read's test switch)")
+        return "living"
     if att.concept is not None:
         if m.memory_writer is not None or att.compressor is not None:
             _refuse("the concept read with a notebook or a compressor")
@@ -286,6 +292,8 @@ class IncrementalDecoder:
             self._build_lsa()
         elif self.kind == "concept":
             self._build_concepts()
+        elif self.kind == "living":
+            self._build_living()
         elif self.kind == "catalogue":
             self._build_catalogue(msgs.get(self.gi))
             if self.cat.open:
@@ -338,6 +346,29 @@ class IncrementalDecoder:
                 dv = att.concept_reasoner(cidx.z, cidx.block_of, cidx.c_doc)
                 dv_tok = token_update(cidx, dv, self.S)
             self.cc.append((cidx, dv, dv_tok))
+
+    def _build_living(self) -> None:
+        """E39: the spans and concepts of the written row from the cached first-pass keys (as `_living_read`'s first
+        call of a forward builds them), then each pass's statistics. A stride's tokens join the memory when the
+        first token of the stride two later is written (the membership rule), so `step` rebuilds at stride starts."""
+        from nn.living_concepts import build_living, living_stats
+
+        att = self.m.layers[self.gi].attn
+        c = att.living
+        doc = self.doc
+        ds = doc_starts(doc)
+        pos = torch.arange(self.S, device=doc.device)[None]
+        sink = (pos - ds < int(c["sinks"])) & (doc >= 0)
+        self.lidx, self.lst = None, [None] * self.passes
+        if att.living_off:
+            return
+        lidx = build_living(self.K[(self.gi, 0)], doc, sink, stride=int(c["stride"]), span_max=int(c["span_max"]),
+                            span_cap=int(c["span_cap"]), theta=att.living_theta, lam=att.living_lam,
+                            levels=int(c["levels"]))
+        if lidx is None:
+            return
+        self.lidx = lidx
+        self.lst = [living_stats(self.K[(self.gi, r)], self.V[(self.gi, r)], lidx) for r in range(self.passes)]
 
     def _build_notes(self, msg) -> None:
         """E33p's notes read: the prefill's notebook (the writer's note values, the tied keys' assignment, when each
@@ -438,6 +469,13 @@ class IncrementalDecoder:
             for built in self.cc:
                 if built is not None:
                     built[0].groups.doc_start[:, t] = ds_t
+        elif self.kind == "living":
+            # a stride starts: the stride two before joins the memory now that this position's document id is
+            # written (the uncached forward over this row groups it so); otherwise only the new document start
+            if t % int(m.layers[self.gi].attn.living["stride"]) == 0:
+                self._build_living()
+            elif self.lidx is not None:
+                self.lidx.groups.doc_start[:, t] = ds_t
         elif self.kind == "notes":
             if self.nt.open:
                 self.nt.ni.groups.doc_start[:, t] = ds_t
@@ -463,7 +501,7 @@ class IncrementalDecoder:
         pos = m._positions(t + 1, B, self.doc[:, :t + 1], dev)[:, t:t + 1]
         cos, sin = rope_cos_sin(pos, cfg.head_dim, cfg.rope_theta, x0.dtype)
         ids = self.buf[:, t:t + 1]
-        self._ds = doc_starts(self.doc) if self.kind in ("lsa", "concept") else None
+        self._ds = doc_starts(self.doc) if self.kind in ("lsa", "concept", "living") else None
         n = len(m.layers)
         n_skip = n // 2
 
@@ -536,6 +574,8 @@ class IncrementalDecoder:
             o = self._lsa_read(q, K, V, r, t, att)
         elif self.kind == "concept":
             o = self._concept_read(q, K, V, r, t, att)
+        elif self.kind == "living":
+            o = self._living_read(q, K, V, r, t, att)
         elif self.kind == "notes":
             o = self._notes_read(q, K, V, r, t)
         else:
@@ -629,6 +669,20 @@ class IncrementalDecoder:
         lg = torch.einsum("bhd,bkd->bhk", q[:, 0].float(), kk) / math.sqrt(d) + bias
         o = torch.einsum("bhk,bkd->bhd", torch.softmax(lg, -1), vv)
         return o[:, None].to(q.dtype)
+
+    def _living_read(self, q, K, V, r, t, att):
+        """E39 (nn.living_concepts.living_read_stream, the full forward's reference read) for the query t, with the
+        grouping of the written row and this pass's statistics. fp32 inside."""
+        from nn.living_concepts import living_read_stream
+
+        c = att.living
+        lidx = self.lidx
+        return living_read_stream(q, K, V, lidx=lidx, st=self.lst[r] if lidx is not None else None, doc=self.doc,
+                                  ds=self._ds, n_sinks=int(c["sinks"]), key_valid=None, top_k=int(c["top_k"]),
+                                  width=int(c["width"]), keep=int(c["keep"]), stride=int(c["stride"]),
+                                  summaries=bool(c["summaries"]), variance=bool(c["variance"]),
+                                  search=str(c["search"]), score=str(c["score"]), sum_len=int(c["sum_len"]),
+                                  q_offset=t)
 
     def _notes_read(self, q, K, V, r, t):
         """E33p (`_attend_open` with the closed rule) for the query t: one softmax over its document's raw window, the
@@ -760,6 +814,8 @@ class IncrementalDecoder:
             self._build_lsa()
         elif self.kind == "concept":
             self._build_concepts()
+        elif self.kind == "living":
+            self._build_living()
 
     # ------------------------------------------------------------------ read once, answer many
     _SHARED = ("m", "cfg", "kind", "gi")

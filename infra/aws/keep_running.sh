@@ -48,11 +48,24 @@ wait_creds() {
   done
   fix_names
 }
+# alive: 0 = a node of NAME is pending or running, or the answer is unknown; 1 = every region answered and none has
+# one. A failed query must never read as "gone": on 2026-11-24 at 14:41 UTC DescribeInstances failed once with
+# AuthFailure (the login check had passed seconds before) and the recall keeper tried to launch a second node while
+# its node ran; only the full spot quota stopped it. Two nodes of one name would write the same run folder.
+ALIVE_ERR="${LOG}.alive_err"
 alive() {
+  local r out rc
   for r in $MC_REGIONS; do
-    aws ec2 describe-instances --region "$r" --filters "Name=tag:Name,Values=$NAME" \
-      "Name=instance-state-name,Values=pending,running" --query 'Reservations[].Instances[].InstanceId' --output text
-  done | grep -q .
+    out=$(aws ec2 describe-instances --region "$r" --filters "Name=tag:Name,Values=$NAME" \
+      "Name=instance-state-name,Values=pending,running" --query 'Reservations[].Instances[].InstanceId' \
+      --output text 2>"$ALIVE_ERR"); rc=$?
+    if [ "$rc" -ne 0 ]; then
+      say "node check failed in $r (exit $rc: $(head -c 200 "$ALIVE_ERR" | tr '\n' ' ')); counted as alive, next check in $INTERVAL s"
+      return 0
+    fi
+    case "$out" in *i-*) return 0 ;; esac
+  done
+  return 1
 }
 committed() {  # spend so far + what running nodes may still cost, in dollars (status.sh prints both)
   bash "$HERE/status.sh" 2>/dev/null | python3 -c "

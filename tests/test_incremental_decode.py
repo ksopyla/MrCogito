@@ -29,7 +29,8 @@ CAT_REUSE = dict(CAT, lm_open_new_per_pass=False)
 DEEP = dict(pre_layers=2, stack_layers=3)
 REASONER = dict(concept_reasoner_layers=1, concept_reasoner_dim=16, concept_reasoner_heads=2)
 ARMS = ["dense", "dense_rope", "lsa", "catalogue", "notes", "concept", "concept_reasoner", "concept_scaled",
-        "concept_dmread", "concept_dca2", "concept_sumonly"]
+        "concept_dmread", "concept_dca2", "concept_sumonly",
+        "living", "living_spans"]
 
 
 class _Tok:
@@ -73,6 +74,18 @@ def _model(arm, deep=False):
                 prm.data.normal_(0, 0.3)
         if arm == "concept_sumonly":  # E40 eval switch: nothing opened, every old concept a summary
             m.layers[m.config.global_layer_index].attn.concept["open"] = False
+        return m
+    if arm.startswith("living"):  # E39, strides of 16: the answer crosses 160, so stride 8 joins the memory
+        from tests.test_living_concepts import LIVING
+
+        kw = dict(LIVING, **extra)
+        if arm == "living_spans":
+            kw.update(living_levels=1)
+        torch.manual_seed(3)
+        m = PerceiverARLM(lm_base_cfg(**kw)).eval()
+        for layer in m.layers:
+            layer.attn.wo.weight.data.normal_(0, 0.2)
+            layer.mlp.down.weight.data.normal_(0, 0.2)
         return m
     raise ValueError(arm)
 

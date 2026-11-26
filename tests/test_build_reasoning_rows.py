@@ -464,6 +464,99 @@ def test_lookup_rows_fake_tokenizer():
     assert _lookup(tok, cfg, book_text(1, 6500) + b.EOT_TOKEN) == []
 
 
+LIST = {"kind": "lookup", "seq_len": 2048, "tokens": 2048 * 9, "facts": (4, 8), "lists": (1, 2),
+        "list_values": (2, 5), "multi": (1, 2), "multi_keys": (2, 3), "spans_per_book": 3,
+        "buckets": {"val": (0, 30), "train": (30, 100)}}
+
+
+def test_list_facts_and_templates():
+    assert set(b.LIST_SETS) == {"list_16k", "list_64k", "recall_16k", "recall_64k"}
+    assert not set(b.LIST_SETS) & set(b.SETS)
+    for s in b.list_templates():
+        assert b.banned_in(s) is None, s
+    rng = random.Random(3)
+    names = b._Names(rng)
+    facts = [b.make_list_fact(rng, names, (2, 5)) for _ in range(600)]
+    assert {f.kind for f in facts} == {"list_" + k for k in b.LIST_FAMILIES}
+    assert {len(f.values) for f in facts} == {2, 3, 4, 5}
+    for f in facts:
+        assert len(set(f.values)) == len(f.values) == len(f.statements) == len(set(f.statements))
+        assert f.answer == ", ".join(f.values)
+        assert all(v in s and f.subject in s for v, s in zip(f.values, f.statements))
+        assert f.subject in f.question and not any(v in f.question for v in f.values)
+        assert not any(b.banned_in(x) for x in f.statements + [f.question])
+
+
+def test_list_rows_fake_tokenizer():
+    """A list set's rows: the lookup row plus facts with several values (stated in the answer's order) and questions
+    for several single facts, whose values no other question of the row gives away."""
+    tok, cfg = FakeTok(), LIST
+    lists = multis = 0
+    for i in range(8):
+        book = book_text(i, 6500)
+        rows = _lookup(tok, cfg, book, doc_id=f"b{i}")
+        assert len(rows) == 3
+        for row in rows:
+            check_row(row, tok, cfg["seq_len"])
+            ctx, qs = blocks(row.text)
+            assert [(q, a) for q, _, a in qs] == [(m["question"], m["answer"]) for m in row.qa]
+            li = [m for m in row.qa if m["kind"].startswith("list_")]
+            mu = [m for m in row.qa if m["kind"] == "multi"]
+            single = [m for m in row.qa if m not in li and m not in mu and m["statements"]]
+            assert cfg["lists"][0] <= len(li) <= cfg["lists"][1] and len(mu) <= cfg["multi"][1]
+            assert row.info["list_facts"] == len(li) and row.info["multi_questions"] == len(mu)
+            assert row.info["list_values"] == sum(len(m["values"]) for m in li)
+            for m in li:
+                assert m["answer"] == ", ".join(m["values"]) and 2 <= len(m["values"]) <= 5
+                at = [ctx.index(s) for s in m["statements"]]
+                assert at == sorted(at) and all(ctx.count(s) == 1 for s in m["statements"])
+                assert m["distance"] == m["answer_pos"] - m["statement_ends"][0] > 0
+                assert m["statement_ends"] == sorted(m["statement_ends"])
+            for m in mu:
+                assert 2 <= len(m["values"]) <= cfg["multi_keys"][1] and not m["statements"]
+                assert m["answer"].replace('"', "") == ", ".join(m["values"])
+                assert all(s in m["question"] and s in ctx for s in m["subjects"])
+                assert all(v in ctx for v in m["values"])
+                assert not {s["subject"] for s in single} & set(m["subjects"])   # asked here only
+                assert m["distance"] == m["answer_pos"] - min(m["statement_ends"]) > 0
+            assert row.info["multi_facts"] == sum(len(m["values"]) for m in mu)
+            assert b.banned_in(row.text) is None
+            lists += len(li)
+            multis += len(mu)
+        again = _lookup(FakeTok(), cfg, book, doc_id=f"b{i}")
+        assert all((x.ids == y.ids).all() and x.text == y.text for x, y in zip(rows, again))
+    assert lists >= 24 and multis >= 20
+
+
+def test_recall_rows_fake_tokenizer():
+    """A recall set: about half of the asked items are a statement to complete; the value follows the statement,
+    with a full stop, where the row says its answer is."""
+    tok, cfg = FakeTok(), {**LIST, "statements": 0.5}
+    assert b.LIST_SETS["recall_16k"]["statements"] == 0.5 and "statements" not in b.LIST_SETS["list_16k"]
+    n_st = n_all = kinds = 0
+    seen = set()
+    for i in range(6):
+        book = book_text(i, 6500)
+        for row in _lookup(tok, cfg, book, doc_id=f"b{i}"):
+            body = row.ids[1: row.n].tolist()
+            assert tok.encode(row.text) == body and tok.decode(body) == row.text and row.text.endswith("\n\n")
+            assert b.banned_in(row.text) is None
+            for m in row.qa:
+                n_all += 1
+                written = m.get("written", m["answer"])
+                a = tok.encode(" " + written)
+                assert row.ids[m["answer_pos"]: m["answer_pos"] + len(a)].tolist() == a
+                if m.get("form") == "statement":
+                    n_st += 1
+                    seen.add("multi" if m["kind"] == "multi" else "list" if m["kind"].startswith("list_") else "single")
+                    assert m["values"] and written.replace('"', "") == m["answer"].replace('"', "") + "."
+                    assert f"\n\n{m['question']} {written}\n\n" in row.text
+                    assert "Question:" not in m["question"]
+                else:
+                    assert f"\n\nQuestion: {m['question']}\nAnswer: {m['answer']}\n\n" in row.text
+    assert 0.3 < n_st / n_all < 0.6 and seen == {"single", "list", "multi"}
+
+
 def test_book_split_rule():
     assert b.stable_hash("10002") == int.from_bytes(
         __import__("hashlib").blake2b(b"10002", digest_size=8).digest(), "big")

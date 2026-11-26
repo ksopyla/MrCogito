@@ -12,6 +12,15 @@ Web text rarely needs far context, so a few percent of the training mix is const
   lookup_64k    0.03e9 tokens   invented facts planted at sentence / paragraph boundaries (K in 4-12 at 16k, 8-24 at
                                 64k), and at the END one `Question: ...\\nAnswer: ...` block per fact, shuffled.
 
+Two more sets are built only when named with --only (2026-11-23, LIST_SETS):
+
+  list_16k      0.10e9 tokens   lookup rows whose question block also asks for ALL the values of one thing (a
+  list_64k      0.03e9 tokens   subject with 2-5 values, each stated on its own somewhere in the span; answer: the
+                                values in the order of the text, ", " between) and for SEVERAL facts in one question
+                                (2-4 of the row's single facts; answer in the order asked; those facts are not asked
+                                on their own). Every lookup question above has one value for an answer; these need
+                                several far values written one after another.
+
 Row format (read by data.bin_token_dataset.BinRowDataset with rule "stream"): [eot] + text tokens, right-padded with
 eot to exactly seq_len. Every padding eot is its own one-token document, so the padding costs no loss. Shards are the
 modded-nanogpt layout (256 int32 header [20240520, 1, n_tokens], uint16 ids), whole rows only. Plain next-token text:
@@ -111,6 +120,24 @@ SETS: dict[str, dict] = {
     "lookup_64k": {"kind": "lookup", "seq_len": 65536, "tokens": 0.03e9, "facts": (8, 24), "spans_per_book": 3,
                    "buckets": {"val": (6, 26), "train": (26, 56)}},
 }
+# List sets (2026-11-23), built only when named with --only: lookup rows whose question block also asks for all the
+# values of one thing (`lists` facts of `list_values` values each) and for several single facts in one question
+# (`multi` questions of `multi_keys` facts). The same book buckets as the lookup set of their length: a book that
+# is validation there is validation here.
+LIST_SETS: dict[str, dict] = {
+    "list_16k": {"kind": "lookup", "seq_len": 16384, "tokens": 0.10e9, "facts": (4, 10), "lists": (1, 2),
+                 "list_values": (2, 5), "multi": (1, 2), "multi_keys": (2, 4), "spans_per_book": 3,
+                 "buckets": {"val": (0, 6), "train": (56, 100)}},
+    "list_64k": {"kind": "lookup", "seq_len": 65536, "tokens": 0.03e9, "facts": (8, 20), "lists": (2, 4),
+                 "list_values": (2, 6), "multi": (2, 3), "multi_keys": (2, 4), "spans_per_book": 3,
+                 "buckets": {"val": (6, 26), "train": (26, 56)}},
+}
+# Recall sets: a list set in which half of the asked items are a statement to complete instead of a question
+# ("As stated above, the badge number of X is" -> " 4412."), so far facts are also needed when the text goes on in
+# prose. Why: after the list fine-tune the 150M concept-memory model lists well once its answer has begun, but on a
+# statement-style prompt it often does not begin (RULER several keys at 16k: 32 of 50 answers start no list).
+LIST_SETS["recall_16k"] = {**LIST_SETS["list_16k"], "statements": 0.5}
+LIST_SETS["recall_64k"] = {**LIST_SETS["list_64k"], "statements": 0.5}
 P_REVISED = 0.15       # share of planted facts stated twice (the later statement wins)
 P_MISSING_ROW = 0.15   # share of lookup rows with 1-2 questions about something never planted
 
@@ -1051,6 +1078,7 @@ class Fact:
     question: str
     answer: str
     subject: str             # the invented name that only this fact carries
+    refs: list = field(default_factory=list)  # a several-facts question: the planted facts it asks for, in order
 
 
 def _value(kind: str, rng: random.Random, names: _Names) -> str:
@@ -1169,6 +1197,173 @@ def make_row_facts(rng: random.Random, k_range: tuple[int, int]) -> tuple[list[F
     n_missing = rng.randint(1, 2) if rng.random() < P_MISSING_ROW else 0
     missing = [make_missing(rng, names, planted) for _ in range(n_missing)]
     return planted, missing
+
+
+# ----------------------------------------------------------------------------------------------------------------
+# List questions (2026-11-23): answers that need several far values
+# ----------------------------------------------------------------------------------------------------------------
+# Every question of the lookup sets has one value for an answer, so a model trained on them never has to write a
+# second far value after the first (root-cause probe scripts/concept_use_probe.py: the 150M models read all the
+# values and write one of them again). The list sets add two kinds of question to a lookup row:
+#   * all the values of one thing: one subject and attribute with 2-5 values, each stated on its own somewhere in
+#     the text; the answer lists them in the order the text states them, ", " between;
+#   * several facts at once: 2-4 of the row's single facts asked for in one question; the answer gives them in the
+#     order asked. Those facts are not asked on their own in the row, so their values are only in the text.
+# Fields as FAMILIES; {av}: the value with its article.
+LIST_FAMILIES: dict[str, dict] = {
+    "numbers": {
+        "attrs": ["badge number", "locker number", "permit number", "ticket number", "account number",
+                  "docket number", "voucher number", "seat number"],
+        "statements": ["One of the {a}s of {e} is {v}.",
+                       "{e} holds the {a} {v}, among others.",
+                       "Among the {a}s issued to {e} is {v}.",
+                       "The register lists {v} as one of {e}'s {a}s.",
+                       "{e} was also issued the {a} {v}.",
+                       "A further {a} of {e} is {v}.",
+                       "The clerk added {v} to the {a}s kept for {e}."],
+        "questions": ["List all the {a}s of {e}.",
+                      "What are all the {a}s of {e}?",
+                      "Give every {a} that was issued to {e}.",
+                      "Which {a}s does {e} hold?",
+                      "Name each {a} recorded for {e}.",
+                      "Write out all of {e}'s {a}s."]},
+    "codes": {
+        "attrs": ["serial", "registration code", "tag", "catalogue code", "stock code", "reference code"],
+        "statements": ["One of the {a}s used by {e} is {v}.",
+                       "{E} also uses the {a} {v}.",
+                       "Among the {a}s of {e} is {v}.",
+                       "The inventory gives {v} as one {a} of {e}.",
+                       "A further {a} belonging to {e} is {v}.",
+                       "Stamped on the goods of {e} is the {a} {v}, among others."],
+        "questions": ["List all the {a}s of {e}.",
+                      "What are all the {a}s used by {e}?",
+                      "Give every {a} that belongs to {e}.",
+                      "Which {a}s does {e} use?",
+                      "Name each {a} of {e}."]},
+    "things": {
+        "statements": ["Among the things {e} owns is {av}.",
+                       "{e} also owns {av}.",
+                       "One of {e}'s possessions is {av}.",
+                       "The inventory of {e}'s goods includes {av}.",
+                       "{Av} is among the belongings of {e}.",
+                       "To {e} belongs, among other things, {av}."],
+        "questions": ["List everything that {e} owns.",
+                      "What are all the things {e} owns?",
+                      "Name each of {e}'s possessions.",
+                      "Which things belong to {e}?",
+                      "Give every item among the belongings of {e}."]},
+}
+_LIST_HOUSES = ["workshop", "warehouse", "archive", "depot", "foundry", "library", "dispensary", "bindery"]
+# several facts in one question: {l} the facts' noun phrases (FAMILIES[...]["label"]), "a, b and c"
+MULTI_QUESTIONS = ["Give, in this order, {l}.",
+                   "State, in the order asked, {l}.",
+                   "What are {l}? Answer in that order.",
+                   "List {l}, in that order.",
+                   "One after another, give {l}.",
+                   "Report {l}, keeping this order."]
+LIST_SEP = ", "
+
+
+def list_templates() -> list[str]:
+    """Every fixed string of the list questions and their statements."""
+    return sorted({t for f in LIST_FAMILIES.values() for t in f["statements"] + f["questions"]} | set(MULTI_QUESTIONS)
+                  | {a for f in LIST_FAMILIES.values() for a in f.get("attrs", [])} | set(_LIST_HOUSES)
+                  | set(RECALL_LEADS) | set(LIST_LABELS.values()) | {"are, in that order,"})
+
+
+def _list_value(kind: str, rng: random.Random, names: _Names) -> str:
+    if kind == "numbers":
+        return str(rng.randint(10 ** 2, 10 ** rng.randint(3, 7) - 1))
+    if kind == "codes":
+        return _value("identifier", rng, names)
+    return f"{rng.choice(_COLOURS + _MATERIALS)} {rng.choice(_OBJECTS)}"
+
+
+def make_list_fact(rng: random.Random, names: _Names, n_values: tuple[int, int]) -> Fact:
+    """One subject and attribute with several values, each with its own statement; the answer lists the values in
+    the order of the statements (`lookup_rows` plants them in that order)."""
+    kind = rng.choice(list(LIST_FAMILIES))
+    fam = LIST_FAMILIES[kind]
+    while True:
+        person = names.person()
+        e = f"the {rng.choice(_LIST_HOUSES)} of {person}" if kind == "codes" else person
+        f = {"e": e, "E": _cap(e)}
+        if fam.get("attrs"):
+            f["a"] = rng.choice(fam["attrs"])
+        values: list[str] = []
+        m = max(2, rng.randint(*n_values))
+        while len(values) < m:
+            v = _list_value(kind, rng, names)
+            if v not in values:
+                values.append(v)
+        tpls = rng.sample(fam["statements"], k=min(len(values), len(fam["statements"])))
+        tpls += [rng.choice(fam["statements"]) for _ in range(len(values) - len(tpls))]
+        statements = []
+        for tpl, v in zip(tpls, values):
+            av = f"{'an' if v[:1] in 'aeiou' else 'a'} {v}"
+            statements.append(tpl.format(**f, v=v, av=av, Av=_cap(av)))
+        question = rng.choice(fam["questions"]).format(**f)
+        if not any(banned_in(s) for s in statements + [question]):
+            return Fact("list_" + kind, f, values, statements, question, LIST_SEP.join(values), person)
+
+
+def make_multi_question(rng: random.Random, planted: list[Fact], picks: list[int]) -> Fact | None:
+    """One question for the planted single facts `picks` (indices), answered in the order asked."""
+    labels = [FAMILIES[planted[i].kind]["label"].format(**planted[i].fields) for i in picks]
+    question = rng.choice(MULTI_QUESTIONS).format(l=", ".join(labels[:-1]) + " and " + labels[-1])
+    if banned_in(question):
+        return None
+    answer = LIST_SEP.join(f'"{planted[i].answer}"' if planted[i].kind == "phrase" else planted[i].answer
+                           for i in picks)
+    return Fact("multi", {}, [], [], question, answer, planted[picks[0]].subject, refs=list(picks))
+
+
+# Recall statements (recall sets): an asked item written as a statement to complete instead of a question, so the
+# far facts are also needed when the text simply goes on in prose ("As stated above, the badge number of X is" ->
+# " 4412."). {l}: the item's noun phrase(s).
+RECALL_LEADS = ["To recall: ", "As stated above, ", "For the record, ", "In short, ", "Summing up, ", ""]
+LIST_LABELS = {"numbers": "the {a}s of {e}", "codes": "the {a}s of {e}", "things": "the things {e} owns"}
+
+
+def recall_stem(rng: random.Random, f: Fact, planted: list[Fact]) -> tuple[str, str] | None:
+    """(the statement up to its value, the value text with the full stop) for an asked item, or None for an item
+    that stays a question (something the text never states)."""
+    if f.refs:
+        labels = [FAMILIES[planted[i].kind]["label"].format(**planted[i].fields) for i in f.refs]
+        stem = ", ".join(labels[:-1]) + " and " + labels[-1] + " are, in that order,"
+    elif f.kind.startswith("list_"):
+        stem = LIST_LABELS[f.kind[5:]].format(**f.fields) + " are"
+    elif f.values:
+        stem = FAMILIES[f.kind]["label"].format(**f.fields) + " is"
+    else:
+        return None
+    lead = rng.choice(RECALL_LEADS)
+    stem = lead + (stem if lead else _cap(stem))
+    value = f'"{f.answer}"' if f.kind == "phrase" else f.answer
+    return (None if banned_in(stem) else (stem, value + "."))
+
+
+def make_list_row_facts(rng: random.Random, cfg: dict) -> tuple[list[Fact], list[Fact], list[Fact], set[int]]:
+    """(planted facts, questions about something never planted, several-facts questions, the planted facts those
+    ask for) for one row of a list set: the single facts of a lookup row, `cfg["lists"]` facts with several values
+    (appended to the planted ones) and `cfg["multi"]` questions over disjoint groups of the single facts."""
+    planted, missing = make_row_facts(rng, cfg["facts"])
+    names = _Names(rng)
+    names.used |= {w.lower() for f in planted for w in re.findall(r"[A-Za-z]+", f.subject)}
+    free = list(range(len(planted)))
+    rng.shuffle(free)
+    multis, grouped = [], set()
+    for _ in range(rng.randint(*cfg["multi"])):
+        k = rng.randint(*cfg["multi_keys"])
+        if len(free) < k:
+            break
+        picks, free = free[:k], free[k:]
+        m = make_multi_question(rng, planted, picks)
+        if m is not None:
+            multis.append(m)
+            grouped |= set(picks)
+    lists = [make_list_fact(rng, names, cfg["list_values"]) for _ in range(rng.randint(*cfg["lists"]))]
+    return planted + lists, missing, multis, grouped
 
 
 # ----------------------------------------------------------------------------------------------------------------
@@ -1383,14 +1578,25 @@ def lookup_rows(doc_id: str, text: str, ids: list[int], offsets: list[tuple[int,
     n_spans = min(cfg["spans_per_book"], n // S)
     seg, rows = n // n_spans, []
     for j in range(n_spans):
-        planted, missing = make_row_facts(rng, cfg["facts"])
+        if cfg.get("lists"):  # a list set: facts with several values, and questions for several facts at once
+            planted, missing, multis, grouped = make_list_row_facts(rng, cfg)
+        else:
+            (planted, missing), multis, grouped = make_row_facts(rng, cfg["facts"]), [], set()
         stmts = [(fi, si) for fi, f in enumerate(planted) for si in range(len(f.statements))]
         kinds = [rng.choice(("para", "sent")) for _ in stmts]
         pieces = [("\n\n" if k == "para" else " ") + planted[fi].statements[si] for (fi, si), k in zip(stmts, kinds)]
-        asked = planted + missing
+        # a fact asked for in a several-facts question is not asked on its own: its value stays in the text only
+        asked = [f for fi, f in enumerate(planted) if fi not in grouped] + missing + multis
         rng.shuffle(asked)
         q_pieces = [f"\n\nQuestion: {f.question}\nAnswer:" for f in asked]
-        enc = tok.encode_batch(pieces + q_pieces + [" " + f.answer for f in asked])
+        a_texts = [" " + f.answer for f in asked]
+        forms = ["question"] * len(asked)
+        if cfg.get("statements"):  # a recall set: this share of the items is a statement to complete
+            for k, f in enumerate(asked):
+                st = recall_stem(rng, f, planted) if rng.random() < cfg["statements"] else None
+                if st is not None:
+                    q_pieces[k], a_texts[k], forms[k] = "\n\n" + st[0], " " + st[1], "statement"
+        enc = tok.encode_batch(pieces + q_pieces + a_texts)
         s_ids, q_ids, a_ids = enc[: len(pieces)], enc[len(pieces): len(pieces) + len(asked)], enc[-len(asked):]
         budget = S - 1 - len(final) - sum(len(x) for x in enc)
         span = _choose_span(text, starts, ends, j * seg, (j + 1) * seg, budget, rng, tok)
@@ -1405,6 +1611,10 @@ def lookup_rows(doc_id: str, text: str, ids: list[int], offsets: list[tuple[int,
         for fi, f in enumerate(planted):  # a revision comes after the statement it revises
             if len(f.statements) == 2 and at[where[fi, 0]] > at[where[fi, 1]]:
                 at[where[fi, 0]], at[where[fi, 1]] = at[where[fi, 1]], at[where[fi, 0]]
+            elif len(f.statements) > 2:  # a list fact: its statements in the order of its values
+                slots = [where[fi, si] for si in range(len(f.statements))]
+                for slot, t_ins in zip(slots, sorted(at[s] for s in slots)):
+                    at[slot] = t_ins
         parts, texts, pos, cur, s_end = [head_ids], [head], 1 + len(head_ids), t0, {}
         for t_ins, k in sorted(zip(at, range(len(stmts)))):
             parts += [arr[cur:t_ins], s_ids[k]]
@@ -1418,22 +1628,38 @@ def lookup_rows(doc_id: str, text: str, ids: list[int], offsets: list[tuple[int,
         q_char = sum(len(x) for x in texts)
         index = {id(f): fi for fi, f in enumerate(planted)}
         qa = []
-        for f, q, a, qp in zip(asked, q_ids, a_ids, q_pieces):
+        for f, q, a, qp, a_text, form in zip(asked, q_ids, a_ids, q_pieces, a_texts, forms):
             parts += [q, a]
-            texts += [qp, " " + f.answer]
+            texts += [qp, a_text]
             ans, fi = pos + len(q), index.get(id(f))
             last = None if fi is None else s_end[fi, len(f.statements) - 1]
+            ends_f = [] if fi is None else [s_end[fi, si] for si in range(len(f.statements))]
+            if f.kind.startswith("list_"):  # the answer needs every statement: the distance to the farthest
+                last = ends_f[0]
+            elif f.refs:  # several facts: the latest statement of each, and the distance to the farthest of those
+                ends_f = [s_end[ri, len(planted[ri].statements) - 1] for ri in f.refs]
+                last = min(ends_f)
             qa.append({"question": f.question, "answer": f.answer, "answer_pos": ans, "kind": f.kind,
                        "attr": f.fields.get("a"),
                        "distance": None if last is None else ans - last, "values": list(f.values),
                        "statements": list(f.statements), "subject": f.subject,
-                       "statement_ends": [] if fi is None else [s_end[fi, si] for si in range(len(f.statements))]})
+                       "statement_ends": ends_f})
+            if f.refs:
+                qa[-1].update({"values": [planted[ri].answer for ri in f.refs],
+                               "subjects": [planted[ri].subject for ri in f.refs]})
+            if form == "statement":  # the text before the value, and the value as written (with its full stop)
+                qa[-1].update({"form": "statement", "question": qp.strip(), "written": a_text.strip()})
             pos = ans + len(a)
         parts.append(final)
         texts.append("\n\n")
         info = {"facts": len(planted), "statements": len(stmts), "not_stated": len(missing),
-                "revised": sum(len(f.statements) == 2 for f in planted), "span_tokens": len(head_ids) + t1 - t0,
+                "revised": sum(len(f.statements) == 2 and not f.kind.startswith("list_") for f in planted),
+                "span_tokens": len(head_ids) + t1 - t0,
                 **{f"kind_{k}": sum(f.kind == k for f in planted) for k in KINDS}}
+        if cfg.get("lists"):
+            info.update({"list_facts": sum(f.kind.startswith("list_") for f in planted),
+                         "list_values": sum(len(f.values) for f in planted if f.kind.startswith("list_")),
+                         "multi_questions": len(multis), "multi_facts": len(grouped)})
         row = finish_row(tok, S, parts, texts, q_char, qa, info)
         row.info["book"] = doc_id
         rows.append(row)
@@ -1512,10 +1738,11 @@ def target_rows(cfg: dict, scale: float) -> int:
 
 def run(args, wiki=None, books=None, tok: Tok | None = None, sets: dict | None = None) -> dict:
     """Build the sets that have no done.json yet. `wiki`, `books`, `tok`, `sets`: stand-ins for the tests."""
-    sets = sets or SETS
+    default = list(sets or SETS)  # without --only: the four sets of the mix; the list sets are built when named
+    sets = sets or {**SETS, **LIST_SETS}
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    names = [n for n in (args.only.split(",") if args.only else list(sets)) if n]
+    names = [n for n in (args.only.split(",") if args.only else default) if n]
     unknown = [n for n in names if n not in sets]
     if unknown:
         raise SystemExit(f"unknown set(s) {unknown}; known: {list(sets)}")
@@ -1594,7 +1821,8 @@ def run(args, wiki=None, books=None, tok: Tok | None = None, sets: dict | None =
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True, help="directory of the shard sets")
-    ap.add_argument("--only", default="", help=f"comma-separated subset of {','.join(SETS)}")
+    ap.add_argument("--only", default="", help=f"comma-separated subset of {','.join(SETS)} (the default: all "
+                    f"four) or of the list sets {','.join(LIST_SETS)}")
     ap.add_argument("--scale", type=float, default=1.0, help="fraction of each set's token target (0.002: tiny)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tokenizer", default="HuggingFaceTB/SmolLM2-135M", help="Hub id, or a folder with tokenizer.json")

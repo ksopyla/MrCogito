@@ -224,6 +224,184 @@ tables) is over the cap, including the running long concept-memory run.
   (BLiMP 78.1, ARC-Easy 51.4, WikiText-2 2.04) on BLiMP and ARC-Easy, i.e. the middle of the board; ARC-Easy
   < 45 % after the full budget means the recipe, not the size, is the limit.
 
+## List questions run (added 2026-11-23)
+The author, 2026-11-23 15:23 UTC, on the 150M models reading several far values and writing one of them again:
+"find a way to fix those issues, work on the concept model ... try to find a root cause and solution ... use Odra
+and Polonez for checks, do not afraid to use AWS for training". A run of this family on a new data mix, not a new
+experiment: the concept-memory model, the same recipe, stages 2 and 3 again on `m21mix_v3`.
+
+**Root cause (measured 2026-11-23 on Odra and Polonez, probe `scripts/concept_use_probe.py`).** Every planted-fact
+question of `m21mix_v2` has one value for an answer, and a fact stated twice is answered with its latest value. No
+row asks for several far values in one answer, so no model of the family has that skill:
+- On held-out questions in our own wording (48 rows of 16k), before any change: concept memory answers 0.91 of the
+  single-value questions exactly, 0.00 of the all-values questions with every value and 0.00 of the several-facts
+  questions; full attention 0.80 / 0.00 / 0.00; the topic index 0.94 / 0.00 / 0.00. Each writes one value and ends
+  the line.
+- On RULER's two several-values tasks all three models fail at the same three places. (1) Starting the list: after
+  a several-keys question concept memory writes ":" first in 80 % / 62 % / 12 % of prompts at 4k / 8k / 16k; with
+  the far read restricted to the planted sentences 98 % / 100 % / 96 %, with every token readable word for word and
+  no summaries 84 % / 70 % / 8 %, with the summaries' weight held at the 4k level 6 % at 16k: the query there is not
+  specific, the grouping, the choice of 512 tokens and the summaries are not the cause. (2) The first of several
+  values under one key: right 0.46–0.68 (distinct keys: 0.96–1.00); the read blends the planted values. (3) Moving
+  on: handed its own answer so far, concept memory writes a new value 0.58–0.86 of the time at 8k (full attention
+  0.44–0.74, topic index 0.58–0.96), and 0.74–0.96 once the written values are hidden from the far read.
+- Sharper read weights (× 1.5, × 2) and summaries out make the free answers worse (8k several keys 0.34 → 0.12 and
+  0.22), so the read is not too blunt in general.
+- **The skill is learnable in minutes.** A fine-tune of the released weights on Polonez (60M tokens of 16k rows,
+  half list rows, half the 16k stage's own sources; 15:52–16:51 UTC): held-out all-values answers with every value
+  0.00 → 0.73, several-facts exact 0.00 → 0.80, single-value 0.91 → 0.97. RULER, whose wording the rows avoid (the
+  banned-words check), board protocol, 100 prompts: all values 0.31 / 0.34 / 0.24 → 0.82 / 0.74 / 0.47 at 4k / 8k /
+  16k, several keys 0.40 / 0.32 / 0.11 → 0.62 / 0.48 / 0.27; the other 11 tasks' mean 0.513 / 0.460 / 0.408 →
+  0.488 / 0.460 / 0.402.
+- **That fine-tune is not the fix:** it saw 16k rows only and lost the 64k calibration the 64k stage had taught
+  (64k documents 2.293 → 2.477 nats per token, summaries now a cost; 16k documents 2.126 → 2.133), and the UUID
+  needle fell (0.29 → 0.02 at 4k). The list rows belong in stages 2 and 3 at a few per cent, not in a heavy
+  afterthought.
+
+- **Added 18:10 UTC, twelve minutes after the launch and before any result of the run (marks unchanged): the
+  control changes how RULER reads.** The same fine-tune with single-value lookup rows in place of the list rows
+  (Polonez, 16:52–17:44 UTC): our list exam stays at 0.00 / 0.00 (single-value 0.95), so the list skill comes from
+  the list rows. But RULER rises almost as much as with the list rows (board protocol at 4k: all values 0.31 →
+  0.74, several keys 0.40 → 0.52; the list fine-tune 0.82 and 0.62), and the UUID needle falls the same way
+  (0.29 → 0.04). The released model had already read more lookup tokens (115M at 3–5 % of its rows) than either
+  fine-tune added (30M at 50 %), so RULER's two tests mostly follow how strongly the END of training is tuned to
+  copying from far context, not the list skill. Consequence for this run: L1 is the test of the list rows; L2 may
+  fail with L1 passed, which would say that 3–5 % of constructed rows teach the skill but do not move RULER, and
+  that a retrieval-rich final stage is the lever (a home-card test of one is under way).
+
+- **Recipe changed before any result of the run (2026-11-23, 20:10 UTC; marks unchanged).** The run on
+  `m21mix_v3` (stage 2 started 18:55:42 UTC on spot g6e.12xlarge `i-08bdd35208065be00`; speed 67.9k tokens/s over
+  its first 300 steps, held-out loss 2.306 at step 200 against the E38 run's 2.295) was stopped and its node
+  terminated at 20:10 UTC, about $9, because two home-card tests that finished at 19:29 UTC showed a better recipe:
+  - **Recall rows** (`recall_16k` / `recall_64k`: the list sets with half of the asked items written as a statement
+    to complete, "As stated above, the serials of X are" → " a, b, c."), the same fine-tune as above (Odra,
+    18:32–19:29 UTC): RULER board protocol all values 0.31 / 0.34 / 0.24 → 0.99 / 0.97 / 0.91 at 4k / 8k / 16k,
+    several keys 0.40 / 0.32 / 0.11 → 0.88 / 0.86 / 0.86; the list now begins with its first value in 86–98 % of
+    several-keys prompts (12 % at 16k before); the other 11 tasks 0.499 / 0.459 / 0.409 (E38 run 0.513 / 0.460 /
+    0.408); our list exam 0.63 all values, 0.74 several facts exact. Costs: similar-needles task (multi-key 2) at
+    16k 0.76 → 0.42 (it now picks a neighbouring key), the UUID needle 0.29 → 0.06 at 4k. Not yet measured on 64k
+    documents.
+  - **A 64k stage after the question-only fine-tune** (Polonez, 18:19–19:29 UTC, 30M tokens of 64k rows, 60 %
+    constructed): 64k documents 2.477 → 2.320 nats per token (E38 run 2.293) with the summaries useful again
+    (switching them off costs 0.069, the E38 run 0.068); multi-key 2 back to 0.94 / 0.90 / 0.81; other 11 tasks
+    0.518 / 0.481 / 0.443; several keys 0.78 / 0.74 / 0.38, all values 0.93 / 0.88 / 0.63; the UUID needle stays
+    low (0.04 / 0.05 / 0.04: the model answers " a special magic uuid. It's a unique identifier…").
+  So the run now reads **`m21mix_v4`** (`data/mix_recipes/m21_mix_v4.json`): v2 plus `recall_16k` at 3 % of
+  stage 2 and `recall_64k` at 5 % of stage 3, from the `pdfs` share; everything else as v3. Job:
+  `infra/aws/jobs/e38_lists.sh e37a m21mix_v4 recall`, folder `runs/e38/e33n_m120t_e37a_muon0.01-recall_tok8.0e9_seed42/`.
+  RULER's two several-values tasks now share their **sentence form** (a statement to complete) with training rows,
+  not their words (the banned-words check holds): report them as trained-form, as the card already does for the
+  single lookups. The marks L1–L3 and KL1–KL3 apply to this run unchanged ($220 from 20:10 UTC; the v3 attempt's
+  $9 and the start-up failures' $2.70 are outside it).
+
+- **Home-card check of the v4 recipe, all release tests (2026-11-23, 20:12–22:33 UTC; diagnostic, not the run).**
+  The recall fine-tune above plus a 64k stage (Polonez, 20:12–21:16 UTC, same 64k stage as the question-only
+  model), then the release protocol (Polonez: list exam, start probe, RULER 4k–16k; Odra: documents, core, RULER
+  32k), against the E38 run:
+  - RULER 13-task mean 0.594 / 0.556 / 0.501 / 0.451 at 4k / 8k / 16k / 32k (E38 run 0.488 / 0.439 / 0.373 /
+    0.319); the other 11 tasks 0.532 / 0.492 / 0.439 / 0.382 (0.513 / 0.460 / 0.408 / 0.347), better at every
+    length; several keys 0.89 / 0.84 / 0.83 / 0.82, all values 0.97 / 0.97 / 0.86 / 0.84 — the gains hold at 32k,
+    a length no training row has; multi-key 2 back to 0.93 / 0.79 / 0.75 / 0.52 (0.92 / 0.84 / 0.76 / 0.41).
+  - Cost: the UUID needle 0.10 / 0.15 / 0.03 / 0.07 (0.29 / 0.27 / 0.07 / 0.07). The control fine-tune with
+    single-value lookup rows loses it too (0.04 at 4k), so it comes from fine-tuning on a large constructed share,
+    not from the list rows; 80 of 100 replies at 4k begin " a unique identifier that is …" instead of the ID (an
+    answer-start failure). Across the saved replies of the E38 run and this model at 4k–32k, every reply that
+    begins with an ID begins with the right one (105 of 105; full attention 145 of 146): the far read finds the
+    36-character ID whenever the answer starts, and the score is the share of replies that start (E38 run 29 / 27
+    / 7 / 7 %, full attention 71 / 69 % at 4k / 8k). Our rows never say "uuid" and their IDs are 6–10
+    characters. This run mixes the rows at 3–5 % from the start of stage 2, as v2 did.
+  - Documents (nats per token, lower is better): 64k 2.319 (2.293, +1.1 %), 16k 2.147 (2.126), 128k 2.450 (2.451,
+    a tie; past 61k tokens of context the full context is now 0.030 worse than a 61k cut, the E38 run 0.060);
+    summaries useful again (switched off: +0.069 at 64k, +0.071 at 128k). WikiText 0.972 bits per byte (0.964).
+    Core 7 mean, the card's metrics: 46.9 (46.2).
+  - Our list exam at 16k: single 0.93, all values 0.59, several facts exact 0.72 (L1 asks 0.90 / 0.65 / 0.70).
+  As a fine-tune it misses only L3's document marks, by about 0.01 nats, and the UUID mark; the run is the test.
+
+- **The recall run, training and its AWS tests (done 2026-11-25 03:07 UTC; read 06:20 UTC).** Spot g6e.12xlarge,
+  one interruption (~11:30 UTC 11-24, resumed from its checkpoint). Nodes $149.27 of $220 (KL3 met); KL1 and KL2
+  met during stage 2 (see above). Against the E38 run ("the released model"), same job, same scripts and settings:
+  - Held-out loss at the end of stage 2 1.996 (1.996; L3 asks ≤ 2.001) and of stage 3 1.938 (1.936; ≤ 1.941):
+    met. Core 7 mean, the card's metrics (acc): 46.27 (46.23; ≥ 45.7): met. WikiText 0.964 bits per byte (0.964).
+  - Long-document loss (the job's test: longdocs-lite, 7 sources, nats per token): 2.066 / 1.890 / 1.881 / 1.775
+    at 4k / 16k / 64k / 128k (2.067 / 1.888 / 1.879 / 1.775), a tie at every length.
+  - RULER as the job runs it (100 prompts, cached decoding; not the card's per-task answer lengths), 4k / 8k /
+    16k / 32k: 13-task mean 0.572 / 0.526 / 0.405 / 0.360 (0.433 / 0.397 / 0.339 / 0.304); the other 11 tasks
+    0.569 / 0.530 / 0.419 / 0.377 (0.456 / 0.413 / 0.372 / 0.333); all values 0.59 / 0.41 / 0.35 / 0.38 (0.29 /
+    0.31 / 0.20 / 0.21); several keys 0.58 / 0.59 / 0.29 / 0.15 (0.33 / 0.29 / 0.10 / 0.07); the UUID needle 0.97 /
+    0.91 / 0.44 / 0.59 (0.02 / 0.02 / 0.00 / 0.00); multi-key 3 0.34 / 0.15 / 0.08 / 0.02 (0.00 / 0.01 / 0.01 /
+    0.00). **The cost: multi-key 2 (similar needles) 0.73 / 0.62 / 0.25 / 0.13 (0.92 / 0.85 / 0.67 / 0.42).** The
+    home-card check had it back after its 64k stage; the full run, with recall rows from the start of stage 2, has
+    not.
+  - L1, L2 and the document, other-11 and UUID items of L3 are set on the card's protocol (list exam; RULER with
+    each task's own answer length, every reply saved; the card's 64k and 16k document tests): run on Polonez from
+    06:11 UTC on the run's final weights (`scripts/release_evals.sh`, cards 1 and 3; list exam and first-token
+    probe on card 0).
+  - **L1 met (06:17 UTC):** our list exam at 16k (48 held-out list rows): single-value answers 0.94, all-values
+    answers 0.67 (values found 0.91), several facts exact 0.85 (L1 asks 0.90 / 0.65 / 0.70; the released model 0.00
+    on both list forms; the home-card fine-tunes 0.63 / 0.59 all values, 0.74 / 0.72 several facts).
+  - **The card's protocol, all release tests (Polonez, 06:17–08:05 UTC; `scripts/compare_release_evals.py
+    --before docs/release/hf_card_concept_memory_150m`; copies in `Cache/results/recall_release/`).** RULER at
+    4k / 8k / 16k / 32k against the card: 13-task mean 0.567 / 0.527 / 0.392 / 0.362 (0.488 / 0.439 / 0.373 /
+    0.319); the other 11 tasks 0.567 / 0.530 / 0.398 / 0.381 (0.513 / 0.460 / 0.408 / 0.347); all values 0.59 /
+    0.43 / 0.35 / 0.36 (0.31 / 0.34 / 0.24 / 0.24); several keys 0.54 / 0.60 / 0.36 / 0.16 (0.40 / 0.32 / 0.11 /
+    0.09); the UUID needle 0.97 / 0.88 / 0.46 / 0.53 (0.29 / 0.27 / 0.07 / 0.07); word counting (fwe) 0.20 / 0.27 /
+    0.12 / 0.17 (0.15 / 0.16 / 0.02 / 0.06); common words (cwe) 0.56 / 0.52 / 0.35 / 0.17 (0.52 / 0.42 / 0.27 /
+    0.13). **The cost: multi-key 2 (one number among similar keys) 0.72 / 0.63 / 0.26 / 0.20 (0.92 / 0.84 / 0.76 /
+    0.41).** Of its wrong replies, 26 of 28 at 4k, 35 of 37 at 8k and 64 of 74 at 16k are a 7-digit number (the
+    form of a value in the text, so most likely a neighbouring key's), the rest invented ("123456789",
+    "1000…"); every wrong reply of the released model is a 7-digit number. The single-value needles 1.00 / 1.00 at
+    4k–16k, 0.92 at 32k on the second one (0.98).
+  - Documents (nats per token, lower is better): 64k 2.291 (2.293), 16k 2.125 (2.126), 128k 2.461 (2.451, +0.4 %;
+    past 61k tokens of context the full context is now 0.072 worse than a 61k cut, the released model 0.060).
+    Summaries off costs +0.067 at 64k (+0.068) and +0.022 at 16k (+0.023): unchanged. Core 7 mean (acc) 46.37
+    (46.22); WikiText 0.964 bits per byte (0.964); BLiMP 79.9 (80.6, −0.7 points; not a mark). Tiny-ML board
+    place 26th (the card's 24th).
+  - **L2 missed on all values, met on several keys:** all values 0.59 / 0.43 / 0.35 (asks ≥ 0.60 / 0.60 / 0.40),
+    several keys 0.54 / 0.60 (asks ≥ 0.50 / 0.40). This is the outcome the 18:10 UTC note above foresaw for
+    3–5 % of constructed rows: L1 passed and RULER's all-values task moved less than with a retrieval-rich end of
+    training (the home-card v4 check: 0.97 / 0.97 / 0.86).
+  - **L3 met:** 64k documents 2.291 ≤ 2.305, 16k 2.125 ≤ 2.137; the other 11 tasks +0.054 / +0.070 / −0.010 at
+    4k / 8k / 16k (within 0.03 or better); the UUID needle at 4k 0.97 ≥ 0.19; core 46.37 ≥ 45.7; held-out losses
+    as above. Not covered by L3 and lost: multi-key 2 at 16k (0.76 → 0.26) and 32k (0.41 → 0.20).
+
+**Data: `m21mix_v3`** (`data/mix_recipes/m21_mix_v3.json`) = v2 plus two constructed sets
+(`scripts/build_reasoning_rows.py --only list_16k,list_64k`): lookup rows whose question block also asks for all the
+values of one thing (2–5 values at 16k, 2–6 at 64k, each stated on its own; answer in the order of the text) and
+for 2–4 single facts in one question (answer in the order asked; those facts are not asked on their own). 3 % of
+stage 2 and 5 % of stage 3, taken from the `pdfs` share; every other source, weight, budget and every evaluation set
+is v2's. Stage 1 reads no constructed rows, so it is the same under both mixes.
+
+**Run:** `infra/aws/jobs/e38_lists.sh e37a`: its own folder
+`runs/e38/e33n_m120t_e37a_muon0.01-lists_tok8.0e9_seed42/`, seeded with the stage-1 final weights of the E38
+concept-memory run (same seed, same optimizer), then stage 2 (3.0B tokens of 16k rows), stage 3 (0.5B of 64k rows)
+and the tests, as every E38 board run. One spot g6e.12xlarge (4 × L40S); the E38 run took 19.3 h for these stages
+and the tests. W&B name "150M concept memory with list questions, Muon, stage 2 of 3".
+
+**Pass marks (set before the run; "the E38 run" = the released concept-memory model, same stage 1):**
+- **L1 (the skill, our wording):** on the held-out list rows at 16k, all-values answers with every value ≥ 0.65 and
+  several-facts answers exact ≥ 0.70 (the fine-tune reached 0.73 and 0.80 with a third of the list tokens this
+  run sees), single-value answers ≥ 0.90.
+- **L2 (RULER's wording, never trained):** all values ≥ 0.60 at 4k and 8k and ≥ 0.40 at 16k; several keys ≥ 0.50
+  at 4k and ≥ 0.40 at 8k (the fine-tune: 0.82 / 0.74 / 0.47 and 0.62 / 0.48; the E38 run 0.31 / 0.34 / 0.24 and
+  0.40 / 0.32).
+- **L3 (nothing else lost):** 64k documents ≤ 2.305 nats per token and 16k documents ≤ 2.137 (the E38 run's 2.293
+  and 2.126 + 0.5 %); the mean of the other 11 RULER tasks within 0.03 of the E38 run's at 4k, 8k and 16k; the UUID
+  needle at 4k ≥ 0.19 (0.29 − 0.10; run-to-run noise at 100 prompts is ± 0.09); core mean ≥ 45.7 (46.22 − 0.5);
+  held-out loss at the end of stage 2 ≤ 2.001 and of stage 3 ≤ 1.941 (the E38 run's 1.996 and 1.936 + 0.005; the
+  evaluation sets are the same).
+
+**Stop marks:**
+- **KL1:** held-out loss at step 1,000 of stage 2 more than 0.03 above the E38 run's at that step → stop: 3 % of
+  list rows must not cost general text.
+- **KL2:** stage-2 speed below 0.9 × the E38 run's on the same node type → report before going on.
+- **KL3 (money):** $220 for this run's nodes (expected about $150); the family cap of $5,000 stands (spent
+  $3,089.18 on 2026-11-23 15:25 UTC, E39's run has $450 of it reserved).
+
+**Not claimed:** RULER's two tests are no longer untrained for this model in the sense the card already states for
+the single lookups (similar shape, different wording). Order of the values in an all-values answer is not learnable
+by a far read without a position code; the mark counts values, not their order. E39's stages 2 and 3 are not
+changed by this section: whether they read v3 is the author's call (its stage 1 is the same either way).
+
 ## Plan
 1. Engineering (done 2026-11-14, branch `eng-100m`): cache + tuning + architecture branches merged; `--fast`;
    read-once / answer-many decoding; `--mix`; job and keeper scripts.

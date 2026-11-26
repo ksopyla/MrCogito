@@ -53,6 +53,32 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 **Result (2026-11-25):** E40 closed in `done_failed/` (K3 tripped, verdict Watch): both mixed arms tie the paired
 control on 64k documents; the concepts' summaries alone carry 18 % of the memory read at 64k. The depth-mix
 component stays in the code (off by default) for a later from-scratch test.
+## [2026-11-26] - E39a: living concepts trained with every span competing
+
+**Why:**
+- E39 failed on single lookups past 8k and on long text; the flat search at test time (R2) brought the lookups back,
+  so the author approved stages 2-3 again with the flat search in training ("Rerun stages 2–3").
+
+**What changed:**
+- [added] `scripts/run_e33n.py` - arm `living_flat` = `living` with `living_search = "flat"` (same parameters; the
+  tiny pipeline settings of `living`).
+- [added] `infra/aws/jobs/e39a_flat.sh` - stages 2-3 from E39's stage-1 weights on `m21mix_v4`, folder `runs/e39a/`.
+- [changed] `infra/aws/jobs/e38_full.sh` - the arm's plain W&B name ("living concepts, every span competing").
+- [added] `docs/experiments_specs/ahead/E39a_living_flat.md` - the flavour's spec with its pass and stop marks.
+
+## [2026-11-24] - Spot keeper: a failed node query no longer reads as "node gone"
+
+**Why:**
+- At 14:41 UTC `DescribeInstances` failed once with AuthFailure (the login check had passed seconds before); the
+  recall run's keeper read the empty answer as "no node" and tried to launch a second node while its node trained.
+  Only the full G spot quota stopped it. Two nodes of one name would resume the same checkpoint and write the same
+  run folder in S3.
+
+**What changed:**
+- [fixed] `infra/aws/keep_running.sh` - `alive()` checks each region query's exit code: a failed query counts the
+  node as alive (logged with the error, retried next interval); only answers from every region with no instance id
+  read as gone. Tested with a fake `aws` (failing, empty, one node, second region failing); the old check returned
+  "gone" on a failing query.
 
 ## [2026-11-22] - E39 spec (living concepts); AWS budget cap $5,000
 

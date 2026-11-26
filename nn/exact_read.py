@@ -151,11 +151,13 @@ def counts(index: GroupIndex, gid: torch.Tensor, lo: torch.Tensor, hi: torch.Ten
 
 @torch.no_grad()
 def choose(score: torch.Tensor, cand: torch.Tensor, index: GroupIndex, q_pos: torch.Tensor, *, m: int, cap: int,
-           raw_window: int) -> tuple[torch.Tensor, torch.Tensor]:
+           raw_window: int, return_counts: bool = False):
     """One query chunk: top-m candidates, then the places each takes. score / cand [B, ch, G], q_pos [ch] long.
 
     Returns ids [B, ch, m'] long (m' = min(m, G), best first) and off [B, ch, m'] int32: places used before each
-    chosen group, `cap` where the group is not a real choice or the cap is already full."""
+    chosen group, `cap` where the group is not a real choice or the cap is already full. `return_counts` (E39) adds
+    cnt [B, ch, m'] int32, each chosen group's members the query may open (0 where it is not a real choice): the
+    group opens min(cnt, cap − off) tokens."""
     B, ch, G = score.shape
     mm = min(int(m), G)
     top = score.masked_fill(~cand, float("-inf")).topk(mm, dim=-1)
@@ -166,6 +168,8 @@ def choose(score: torch.Tensor, cand: torch.Tensor, index: GroupIndex, q_pos: to
     cnt = torch.where(valid, counts(index, ids, lo, hi), torch.zeros_like(ids, dtype=torch.int32))
     off = cnt.cumsum(-1) - cnt
     off = torch.where(valid & (off < cap), off, torch.full_like(off, cap))
+    if return_counts:
+        return ids, off.to(torch.int32), cnt.to(torch.int32)
     return ids, off.to(torch.int32)
 
 

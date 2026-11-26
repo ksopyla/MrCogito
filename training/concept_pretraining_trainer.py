@@ -196,6 +196,11 @@ class PerceiverDenoiseTrainer(Trainer):
             for cb in self.callback_handler.callbacks:  # E33p instrumentation (training/flow_callback.py)
                 if hasattr(cb, "pop_flow"):
                     logs = {**logs, **cb.pop_flow()}
+            # E39: a read's own numbers since the last log (the living grouping, readout R4); local, no collective
+            model = self.accelerator.unwrap_model(self.model) if hasattr(self, "accelerator") else self.model
+            pop = getattr(model, "pop_train_stats", None)
+            if callable(pop):
+                logs = {**logs, **pop()}
         super().log(logs, start_time=start_time)
 
     def create_optimizer(self):
