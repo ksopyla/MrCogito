@@ -222,6 +222,7 @@ class RowReads:
 
     follow: torch.Tensor
     cap: torch.Tensor
+    descent: Optional[torch.Tensor] = None   # [B] bool: rows whose choice scores a node by its own estimate
 
     def flat(self, top_k: int) -> bool:
         return bool((self.follow[:, 2:] == ALL).all()) and bool((self.cap >= top_k).all())
@@ -250,9 +251,10 @@ def _row_uniform(ids: torch.Tensor, salt: int, n: int) -> torch.Tensor:
 def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k: int, small: int = 64,
               block: int = 512) -> RowReads:
     """The closed-book rows (training): each row draws its read. `mix` = (as normal, bounded, cut) shares.
-    As normal: every node followed, `top_k` tokens. Bounded: `follow` nodes per level, `top_k` tokens. Cut: a level
-    m ∈ 1 … L drawn evenly; nothing below level m is read (follow 0 at levels ≤ m, every node above) and no token
-    is opened, except that half of the m = 1 rows open `small` tokens.
+    As normal: every node followed, `top_k` tokens. Bounded: a budget drawn evenly from `follow` / 4, / 2, × 1, × 4
+    nodes per level, `top_k` tokens; half of the bounded rows choose by `descent` (a node's own estimate), half by
+    `lookahead`. Cut: a level m ∈ 1 … L drawn evenly; nothing below level m is read (follow 0 at levels ≤ m, every
+    node above) and no token is opened, except that half of the m = 1 rows open `small` tokens.
 
     The draw reads the row's first min(256, 2 · block) tokens only: no query among them has a memory to read
     (its window covers them), so the draw tells no query anything about its own future."""
@@ -265,13 +267,15 @@ def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k:
     cap = torch.full((B,), int(top_k), dtype=torch.long, device=dev)
     bounded = (u >= p_norm) & (u < p_norm + p_bound)
     cut = u >= p_norm + p_bound
-    f[bounded, 2:] = int(follow)
+    sizes = torch.tensor([max(follow // 4, 1), max(follow // 2, 1), int(follow), 4 * int(follow)], device=dev)
+    fb = sizes[(u2 * 4).long().clamp(max=3)]                                              # [B]
+    f[:, 2:] = torch.where(bounded[:, None], fb[:, None].expand(B, levels - 1), f[:, 2:])
     m = (u2 * levels).long().clamp(max=levels - 1) + 1                                   # 1 … L
     lv = torch.arange(levels + 1, device=dev)[None]
     f = torch.where(cut[:, None] & (lv <= m[:, None]) & (lv >= 2), torch.zeros_like(f), f)
     cap = torch.where(cut, torch.where((m == 1) & (u3 < 0.5), torch.full_like(cap, int(small)),
                                        torch.zeros_like(cap)), cap)
-    return RowReads(follow=f, cap=cap)
+    return RowReads(follow=f, cap=cap, descent=bounded & (u3 < 0.5))
 
 
 # ------------------------------------------------------------------------------------------------ the choice
@@ -317,7 +321,10 @@ def choose_chunk(qc: torch.Tensor, qd: torch.Tensor, qp: torch.Tensor, tree: Tre
     cidx = tree.cidx
     gi = cidx.groups
     C1, L = tree.n_concepts, tree.levels
-    look = route == "lookahead"
+    # rows that choose by a node's own estimate (`descent`); the others by the summed concept mass (`lookahead`)
+    own = reads.descent if reads.descent is not None else torch.full((B,), route != "lookahead", dtype=torch.bool,
+                                                                     device=qc.device)
+    look, desc = bool((~own).any()), bool(own.any())
     sc1 = node_logit(qc, tree, 0, C1, variance=variance).amax(2)                        # [B, ch, C1]
     par_ok, Xc = None, None                                                              # level 1: parent followed
     if need_x:
@@ -326,10 +333,11 @@ def choose_chunk(qc: torch.Tensor, qd: torch.Tensor, qp: torch.Tensor, tree: Tre
             lo, hi = tree.span(lv)
             if look:
                 plo_, phi_ = tree.span(lv - 1)
-                up[lv] = _lse_to_parents(prev, tree.par[:, plo_:phi_], tree.pfrm[:, plo_:phi_], lo, hi - lo)
-                prev = up[lv]
-            else:
-                up[lv] = node_logit(qc, tree, lo, hi, variance=variance).amax(2)
+                prev = _lse_to_parents(prev, tree.par[:, plo_:phi_], tree.pfrm[:, plo_:phi_], lo, hi - lo)
+                up[lv] = prev
+            if desc:
+                mine = node_logit(qc, tree, lo, hi, variance=variance).amax(2)
+                up[lv] = torch.where(own[:, None, None], mine, up[lv]) if look else mine
         Xc = torch.zeros(B, ch, tree.n_entries - C1, dtype=torch.bool, device=qc.device)
         for lv in range(L, 1, -1):
             lo, hi = tree.span(lv)

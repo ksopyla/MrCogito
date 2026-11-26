@@ -269,7 +269,10 @@ def test_row_reads_are_fixed_per_row_and_follow_the_mix():
     r2 = row_reads(ids, L, mix=(0.4, 0.2, 0.4), follow=16, top_k=512)
     assert torch.equal(r1.follow, r2.follow) and torch.equal(r1.cap, r2.cap)
     normal = (r1.follow[:, 2:] == ALL).all(-1) & (r1.cap == 512)
-    bounded = (r1.follow[:, 2:] == 16).all(-1) & (r1.cap == 512)
+    bounded = (r1.follow[:, 2:] > 0).all(-1) & (r1.cap == 512)
+    assert set(r1.follow[bounded, 2].tolist()) == {4, 8, 16, 64}                         # the budget is drawn
+    assert (r1.follow[bounded, 2:] == r1.follow[bounded, 2:3]).all()                     # the same at every level
+    assert 0.3 < float(r1.descent[bounded].float().mean()) < 0.7 and not r1.descent[~bounded].any()
     cut = ~normal & ~bounded
     assert abs(float(normal.float().mean()) - 0.4) < 0.04 and abs(float(bounded.float().mean()) - 0.2) < 0.04
     assert (r1.cap[cut] <= 64).all()
