@@ -1,0 +1,702 @@
+<title>Tree Concept Model</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: one reading column (~46rem) with wider figure panels; order: the rule, one read, the whole model, one concept, training, NCM map, today vs tree, risks, decisions.
+   Colour carries one meaning, the same as on the NCM page: ochre = a summary (coarse), teal = exact tokens (fine), indigo = what the reader follows or the reasoner predicts. */
+:root {
+  --bg: #F4F6F8; --surface: #FFFFFF; --fg: #18202C; --muted: #576173; --rule: #D6DBE4;
+  --coarse: #A35C00; --coarse-soft: #F5E2C4; --fine: #0A777B; --fine-soft: #CBEAEB;
+  --ours: #4549BE; --ours-soft: #E0E1F8; --bad: #B3261E; --good: #1D7438; --mask: #E7EAF0;
+  --display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --body: "Inter", "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0E1219; --surface: #161C26; --fg: #E5E9F0; --muted: #9BA5B6; --rule: #2B3342;
+  --coarse: #F0A63C; --coarse-soft: #3B2A12; --fine: #43C7C8; --fine-soft: #0E3132;
+  --ours: #9296FF; --ours-soft: #25274B; --bad: #FF8A80; --good: #72D690; --mask: #232A36; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0E1219; --surface: #161C26; --fg: #E5E9F0; --muted: #9BA5B6; --rule: #2B3342;
+  --coarse: #F0A63C; --coarse-soft: #3B2A12; --fine: #43C7C8; --fine-soft: #0E3132;
+  --ours: #9296FF; --ours-soft: #25274B; --bad: #FF8A80; --good: #72D690; --mask: #232A36; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 400 16px/1.6 var(--body); }
+.wrap { max-width: 1040px; margin: 0 auto; padding-block: 2.5rem 4rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.col { max-width: 46rem; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(2rem, 5vw, 3.1rem); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1.65rem; font-weight: 600; }
+h3 { font-size: 1.08rem; font-weight: 600; }
+p { margin: 0; }
+ul { margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.stack { display: flex; flex-direction: column; gap: 1rem; }
+.stack-lg { display: flex; flex-direction: column; gap: 3.25rem; }
+.eyebrow { font: 500 0.75rem/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 1.15rem; max-width: 44rem; }
+.muted { color: var(--muted); }
+.small { font-size: 0.875rem; }
+a { color: var(--ours); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--ours); outline-offset: 2px; }
+.c { color: var(--coarse); font-weight: 600; } .f { color: var(--fine); font-weight: 600; } .o { color: var(--ours); font-weight: 600; }
+.part-head { display: flex; flex-direction: column; gap: 0.4rem; padding-top: 1rem; border-top: 2px solid var(--fg); }
+
+/* the rule */
+.rule3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+.rule3 > div { background: var(--surface); padding: 1rem; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.rule3 b { font-family: var(--display); font-size: 1rem; }
+.maxim { font: 600 1.35rem/1.3 var(--display); }
+
+/* panels and controls */
+.panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 1.1rem; display: flex; flex-direction: column; gap: 0.9rem; min-width: 0; }
+.controls { display: flex; flex-wrap: wrap; gap: 0.6rem 0.9rem; align-items: center; }
+button { font: 500 0.85rem var(--body); color: var(--fg); background: var(--bg); border: 1px solid var(--rule); border-radius: 4px; padding: 0.4rem 0.8rem; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--ours-soft); border-color: var(--ours); }
+button[aria-pressed="true"] { background: var(--ours-soft); border-color: var(--ours); }
+select, input[type="range"] { font: 400 0.9rem var(--body); color: var(--fg); background: var(--bg); border: 1px solid var(--rule); border-radius: 4px; padding: 0.3rem; }
+input[type="range"] { padding: 0; accent-color: var(--ours); width: min(200px, 100%); }
+label { font-size: 0.875rem; color: var(--muted); display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.say { font-size: 0.95rem; min-height: 3.2em; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+.stats > div { background: var(--surface); padding: 0.6rem 0.8rem; display: flex; flex-direction: column; min-width: 0; }
+.stats span { font-size: 0.78rem; color: var(--muted); }
+.stats b { font: 500 1.15rem var(--mono); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 0.8rem; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 0.35rem; }
+.k-follow { background: var(--ours); } .k-sum { background: var(--coarse-soft); outline: 1px solid var(--coarse); outline-offset: -1px; } .k-tok { background: var(--fine); }
+
+/* figures */
+.figscroll { overflow-x: auto; }
+.fig { display: block; width: 100%; min-width: 680px; height: auto; color: var(--muted); }
+.fig text { font-family: var(--body); fill: var(--fg); font-size: 12px; }
+.fig .tm { fill: var(--muted); font-size: 11px; }
+.fig .tb { font: 600 13px var(--display); }
+.fig .tl { font-weight: 600; }
+.fig .cell-sum { fill: var(--coarse-soft); stroke: var(--coarse); stroke-width: 1; }
+.fig .cell-keep { fill: var(--ours); stroke: var(--ours); stroke-width: 1; }
+.fig .cell-tok { fill: var(--fine); stroke: var(--fine); stroke-width: 1; }
+.fig .link { fill: var(--ours); opacity: 0.13; }
+.fig .link-tok { fill: var(--fine); opacity: 0.16; }
+.fig .ghost { fill: none; stroke: var(--rule); stroke-dasharray: 4 4; }
+.fig .strip { fill: var(--mask); }
+.fig .span-keep { fill: var(--ours); opacity: 0.6; }
+.fig .span-tok { fill: var(--fine); }
+.fig .dot { fill: var(--surface); }
+.fig .ring { fill: none; stroke: var(--bad); stroke-width: 1.6; }
+.fig .ring-in { fill: none; stroke: var(--surface); stroke-width: 1.6; stroke-dasharray: 2 1.5; }
+.fig .fact { fill: var(--fg); }
+.fig .hit { fill: transparent; cursor: pointer; }
+.fig .box { fill: var(--surface); stroke: var(--fg); stroke-width: 1.25; }
+.fig .far { fill: var(--mask); stroke: var(--rule); }
+.fig .win { fill: var(--fine-soft); stroke: var(--fine); }
+.fig .plan { fill: var(--ours-soft); stroke: var(--ours); }
+.fig .tline { stroke: var(--coarse); stroke-width: 1; opacity: 0.55; }
+.fig .arrow { stroke: currentColor; stroke-width: 1.4; fill: none; }
+.fig .pillbox { fill: var(--fg); }
+.fig .pilltext { fill: var(--bg); font-size: 11px; font-weight: 500; }
+#arch .g { transition: opacity 0.2s; }
+#arch .pill { display: none; }
+#arch[data-step="train"] .pill { display: inline; }
+#arch[data-step="write"] .g:not(.on-write), #arch[data-step="think"] .g:not(.on-think),
+#arch[data-step="walk"] .g:not(.on-walk), #arch[data-step="decode"] .g:not(.on-decode) { opacity: 0.16; }
+@media (prefers-reduced-motion: reduce) { #arch .g { transition: none; } }
+
+/* cards and tables */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 1rem; display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
+.card .from { font: 500 0.72rem/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.card.sum { border-top: 3px solid var(--coarse); } .card.tok { border-top: 3px solid var(--fine); } .card.pred { border-top: 3px solid var(--ours); }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--rule); }
+th { font: 600 0.8rem var(--display); color: var(--muted); white-space: nowrap; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 0.85rem; white-space: nowrap; }
+tr.hl td { background: var(--ours-soft); }
+.lv { display: flex; flex-direction: column; gap: 4px; }
+.lvrow { display: grid; grid-template-columns: 9.5rem 1fr; gap: 0.6rem; align-items: center; font-size: 0.82rem; }
+.lvrow .bar { height: 18px; border-radius: 3px; background: var(--coarse-soft); border: 1px solid var(--coarse); }
+.lvrow.tokrow .bar { background: var(--fine-soft); border-color: var(--fine); }
+.lvrow.off .bar { background: none; border: 1px dashed var(--rule); }
+.lvrow.off { color: var(--muted); }
+.lvrow .bar.swap { background: repeating-linear-gradient(135deg, var(--coarse-soft) 0 6px, var(--surface) 6px 12px); }
+.pick { font-size: 0.9rem; padding-top: 0.45rem; border-top: 1px solid var(--rule); }
+.pick b { color: var(--ours); }
+footer { border-top: 1px solid var(--rule); padding-top: 1rem; }
+</style>
+
+<div class="wrap stack-lg">
+
+<header class="stack col">
+  <div class="eyebrow">Shared picture before the spec · 26 Nov 2026 · a proposal, nothing built</div>
+  <h1>Tree Concept Model</h1>
+  <p class="lede">One model built around a tree of concepts. The trunk holds a few coarse summaries of the whole text, the branches hold finer ones, and the leaves are the tokens themselves. A reader walks down from the trunk, rereading as it goes, and a thin decoder writes the next word from what the walk found.</p>
+  <p class="muted">Your two additions are built in: the next-concept loss and the NCM-style decoder. Everything on this page is my reading of your idea, drawn so you can correct it before I write the spec.</p>
+</header>
+
+<section class="stack">
+  <p class="maxim col">One rule holds it together: predict, then keep what the prediction missed.</p>
+  <div class="rule3">
+    <div><b>Down the tree</b><span>A <span class="c">summary</span> predicts the finer summaries beneath it. Each child stores only its difference from the parent. This is NCM's ladder.</span></div>
+    <div><b>Along the text</b><span>The reasoner <span class="o">predicts the next concept</span> before the text arrives, and training scores the guess. This is the next-concept loss.</span></div>
+    <div><b>At the leaves</b><span>What no summary can predict, a name or a number, stays in the <span class="f">text itself</span> and is reached by position, word for word.</span></div>
+  </div>
+</section>
+
+<section class="stack" id="read">
+  <div class="part-head col"><div class="eyebrow">Part 1</div><h2>One read, from trunk to leaves</h2>
+  <p>A fact is hidden somewhere in a long text, and a look-alike of it sits elsewhere. Step through the walk, change the length, or click the text to move the fact. The scores are invented to show the mechanism. The counts are real arithmetic.</p></div>
+
+  <div class="panel">
+    <div class="controls">
+      <label for="len">Text length <select id="len"><option value="4096">4k tokens</option><option value="65536">64k</option><option value="1048576">1M</option><option value="10485760" selected>10M</option></select></label>
+      <label for="keep">Followed per level <select id="keep"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option></select></label>
+      <label for="fact">Where the fact is <input type="range" id="fact" min="0" max="999" value="620"></label>
+    </div>
+    <div class="controls">
+      <button id="deeper" class="primary">Reread and go deeper</button>
+      <button id="walkall">Walk to the leaves</button>
+      <button id="reset">Start again at the trunk</button>
+    </div>
+    <div class="figscroll"><svg id="tree" class="fig" role="img" aria-label="The tree read. Each row is one level of summaries, from a few trunk concepts at the top to twigs of 8 tokens and then the tokens. The reader follows a few concepts per level and reads every other one as a single summary."></svg></div>
+    <div class="legend">
+      <span><i class="k-follow"></i>followed one level deeper</span>
+      <span><i class="k-sum"></i>read as one summary, stands for everything under it</span>
+      <span><i class="k-tok"></i>tokens opened word for word</span>
+      <span>● the fact</span><span>○ the look-alike</span>
+    </div>
+    <p class="say" id="say" aria-live="polite"></p>
+    <div class="stats">
+      <div><span>Concepts scored so far</span><b id="st-scored">0</b></div>
+      <div><span>Entries in the read</span><b id="st-read">0</b></div>
+      <div><span>Concept memory's flat list today</span><b id="st-today">0</b></div>
+      <div><span>Full attention</span><b id="st-full">0</b></div>
+    </div>
+  </div>
+
+  <ul class="col">
+    <li><b>Nothing is dropped.</b> A branch the reader does not open stays in the read as one summary that stands for everything under it. Every past token is counted once: opened, or inside one summary.</li>
+    <li><b>Rereading steers.</b> From the trunk, the fact and its look-alike seem equally good. After two rereads the question is sharper and the look-alike branch is let go. Today's model already loops four times over its read, so each pass can go about two levels deeper.</li>
+    <li><b>The read stops growing.</b> Today's flat list has one summary per 8 tokens, so it grows with the text. The tree read stays near 1,000 entries from 16k to 10M tokens.</li>
+    <li><b>The budget is the dial.</b> Follow every branch at 64k and the read has exactly the shape of today's concept memory: every twig summary plus the opened tokens. So the tree contains today's model as its most expensive setting.</li>
+  </ul>
+
+  <div class="tablewrap col">
+    <table>
+      <thead><tr><th>Text length</th><th class="num">Concept memory today</th><th class="num">Tree read</th><th class="num">Full attention</th></tr></thead>
+      <tbody>
+        <tr><td>16k</td><td class="num">2,368</td><td class="num">704</td><td class="num">16,384</td></tr>
+        <tr><td>64k</td><td class="num">8,512</td><td class="num">800</td><td class="num">65,536</td></tr>
+        <tr><td>1M</td><td class="num">131,392</td><td class="num">928</td><td class="num">1,048,576</td></tr>
+        <tr class="hl"><td>10M</td><td class="num">1,311,040</td><td class="num">1,048</td><td class="num">10,485,760</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted col">Entries one token reads from the far past in one pass. The tree column follows 16 concepts per level and opens 512 tokens, a setting to tune. Both models also read the last 512 to 1,023 tokens word for word. Inside a 512-token passage the grouping is by meaning; the figure draws every level in text order to stay readable.</p>
+</section>
+
+<section class="stack" id="model">
+  <div class="part-head col"><div class="eyebrow">Part 2</div><h2>The whole model</h2>
+  <p>Four parts. Three run on every token, one runs on concepts only. Step through them.</p></div>
+
+  <div class="panel">
+    <div class="controls" id="steps">
+      <button data-step="all" aria-pressed="true">Whole model</button>
+      <button data-step="write" aria-pressed="false">1 · Write the tree</button>
+      <button data-step="think" aria-pressed="false">2 · Think over concepts</button>
+      <button data-step="walk" aria-pressed="false">3 · Walk the tree</button>
+      <button data-step="decode" aria-pressed="false">4 · Write the next word</button>
+      <button data-step="train" aria-pressed="false">Where training acts</button>
+    </div>
+    <div class="figscroll">
+    <svg id="arch" class="fig" data-step="all" viewBox="0 0 820 484" role="img" aria-label="The model. A writer turns the text into a tree of summaries. A reasoner works on the tree's concepts and predicts the next ones as a plan. A looped reader walks the tree from trunk to tokens. A thin decoder turns the paths, the plan and the last words into the next word.">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+
+      <g class="g on-write on-walk on-decode">
+        <text class="tm" x="30" y="428">The text so far</text>
+        <rect class="far" x="30" y="436" width="440" height="16"/>
+        <text class="tm" x="250" y="448" text-anchor="middle">the far past, up to 10M tokens</text>
+        <rect class="win" x="470" y="436" width="140" height="16"/>
+        <text class="tm" x="540" y="448" text-anchor="middle">last 512–1,023 tokens</text>
+      </g>
+
+      <g class="g on-write">
+        <rect class="box" x="110" y="360" width="280" height="44" rx="5"/>
+        <text class="tb" x="250" y="379" text-anchor="middle">Writer</text>
+        <text class="tm" x="250" y="395" text-anchor="middle">4 local layers: keys, values, grouping</text>
+        <line class="arrow" x1="250" y1="436" x2="250" y2="406" marker-end="url(#ah)"/>
+        <line class="arrow" x1="250" y1="360" x2="250" y2="324" marker-end="url(#ah)"/>
+        <text class="tm" x="258" y="346">merges upward</text>
+      </g>
+
+      <g class="g on-write on-think on-walk">
+        <text class="tb" x="30" y="138">The tree</text>
+        <text class="tm" x="30" y="153">the model's memory</text>
+        <rect class="cell-sum" x="215" y="192" width="70" height="12"/>
+        <text class="tm" x="205" y="202" text-anchor="end">trunk</text>
+        <g><rect class="cell-sum" x="160" y="230" width="39" height="12"/><rect class="cell-sum" x="207" y="230" width="39" height="12"/><rect class="cell-sum" x="254" y="230" width="39" height="12"/><rect class="cell-sum" x="301" y="230" width="39" height="12"/></g>
+        <text class="tm" x="150" y="240" text-anchor="end">branches</text>
+        <g><rect class="cell-sum" x="100" y="268" width="24" height="12"/><rect class="cell-sum" x="130" y="268" width="24" height="12"/><rect class="cell-sum" x="160" y="268" width="24" height="12"/><rect class="cell-sum" x="190" y="268" width="24" height="12"/><rect class="cell-sum" x="220" y="268" width="24" height="12"/><rect class="cell-sum" x="250" y="268" width="24" height="12"/><rect class="cell-sum" x="280" y="268" width="24" height="12"/><rect class="cell-sum" x="310" y="268" width="24" height="12"/><rect class="cell-sum" x="340" y="268" width="24" height="12"/><rect class="cell-sum" x="370" y="268" width="24" height="12"/></g>
+        <g id="twigrow"></g>
+        <text class="tm" x="40" y="334">twigs: about 8 tokens each</text>
+        <line class="tline" x1="215" y1="204" x2="160" y2="230"/><line class="tline" x1="285" y1="204" x2="340" y2="230"/>
+        <line class="tline" x1="160" y1="242" x2="100" y2="268"/><line class="tline" x1="340" y1="242" x2="394" y2="268"/>
+        <line class="tline" x1="100" y1="280" x2="40" y2="306"/><line class="tline" x1="394" y1="280" x2="457" y2="306"/>
+      </g>
+
+      <g class="g on-think">
+        <rect class="box" x="110" y="56" width="280" height="54" rx="5"/>
+        <text class="tb" x="250" y="77" text-anchor="middle">Reasoner</text>
+        <text class="tm" x="250" y="94" text-anchor="middle">3 layers, looped; runs on concepts only</text>
+        <line class="arrow" x1="250" y1="112" x2="250" y2="188" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <text class="tm" x="262" y="138">connects concepts,</text>
+        <text class="tm" x="262" y="152">rewrites summaries</text>
+        <line class="arrow" x1="390" y1="83" x2="494" y2="83" marker-end="url(#ah)"/>
+        <text class="tm" x="442" y="75" text-anchor="middle">predicts</text>
+      </g>
+
+      <g class="g on-think on-decode">
+        <text class="tl" x="500" y="46">Plan: the next passage, coarse first</text>
+        <rect class="plan" x="500" y="56" width="40" height="10"/><text class="tm" x="548" y="65">1 code</text>
+        <rect class="plan" x="500" y="72" width="84" height="10"/><text class="tm" x="592" y="81">8 codes</text>
+        <rect class="plan" x="500" y="88" width="150" height="10"/><text class="tm" x="658" y="97">64 codes</text>
+      </g>
+
+      <g class="g on-walk on-decode">
+        <rect class="box" x="500" y="212" width="240" height="66" rx="5"/>
+        <text class="tb" x="620" y="232" text-anchor="middle">Reader</text>
+        <text class="tm" x="620" y="248" text-anchor="middle">looped ×4: reread, sharpen, go deeper</text>
+        <text class="tm" x="620" y="264" text-anchor="middle">trunk → branches → twigs → tokens</text>
+      </g>
+      <g class="g on-walk">
+        <path class="arrow" d="M410,264 C445,264 462,246 498,246" marker-start="url(#ah)" marker-end="url(#ah)"/>
+        <text class="tm" x="418" y="240">asks, reads</text>
+      </g>
+
+      <g class="g on-decode">
+        <rect class="box" x="560" y="330" width="230" height="54" rx="5"/>
+        <text class="tb" x="675" y="351" text-anchor="middle">Thin decoder</text>
+        <text class="tm" x="675" y="368" text-anchor="middle">3 layers, NCM-style</text>
+        <path class="arrow" d="M712,83 H775 V328" marker-end="url(#ah)"/>
+        <text class="tm" x="781" y="204">plan</text>
+        <line class="arrow" x1="640" y1="278" x2="640" y2="328" marker-end="url(#ah)"/>
+        <text class="tm" x="632" y="308" text-anchor="end">paths + opened tokens</text>
+        <line class="arrow" x1="585" y1="436" x2="585" y2="386" marker-end="url(#ah)"/>
+        <text class="tm" x="593" y="416">last words</text>
+        <line class="arrow" x1="761" y1="384" x2="761" y2="428" marker-end="url(#ah)"/>
+        <rect class="win" x="722" y="430" width="78" height="28" rx="4"/>
+        <text class="tl" x="761" y="448" text-anchor="middle">next word</text>
+      </g>
+
+      <g class="pill">
+        <rect class="pillbox" x="30" y="164" width="166" height="16" rx="8"/><text class="pilltext" x="113" y="176" text-anchor="middle">parent predicts children</text>
+        <rect class="pillbox" x="296" y="164" width="120" height="16" rx="8"/><text class="pilltext" x="356" y="176" text-anchor="middle">swapped branches</text>
+        <rect class="pillbox" x="500" y="108" width="128" height="16" rx="8"/><text class="pilltext" x="564" y="120" text-anchor="middle">next-concept loss</text>
+        <rect class="pillbox" x="500" y="190" width="118" height="16" rx="8"/><text class="pilltext" x="559" y="202" text-anchor="middle">closed-book cuts</text>
+        <rect class="pillbox" x="396" y="340" width="150" height="16" rx="8"/><text class="pilltext" x="471" y="352" text-anchor="middle">rebuild-the-passage loss</text>
+        <rect class="pillbox" x="706" y="462" width="104" height="16" rx="8"/><text class="pilltext" x="758" y="474" text-anchor="middle">next-word loss</text>
+      </g>
+    </svg>
+    </div>
+    <p class="say" id="archsay" aria-live="polite"></p>
+  </div>
+  <p class="small muted col">A first split of today's budget of about 141M weights, all 896 wide: writer 4 layers, reader 2 layers looped four times, decoder 3 layers, reasoner 3 layers. Today's concept memory spends all 13 layers on tokens, and its concept reasoner is switched off in the release.</p>
+</section>
+
+<section class="stack" id="concept">
+  <div class="part-head col"><div class="eyebrow">Part 3</div><h2>What one concept holds</h2>
+  <p>A concept at any level, from a twig of 8 tokens to a trunk concept of 2M, keeps the same three things. This is your sentence about concepts and the indices of specific tokens, made concrete.</p></div>
+  <div class="cards">
+    <div class="card sum"><h3>A summary</h3>
+      <p class="small">How many tokens lie beneath. A key with its spread, used to estimate how much attention the whole branch deserves. A value: what the branch says, stored as its difference from the parent. A working state of 896 numbers that the reasoner reads and rewrites.</p></div>
+    <div class="card tok"><h3>Pointers down</h3>
+      <p class="small">To its eight children. A twig points at its member tokens by position, so they can be opened word for word. Each concept also keeps a short list of stand-out tokens beneath it: the ones its summaries predict worst, such as names and numbers.</p></div>
+    <div class="card pred"><h3>A code</h3>
+      <p class="small">A label from a codebook, as in NCM. It is the target for next-concept prediction and the form the plan takes. Reading stays on the continuous summaries, because a code alone carries too little: one of 4,096 is 12 bits.</p></div>
+  </div>
+  <p class="col"><b>What "learned" means here.</b> Three things get trained that are fixed formulas today: who groups with whom, what the summary says, and where the reader goes. The plain average stays only as the starting point of the summary, with a learned correction on top that begins at zero. H-Net's ablations found that the squeezing formula matters little; the network in front of it and the pressure from training matter. So most of the work is in Part 4.</p>
+</section>
+
+<section class="stack" id="training">
+  <div class="part-head col"><div class="eyebrow">Part 4</div><h2>How training forms the summaries</h2>
+  <p>Today nothing forces a summary to be good. The best 512 tokens are always reopened, so the loss is low without the summaries holding anything. Measured on 64k documents, the summaries alone score 0.091 nats per token worse than cutting the document to its last 1k tokens (lower is better), while the far past with rereads is worth 0.142. The tree model trains with six signals. Five come from NCM.</p></div>
+
+  <div class="cards">
+    <div class="card"><div class="from">kept from today</div><h3>Next word</h3>
+      <p class="small">The usual loss, with the far past read through the tree. It stays the anchor: in the text work we reviewed, predicting concepts without it collapsed or drifted to the average.</p></div>
+    <div class="card sum"><div class="from">NCM: nested dropout</div><h3>Closed-book cuts</h3>
+      <p class="small">On half the rows the reader is stopped at a random depth: trunk only, down to the branches, or down to the twigs with nothing opened. The loss can then fall only through the summaries of that level. E37f, specified today, tests the one-level version on today's model.</p></div>
+    <div class="card sum"><div class="from">NCM: the tokenizer's reconstruction</div><h3>Rebuild the passage</h3>
+      <p class="small">On some rows the decoder is handed a passage's own summaries, cut at a random depth, and must write that passage. Every passage gives signal on every step, whether or not a later question needs it. It also measures compression directly: bits saved per token with one summary per 512 tokens, per 64, per 8.</p></div>
+    <div class="card pred"><div class="from">NCM: the generator's loss</div><h3>Next concept</h3>
+      <p class="small">Before a passage is read, the reasoner predicts its codes, coarsest level first. The guess is scored against what the writer then writes. This trains the reasoner and pulls summaries toward the gist, the part that can be predicted. Facts cannot be predicted, which is why they stay on the exact path.</p></div>
+    <div class="card sum"><div class="from">NCM: the residual ladder</div><h3>Parent predicts children</h3>
+      <p class="small">For real questions from the batch, a parent's estimate of how much attention its branch deserves must match what its children say. The child keeps only the difference. This is what sends the walk down the right branch.</p></div>
+    <div class="card"><div class="from">NCM: code corruption</div><h3>Wrong notes on purpose</h3>
+      <p class="small">Some branches are swapped for branches of another document in the batch, and the decoder sometimes gets a noisy plan. The reader learns to check a summary by going deeper. Swapped branches also make a 64k row look like a far longer text at almost no cost.</p></div>
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <button id="draw" class="primary">Draw a training row</button>
+      <span class="small muted">A 64k row. The proportions are a first guess: half the rows as normal, half cut.</span>
+    </div>
+    <div class="lv" id="rowlv"></div>
+    <p class="say" id="rowsay" aria-live="polite"></p>
+  </div>
+
+  <div class="col stack">
+    <p><b>Outside evidence for the next-concept loss.</b> Added to next-word training, it reached the same loss with about half the tokens in one 2026 preprint (NCP, read from the abstract only) and with 21.5% fewer in CoCoMix, which also feeds the predicted concept back into the model, as the plan does here. Large Concept Models found that predicting concepts by squared error drifts to the average, so the target here is a code scored by cross-entropy.</p>
+    <h3>The tree grows with the stages</h3>
+  </div>
+  <div class="tablewrap col">
+    <table>
+      <thead><tr><th>Stage</th><th>Rows</th><th>What the tree gains</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>4k tokens</td><td>Twigs, the 64 and 512 levels, and the first merge above them. Rebuild and next-concept from the first step.</td></tr>
+        <tr><td>2</td><td>16k</td><td>Four 4k branches per row. Closed-book cuts switch on.</td></tr>
+        <tr><td>3</td><td>64k</td><td>The 32k level. Swapped branches switch on.</td></tr>
+        <tr class="hl"><td>4, new</td><td>up to 1M, read in 64k pieces with the tree carried over</td><td>The 256k level and above, which a 10M text needs and no 64k row ever builds.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted col">One small network does every merge above the twigs, so a level first seen at 10M tokens uses weights already trained on lower levels. Stage 4 checks that this holds.</p>
+</section>
+
+<section class="stack" id="ncm">
+  <div class="part-head col"><div class="eyebrow">Part 5</div><h2>From NCM: what we take, what we change</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>In NCM</th><th>In the tree concept model</th><th>Kept or changed</th></tr></thead>
+      <tbody>
+        <tr><td>Ladder of levels, each storing what the coarser ones missed</td><td>The tree: each concept stores its difference from its parent</td><td>Kept</td></tr>
+        <tr><td>Nested dropout: decode from only the first levels</td><td>Closed-book cuts at every depth</td><td>Kept</td></tr>
+        <tr><td>Tokenizer loss: rebuild the text from the codes</td><td>Rebuild the passage from its own summaries</td><td>Kept, as one signal among six</td></tr>
+        <tr><td>Generator: predict the next level's codes</td><td>Next-concept loss, and the plan handed to the decoder</td><td>Kept; it predicts the next passage, since ours reads rather than generates</td></tr>
+        <tr><td>Code corruption</td><td>Swapped branches and a noisy plan</td><td>Kept</td></tr>
+        <tr><td>Decoder of one block and a linear head</td><td>Thin decoder of 3 layers</td><td>Kept; it still writes one word at a time</td></tr>
+        <tr><td>Level lengths that grow exponentially, the best of six schedules they tried</td><td>Eight children per concept at every level</td><td>Kept</td></tr>
+        <tr class="hl"><td>12 fixed levels over 128 tokens</td><td>As many levels as the text needs, one shared merge network</td><td>Changed: fixed depth is a limit the authors name</td></tr>
+        <tr class="hl"><td>Tokenizer trained first, then frozen</td><td>Writer trained together with the reader</td><td>Changed: the authors name this too, and our separately trained writer was a bottleneck</td></tr>
+        <tr class="hl"><td>"Down" is a plain average over equal stretches of positions</td><td>Twigs grouped by meaning, summaries written by a learned network</td><td>Changed</td></tr>
+        <tr class="hl"><td>Discrete codes are the whole representation</td><td>Codes are targets and the plan; the memory stays continuous</td><td>Changed</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="stack" id="today">
+  <div class="part-head col"><div class="eyebrow">Part 6</div><h2>Next to today's concept memory</h2></div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th></th><th>Concept memory (150M, released)</th><th>Tree concept model</th></tr></thead>
+      <tbody>
+        <tr><td>Levels of summaries</td><td>One: 64 concepts per 512 tokens</td><td>Seven at 10M tokens, from 8 tokens to 2M per concept</td></tr>
+        <tr><td>Who writes a summary</td><td>A formula: the average of about 8 tokens' values</td><td>A learned writer, and a reasoner that rewrites it in context</td></tr>
+        <tr><td>What training asks of it</td><td>Nothing, since the best tokens are always reopened</td><td>Closed-book cuts, rebuild the passage, next concept</td></tr>
+        <tr><td>The read at 10M tokens</td><td>1.3M summaries per token and pass</td><td>About 1,000 entries</td></tr>
+        <tr><td>Past the training length</td><td>Summaries multiply and swamp the read; a length scale patches it</td><td>The read keeps its size, so the mix it trained on holds</td></tr>
+        <tr><td>Reasoning over concepts</td><td>Built, switched off</td><td>On, with its own loss</td></tr>
+        <tr><td>After the read</td><td>9 token layers</td><td>3 thin decoder layers fed with paths and a plan</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="stack" id="risks">
+  <div class="part-head col"><div class="eyebrow">Part 7</div><h2>Where it could break</h2></div>
+  <ul class="col">
+    <li><b>One fact seen from the trunk.</b> A single summary of 2M tokens cannot show that one password lies beneath it. This is the risk I rate highest. The defences are the stand-out token lists, a wide walk (16 or more followed per level, best first), and the parent-predicts-children signal. If they are not enough, the fallback is to scan all twig summaries at lengths where that is affordable and use the tree only above.</li>
+    <li><b>Many new parts at once.</b> Going all in means a failure will not name its cause. Each part gets an off switch for testing and its own readout: closed-book value per level, next-concept accuracy per level, rebuild bits per level, how often the walk reaches the right twig.</li>
+    <li><b>The plan may not help the next word.</b> A plan for a 512-token passage adds little to a decoder that already sees the last 512 to 1,023 tokens. The plan's input starts at zero, so it cannot hurt, and the next-concept loss still shapes the summaries.</li>
+    <li><b>Fewer token layers.</b> Three layers move from tokens to concepts. Plain language quality at short range could drop. The no-harm checks against concept memory decide.</li>
+    <li><b>Speed is unmeasured.</b> The read gets smaller and the reasoner is cheap (it runs on one position per seven tokens, so twelve passes cost less than two token layers), but the walk has data-dependent steps that may not compile as well as today's read.</li>
+  </ul>
+</section>
+
+<section class="stack" id="decisions">
+  <div class="part-head col"><div class="eyebrow">Part 8</div><h2>Five choices before the spec</h2>
+  <p>Each one changes what gets built. My pick is marked; tell me where you see it differently.</p></div>
+  <div class="cards">
+    <div class="card"><h3>How twigs are cut</h3>
+      <p class="small">Today's grouping by meaning inside 512-token blocks, proven in concept memory. Or passages cut where the meaning changes, as in living concepts, whose rerun reports on 27 Nov. With blocks, "the next concept" has an order only from the 512 level up; inside a passage the reasoner predicts an unordered set of codes.</p>
+      <p class="pick"><b>Pick:</b> blocks now. The tree above the twigs is the same either way.</p></div>
+    <div class="card"><h3>Children per concept</h3>
+      <p class="small">8 gives seven levels at 10M. 4 gives twelve, as many as NCM uses. 64 gives three. Fewer, wider levels leave fewer chances for a wrong turn; more levels give finer closed-book cuts.</p>
+      <p class="pick"><b>Pick:</b> 8.</p></div>
+    <div class="card"><h3>Where the weights go</h3>
+      <p class="small">All in: 4 writer, 2 looped reader, 3 decoder and 3 reasoner layers. Or keep today's body and swap only the memory, which could start from the released weights.</p>
+      <p class="pick"><b>Pick:</b> all in, as you said. It means training from scratch.</p></div>
+    <div class="card"><h3>The first run</h3>
+      <p class="small">From scratch at 150M on the same data as the recall run, compared with it and with concept memory. Earlier from-scratch 150M runs cost about $450; this one depends on its speed. A short pipeline check at home comes first.</p>
+      <p class="pick"><b>Pick:</b> one full run, no smaller screen.</p></div>
+    <div class="card"><h3>The plan in run one</h3>
+      <p class="small">The decoder gets the plan from the first step, through an input that starts at zero. Or the next-concept loss acts only as a training signal in the first run and the plan joins later.</p>
+      <p class="pick"><b>Pick:</b> plan in from the start.</p></div>
+  </div>
+</section>
+
+<footer class="stack col small muted">
+  <p><b>Sources.</b> NCM: <a href="https://arxiv.org/abs/2610.14162">arXiv 2610.14162</a> and <a href="https://github.com/HazyResearch/ncm">its code</a>. Our side: the concept memory module, the E37f closed-book practice spec and the E40 report on the dev branch (26 Nov 2026). Next-concept evidence: NCP <a href="https://arxiv.org/abs/2609.10715">2609.10715</a> (abstract only), CoCoMix <a href="https://arxiv.org/abs/2502.08524">2502.08524</a>, Large Concept Models <a href="https://arxiv.org/abs/2412.08821">2412.08821</a>. H-Net: <a href="https://arxiv.org/abs/2507.07955">2507.07955</a>.</p>
+  <p>The earlier page explaining NCM itself: <a href="https://claude.ai/artifact/GRkk2Yf2BNNBCKGJSvrqYc">NCM and Concept Memory</a>.</p>
+</footer>
+
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var NS = 'http://www.w3.org/2000/svg';
+  var SP = [8, 64, 512, 4096, 32768, 262144, 2097152, 16777216];
+  var $ = function (id) { return document.getElementById(id); };
+  function el(name, attrs, text) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function num(n) { return n.toLocaleString('en-US'); }
+  function compact(n) {
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 10000) return Math.round(n / 1000) + 'k';
+    return num(n);
+  }
+  function spanName(s) {
+    if (s >= 1048576) return (s / 1048576) + 'M';
+    if (s >= 1024) return (s / 1024) + 'k';
+    return String(s);
+  }
+
+  /* ---------- Part 1: the walk ---------- */
+  var S = { N: 10485760, b: 3, target: 0, decoy: 0, depth: 1 };
+  function cnt(l) { return Math.ceil(S.N / SP[l]); }
+  function topLevel() { var t = 0; for (var l = 0; l < SP.length; l++) if (cnt(l) >= 2) t = l; return t; }
+  function hash(l, i) {
+    var x = Math.imul(i + 1, 2654435761) ^ Math.imul(l + 7, 40503);
+    x ^= x >>> 15; x = Math.imul(x, 2246822519); x ^= x >>> 13;
+    return ((x >>> 0) % 1000) / 1000;
+  }
+  function has(l, i, tok) { var a = i * SP[l]; return tok >= a && tok < a + SP[l]; }
+  function score(l, i, sharp) {
+    if (has(l, i, S.target)) return 1;
+    if (has(l, i, S.decoy)) return sharp ? 0.22 : 0.93;
+    return 0.08 + 0.55 * hash(l, i);
+  }
+  function build() {
+    var t = topLevel(), rows = [], ids = [], i;
+    for (i = 0; i < cnt(t); i++) ids.push(i);
+    for (var l = t, r = 0; l >= 0; l--, r++) {
+      var sharp = r >= 2;
+      var nodes = ids.map(function (id) { return { i: id, s: score(l, id, sharp) }; });
+      var k = Math.min(S.b, nodes.length);
+      var best = nodes.slice().sort(function (a, b) { return b.s - a.s; }).slice(0, k).map(function (o) { return o.i; });
+      best.sort(function (a, b) { return a - b; });
+      rows.push({ l: l, nodes: nodes, kept: best });
+      ids = [];
+      if (l > 0) best.forEach(function (p) { for (var c = 0; c < 8; c++) { var j = p * 8 + c; if (j < cnt(l - 1)) ids.push(j); } });
+    }
+    return rows;
+  }
+  function groupsOf(row, r) {
+    if (r === 0) return [row.nodes];
+    var out = [], cur = null, last = -1;
+    row.nodes.forEach(function (n) {
+      var p = Math.floor(n.i / 8);
+      if (p !== last) { cur = []; out.push(cur); last = p; }
+      cur.push(n);
+    });
+    return out;
+  }
+
+  function drawTree() {
+    var rows = build(), R = rows.length, svg = $('tree');
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var X0 = 180, AW = 570, RH = 22, PITCH = 50, Y0 = 12, GAP = 12;
+    var yLeaf = Y0 + R * PITCH, yText = yLeaf + PITCH + 14, H = yText + 26;
+    svg.setAttribute('viewBox', '0 0 760 ' + H);
+    var shownRows = Math.min(S.depth, R), leaves = S.depth > R;
+    var pos = [], scored = 0, entries = 0;
+
+    rows.forEach(function (row, r) {
+      var y = Y0 + r * PITCH, l = row.l;
+      var zone = r === 0 ? 'Trunk' : (l === 0 ? 'Twigs' : 'Branches');
+      svg.appendChild(el('text', { x: 0, y: y + 10, 'class': 'tl' }, zone));
+      svg.appendChild(el('text', { x: 0, y: y + 24, 'class': 'tm' }, spanName(SP[l]) + ' tokens each, ' + compact(cnt(l)) + ' in all'));
+      if (r >= shownRows) {
+        svg.appendChild(el('rect', { x: X0, y: y, width: AW, height: RH, 'class': 'ghost' }));
+        svg.appendChild(el('text', { x: X0 + AW / 2, y: y + 15, 'text-anchor': 'middle', 'class': 'tm' }, 'not read yet'));
+        return;
+      }
+      var groups = groupsOf(row, r), n = row.nodes.length, G = groups.length;
+      var cw = Math.min(26, (AW - (G - 1) * GAP) / n);
+      var x = X0 + (AW - (n * cw + (G - 1) * GAP)) / 2;
+      var map = {};
+      groups.forEach(function (g) {
+        var gx0 = x;
+        g.forEach(function (nd) {
+          var keep = row.kept.indexOf(nd.i) >= 0;
+          svg.appendChild(el('rect', { x: x, y: y, width: cw - 2, height: RH, rx: 2, 'class': keep ? 'cell-keep' : 'cell-sum' }));
+          var cx = x + (cw - 2) / 2, cy = y + RH / 2;
+          if (has(l, nd.i, S.target)) svg.appendChild(el('circle', { cx: cx, cy: cy, r: 3, 'class': 'dot' }));
+          else if (has(l, nd.i, S.decoy)) svg.appendChild(el('circle', { cx: cx, cy: cy, r: 3.2, 'class': keep ? 'ring-in' : 'ring' }));
+          map[nd.i] = { x: x, w: cw - 2 };
+          x += cw;
+        });
+        if (r > 0) {
+          var p = pos[r - 1][Math.floor(g[0].i / 8)], yb = y - PITCH + RH;
+          svg.insertBefore(el('polygon', { points: [p.x, yb, p.x + p.w, yb, x - 2, y, gx0, y].join(' '), 'class': 'link' }), svg.firstChild);
+        }
+        x += GAP;
+      });
+      pos.push(map);
+      scored += n;
+      var last = r === shownRows - 1;
+      entries += (last && !leaves) ? n : n - row.kept.length;
+    });
+
+    /* leaves */
+    svg.appendChild(el('text', { x: 0, y: yLeaf + 10, 'class': 'tl' }, 'Leaves'));
+    svg.appendChild(el('text', { x: 0, y: yLeaf + 24, 'class': 'tm' }, 'the tokens, by position'));
+    var twigs = rows[R - 1].kept, tokens = 0;
+    if (!leaves) {
+      svg.appendChild(el('rect', { x: X0, y: yLeaf, width: AW, height: RH, 'class': 'ghost' }));
+      svg.appendChild(el('text', { x: X0 + AW / 2, y: yLeaf + 15, 'text-anchor': 'middle', 'class': 'tm' }, 'not opened yet'));
+    } else {
+      var k = twigs.length, tw = Math.min(18, (AW - (k - 1) * GAP) / (8 * k));
+      var tx = X0 + (AW - (8 * k * tw + (k - 1) * GAP)) / 2;
+      twigs.forEach(function (ti) {
+        var g0 = tx, p = pos[R - 1][ti];
+        for (var c = 0; c < 8; c++) {
+          var tok = ti * 8 + c;
+          svg.appendChild(el('rect', { x: tx, y: yLeaf, width: tw - 2, height: RH, rx: 2, 'class': 'cell-tok' }));
+          if (tok === S.target) svg.appendChild(el('circle', { cx: tx + (tw - 2) / 2, cy: yLeaf + RH / 2, r: 3, 'class': 'dot' }));
+          tx += tw;
+        }
+        svg.insertBefore(el('polygon', { points: [p.x, yLeaf - PITCH + RH, p.x + p.w, yLeaf - PITCH + RH, tx - 2, yLeaf, g0, yLeaf].join(' '), 'class': 'link-tok' }), svg.firstChild);
+        if (has(0, ti, S.target)) {
+          var mid = Math.max(X0 + 70, Math.min(X0 + AW - 70, (g0 + tx) / 2));
+          svg.appendChild(el('text', { x: mid, y: yLeaf + RH + 14, 'text-anchor': 'middle', 'class': 'tm' }, 'tokens ' + num(ti * 8) + ' to ' + num(ti * 8 + 7)));
+        }
+        tx += GAP;
+      });
+      tokens = k * 8; entries += tokens;
+    }
+
+    /* the text strip */
+    svg.appendChild(el('text', { x: 0, y: yText + 5, 'class': 'tl' }, 'The text'));
+    svg.appendChild(el('text', { x: 0, y: yText + 19, 'class': 'tm' }, 'click it to move the fact'));
+    svg.appendChild(el('rect', { x: X0, y: yText, width: AW, height: 14, 'class': 'strip' }));
+    var dr = rows[shownRows - 1];
+    dr.kept.forEach(function (i) {
+      var w = Math.max(2, SP[dr.l] / S.N * AW), sx = Math.min(X0 + AW - w, X0 + i * SP[dr.l] / S.N * AW);
+      svg.appendChild(el('rect', { x: sx, y: yText, width: w, height: 14, 'class': leaves ? 'span-tok' : 'span-keep' }));
+    });
+    var fx = X0 + S.target / S.N * AW, dx = X0 + S.decoy / S.N * AW;
+    svg.appendChild(el('polygon', { points: [fx - 5, yText - 10, fx + 5, yText - 10, fx, yText - 2].join(' '), 'class': 'fact' }));
+    svg.appendChild(el('circle', { cx: dx, cy: yText - 6, r: 3.5, 'class': 'ring' }));
+    var fr = fx < X0 + AW - 70, dr2 = dx < X0 + AW - 80;
+    svg.appendChild(el('text', { x: fr ? fx + 9 : fx - 9, y: yText - 3, 'text-anchor': fr ? 'start' : 'end', 'class': 'tm' }, 'the fact'));
+    svg.appendChild(el('text', { x: dr2 ? dx + 8 : dx - 8, y: yText - 3, 'text-anchor': dr2 ? 'start' : 'end', 'class': 'tm' }, 'look-alike'));
+    var hit = el('rect', { x: X0, y: yText - 14, width: AW, height: 34, 'class': 'hit' });
+    hit.addEventListener('click', function (e) {
+      var box = hit.getBoundingClientRect();
+      var f = Math.max(0, Math.min(0.999, (e.clientX - box.left) / box.width));
+      $('fact').value = Math.round(f * 999);
+      setFact(f);
+    });
+    svg.appendChild(hit);
+
+    /* words and counts */
+    var say, top = rows[0];
+    if (S.depth === 1) {
+      say = 'Pass 1. The reader reads all ' + top.nodes.length + ' trunk concepts and follows the ' + top.kept.length + ' that look most relevant. From up here the look-alike seems as good as the fact.';
+    } else if (!leaves) {
+      var row = rows[S.depth - 1];
+      say = 'It opens only the concepts it followed: ' + row.nodes.length + ' children at the ' + (row.l === 0 ? 'twig' : spanName(SP[row.l])) + ' level. Every concept it passed over stays in the read as one summary.';
+      if (S.depth === 3) say += ' After two rereads the question is sharper, and the look-alike branch is let go.';
+    } else {
+      say = 'At the twigs it opens the tokens themselves: ' + tokens + ' tokens, by position. The fact is token ' + num(S.target) + '. The read holds ' + num(entries) + ' entries that together stand for all ' + num(S.N) + ' tokens.';
+    }
+    $('say').textContent = say;
+    $('st-scored').textContent = num(scored);
+    $('st-read').textContent = num(entries);
+    $('st-today').textContent = num(Math.max(0, (S.N / 512 - 2) * 64 - 64) + 512);
+    $('st-full').textContent = num(S.N);
+    $('deeper').disabled = leaves;
+    $('walkall').disabled = leaves;
+  }
+  function setFact(f) {
+    S.target = Math.min(S.N - 1, Math.floor(f * S.N));
+    S.decoy = Math.floor(((f + 0.41) % 1) * S.N);
+    S.depth = 1; drawTree();
+  }
+  function fullDepth() { return topLevel() + 2; }
+  $('len').addEventListener('change', function () { S.N = +this.value; setFact(+$('fact').value / 1000); });
+  $('keep').addEventListener('change', function () { S.b = +this.value; S.depth = 1; drawTree(); });
+  $('fact').addEventListener('input', function () { setFact(+this.value / 1000); });
+  $('deeper').addEventListener('click', function () { if (S.depth < fullDepth()) { S.depth++; drawTree(); } });
+  $('walkall').addEventListener('click', function () { S.depth = fullDepth(); drawTree(); });
+  $('reset').addEventListener('click', function () { S.depth = 1; drawTree(); });
+  S.target = Math.floor(0.62 * S.N); S.decoy = Math.floor(0.03 * S.N); S.depth = fullDepth();
+  drawTree();
+
+  /* ---------- Part 2: the model ---------- */
+  var tr = $('twigrow');
+  for (var c = 0; c < 28; c++) tr.appendChild(el('rect', { x: 40 + c * 15, y: 306, width: 12, height: 12, 'class': 'cell-sum' }));
+  var CAP = {
+    all: 'Four parts share one budget. The writer, the reader and the decoder run on every token. The reasoner runs on concepts only, about one position for every seven tokens, so twelve passes of it cost less than two token layers.',
+    write: 'The writer reads the text with local layers and gives each token a key (how to find it) and a value (what it says). When 512 tokens have passed it groups them into about 64 twigs by meaning and writes one summary per twig. Every eight siblings are then merged into a parent, level after level. One small network does every merge, so levels that only appear at 10M tokens need no new weights.',
+    think: 'The reasoner works on concepts only. Each new concept looks at earlier ones and at its parents, and its summary is rewritten with that context. Then the reasoner predicts the concepts of the passage that comes next, coarsest first: one code for the passage, then 8, then 64. That prediction is the plan.',
+    walk: 'Each token asks its own question. The reader reads the trunk, rereads what it has, sharpens the question and goes deeper, four passes in all. It ends at the exact tokens of the best twigs. Concepts it passed over stay in the read as summaries.',
+    decode: 'The thin decoder gets three things: the paths the reader took (a summary from every level, the opened tokens and their positions), the plan, and the last words. It turns them into the next word. As in NCM it can be small, because the tree and the reasoner did the work.',
+    train: 'Six signals, each drawn where it acts. Part 4 explains them one by one.'
+  };
+  var arch = $('arch'), stepBtns = document.querySelectorAll('#steps button');
+  function setStep(s) {
+    arch.setAttribute('data-step', s);
+    for (var i = 0; i < stepBtns.length; i++) stepBtns[i].setAttribute('aria-pressed', stepBtns[i].getAttribute('data-step') === s ? 'true' : 'false');
+    $('archsay').textContent = CAP[s];
+  }
+  for (var b = 0; b < stepBtns.length; b++) stepBtns[b].addEventListener('click', function () { setStep(this.getAttribute('data-step')); });
+  setStep('all');
+
+  /* ---------- Part 4: a training row ---------- */
+  var LV = ['32k level, 2 concepts', '4k level, 16', '512 level, 128', '64 level, 1,024', 'twigs, 8,192', 'tokens opened'];
+  var LVNAME = ['the 32k level', 'the 4k level', 'the 512 level', 'the 64 level', 'the twigs'];
+  function showRow(d) {
+    var box = $('rowlv'); box.textContent = '';
+    LV.forEach(function (name, i) {
+      var off = i < 5 ? (d.cut >= 0 && i > d.cut) : d.open === 0;
+      var row = document.createElement('div');
+      row.className = 'lvrow' + (off ? ' off' : '') + (i === 5 ? ' tokrow' : '');
+      var lab = document.createElement('span');
+      lab.textContent = i === 5 ? (d.open ? 'tokens opened: ' + d.open : 'no tokens opened') : name + (off ? ' (hidden)' : '');
+      var bar = document.createElement('span');
+      bar.className = 'bar' + (i === 1 && d.swap && !off ? ' swap' : '');
+      bar.style.width = (i === 5 ? Math.max(4, d.open / 512 * 100) : 100) + '%';
+      row.appendChild(lab); row.appendChild(bar); box.appendChild(row);
+    });
+    var t = d.cut < 0 ? 'This row runs as normal: the reader goes all the way down and opens 512 tokens.'
+      : 'This row is cut: the reader stops at ' + LVNAME[d.cut] + (d.open ? ' and opens only ' + d.open + ' tokens.' : ' and opens nothing.') + ' The loss can fall only through the summaries down to that level.';
+    if (d.swap) t += ' ' + d.swap + ' of the 16 branches at the 4k level come from another document.';
+    t += ' The decoder gets ' + d.plan + '.';
+    $('rowsay').textContent = t;
+  }
+  function drawRow() {
+    var d = { cut: -1, open: 512, swap: 0, plan: 'the reasoner\'s predicted plan' };
+    if (Math.random() < 0.5) { d.cut = Math.floor(Math.random() * 5); d.open = d.cut === 4 && Math.random() < 0.5 ? 64 : 0; }
+    if (Math.random() < 0.3) d.swap = 1 + Math.floor(Math.random() * 3);
+    var p = Math.random();
+    if (p < 0.25) d.plan = 'the passage\'s own summaries and must rebuild the passage';
+    else if (p < 0.4) d.plan = 'the predicted plan with noise added';
+    showRow(d);
+  }
+  $('draw').addEventListener('click', drawRow);
+  showRow({ cut: 1, open: 0, swap: 2, plan: 'the reasoner\'s predicted plan' });
+})();
+</script>
