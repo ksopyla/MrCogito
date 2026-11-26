@@ -20,6 +20,16 @@
 We still follow the [Vision](vision_and_goals.md): compress sequences into concepts and **reason in latent space**, working toward a multimodal / audio model eventually. *How* we get there is unsettled and under active exploration. Latent-space reasoning stays a central interest — likely explored with a different approach than before.
 
 ## Current focus
+- **2026-11-26 — E37f, closed-book practice (spec written at the author's request; waiting for the alignment
+  checklist; nothing built).** Measured against cutting the document to its last 1k tokens, concept memory's
+  summaries alone are worth −0.091 nats per token at 64k: worse than no far past, while the exact rereads make the far
+  past worth 0.142. A summary is a plain average of about 8 tokens' values, and training never needs it because the
+  best 512 tokens are always reopened. E37f trains a third of the rows with nothing reopened and a third with 64
+  tokens, so the loss reaches the far past only through the summaries; a second version adds E37's shelved reasoner
+  (shelved when the book was always open). Retrofit of the released 150M model on Odra, paired with E40's control,
+  about one day, $0. Deciding mark: summaries alone beat the 1k cut by ≥ 0.057 at 64k (40 % of the far past), no
+  harm ≤ 0.010. Spec [E37f](../experiments_specs/ahead/E37f_closed_book_practice.md) · alignment page
+  [e37f_architecture.html](../3_Evaluations_and_Baselines/e37f_architecture.html).
 - **2026-11-25 — E40, depth-mixed read: closed, K3 tripped (verdict Watch; home cards, $0).** DeepCrossAttention's
   depth mixes do not help the trained 150M concept-memory model as a retrofit: both the reading-layer-only mixes and
   Google's 2-DCA on every layer tie a paired control on 64k documents (all differences under 0.003 nats per token).

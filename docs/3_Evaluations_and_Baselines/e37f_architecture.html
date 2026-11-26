@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Closed-Book Practice</title>
+<style>
+:root{--bg:#fbfaf7;--card:#fff;--ink:#1d1d1b;--mute:#6b6a65;--line:#dedbd2;--a:#2f6f9f;--a2:#d9e8f3;--b:#b8612a;--b2:#f6e3d3;
+  --ok:#2e7d5b;--ok2:#dcefe6;--new:#8a4fbf;--new2:#ece1f6;--bad:#b3403a;--bad2:#f6dedc;--sum:#a08a2a;--sum2:#f3ecc9;
+  --gy:#6b6a65;--gy2:#e9e6de;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171715;--card:#20201d;--ink:#eceae3;--mute:#a09e96;--line:#3a3934;
+  --a:#7db6de;--a2:#1f3545;--b:#e39a63;--b2:#46301f;--ok:#6cc79c;--ok2:#1d3a2d;--new:#c29be8;--new2:#34264a;--bad:#e2756e;--bad2:#44201d;
+  --sum:#d8c26a;--sum2:#3b341a;--gy:#a09e96;--gy2:#33322e}}
+:root[data-theme="dark"]{--bg:#171715;--card:#20201d;--ink:#eceae3;--mute:#a09e96;--line:#3a3934;--a:#7db6de;--a2:#1f3545;--b:#e39a63;
+  --b2:#46301f;--ok:#6cc79c;--ok2:#1d3a2d;--new:#c29be8;--new2:#34264a;--bad:#e2756e;--bad2:#44201d;--sum:#d8c26a;--sum2:#3b341a;
+  --gy:#a09e96;--gy2:#33322e}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;overflow-wrap:break-word}
+main{max-width:1060px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:24px;margin:6px 0 4px;line-height:1.25}
+h2{font-size:18px;margin:34px 0 8px;padding-top:14px;border-top:1px solid var(--line);scroll-margin-top:110px}
+h3{font-size:13px;margin:0 0 6px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+p{margin:6px 0}ul{margin:6px 0;padding-left:22px}li{margin:4px 0}
+.lead{font-size:16px;max-width:880px}.note{color:var(--mute);font-size:13px}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:10px 0}
+.grid2{display:grid;grid-template-columns:1.1fr 1fr;gap:12px}.grid2>*{min-width:0}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.bar{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 0;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.secnav{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:13px}
+.secnav a{color:var(--a);text-decoration:none;white-space:nowrap}.secnav a:hover{text-decoration:underline}
+.barrow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);color:var(--ink);padding:6px 10px;font:inherit;font-size:13.5px;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}.seg button.on{background:var(--ink);color:var(--bg)}
+.btn{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 11px;font:inherit;cursor:pointer}
+.btn.primary{background:var(--ink);color:var(--bg)}
+.pipe{display:flex;flex-wrap:wrap;gap:6px}
+.node{flex:1 1 130px;max-width:200px;text-align:left;font:inherit;font-size:12.5px;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:7px 8px;background:var(--card);cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.node b{font-size:13px}.node .num{font-size:11px;color:var(--mute)}
+.node.newn{border-color:var(--new);background:var(--new2)}
+.node.press{border-color:var(--b);background:var(--b2)}
+.node.off{opacity:.5;border-style:dashed}
+.node.on{outline:2px solid var(--ink);outline-offset:1px;opacity:1}
+.shape{font-family:var(--mono);font-size:12.5px;white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere;background:var(--gy2);border-radius:8px;padding:8px}
+.tag{display:inline-block;font-size:11px;font-weight:600;border-radius:20px;padding:1px 8px;white-space:nowrap}
+.tag.same{background:var(--gy2);color:var(--gy)}.tag.new{background:var(--new2);color:var(--new);border:1px solid var(--new)}
+.tag.press{background:var(--b2);color:var(--b);border:1px solid var(--b)}.tag.off{border:1px dashed var(--mute);color:var(--mute)}
+.tag.illus{background:var(--sum2);color:var(--sum);border:1px solid var(--sum)}
+.legend span{display:inline-flex;align-items:center;gap:5px;margin:2px 14px 2px 0;font-size:13px}
+.sw{display:inline-block;width:14px;height:10px;border-radius:2px;flex:none}
+svg{max-width:100%;height:auto;display:block}
+svg text{fill:var(--ink);font:12px -apple-system,Helvetica,Arial,sans-serif}
+svg text.m{fill:var(--mute)}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{border-bottom:1px solid var(--line);padding:6px 6px;text-align:left;vertical-align:top}
+th{font-size:12px;color:var(--mute);font-weight:600}
+td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tblwrap{overflow-x:auto}
+.toks{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.tok{font-family:var(--mono);font-size:12.5px;border:1px solid var(--line);border-radius:6px;padding:3px 6px;background:var(--card)}
+.tok.win{background:var(--a2);border-color:var(--a)}
+.tok.open{background:var(--ok2);border-color:var(--ok);font-weight:600}
+.tok.sum{background:var(--sum2);border-color:var(--sum)}
+.tok.q{background:var(--ink);color:var(--bg)}
+.blk{border:1px dashed var(--line);border-radius:8px;padding:5px 7px;margin:4px 0}
+.blk .bl{font-size:11.5px;color:var(--mute)}
+.vals{display:grid;grid-template-columns:auto repeat(8,1fr);gap:2px;align-items:center;font-size:12px;max-width:460px}
+.vals .lab{font-family:var(--mono);padding-right:6px;white-space:nowrap}
+.cell{height:20px;border-radius:3px;font-size:10px;display:flex;align-items:center;justify-content:center;color:var(--ink)}
+.avgrow .lab{font-weight:700}
+.chk{width:100%}
+.chk td:nth-child(2){white-space:nowrap}
+.chk label{display:inline-flex;align-items:center;gap:3px;margin-right:8px;font-size:12.5px;cursor:pointer}
+.chk input[type=text]{width:100%;min-width:120px;font:inherit;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+textarea{width:100%;min-height:140px;font-family:var(--mono);font-size:12.5px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+.kpi{display:flex;flex-wrap:wrap;gap:10px}
+.kpi div{flex:1 1 180px;border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--card)}
+.kpi b{font-size:20px;display:block}
+.mgrid{display:grid;gap:2px;font-size:11px}
+.mgrid div{border-radius:3px;min-height:26px;display:flex;align-items:center;justify-content:center;text-align:center;padding:1px}
+@media(max-width:560px){.secnav{font-size:12.5px;gap:0 10px}.seg button{padding:5px 7px;font-size:12.5px}.node{flex:1 1 44%;max-width:none}}
+</style>
+</head>
+<body>
+<main>
+<div class="bar">
+  <nav class="secnav">
+    <a href="#idea">Idea</a><a href="#numbers">Numbers</a><a href="#pipeline">Pipeline</a><a href="#toy">Toy</a>
+    <a href="#budget">Information budget</a><a href="#masks">Masks</a><a href="#marks">Marks</a><a href="#check">Checklist</a>
+  </nav>
+  <div class="barrow">
+    <span class="note">Version:</span>
+    <div class="seg" id="armSeg">
+      <button data-arm="ctrl">Control (as built)</button>
+      <button data-arm="cb" class="on">Closed-book practice</button>
+      <button data-arm="cbr">+ reasoner</button>
+    </div>
+    <span class="note">This row opens:</span>
+    <div class="seg" id="budSeg">
+      <button data-b="512" class="on">512 tokens</button>
+      <button data-b="64">64</button>
+      <button data-b="0">nothing</button>
+    </div>
+    <button class="btn" id="themeBtn" title="Switch light and dark">◐</button>
+  </div>
+</div>
+
+<h1>E37f — closed-book practice for concept memory</h1>
+<p class="lead">Concept memory rereads the best 512 far tokens word for word and sees every other concept only as one
+averaged summary. Today those summaries alone are <b>worse than cutting the document</b>. The bet: if some training
+rows may open nothing, the model must learn to write summaries that hold the document. A retrofit of the released
+150M model on Odra, about one day, no AWS money.</p>
+<p class="note">Spec: <code>docs/experiments_specs/ahead/E37f_closed_book_practice.md</code> · written 2026-11-26 ·
+the switches above change the pipeline, the toy and the masks below.</p>
+
+<h2 id="idea">The idea in one picture</h2>
+<div class="card">
+<svg viewBox="0 0 900 230" role="img" aria-label="Open book versus closed book">
+  <rect x="10" y="20" width="420" height="190" rx="12" fill="var(--a2)" stroke="var(--a)"/>
+  <text x="30" y="48" style="font-weight:700;font-size:14px">Open book (how it was trained)</text>
+  <text x="30" y="74">Every row: the reader rereads its best 512 far tokens.</text>
+  <text x="30" y="96">The loss is low without the summaries holding much,</text>
+  <text x="30" y="118">so nothing asks them to carry the facts.</text>
+  <rect x="30" y="136" width="120" height="50" rx="6" fill="var(--ok2)" stroke="var(--ok)"/><text x="44" y="166">exact rereads</text>
+  <rect x="165" y="136" width="120" height="50" rx="6" fill="var(--sum2)" stroke="var(--sum)"/><text x="178" y="158">averages:</text><text x="178" y="176">"lazy notebook"</text>
+  <rect x="470" y="20" width="420" height="190" rx="12" fill="var(--new2)" stroke="var(--new)"/>
+  <text x="490" y="48" style="font-weight:700;font-size:14px">Closed-book practice (E37f)</text>
+  <text x="490" y="74">A third of the rows reread nothing, a third only 64</text>
+  <text x="490" y="96">tokens: there the far past reaches the model only</text>
+  <text x="490" y="118">through the summaries, so the loss teaches the notes.</text>
+  <rect x="490" y="136" width="60" height="50" rx="6" fill="var(--ok2)" stroke="var(--ok)" stroke-dasharray="4 3"/><text x="497" y="166">0–512</text>
+  <rect x="565" y="136" width="185" height="50" rx="6" fill="var(--sum2)" stroke="var(--sum)" stroke-width="2"/><text x="578" y="158">averages the model</text><text x="578" y="176">must make useful</text>
+  <text x="770" y="160" class="m">gradient → the</text><text x="770" y="176" class="m">tokens' keys, values</text>
+</svg>
+</div>
+
+<h2 id="numbers">What we start from (E40's control, 64k documents)</h2>
+<div class="grid2">
+<div class="card">
+<h3>Loss on the last 4,096 tokens, nats per token, lower is better</h3>
+<svg id="lossChart" viewBox="0 0 520 270" role="img" aria-label="Losses of the control at 64k"></svg>
+<p class="note">55 documents of 64k. The dashed line is the pass mark: summaries alone at most 2.387, which is 0.057
+better than cutting the document to its last 1k (40 % of what the far past is worth).</p>
+</div>
+<div class="card">
+<h3>Read it like this</h3>
+<div class="kpi">
+  <div><b>0.142</b>what the far past is worth with exact rereads (cut 1k − whole document)</div>
+  <div><b>−0.091</b>what the summaries alone are worth today (cut 1k − summaries only): worse than nothing</div>
+  <div><b>+0.057</b>the pass mark for the summaries alone, closed-book version</div>
+  <div><b>0.063</b>what the summaries add next to the 512 rereads (cost of switching them off): why the mark is reachable</div>
+</div>
+<p class="note">Another document's far past is worth nothing (2.406 against 2.392 with the last 4k only), so anything
+the summaries add is this document's content. E40's "18 % share" used the far-read-off run as zero, a state the
+model never trained in; this page measures against the cut.</p>
+</div>
+</div>
+
+<h2 id="pipeline">The pipeline, step by step</h2>
+<p class="note">Click a step or use the arrows. Shapes are for one 64k training row of the 150M model. The version
+switch at the top marks what changes.</p>
+<div class="legend"><span><i class="sw" style="background:var(--gy2)"></i>unchanged</span><span><i class="sw" style="background:var(--b2);border:1px solid var(--b)"></i>same module, new pressure</span><span><i class="sw" style="background:var(--new2);border:1px solid var(--new)"></i>new in this version</span><span><i class="sw" style="border:1px dashed var(--mute)"></i>not in this version</span></div>
+<div class="pipe" id="pipe"></div>
+<div class="card" id="stage">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+    <h4 id="stTitle" style="margin:0"></h4><span id="stTag"></span>
+    <span><button class="btn" id="prevB">←</button> <button class="btn" id="nextB">→</button></span>
+  </div>
+  <p id="stWhat"></p>
+  <div class="shape" id="stShape"></div>
+  <p><b>What survives this step:</b> <span id="stKeep"></span></p>
+</div>
+
+<h2 id="toy">A worked toy: where the code goes</h2>
+<p class="note"><span class="tag illus">illustrative</span> Toy sizes: blocks of 8 tokens, 2 concepts of 4 tokens per
+block (the real model: blocks of 512, 64 concepts of about 8). The grouping and the values are hand-built to show
+the mechanism, not taken from the model.</p>
+<div class="card">
+  <h3>The document, as the query at "?" reads it</h3>
+  <div id="toyDoc"></div>
+  <div class="legend"><span><i class="sw" style="background:var(--a2);border:1px solid var(--a)"></i>window (exact, always)</span><span><i class="sw" style="background:var(--ok2);border:1px solid var(--ok)"></i>opened: reread word for word</span><span><i class="sw" style="background:var(--sum2);border:1px solid var(--sum)"></i>read as one summary per concept</span><span><i class="sw" style="background:var(--ink)"></i>the query</span></div>
+  <p id="toyNote"></p>
+</div>
+<div class="grid2">
+<div class="card">
+  <h3>The digits concept's summary: members' values and their average</h3>
+  <div class="seg" id="valSeg" style="margin-bottom:8px"><button data-v="lazy" class="on">as trained</button><button data-v="cb">after closed-book practice (hypothesis)</button></div>
+  <div id="valGrid"></div>
+  <p class="note" id="valNote"></p>
+</div>
+<div class="card">
+  <h3>What the reader gets at "?"</h3>
+  <div id="toyOut"></div>
+</div>
+</div>
+
+<h2 id="budget">Information budget along the path</h2>
+<div class="grid2">
+<div class="card">
+<h3>One concept (about 8 tokens)</h3>
+<svg id="budChart" viewBox="0 0 520 250" role="img" aria-label="Numbers kept per concept"></svg>
+<p class="note">A summary keeps 64 numbers of value for 8 tokens' 512: one eighth. Raw room is not the limit (64
+numbers can hold 8 tokens' identities, about 125 bits); what an average keeps depends on how the layers below write
+the values. The reasoner reads the concept's mean state (896 numbers) and writes a 64-number update.</p>
+</div>
+<div class="card">
+<h3>One query, by document length</h3>
+<div class="tblwrap"><table>
+<tr><th>Length</th><th>Exact (sinks + window + opened)</th><th>Summaries read</th><th>Opened share</th></tr>
+<tr><td>16k</td><td class="n">≈ 1.5k tokens</td><td class="n">≈ 1,900</td><td class="n">3 %</td></tr>
+<tr><td>64k</td><td class="n">≈ 1.5k tokens</td><td class="n">≈ 8,100</td><td class="n">0.8 %</td></tr>
+<tr><td>10M (goal)</td><td class="n">≈ 1.5k tokens</td><td class="n">≈ 1.25M</td><td class="n">0.005 %</td></tr>
+</table></div>
+<p class="note">Window: the query's own block and the one before (512–1,024 tokens). In a closed-book row the opened
+column is zero and those concepts are read as summaries too. At 10M the summaries carry essentially everything, which
+is why they must hold content (and why a concept tree is needed for their count, a later spec).</p>
+</div>
+</div>
+
+<h2 id="masks">Masks: who may read what</h2>
+<div class="grid2">
+<div class="card">
+<h3>A query in block 5 reads, per key block</h3>
+<div id="maskGrid"></div>
+<div class="legend"><span><i class="sw" style="background:var(--a2);border:1px solid var(--a)"></i>raw tokens (window; own block causal)</span><span><i class="sw" style="background:var(--ok2);border:1px solid var(--ok)"></i>opened members of chosen concepts</span><span><i class="sw" style="background:var(--sum2);border:1px solid var(--sum)"></i>one summary per other concept</span><span><i class="sw" style="background:var(--gy2)"></i>never (future)</span></div>
+<p class="note" id="maskNote"></p>
+</div>
+<div class="card">
+<h3>Rules that do not change</h3>
+<ul>
+<li>One softmax over sinks ‖ window ‖ opened members ‖ summaries; every past token counted exactly once.</li>
+<li>Only closed blocks older than the window become concepts; the query's own block is read raw and causally, so no
+summary contains a token the query must not see.</li>
+<li>A query reads only its own document's concepts; summaries never mix documents.</li>
+<li>Choice of what to open: estimated attention mass (the summary logit, best head), best concept first until the
+row's budget is used. The budget is the only thing closed-book practice changes.</li>
+<li id="rsnRule">Reasoner (with "+ reasoner"): a concept attends to concepts of its own and earlier blocks, same
+document only; its update is added to the summary and to the members' values read from memory.</li>
+<li>Held-out loss and every test run as trained: 512 tokens opened (plus the extra test switches).</li>
+</ul>
+</div>
+</div>
+
+<h2 id="marks">Pass and kill marks, and what each outcome means</h2>
+<div class="card tblwrap">
+<table>
+<tr><th>Mark</th><th>What it asks (paired by document against the control)</th><th>Control today</th></tr>
+<tr><td>Pass: notebook carries the document (decides)</td><td>closed-book version: summaries alone beat the 1k cut at 64k by ≥ 0.057, interval above 0.03</td><td class="n">−0.091</td></tr>
+<tr><td>Pass: scarce budgets</td><td>with 64 tokens opened, closes ≥ half the control's gap to 512 opened (if that gap ≥ 0.02)</td><td class="n">pre-flight</td></tr>
+<tr><td>Pass: room binds too</td><td>+ reasoner beats closed-book alone on the same measure by ≥ 0.020</td><td class="n">—</td></tr>
+<tr><td>Pass: no harm</td><td>as normally run: 64k and 16k loss ≤ +0.010; RULER 4k–16k within 0.02; grammar and 7-task core within 1 point</td><td class="n">2.301 / 2.128</td></tr>
+<tr><td>Pass: cost</td><td>closed-book ≥ 0.95 × the control's speed</td><td class="n">7,704 tok/s</td></tr>
+<tr><td>Kill: identity</td><td>+ reasoner not equal to the released model at step 0 after one fix → stop that version</td><td></td></tr>
+<tr><td>Kill: halfway</td><td>held-out loss > control + 0.02 at step 1,144 → stop that version</td><td class="n">1.9228</td></tr>
+<tr><td>Kill: averages cannot</td><td>both versions' notebook value below +0.010 at the end → stop</td><td></td></tr>
+</table>
+</div>
+<div class="card">
+<ul>
+<li><b>Closed-book passes, reasoner adds nothing:</b> the missing piece was the incentive → closed-book practice goes
+into a from-scratch 150M run on the recall recipe, against the recall run (about $450, your go-ahead).</li>
+<li><b>Both pass:</b> the reasoner joins that run.</li>
+<li><b>Closed-book short of the mark but positive, reasoner passes:</b> averages are too thin → a learned writer with
+room that grows with content.</li>
+<li><b>Kill, averages cannot:</b> the notebook cannot be averages → the learned writer, or an attention-reconstruction
+loss (Compressive Transformer's best compressor).</li>
+</ul>
+</div>
+
+<h2 id="check">Alignment checklist</h2>
+<p class="note">Mark each decision, add a note where you want a change, then press the button and paste the text into
+the chat.</p>
+<div class="card tblwrap"><table class="chk" id="chk"></table></div>
+<p><button class="btn primary" id="collect">Collect my answers</button> <button class="btn" id="copyB">Copy</button> <span class="note" id="copied"></span></p>
+<textarea id="out" readonly placeholder="Your answers appear here."></textarea>
+</main>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+let arm='cb', bud=512, valMode='lazy', cur=5;
+
+// theme
+$('#themeBtn').onclick=()=>{const r=document.documentElement;const dark=r.dataset.theme?r.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;r.dataset.theme=dark?'light':'dark';drawAll();};
+
+// ---------------------------------------------------------------- loss chart
+function drawLoss(){
+  const rows=[['Whole document, as trained',2.301,'var(--ok)'],['Last 4k tokens only',2.392,'var(--gy)'],['Another document\'s far past',2.406,'var(--gy)'],
+    ['Last 1k tokens only (the cut)',2.444,'var(--a)'],['Summaries only, today',2.534,'var(--sum)'],['Far read off (never trained)',2.582,'var(--bad)']];
+  const x0=200,x1=500,lo=2.25,hi=2.62,X=v=>x0+(v-lo)/(hi-lo)*(x1-x0);
+  let s='';rows.forEach((r,i)=>{const y=14+i*36;s+=`<text x="0" y="${y+15}" class="m">${r[0]}</text><rect x="${x0}" y="${y}" width="${X(r[1])-x0}" height="22" rx="3" fill="${r[2]}" opacity=".85"/><text x="${X(r[1])+4}" y="${y+16}">${r[1].toFixed(3)}</text>`;});
+  const t=X(2.387);s+=`<line x1="${t}" x2="${t}" y1="6" y2="230" stroke="var(--new)" stroke-width="2" stroke-dasharray="5 4"/><text x="${t-4}" y="248" text-anchor="end" style="fill:var(--new)">pass mark 2.387</text>`;
+  [2.3,2.4,2.5,2.6].forEach(v=>{s+=`<text x="${X(v)}" y="266" text-anchor="middle" class="m">${v.toFixed(1)}</text>`;});
+  $('#lossChart').innerHTML=s;
+}
+
+// ---------------------------------------------------------------- pipeline
+const ST=[
+ {t:'Tokens',k:'same',w:'A training row: 65,536 token ids of one or more documents (stage-3 mix), or 4 rows of 16,384 in the first part.',
+  s:'ids [1, 65536]',keep:'everything'},
+ {t:'Layers below the reading layer',k:'press',w:'Embeddings and the layers before the reading layer turn tokens into states, and the reading layer projects one key and one value per token. In closed-book rows these weights are the only way to make the summaries useful, so they get a new pull: write values whose averages keep the facts.',
+  s:'states x [1, 65536, 896]\nkeys k   [1, 65536, 1, 64]\nvalues v [1, 65536, 1, 64]',keep:'everything, spread over 896 numbers per token; the read sees only 64 + 64 of them'},
+ {t:'Filing into concepts',k:'same',w:'Each closed block of 512 keys is grouped by content into 64 concepts of about 8 tokens: balanced soft k-means on the unit keys, three rounds, no gradient, nothing learned.',
+  s:'128 blocks × 64 = 8,192 concepts\neach: links to its ~8 member tokens',keep:'every token, filed under exactly one concept'},
+ {t:'Concept statistics',k:'same',w:'Each concept keeps its count n, mean key μk, mean value μv, key spread σ² and mean state z. The summary is these numbers; nothing learned writes them.',
+  s:'n [8192]   μk [8192, 64]   σ² [8192]\nμv [8192, 64]   z [8192, 896]',keep:'per concept: 64 numbers of value for 8 tokens\' 512 (one eighth)'},
+ {t:'Reasoner',k:'rsn',w:'Two tied transformer layers of width 512, looped twice over the concepts\' mean states. A concept attends to concepts of its own and earlier blocks of its document. Its output is added to each summary\'s value and to the members\' values. Zero output at the start, so step 0 is the released model.',
+  s:'z [1, 8192, 896] → update [1, 8192, 64]\n~6.8M new weights, own AdamW group 6e-4',keep:'a learned 64-number note per concept, written from 896 numbers instead of averaged from 64'},
+ {t:'Opening budget',k:'bud',w:'Each training row draws how many far tokens the read may reopen word for word: nothing (1/3), 64 (1/3) or 512 as trained (1/3). Seeded by the row\'s index, so both new versions see the same draws. Held-out loss and all tests use 512.',
+  s:'budget ∈ {0, 64, 512}, one draw per row,\nthe same for all queries and all 4 passes',keep:'unchanged information; it decides what the read can reach exactly'},
+ {t:'Choice of what to open',k:'same',w:'For each query, the estimated attention mass of every concept (its summary logit, best head) ranks them; the best concepts are opened until the budget is used. With budget 0 nothing is built.',
+  s:'logit = log n + q·μk/√d + |q|²σ²/(2d)\nopened ≤ budget tokens per query',keep:'which concepts are reread exactly; the rest stay summaries'},
+ {t:'Decoder read',k:'same',w:'One softmax per query over its document\'s first 4 tokens, the raw window (own block and the one before), the opened members, and one summary entry for every other older concept.',
+  s:'per query: 4 + 512–1,024 + ≤512 exact\n+ ~8,100 summaries (64k)',keep:'exact words for the window and the opened; one average per other concept'},
+ {t:'Upper layers, 4 passes',k:'same',w:'The rest of the stack, with the reading layer run in each of 4 loop passes, turns the read into the next-token prediction.',
+  s:'logits [1, 65536, 49152]',keep:'what the read delivered'},
+ {t:'Loss',k:'same',w:'Next-token cross-entropy on every row. In a closed-book row the far past can only lower it through the summaries: that is the incentive this experiment adds.',
+  s:'mean over tokens of −log p(next token)',keep:'—'}
+];
+function status(k){
+  if(k==='rsn') return arm==='cbr'?['newn','new','new in + reasoner']:['off','off','not in this version'];
+  if(k==='bud') return arm==='ctrl'?['off','off','not in the control (always 512)']:['newn','new','new: drawn per row'];
+  if(k==='press') return arm==='ctrl'?['','same','unchanged']:['press','press','same module, new pressure'];
+  return ['','same','unchanged'];
+}
+function drawPipe(){
+  $('#pipe').innerHTML=ST.map((s,i)=>{const [c]=status(s.k);return `<button class="node ${c} ${i===cur?'on':''}" data-i="${i}"><span class="num">${i+1}</span><b>${s.t}</b></button>`}).join('');
+  $$('#pipe .node').forEach(b=>b.onclick=()=>{cur=+b.dataset.i;drawPipe();});
+  const s=ST[cur],[,tc,tl]=status(s.k);
+  $('#stTitle').textContent=(cur+1)+'. '+s.t;$('#stTag').innerHTML=`<span class="tag ${tc}">${tl}</span>`;
+  $('#stWhat').textContent=s.w;$('#stShape').textContent=s.s;$('#stKeep').textContent=s.keep;
+}
+$('#prevB').onclick=()=>{cur=(cur+ST.length-1)%ST.length;drawPipe();};
+$('#nextB').onclick=()=>{cur=(cur+1)%ST.length;drawPipe();};
+
+// ---------------------------------------------------------------- toy
+const BL=[
+ {c:[['The','vault','code','is'],['4','8','2','1']],cn:['A0 words','B0 digits']},
+ {c:[['Mira','left','the','note'],['under','a','loose','brick']],cn:['A1','B1']},
+ {c:[['Later','she','walked','home'],['past','the','old','bank']],cn:['A2','B2']},
+ {raw:['At','the','door','she','typed','the','code','?']}
+];
+// toy budget in tokens: 512 → 8 (2 concepts), 64 → 4 (1 concept), 0 → 0
+function toyOpen(){const n=bud===512?2:bud===64?1:0;return ['B0','A0'].slice(0,n);} // ranked by estimated mass for the query "code ?"
+function drawToy(){
+  const op=toyOpen();
+  let h='';
+  BL.forEach((b,bi)=>{
+    h+=`<div class="blk"><div class="bl">block ${bi}${bi===3?' (the query\'s own block: window)':bi===2?' (the block before: window)':' (closed, filed into concepts)'}</div><div class="toks">`;
+    if(b.raw){b.raw.forEach((t,i)=>{h+=`<span class="tok ${i===7?'q':'win'}">${t}</span>`;});}
+    else if(bi===2){b.c.flat().forEach(t=>{h+=`<span class="tok win">${t}</span>`;});}
+    else b.c.forEach((m,ci)=>{const id=(ci?'B':'A')+bi;const cls=op.includes(id)?'open':'sum';h+=`<span class="note" style="align-self:center">${id}:</span>`+m.map(t=>`<span class="tok ${cls}">${t}</span>`).join('');});
+    h+='</div></div>';
+  });
+  $('#toyDoc').innerHTML=h;
+  const nb=bud===512?'two concepts (8 tokens, the toy\'s "512")':bud===64?'one concept (4 tokens, the toy\'s "64")':'nothing';
+  $('#toyNote').innerHTML=`This row opens ${nb}. Ranked by estimated mass for the query: B0 (the digits) first, then A0. `+
+    (op.includes('B0')?'The digits are reread word for word, so the answer is exact whatever the summaries hold.':'The digits reach the query only as B0\'s summary: the average of four values. This is the row where the notebook must work.');
+  drawVals();
+}
+const LAZY=[[.9,.8,.6,0,0,.25,0,0],[.9,.8,0,.6,0,0,.25,0],[.9,.8,0,0,.6,0,0,.25],[.9,.8,0,0,0,.6,.25,0]];
+const CBV=[[.3,0,1,0,0,0,0,0],[.3,0,0,1,0,0,0,0],[.3,0,0,0,1,0,0,0],[.3,0,0,0,0,1,0,0]];
+function drawVals(){
+  const M=valMode==='lazy'?LAZY:CBV, avg=M[0].map((_,j)=>M.reduce((a,r)=>a+r[j],0)/M.length);
+  const col=(v)=>`background:color-mix(in srgb, var(--sum) ${Math.round(Math.min(1,v)*85)}%, var(--card))`;
+  let h='<div class="vals"><span></span>'+['shared','shared','slot 1','slot 2','slot 3','slot 4','pos','pos'].map(x=>`<span class="note" style="font-size:10px;text-align:center">${x}</span>`).join('');
+  ['4','8','2','1'].forEach((d,i)=>{h+=`<span class="lab">"${d}"</span>`+M[i].map(v=>`<span class="cell" style="${col(v)}">${v?v.toFixed(2):''}</span>`).join('');});
+  h+=`<span class="lab" style="font-weight:700">average</span>`+avg.map(v=>`<span class="cell" style="${col(v)};outline:1px solid var(--sum)">${v?v.toFixed(2):''}</span>`).join('')+'</div>';
+  $('#valGrid').innerHTML=h;
+  $('#valNote').innerHTML=valMode==='lazy'
+   ?'As trained (illustrative): each digit\'s value is mostly a shared "a number is here" part; what tells the digits apart is small, and averaging shrinks it to a quarter. The summary says <i>a code was mentioned</i>, not <i>4 8 2 1</i>.'
+   :'Hypothesis (illustrative): trained to be read as an average, the layers below write each digit with its position into its own slot. The average keeps all four, each at a quarter strength the reader can scale back. Whether 8 members in 64 numbers fit is what the experiment measures.';
+  const opened=toyOpen().includes('B0');
+  let o='';
+  if(opened) o='<p><span class="tag new">exact</span> B0 is opened: the query reads "4 8 2 1" word for word. Summaries do not matter here; this is the regime the model was trained in.</p>';
+  else if(valMode==='lazy') o='<p><span class="tag off">blurred</span> Only B0\'s average arrives: "a number was mentioned". The model has to guess the code: the 0.091 nats lost against simply cutting the document comes from rows like this, plus the summaries\' weight crowding the read.</p>';
+  else o='<p><span class="tag illus">recoverable</span> B0\'s average keeps four slots: the reader can recover 4 8 2 1 from one summary entry. Closed-book practice asks training to find writes like this.</p>';
+  o+=`<p class="note">Version: ${arm==='ctrl'?'control: never trained with this row\'s budget unless it is 512.':arm==='cb'?'closed-book practice: a third of its rows looked like the "nothing" case.':'+ reasoner: the B0 summary also gets a learned update written from the members\' 896-number mean state.'}</p>`;
+  $('#toyOut').innerHTML=o;
+}
+$$('#valSeg button').forEach(b=>b.onclick=()=>{valMode=b.dataset.v;$$('#valSeg button').forEach(x=>x.classList.toggle('on',x===b));drawVals();});
+
+// ---------------------------------------------------------------- budget chart
+function drawBud(){
+  const rows=[['8 members\' values',512,'var(--a)'],['Summary value μv',64,'var(--sum)'],['Summary key μk + σ² + n',66,'var(--gy)'],['Mean state z (reasoner input)',896,'var(--new)'],['Reasoner\'s update',64,'var(--new)']];
+  const x0=210,x1=470,X=v=>x0+v/896*(x1-x0);let s='';
+  rows.forEach((r,i)=>{const y=12+i*42;const dim=(r[0].startsWith('Mean')||r[0].startsWith('Reasoner'))&&arm!=='cbr';
+    s+=`<text x="0" y="${y+16}" class="m">${r[0]}</text><rect x="${x0}" y="${y}" width="${Math.max(2,X(r[1])-x0)}" height="24" rx="3" fill="${r[2]}" opacity="${dim?.25:.85}"/><text x="${X(r[1])+5}" y="${y+17}">${r[1]}${dim?' (off)':''}</text>`;});
+  s+=`<text x="0" y="238" class="m">numbers per concept; the read uses μv (+ the update) as the value</text>`;
+  $('#budChart').innerHTML=s;
+}
+
+// ---------------------------------------------------------------- masks
+function drawMask(){
+  const cells=[];
+  for(let k=0;k<6;k++){
+    if(k===5) cells.push(['own block: raw, causal','var(--a2)']);
+    else if(k===4) cells.push(['block before: raw','var(--a2)']);
+    else {
+      let t,c;
+      if(bud===0){t='all summaries';c='var(--sum2)';}
+      else if(bud===64){t=k===0?'1 concept opened, rest summaries':'summaries';c=k===0?'linear-gradient(90deg,var(--ok2) 25%,var(--sum2) 25%)':'var(--sum2)';}
+      else {t=k===0||k===2?'best concepts opened, rest summaries':'summaries';c=(k===0||k===2)?'linear-gradient(90deg,var(--ok2) 40%,var(--sum2) 40%)':'var(--sum2)';}
+      cells.push([t,c]);
+    }
+  }
+  cells.push(['future: never','var(--gy2)']);
+  let h='<div class="mgrid" style="grid-template-columns:repeat(7,1fr)">';
+  ['blk 0','blk 1','blk 2','blk 3','blk 4','blk 5','blk 6'].forEach(x=>h+=`<div class="note" style="min-height:auto">${x}</div>`);
+  cells.forEach(c=>h+=`<div style="background:${c[1]};border:1px solid var(--line)">${c[0]}</div>`);
+  h+='</div>';
+  $('#maskGrid').innerHTML=h;
+  $('#maskNote').textContent=bud===0?'Nothing opened: every older concept arrives as its summary. This is the closed-book row; the window and sinks stay exact.':
+    bud===64?'64 tokens: about 8 concepts opened over the whole document, so most blocks give only summaries.':'As trained: the 512 best tokens are opened wherever they lie (here in blocks 0 and 2); every other concept is one summary.';
+  $('#rsnRule').style.opacity=arm==='cbr'?1:.45;
+}
+
+// ---------------------------------------------------------------- checklist
+const CK=[
+ ['Retrofit from the released 150M weights (not from scratch), 154M tokens, E40\'s schedule and rows'],
+ ['Reuse E40\'s control instead of training a new one (P0 checks it reproduces)'],
+ ['Opening budget drawn per row: nothing / 64 / 512 tokens, a third each'],
+ ['One budget per row, the same for every query and all 4 passes; held-out loss and tests always at 512'],
+ ['Second version adds the e37b reasoner (2 layers, width 512, 2 loops, ~6.8M weights), zero output at start'],
+ ['Reasoner in its own AdamW group at 6e-4, constant; the rest at the released stage 3\'s final rates'],
+ ['Yardstick: summaries alone against cutting the document to its last 1k (not E40\'s share against "far read off")'],
+ ['Deciding pass mark: summaries alone ≥ 0.057 better than the 1k cut at 64k (40 % of the far past\'s 0.142)'],
+ ['Scarce-budget mark: with 64 tokens opened, close half the control\'s gap to 512'],
+ ['Reasoner mark: ≥ 0.020 better than closed-book alone'],
+ ['No harm as normally run: ≤ +0.010 on 64k and 16k documents; RULER within 0.02; grammar and core within 1 point'],
+ ['Kill marks: halfway loss > control + 0.02; both versions\' notebook value < +0.010 at the end'],
+ ['Odra, two cards at a time, about one day, no AWS'],
+ ['Out of scope: attention-reconstruction loss, a learned writer, more concepts per block, a from-scratch run']
+];
+function drawChk(){
+  $('#chk').innerHTML='<tr><th>#</th><th>Your call</th><th>Decision</th><th>Note</th></tr>'+CK.map((r,i)=>`<tr><td>${i+1}</td><td>`+
+    ['agree','change','question'].map(v=>`<label><input type="radio" name="c${i}" value="${v}">${v}</label>`).join('')+
+    `</td><td>${r[0]}</td><td><input type="text" id="n${i}" placeholder="optional"></td></tr>`).join('');
+}
+$('#collect').onclick=()=>{
+  const lines=['E37f alignment answers:'];
+  CK.forEach((r,i)=>{const v=(document.querySelector(`input[name=c${i}]:checked`)||{}).value||'—';const n=$('#n'+i).value.trim();
+    lines.push(`${i+1}. ${v.toUpperCase()} — ${r[0]}${n?'\n   note: '+n:''}`);});
+  $('#out').value=lines.join('\n');
+};
+$('#copyB').onclick=()=>{const t=$('#out');if(!t.value)$('#collect').click();t.select();
+  try{navigator.clipboard.writeText(t.value).then(()=>{$('#copied').textContent='copied';},()=>{document.execCommand('copy');$('#copied').textContent='copied';});}catch(e){$('#copied').textContent='select and copy by hand';}};
+
+// ---------------------------------------------------------------- switches
+$$('#armSeg button').forEach(b=>b.onclick=()=>{arm=b.dataset.arm;$$('#armSeg button').forEach(x=>x.classList.toggle('on',x===b));drawAll();});
+$$('#budSeg button').forEach(b=>b.onclick=()=>{bud=+b.dataset.b;$$('#budSeg button').forEach(x=>x.classList.toggle('on',x===b));drawAll();});
+function drawAll(){drawLoss();drawPipe();drawToy();drawBud();drawMask();}
+drawChk();drawAll();
+})();
+</script>
+</body>
+</html>
