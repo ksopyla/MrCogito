@@ -56,6 +56,37 @@
   33 % (46 % at the first step of stage 2; 75–80 % at the end of stage 1 at 4k); about 193 concepts per document
   (the reader keeps 32, so at 16k it must choose, unlike at 4k); 48 % single-span; spans 8.3 tokens;
   `living/summary_weight` 0.36 → 0.26.
+- **Training done, AWS-job tests read (2026-11-26).** Stage 2 ended 19:36 UTC 11-25, stage 3 02:11 UTC 11-26, the
+  job's tests 03:36 UTC; the node powered itself off (no node left running at 06:05 UTC; this laptop's AWS login had
+  expired 02:18–06:04 UTC, so the keeper only waited). **K4 met:** nodes $324.56 of $450; the family $3,578.44 of
+  $5,000. **S7 met:** 67.6k tokens per second at 16k (≥ 59k), 21.4k at 64k (≥ 18k). Against the E38 recall run
+  (concept memory on the same v4 stages 2–3) and concept memory itself (the E38 run), same job and scripts:
+  - Held-out loss at the end of stage 2 (16k) **2.017** (1.996 / 1.996) and of stage 3 (64k) **2.003** (1.938 /
+    1.936). The gap to concept memory grows with the row length: +0.003 at the end of stage 1 (4k), +0.021 (16k),
+    +0.065 (64k); the 64k stage lowered E39's loss by 0.014, concept memory's by 0.060.
+  - Long-document loss (the job's test, 7 sources, nats per token) 2.069 / 1.910 / 1.940 / 1.936 / 1.840 at 4k /
+    16k / 32k / 64k / 128k (recall run 2.066 / 1.890 / 1.904 / 1.881 / 1.775). Core 7 mean (acc) 46.52 (46.28 /
+    46.23); WikiText 0.965 bits per byte (0.964).
+  - RULER as the job runs it, 4k / 8k / 16k / 32k: 13-task mean 0.436 / 0.384 / 0.266 / 0.194 (recall run 0.572 /
+    0.526 / 0.405 / 0.360; concept memory 0.433 / 0.397 / 0.339 / 0.304); the other 11 0.409 / 0.359 / 0.262 / 0.195
+    (0.569 / 0.530 / 0.419 / 0.377; 0.456 / 0.413 / 0.372 / 0.333); all values 0.59 / 0.54 / 0.28 / 0.29 (0.59 /
+    0.41 / 0.35 / 0.38); several keys 0.58 / 0.51 / 0.29 / 0.08 (0.58 / 0.59 / 0.29 / 0.15). **Single lookups fall
+    past 8k:** one number in an essay (niah_single_2) 0.98 / 0.99 / **0.47 / 0.28** (concept memory 1.00 / 1.00 /
+    1.00 / 0.97); one number among distractor keys (multikey 1) 0.86 / 0.70 / **0.50** / 0.32 (0.98 / 0.93 / 0.85 /
+    0.80); SQuAD 0.24 / 0.07 / 0.03 / 0.04 (0.34 / 0.19 / 0.21 / 0.22); the noise-haystack needle stays 1.00. Similar
+    keys (multikey 2) 0.19 / 0.11 / 0.14 / 0.04; the UUID needle 0.12 / 0.15 / 0.02 / 0.02.
+  - R4 at the end of stage 2 (16k): 210 concepts per document, the largest 32 % of memory tokens, 50 % single-span,
+    spans 8.3; at the end of stage 3 (64k): **881 concepts per document**, the largest 12 %, 50 % single-span, spans
+    8.5. Concepts grow linearly with length (23 at 4k → 210 → 881) while the reader keeps 32, so the share of a
+    document a reader can open shrinks as the text grows: the catalogue's lesson in the Risks ("the first level may
+    hide the right span"), and the failure pattern fits it (single lookups in an essay fail, in noise they do not).
+  - **Early marks on the job's protocol** (the card's protocol decides; it runs on Polonez from 06:09 UTC): S4
+    missed (asks ≥ 0.95 and ≥ 0.80 at 16k); S2 missed (asks ≥ 0.49 / 0.41 at 8k / 16k); S3 very likely missed (the
+    job's 64k loss is 0.055 above concept memory's, S3 allows 0.02); S1 at the mark (0.405, asks ≥ 0.40), the same
+    as the recall run's 0.41, so it comes from the recipe, not the grouping; S6 core met; S7 and K4 met. The bet
+    needs S1, S3 and S4.
+  - R2 (flat search, every visible span competes, set in a copy of the config) runs on card 0: RULER 16k and the
+    64k documents.
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
