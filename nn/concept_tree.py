@@ -529,6 +529,135 @@ def _attend_tree_flex(q, k, v, v1, *, tree: TreeIndex, X, opened, doc, sink, ds,
     return merge_calls(o1, l1, o2, aux2.lse, logrho, q.dtype).transpose(1, 2)
 
 
+NEG = float("-inf")
+
+
+def _take(x: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
+    """x [B, S, …] at pos [B, ch, P] → [B, ch, P, …]."""
+    B, ch, P = pos.shape
+    idx = pos.reshape(B, ch * P)
+    if x.dim() == 2:
+        return x.gather(1, idx).view(B, ch, P)
+    return x.gather(1, idx[..., None].expand(B, ch * P, x.shape[-1])).view(B, ch, P, x.shape[-1])
+
+
+def tree_read_stream(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_sinks: int, key_valid, top_k: int,
+                     width: int, variance: bool = True, route: str = "lookahead", summaries: bool = True,
+                     open_tokens: bool = True, dv_tok: Optional[torch.Tensor] = None, sum_len: int = 0,
+                     q_offset: int = 0, chunk: int = 0) -> torch.Tensor:
+    """The same read without a [B, S, ·] table (long rows: T is 4 GB at 128k and 260 GB at 1M): per chunk of
+    queries of one block, the top-down choice, then one fp32 softmax over the window ‖ the document's sinks outside
+    it ‖ the opened tokens (gathered) ‖ the summary entries the chunk may read. Differentiable (the choice carries
+    no gradient). q [B, Q, h, d] holds the queries [q_offset, q_offset + Q) of the row that k / v [B, S, 1, d], doc
+    and ds [B, S] cover. Returns [B, Q, h, d]."""
+    from nn.exact_read import ChoiceList
+
+    B, Q, h, d = q.shape
+    S = int(k.shape[1])
+    q0 = int(q_offset)
+    dev = q.device
+    sc = d ** -0.5
+    blk = tree.cidx.block
+    C1, E = tree.n_concepts, tree.n_entries
+    kf, vf = k[:, :, 0], v[:, :, 0]
+    vu = vf if dv_tok is None else vf + dv_tok[:, :, 0].to(vf.dtype)                      # older tokens: with the update
+    gi = tree.cidx.groups
+    flat = reads.flat(top_k)
+    hi_e = E if not flat else C1
+    logrho = summary_log_scale(ds, S, blk, sum_len) if summaries else None
+    members = None
+    per_block = C1 // max((tree.span(2)[1] - tree.span(2)[0]) // tree.probes, 1)
+    out = []
+    s0 = q0
+    while s0 < q0 + Q:
+        tau = s0 // blk
+        n1 = min(C1, max(tau - 1, 0) * per_block)                                        # concepts the block may read
+        per = (2 * blk + n_sinks + top_k + n1 + (hi_e - C1)) * h
+        cs = chunk or max(8, min(blk, (1 << 25) // max(B * per, 1)))
+        s1 = min(q0 + Q, (tau + 1) * blk, s0 + cs)
+        ch = s1 - s0
+        qp = torch.arange(s0, s1, device=dev)
+        qc = q[:, s0 - q0:s1 - q0].float()
+        qd = doc[:, s0:s1]
+        okq = (qd >= 0)[..., None]
+        own_lo = tau * blk
+        logits, vals = [], []
+        # the window: the query's block and the one before (its own block read raw)
+        j0 = max(0, (tau - 1) * blk)
+        jw = torch.arange(j0, s1, device=dev)
+        ok = (jw[None, :] <= qp[:, None])[None] & (doc[:, j0:s1][:, None, :] == qd[..., None]) & okq
+        if key_valid is not None:
+            ok = ok & (key_valid.bool()[:, j0:s1][:, None, :] | (jw[None, :] == qp[:, None])[None])
+        lw = torch.einsum("bqhd,bkd->bqhk", qc, kf[:, j0:s1].float()) * sc
+        logits.append(lw.masked_fill(~ok[:, :, None, :], NEG))
+        vw = torch.where((jw < own_lo)[None, :, None], vu[:, j0:s1], vf[:, j0:s1])
+        vals.append(("shared", vw.float()))
+        # the document's sinks outside the window
+        if n_sinks and j0 > 0:
+            sp = ds[:, s0:s1][..., None] + torch.arange(n_sinks, device=dev)             # [B, ch, n]
+            spc = sp.clamp(max=S - 1)
+            ok = (sp < j0) & (_take(doc, spc) == qd[..., None]) & okq
+            if key_valid is not None:
+                ok = ok & _take(key_valid.bool(), spc)
+            ls = torch.einsum("bqhd,bqpd->bqhp", qc, _take(kf, spc).float()) * sc
+            logits.append(ls.masked_fill(~ok[:, :, None, :], NEG))
+            vals.append(("own", _take(vu, spc).float()))
+        if tau >= 2:
+            ids, off, Xc = choose_chunk(qc.detach(), qd, qp, tree, reads, top_k=top_k, width=width,
+                                        variance=variance, route=route, open_tokens=open_tokens,
+                                        need_x=not flat)
+            chosen = torch.zeros(B, ch, C1, dtype=torch.bool, device=dev)
+            if ids is not None:
+                cl = ChoiceList(gi, B, ch, cap=top_k, m=ids.shape[-1], row0=s0, members=members)
+                cl.add(s0, ids, off)
+                pos, ok = cl.opened(s0, s1, blk)
+                members = cl.members()
+                # keep the opened places only (at most top_k per query), packed to the front
+                P = int(min(top_k, pos.shape[-1]))
+                dest = torch.where(ok, ok.long().cumsum(-1) - 1, torch.full_like(pos, P)).clamp(max=P)
+                pk = torch.zeros(B, ch, P + 1, dtype=torch.long, device=dev).scatter_(2, dest, pos)[..., :P]
+                ok = (torch.arange(P, device=dev) < ok.sum(-1, keepdim=True)) & okq
+                if key_valid is not None:
+                    ok = ok & _take(key_valid.bool(), pk)
+                lo = torch.einsum("bqhd,bqpd->bqhp", qc, _take(kf, pk).float()) * sc
+                logits.append(lo.masked_fill(~ok[:, :, None, :], NEG))
+                vals.append(("own", _take(vu, pk).float()))
+                chosen.scatter_(2, ids, off < top_k)
+            if summaries:
+                # entries the chunk may read: the concepts of blocks ≤ tau − 2, then every higher level
+                sel = torch.cat([torch.arange(n1, device=dev), torch.arange(C1, hi_e, device=dev)])
+                frm, edoc = tree.frm[:, sel], tree.doc[:, sel]
+                vis = (qp[None, :, None] >= frm[:, None, :]) & (edoc[:, None, :] == qd[..., None]) & okq
+                gone = torch.zeros(B, ch, sel.numel(), dtype=torch.bool, device=dev)
+                gone[:, :, :n1] = chosen[:, :, :n1]
+                if Xc is not None:
+                    gone[:, :, n1:] = Xc
+                    pe = (tree.par[:, sel] - C1).clamp_min(0)[:, None, :].expand(B, ch, sel.numel())
+                    vis = vis & ((qp[None, :, None] < tree.pfrm[:, sel][:, None, :]) | Xc.gather(2, pe))
+                vis = vis & ~gone
+                n = tree.n[:, sel]
+                bias = torch.where(n > 0, n.clamp_min(1.0).log(), torch.zeros_like(n)).detach()[:, None, None, :]
+                if variance:
+                    bias = bias + ((qc.detach() ** 2).sum(-1, keepdim=True) / (2 * d)) \
+                        * tree.var[:, sel].detach()[:, None, None, :]
+                if logrho is not None:
+                    bias = bias + logrho[:, s0:s1][:, :, None, None]
+                lsum = torch.einsum("bqhd,bcd->bqhc", qc, tree.key[:, sel].float()) * sc + bias
+                logits.append(lsum.masked_fill(~vis[:, :, None, :], NEG))
+                vals.append(("shared", tree.val[:, sel].float()))
+        w = torch.nan_to_num(torch.softmax(torch.cat(logits, dim=-1), dim=-1), nan=0.0)
+        o, a = 0.0, 0
+        for lg, (kind, val) in zip(logits, vals):
+            n_ = lg.shape[-1]
+            wi = w[..., a:a + n_]
+            a += n_
+            o = o + (torch.einsum("bqhk,bkd->bqhd", wi, val) if kind == "shared"
+                     else torch.einsum("bqhp,bqpd->bqhd", wi, val))
+        out.append(o.to(q.dtype))
+        s0 = s1
+    return torch.cat(out, dim=1)
+
+
 def token_update(tree: TreeIndex, dv1: torch.Tensor, S: int) -> torch.Tensor:
     """Level-1 value corrections spread to the member tokens (the concept read's rule): [B, C1, d] → [B, S, 1, d]."""
     from nn.concept_memory import token_update as _tu

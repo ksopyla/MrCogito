@@ -260,6 +260,45 @@ def test_lookahead_follows_the_largest_summed_mass():
             assert int(X[b, qi, lo - C1:hi - C1].sum()) <= 2
 
 
+# ------------------------------------------------------------------ T9 the streamed read
+@pytest.mark.parametrize("docs", [False, True])
+@pytest.mark.parametrize("follow,cap,route", [(ALL, 24, "lookahead"), (2, 24, "lookahead"), (1, 24, "descent"),
+                                              (2, 0, "lookahead"), (0, 0, "lookahead")])
+def test_the_streamed_read_equals_the_table_read(docs, follow, cap, route):
+    """Long rows read chunk by chunk without the [B, S, ·] tables: the same output, also for part of the queries,
+    with token updates, a cut, and gradients."""
+    from nn.concept_tree import tree_read_stream
+
+    q, k, v, x, doc, sink, ds = _inputs(seed=11, docs=docs)
+    B, S = doc.shape
+    k, v = k.requires_grad_(), v.requires_grad_()
+    tree = _tree(k, v, None, doc, sink)
+    f = torch.full((B, tree.levels + 1), follow, dtype=torch.long)
+    if follow == 0:
+        f[:, 4:] = ALL                                                                   # a cut at level 3
+    reads = RowReads(follow=f, cap=torch.full((B,), cap, dtype=torch.long))
+    dv_tok = 0.3 * torch.randn(B, S, 1, k.shape[-1])
+    tab, X = tree_choice(q, tree, doc, reads, top_k=24, width=12, route=route)
+    ref = attend_tree(q, k, v, tree=tree, X=X, opened=tab, doc=doc, sink=sink, ds=ds, n_sinks=2, key_valid=None,
+                      backend="sdpa", dv_tok=dv_tok)
+    kw = dict(tree=tree, reads=reads, doc=doc, ds=ds, n_sinks=2, key_valid=None, top_k=24, width=12, route=route,
+              dv_tok=dv_tok)
+    out = tree_read_stream(q, k, v, chunk=7, **kw)
+    if docs and follow != ALL and cap > 0:
+        rows = slice(1, 2)  # a packed row: the table read's flat choice ranks other documents' concepts (see T2)
+    else:
+        rows = slice(0, B)
+    if not (docs and follow == ALL):                                                     # T2's note again
+        torch.testing.assert_close(out[rows], ref[rows], atol=2e-5, rtol=1e-4)
+    part = tree_read_stream(q[:, 100:150], k, v, q_offset=100, **kw)
+    torch.testing.assert_close(part, out[:, 100:150], atol=2e-5, rtol=1e-4)
+    g_ref = torch.autograd.grad(ref[rows].pow(2).sum(), [k, v], retain_graph=True)
+    g_out = torch.autograd.grad(out[rows].pow(2).sum(), [k, v])
+    if not (docs and follow == ALL):
+        for a, b in zip(g_out, g_ref):
+            torch.testing.assert_close(a, b, atol=5e-4, rtol=5e-3)
+
+
 # ------------------------------------------------------------------ T8 the rows' draw
 def test_row_reads_are_fixed_per_row_and_follow_the_mix():
     torch.manual_seed(8)
@@ -458,6 +497,18 @@ def test_memory_modes_switch_the_tree_read_and_put_it_back():
     with pytest.raises(ValueError, match="tree read"):
         with memory_mode(_model(), "tree4"):
             pass
+
+
+@pytest.mark.parametrize("kw", [{}, {"tree_follow": 2}, {"tree_follow": 1, "tree_route": "descent"}],
+                         ids=["flat", "bounded", "descent"])
+def test_the_list_switch_reads_the_same(kw):
+    m = _model(warm=True, **{**TREE, **REASON, "tree_token_update": True, **kw})
+    ids = _ids(S=224, B=2)
+    with torch.no_grad():
+        want = m(ids).logits
+        with m.open_impl("list"):
+            got = m(ids).logits
+    torch.testing.assert_close(got, want, atol=2e-4, rtol=1e-3)
 
 
 def test_short_rows_run_and_keep_the_reasoner_in_the_graph():

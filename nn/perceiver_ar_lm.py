@@ -3247,7 +3247,8 @@ class Attention(nn.Module):
         members ‖ the readable summaries of every level (nn/concept_tree.py)."""
         from nn.concept_memory import attend_concepts, build_concepts
         from nn.concept_tree import (attend_tree, build_tree, fixed_reads, plan_tokens, route_loss, row_reads,
-                                     token_update, tree_choice)
+                                     token_update, tree_choice, tree_read_stream)
+        from nn.exact_read import _FLEX_MAX_NUMEL
 
         B, S = q.shape[:2]
         c, t = self.concept, self.tree
@@ -3288,14 +3289,23 @@ class Attention(nn.Module):
         else:
             reads = fixed_reads(B, tree.levels, follow=t["follow"], top_k=c["top_k"], device=q.device,
                                 cut=int(t.get("cut", 0)))
+        if aux_on:
+            self._tree_aux = aux
+        # rows too long for the per-query tables (T [B, S, concepts]: 4 GB at 128k), and the `list` switch: the
+        # same read chunk by chunk (evaluation only)
+        if not torch.is_grad_enabled() and self.tree_stats is None and (
+                self.open_impl == "list" or B * S * tree.n_concepts > _FLEX_MAX_NUMEL):
+            return tree_read_stream(q, k, v, tree=tree, reads=reads, doc=doc, ds=ds, n_sinks=c["sinks"],
+                                    key_valid=key_valid, top_k=c["top_k"], width=c["width"],
+                                    variance=c["variance"], route=t["route"], summaries=c["summaries"],
+                                    open_tokens=bool(c.get("open", True)), dv_tok=dv_tok,
+                                    sum_len=c.get("sum_len", 0))
         opened, X = tree_choice(q, tree, doc, reads, top_k=c["top_k"], width=c["width"], variance=c["variance"],
                                 route=t["route"], open_tokens=bool(c.get("open", True)))
         if self.tree_stats is not None:
             from nn.concept_tree import read_stats
 
             self.tree_stats = read_stats(tree, X, opened, doc)
-        if aux_on:
-            self._tree_aux = aux
         return attend_tree(q, k, v, tree=tree, X=X, opened=opened, doc=doc, sink=sink, ds=ds, n_sinks=c["sinks"],
                            key_valid=key_valid, backend=self.backend, variance=c["variance"],
                            summaries=c["summaries"], dv_tok=dv_tok, sum_len=c.get("sum_len", 0))
