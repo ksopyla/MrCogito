@@ -81,10 +81,10 @@ def check(src: Path, dst: Path, shard: Path, length: int, rows: int) -> None:
         t0 = time.time()
         with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
             if mode is None:
-                out = m(ids, labels=ids, return_logits=True)
+                out = m(ids, labels=ids)
             else:
                 with memory_mode(m, mode):
-                    out = m(ids, labels=ids, return_logits=True)
+                    out = m(ids, labels=ids)
         torch.cuda.synchronize()
         return out, time.time() - t0
 
@@ -92,10 +92,13 @@ def check(src: Path, dst: Path, shard: Path, length: int, rows: int) -> None:
     ob, tb = run(base)
     ot, _ = run(tree)
     ot, tt = run(tree)
-    diff = float((ob.logits.float() - ot.logits.float()).abs().max())
+    with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):  # the last hidden states (no [S, V] logits)
+        hb, ht = base.hidden_states(ids).float(), tree.hidden_states(ids).float()
+    diff = float((hb - ht).abs().max())
     print(f"rows {rows} × {length} tokens from {shard.name}")
-    print(f"identity (every node followed): max |logit difference| {diff:.2e}; loss {float(ob.loss):.4f} vs "
-          f"{float(ot.loss):.4f}; forward {tb:.2f} s vs {tt:.2f} s")
+    print(f"identity (every node followed): max |hidden state difference| {diff:.2e} (states up to "
+          f"{float(hb.abs().max()):.1f}); loss {float(ob.loss):.5f} vs {float(ot.loss):.5f}; forward {tb:.2f} s vs "
+          f"{tt:.2f} s")
     print(f"{'read':12} {'loss':>8} {'vs flat':>8} {'entries':>8} {'tokens in summaries':>20} {'seconds':>8}")
     for mode in ("tree64", "tree16", "tree8", "tree4", "descent16", "descent8", "cut1", "cut2", "cut3", "nosum",
                  "off"):
