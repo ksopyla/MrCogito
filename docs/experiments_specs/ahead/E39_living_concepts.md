@@ -87,6 +87,26 @@
     needs S1, S3 and S4.
   - R2 (flat search, every visible span competes, set in a copy of the config) runs on card 0: RULER 16k and the
     64k documents.
+- **The card's protocol (Polonez, from 06:09 UTC 11-26; first results 07:04 UTC; `Cache/aws_runs/e39_release`, the
+  flat copy `e39_release_flat`).** RULER (each task's own answer length) 13-task mean 0.436 / 0.387 / 0.269 at 4k /
+  8k / 16k (concept memory 0.488 / 0.439 / 0.373; the E38 recall run 0.567 / 0.527 / 0.392; full attention 0.459 /
+  0.407 / 0.255; topic index 0.541 / 0.540 / 0.439; catalogue 0.433 / 0.407 / 0.356). 64k documents **2.388** nats
+  per token (concept memory 2.293, recall run 2.291; the worst of the six models on the same data); switching the far
+  read off costs +0.184 (concept memory +0.287), and a 16k cut is only 0.006 worse than the whole 64k (concept
+  memory 0.061): past 16k the read adds almost nothing. Our list exam at 16k: single-value 0.71, all values 0.35,
+  several facts exact 0.28 (recall run 0.94 / 0.67 / 0.85); 63 % of list answers write a value twice (28 %).
+  - **S1 met at the mark:** all values 0.57 / 0.30 and several keys 0.52 / 0.26 at 8k / 16k, mean 0.41 (asks ≥ 0.40;
+    concept memory 0.25; the recall run, same recipe, 0.44): the recall rows, not the grouping.
+  - **S2 missed** (0.387 / 0.269, asks ≥ 0.49 / 0.41). **S3 missed at 64k** (2.388, asks ≤ 2.313; 16k pending).
+    **S4 missed at 16k:** one number in an essay 0.48 (asks ≥ 0.95), one number among distractor keys 0.55 (asks
+    ≥ 0.80); 32k pending. **The bet fails: it needs S1, S3 and S4.**
+  - **R2, what the first level costs (flat search at test time, same weights):** RULER at 16k 0.269 → **0.344**; one
+    number in an essay 0.48 → **1.00**; among distractor keys 0.55 → **0.84**; similar keys 0.10 → 0.16; all values
+    0.30 → 0.27; several keys 0.26 → 0.30. 64k documents 2.388 → **2.331**, a 16k cut now 0.040 worse than the whole
+    64k. So the concept choice (32 kept of ~210 at 16k, ~880 at 64k) is what drops the single lookups; with every
+    span competing the model is still 0.038 behind concept memory on 64k documents and 0.029 on RULER at 16k: trained
+    behind a narrow first level, it learned less from far context (its 64k stage lowered the held-out loss by 0.014,
+    concept memory's by 0.060).
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
