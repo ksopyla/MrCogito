@@ -163,5 +163,48 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
 - **New foundation code:** `nn/concept_tree.py`, wiring in `nn/perceiver_ar_lm.py`, trainer arguments, arm `tree`,
   tests `tests/test_concept_tree.py` (+ CUDA), eval switches, cached decoding.
 
+## Log
+- **2026-11-26 20:55–21:48 UTC, build and checks (home cards, $0).**
+  - Tests: 45 on the laptop, 62 with the GPU tests on an RTX 3090 (Odra and Polonez): every node followed = the
+    concept read; flex = the reference forward and backward for bounded, cut and training rows; gradient
+    checkpointing agrees; cached decoding = the full forward to 6e-7; the streamed read = the table read.
+  - **K4 (identity) passed** on the released concept-memory weights: hidden states identical at 16k and 64k
+    (difference 0.00), loss equal (`scripts/e41_tree_view.py check`, Odra 21:16–21:21 UTC).
+  - **The untrained tree read on the released model** (loss over whole rows of held-out books, nats per token; the
+    far read is worth 0.071 at 16k and 0.102 at 64k on these rows):
+
+    | read | 16k: loss above flat | summary entries | 64k: loss above flat | summary entries |
+    |---|---|---|---|---|
+    | every node followed (flat) | 0 | about 930 | 0 | about 4,000 |
+    | 64 followed per level | +0.0006 | 474 | +0.0060 | 824 |
+    | 16 followed per level | +0.0069 | 173 | +0.0266 | 286 |
+    | 8 followed per level | +0.0124 | 87 | +0.0530 | 176 |
+    | 16 per level, scored by a node's own estimate | +0.0106 | 173 | +0.0404 | 291 |
+    | closed book: concept summaries only | +0.0437 | 990 | +0.0743 | 4,015 |
+    | level-2 summaries only | +0.0659 | 124 | +0.1105 | 504 |
+    | level-3 summaries only | +0.0714 | 40 | +0.1573 | 84 |
+    | no summaries (opened tokens only) | +0.0160 | — | +0.0462 | — |
+    | no far read | +0.0706 | — | +0.1015 | — |
+
+    The tree works as a read without training (64 per level keeps 94 % of the far read at 64k with a fifth of the
+    entries); summaries of level 2 and above alone are worse than no far read, the state the cut rows train on.
+  - **Speed** (one RTX 3090, 16k rows, gradient checkpointing; `speed_check.sh`): concept memory 7,278 tokens/s,
+    `tree_read` 6,931 (0.95 ×), `tree_noaux` 6,548 (0.90 ×), `tree` 6,435 (0.88 ×): above K2 and S5's 0.85 ×.
+  - **Pipeline check** (`e38_pipeline_check.sh 0.01 tree m120t`, Odra card 2): the three training stages with
+    evaluation and the resume passed (21:17–21:35 UTC; the 64k stage ran under gradient checkpointing with the
+    auxiliary losses). Its test stage found a bug: generation casts the model to bf16 and the codebook comparison
+    mixed fp32 with bf16 (RULER crashed). Fixed in `4f897796` (codebooks compared in fp32; no code targets outside
+    training), with a regression test; the test stage is rerun on the check's model.
+  - Row draw as launched: 40 % as normal, 20 % bounded (4, 8, 16 or 64 nodes per level, drawn evenly; half of them
+    scored by a node's own estimate), 40 % cut at a level drawn evenly (no token opened; half of the level-1 cuts
+    open 64 tokens).
+- **2026-11-26 21:48:43 UTC, run 1 launched.** Arm `tree` (148.9M), stages 2–3 on `m21mix_v4` from concept memory's
+  stage-1 final (copied server side to `runs/e41/e33n_m120t_tree_muon0.01_tok8.0e9_seed42/trunk/` at 21:38 UTC,
+  laptop admin profile). Branch `e41-run1` at `4f897796`. Keeper `Cache/keepers/e41-tree.sh` (at most 8 launches,
+  30 h per node) launched spot g6e.12xlarge `i-0881ec244a58d5d8c` in us-east-1c (1a and 1d had no capacity), up to
+  $7.87/h. Watcher `Cache/keepers/e41-tree-watch.sh` (from `infra/aws/watch_run.sh`): stops the node above 2.227
+  at the 5th held-out evaluation of stage 2 (K1), reports below 48.6k tokens/s (K2), stops at $220 for this run
+  (K3). Family spend before the launch $3,684 (the E39a node still running); E41 spend so far $0.
+
 ## Result
 <Filled in after, by experiment-track.>
