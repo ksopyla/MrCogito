@@ -135,6 +135,10 @@ ARMS = {
                      "living_stride": 512, "living_span_max": 16, "living_span_cap": 128, "living_levels": 1,
                      "concept_sinks": 4, "concept_top_k": 512},
 }
+# E39a (docs/experiments_specs/ahead/E39a_living_flat.md, author 2026-11-26): living concepts with every visible span
+# competing for the 512 opened tokens in training too (the test switch of E39's R2); same weights shape, so stages 2-3
+# start from E39's stage-1 weights
+ARMS["living_flat"] = {**ARMS["living"], "living_search": "flat"}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
 ARMS["catalogue_reuse"] = {**ARMS["catalogue"], "lm_open_new_per_pass": False}  # every pass may re-open any note
 # E33t stage B (approved by the author 2026-11-08): note and page sizes around catalogue_reuse; the read's budget stays
@@ -159,6 +163,7 @@ TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"
                         "living_width": 16, "concept_top_k": 64},
              "living_spans": {"living_stride": 64, "living_span_max": 8, "living_span_cap": 16, "living_width": 16,
                               "concept_top_k": 64}}
+TINY_OPEN["living_flat"] = TINY_OPEN["living"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}

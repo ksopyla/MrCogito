@@ -46,7 +46,8 @@ for ARM in "$@"; do
   RUN="e33n_${SIZE}_${ARM}${TAG:+_$TAG}_tok${TT}_seed${SEED}"
   case "$ARM" in e37a) ARMP="concept memory";; lsa) ARMP="LSA port";; catalogue_reuse_n4) ARMP="catalogue";;
     dense_rope) ARMP="fair full attention";; dense) ARMP="full attention";; window) ARMP="window only";;
-    living) ARMP="living concepts";; living_spans) ARMP="living spans";; *) ARMP="$ARM";; esac
+    living) ARMP="living concepts";; living_spans) ARMP="living spans";;
+    living_flat) ARMP="living concepts, every span competing";; *) ARMP="$ARM";; esac
   export E33N_PLAIN="$SZP $ARMP${E38_PLAIN_NOTE:+ $E38_PLAIN_NOTE}, $OPTP"
   export MC_WANDB_TAGS="$EXPT,$SIZE,$MIX,$ARM,opt-$OPT,seed$SEED${E38_BOARD:+,leaderboard}"
   export MC_WANDB_NOTES="$SZP $ARMP, $OPTP${E38_BOARD:+, for the Tiny-ML leaderboard}. Code: arm $ARM, size $SIZE, mix $MIX, optimizer $OPT, seed $SEED, run $RUN."

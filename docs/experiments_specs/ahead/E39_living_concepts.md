@@ -124,7 +124,8 @@
   before the reasoner. The flat search fixes single lookups at test time but costs a score over every span per
   reader, which does not scale to 10M tokens. The open question for a flavour: trained with every span competing
   in stages 2–3 (from this run's stage-1 weights, where the first level cost nothing), does the grouping match the
-  recall run on long text?
+  recall run on long text? **Asked and approved 2026-11-26 ("Rerun stages 2–3"): flavour
+  [E39a](E39a_living_flat.md).**
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).

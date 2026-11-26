@@ -15,6 +15,19 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-26] - E39a: living concepts trained with every span competing
+
+**Why:**
+- E39 failed on single lookups past 8k and on long text; the flat search at test time (R2) brought the lookups back,
+  so the author approved stages 2-3 again with the flat search in training ("Rerun stages 2–3").
+
+**What changed:**
+- [added] `scripts/run_e33n.py` - arm `living_flat` = `living` with `living_search = "flat"` (same parameters; the
+  tiny pipeline settings of `living`).
+- [added] `infra/aws/jobs/e39a_flat.sh` - stages 2-3 from E39's stage-1 weights on `m21mix_v4`, folder `runs/e39a/`.
+- [changed] `infra/aws/jobs/e38_full.sh` - the arm's plain W&B name ("living concepts, every span competing").
+- [added] `docs/experiments_specs/ahead/E39a_living_flat.md` - the flavour's spec with its pass and stop marks.
+
 ## [2026-11-24] - Spot keeper: a failed node query no longer reads as "node gone"
 
 **Why:**
