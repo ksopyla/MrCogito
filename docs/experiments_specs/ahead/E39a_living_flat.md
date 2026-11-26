@@ -60,3 +60,10 @@ single lookups.** If it does not, the grouping itself costs long text and E39's 
 - After the job's tests: the card protocol on Polonez (cards 0, 1, 3; card 2 holds a stuck process), the list exam
   and R3, against the recall run and E39.
 - W&B: experiment E39a, "150M living concepts, every span competing with recall questions, Muon, stage 2 of 3".
+
+## Log
+- **2026-11-26 08:11 UTC launched.** E39's stage-1 final copied server side to the E39a folder (08:10 UTC, laptop
+  admin profile); keeper (frozen copy `Cache/keepers/e39a-flat.sh`, at most 8 launches, 40 h per node) launched spot
+  g6e.12xlarge `i-04c1102b95b220027` in us-east-1d at 08:12 UTC (1b and 1a had no capacity); money guard at $200;
+  the waiter `Cache/ops/e39a_wait.sh` reads KA2 and KA1 from the stage-2 log and stops the node on KA1 by itself.
+  Spend before the launch $3,578.44 of $5,000.
