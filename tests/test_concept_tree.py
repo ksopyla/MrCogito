@@ -280,3 +280,189 @@ def test_row_reads_are_fixed_per_row_and_follow_the_mix():
             assert zero.tolist() == list(range(len(zero)))
         assert (row[2 + len(zero):] == ALL).all()
     assert (r1.cap[cut & (r1.follow[:, 2] == 0)] == 0).all()                             # a cut above level 1: closed
+
+
+# =================================================================== the model
+#   M1  a tree model with every new part at its starting value is the concept-memory model (same weights), in
+#       evaluation and in training with all rows read as normal;
+#   M2  no look-ahead through the whole model: bounded reads, cut rows in training mode, the reasoner with nonzero
+#       outputs, the plan, token updates;
+#   M3  the reasoner learns from zero (its outputs get gradient, its inputs none yet), the auxiliary losses are
+#       finite and reach the predictor; gradient checkpointing gives the same loss and gradients;
+#   M4  the codebooks move only between forwards, and a short training run lowers the next-concept loss;
+#   M5  short rows (no closed block) run, and every reasoner parameter stays in the graph.
+from nn.perceiver_ar_lm import PerceiverARLM  # noqa: E402
+from tests.test_latent_memory import cfg  # noqa: E402
+
+CONCEPT = dict(message_boundary_token_id=-1, message_loop_rounds=2, global_nope=True, num_kv_heads=1,
+               par_global_read="concept", concept_block=BLK, concept_per_block=PER, concept_sinks=2,
+               concept_top_k=8, concept_iters=3)
+TREE = dict(concept_tree=True, tree_probes=P, tree_fan=FAN)
+REASON = dict(tree_reasoner_layers=1, tree_reasoner_dim=16, tree_reasoner_heads=2, tree_plan=True)
+AUX = dict(tree_next_concept=0.1, tree_route_loss=0.1, tree_codes_coarse=8, tree_codes_fine=16, tree_code_dim=8,
+           tree_route_queries=16)
+
+
+def _model(seed=0, warm=False, **kw):
+    torch.manual_seed(seed)
+    m = PerceiverARLM(cfg(**CONCEPT, **kw)).eval()
+    for layer in m.layers:
+        layer.attn.wo.weight.data.normal_(0, 0.2)
+        layer.mlp.down.weight.data.normal_(0, 0.2)
+    rs = m.layers[m.config.global_layer_index].attn.tree_reasoner
+    if rs is not None and warm:                                                          # nonzero corrections and plan
+        for lin in (rs.out_k, rs.out_v, rs.out_k1, rs.out_v1, rs.plan):
+            if lin is not None:
+                lin.weight.data.normal_(0, 0.2)
+    return m
+
+
+def _ids(S=192, B=2, seed=5):
+    g = torch.Generator().manual_seed(seed)
+    return torch.randint(3, 60, (B, S), generator=g)
+
+
+@pytest.mark.parametrize("kw", [TREE, {**TREE, **REASON}, {**TREE, **REASON, **AUX, "tree_token_update": True}],
+                         ids=["read", "reasoner", "all"])
+def test_a_fresh_tree_model_is_the_concept_model(kw):
+    base = _model()
+    m = _model(**kw)
+    missing, unexpected = m.load_state_dict(base.state_dict(), strict=False)
+    assert not unexpected and all("tree_reasoner" in k for k in missing)
+    ids = _ids()
+    with torch.no_grad():
+        torch.testing.assert_close(m(ids).logits, base(ids).logits, atol=1e-5, rtol=1e-4)
+    m.train(), base.train()
+    lm = m(ids, labels=ids).loss
+    lb = base(ids, labels=ids).loss
+    if "tree_next_concept" in kw:                                                        # the extra losses are added
+        st = m.pop_train_stats()
+        torch.testing.assert_close(torch.tensor(st["tree/next_word_loss"]), lb.detach().cpu(), atol=1e-5, rtol=1e-5)
+        assert float(lm) > float(lb)
+    else:
+        torch.testing.assert_close(lm, lb, atol=1e-5, rtol=1e-5)
+
+
+@pytest.mark.parametrize("kw", [
+    {**TREE, "tree_follow": 2},
+    {**TREE, "tree_follow": 1, "tree_route": "descent"},
+    {**TREE, **REASON, "tree_follow": 2, "tree_token_update": True},
+    {**TREE, **REASON, **AUX, "tree_row_mix": "0.2,0.3,0.5", "tree_train_follow": 2},
+], ids=["bounded", "descent", "reasoner_bounded", "training_rows"])
+def test_the_tree_model_never_reads_ahead(kw):
+    m = _model(warm=True, **kw)
+    if "tree_row_mix" in kw:
+        m.train()                                                                        # the rows' draws are active
+    ids = _ids(S=224, B=3)
+    with torch.no_grad():
+        base = m(ids).logits
+        for t in range(40, 224, 23):
+            ids2 = ids.clone()
+            ids2[:, t:] = (ids2[:, t:] + 7) % 57 + 3
+            d = (base - m(ids2).logits)[:, :t].abs().amax(-1)
+            assert (d < 1e-4).all(), (t, d.nonzero()[:5].tolist())
+
+
+def test_training_rows_draw_depends_on_the_row_only():
+    """The draw must not change between a forward and its recomputation, nor between loop passes."""
+    ids = _ids(S=224, B=6)
+    a = row_reads(ids, 5, mix=(0.2, 0.3, 0.5), follow=2, top_k=8, block=BLK)
+    ids2 = ids.clone()
+    ids2[:, 2 * BLK:] = 3                                                                # only the first two blocks count
+    b = row_reads(ids2, 5, mix=(0.2, 0.3, 0.5), follow=2, top_k=8, block=BLK)
+    assert torch.equal(a.follow, b.follow) and torch.equal(a.cap, b.cap)
+    assert len({tuple(r.tolist()) for r in a.follow}) > 1                                # rows differ
+
+
+def test_the_reasoner_learns_from_zero_and_checkpointing_agrees():
+    kw = {**TREE, **REASON, **AUX, "tree_row_mix": "0.4,0.2,0.4", "tree_train_follow": 2}
+    import copy
+
+    m = _model(**kw)
+    att = m.layers[m.config.global_layer_index].attn
+    rs = att.tree_reasoner
+    ids = _ids(S=224, B=3)
+    m.train()
+    m2 = copy.deepcopy(m)                                                                # the same state, recomputed
+    out = m(ids, labels=ids)
+    out.loss.backward()
+    st = m.pop_train_stats()
+    assert all(math.isfinite(v) for v in st.values()) and st["tree/next_concept_fine"] > 0
+    for lin in (rs.out_k, rs.out_v, rs.out_k1, rs.out_v1, rs.plan, rs.head_c, rs.head_f):
+        assert lin.weight.grad is not None and float(lin.weight.grad.abs().sum()) > 0, lin
+    assert float(rs.inp.weight.grad.abs().sum()) > 0                                     # through the predictor
+    assert att.wk.weight.grad is not None and float(att.wk.weight.grad.abs().sum()) > 0
+    g_ref = {n: p.grad.clone() for n, p in m.named_parameters() if p.grad is not None}
+    loss_ref = float(out.loss)
+    m2.gradient_checkpointing_enable()
+    out2 = m2(ids, labels=ids)
+    out2.loss.backward()
+    assert abs(float(out2.loss) - loss_ref) < 1e-5
+    worst = 0.0
+    for n, p in m2.named_parameters():
+        if n in g_ref:
+            assert p.grad is not None, n
+            worst = max(worst, float((p.grad - g_ref[n]).abs().max() / g_ref[n].abs().max().clamp_min(1e-8)))
+    assert worst < 2e-3, worst
+
+
+def test_codebooks_move_between_forwards_and_the_prediction_improves():
+    kw = {**TREE, **REASON, **AUX}
+    m = _model(**kw)
+    rs = m.layers[m.config.global_layer_index].attn.tree_reasoner
+    ids = _ids(S=224, B=4)
+    m.train()
+    book0 = rs.book_f.clone()
+    m(ids, labels=ids)
+    assert torch.equal(rs.book_f, book0) and float(rs.pend_f.abs().sum()) > 0            # kept for the next forward
+    m(ids, labels=ids)
+    assert not torch.equal(rs.book_f, book0)
+    opt = torch.optim.AdamW(m.parameters(), lr=3e-3)
+    first = last = None
+    for step in range(30):
+        opt.zero_grad()
+        m(ids, labels=ids).loss.backward()
+        opt.step()
+        st = m.pop_train_stats()
+        nc = st["tree/next_concept_coarse"] + st["tree/next_concept_fine"]
+        first = nc if first is None else first
+        last = nc
+    assert last < first - 0.05, (first, last)
+    m.eval()
+    with torch.no_grad():
+        assert torch.isfinite(m(ids).logits).all()
+    book1 = rs.book_f.clone()
+    m(ids)                                                                               # evaluation moves nothing
+    assert torch.equal(rs.book_f, book1)
+
+
+def test_memory_modes_switch_the_tree_read_and_put_it_back():
+    from evaluation.long_context_use import memory_mode
+
+    m = _model(warm=True, **{**TREE, **REASON})
+    att = m.layers[m.config.global_layer_index].attn
+    ids = _ids(S=224, B=2)
+    with torch.no_grad():
+        on = m(ids).logits
+        outs = {}
+        for mode in ("tree1", "descent1", "cut1", "cut3", "sumonly"):
+            with memory_mode(m, mode):
+                outs[mode] = m(ids).logits
+            assert (att.tree["follow"], att.tree["route"], att.tree["cut"]) == (0, "lookahead", 0)
+            assert not torch.allclose(outs[mode][:, 64:], on[:, 64:], atol=1e-4), mode
+        torch.testing.assert_close(outs["cut1"], outs["sumonly"], atol=1e-5, rtol=1e-4)   # the closed book
+        torch.testing.assert_close(m(ids).logits, on)
+    with pytest.raises(ValueError, match="tree read"):
+        with memory_mode(_model(), "tree4"):
+            pass
+
+
+def test_short_rows_run_and_keep_the_reasoner_in_the_graph():
+    m = _model(**{**TREE, **REASON, **AUX})
+    rs = m.layers[m.config.global_layer_index].attn.tree_reasoner
+    ids = _ids(S=40, B=2)                                                                # no closed block
+    m.train()
+    out = m(ids, labels=ids)
+    out.loss.backward()
+    assert math.isfinite(float(out.loss))
+    assert all(p.grad is not None for p in rs.parameters())

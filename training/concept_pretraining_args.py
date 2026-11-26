@@ -497,6 +497,34 @@ class ModelArguments:
     concept_reasoner_dim: int = field(default=512, metadata={"help": "E37: concept reasoner width."})
     concept_reasoner_heads: int = field(default=8, metadata={"help": "E37: concept reasoner heads."})
     concept_reasoner_loops: int = field(default=2, metadata={"help": "E37: concept reasoner loops."})
+    concept_tree: bool = field(default=False, metadata={
+        "help": "E41 (nn/concept_tree.py): levels of summaries above the concept read's concepts and a top-down "
+                "read. Needs par_global_read concept. With every node followed it is the concept read."})
+    tree_probes: int = field(default=8, metadata={"help": "E41: nodes per container at every level >= 2."})
+    tree_fan: int = field(default=8, metadata={"help": "E41: child containers per container (level >= 3)."})
+    tree_follow: int = field(default=0, metadata={
+        "help": "E41: nodes a query follows per level outside training (0 = all, the flat read)."})
+    tree_route: str = field(default="lookahead", metadata={
+        "help": "E41: the choice's score: lookahead (a node's summed concept mass) | descent (its own estimate)."})
+    tree_row_mix: str = field(default="", metadata={
+        "help": "E41: shares of training rows read 'as normal,bounded,cut' (e.g. 0.4,0.2,0.4); empty = all normal."})
+    tree_train_follow: int = field(default=16, metadata={"help": "E41: nodes followed per level in a bounded row."})
+    tree_reasoner_layers: int = field(default=0, metadata={"help": "E41: reasoner layers over the tree (0 = none)."})
+    tree_reasoner_dim: int = field(default=512, metadata={"help": "E41: reasoner width."})
+    tree_reasoner_heads: int = field(default=8, metadata={"help": "E41: reasoner heads."})
+    tree_reasoner_loops: int = field(default=2, metadata={"help": "E41: reasoner loops."})
+    tree_plan: bool = field(default=False, metadata={
+        "help": "E41: the reasoner's plan vector per block, added to the token stream (zero at the start)."})
+    tree_token_update: bool = field(default=False, metadata={
+        "help": "E41: opened tokens carry their concept's value correction."})
+    tree_next_concept: float = field(default=0.0, metadata={
+        "help": "E41: weight of the next-concept loss (the reasoner predicts the next block's concept codes)."})
+    tree_codes_coarse: int = field(default=1024, metadata={"help": "E41: codebook size of the level-2 nodes."})
+    tree_codes_fine: int = field(default=4096, metadata={"help": "E41: codebook size of the concepts."})
+    tree_code_dim: int = field(default=64, metadata={"help": "E41: width of the codes' fixed random projection."})
+    tree_route_loss: float = field(default=0.0, metadata={
+        "help": "E41: weight of the route loss (a node's own estimate regresses its concepts' summed estimate)."})
+    tree_route_queries: int = field(default=256, metadata={"help": "E41: queries per row the route loss samples."})
     par_depth_mix: str = field(default="none", metadata={
         "help": "E40 (nn/depth_mix.py): none | read (GRN-v3 query/key/value depth mixes on the reading layer's runs) "
                 "| dca2 (2-DCA on every layer run). Identity at initialisation, so a warm start is unchanged."})

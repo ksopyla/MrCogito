@@ -139,6 +139,18 @@ ARMS = {
 # competing for the 512 opened tokens in training too (the test switch of E39's R2); same weights shape, so stages 2-3
 # start from E39's stage-1 weights
 ARMS["living_flat"] = {**ARMS["living"], "living_search": "flat"}
+# E41 (docs/experiments_specs/ahead/E41_tree_concept_model.md): the tree concept model. Concept memory's concepts as
+# the leaves of a tree of exact summaries (8 nodes per container, containers of 512 → 4k → 32k … tokens), a reasoner
+# over the tree's nodes (key and value corrections, a plan per block, the next-concept prediction), a top-down read,
+# and closed-book training rows (40 % as normal, 20 % bounded to 16 nodes per level, 40 % cut at a drawn level).
+# Every new part starts as an identity: a warm start from e37a's weights is e37a at step 0.
+# tree_read: the read and the closed-book rows only (no new weights); tree_noaux: + the reasoner, no extra losses.
+ARMS["tree_read"] = {**ARMS["e37a"], "concept_tree": "true", "tree_row_mix": "0.4,0.2,0.4"}
+# The reasoner: two layers of width 384 looped twice (with the plan and the two prediction heads about 7.3M weights;
+# width 512 would put m120t at 153M, over the board's 150M cap).
+ARMS["tree_noaux"] = {**ARMS["tree_read"], "tree_reasoner_layers": 2, "tree_reasoner_dim": 384,
+                      "tree_reasoner_heads": 6, "tree_reasoner_loops": 2, "tree_plan": "true"}
+ARMS["tree"] = {**ARMS["tree_noaux"], "tree_next_concept": 0.1, "tree_route_loss": 0.1}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
 # E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
 # mixes for the query, key and value inputs (nn/depth_mix.py): the reading layer's runs only, or 2-DCA on every run.
@@ -169,6 +181,11 @@ TINY_OPEN = {"notes_open": {"lm_open_k": 4, "lm_open_cap": 64}, "pages_open": {"
              "living_spans": {"living_stride": 64, "living_span_max": 8, "living_span_cap": 16, "living_width": 16,
                               "concept_top_k": 64}}
 TINY_OPEN["living_flat"] = TINY_OPEN["living"]
+# E41 tiny: 64-token blocks of 8 concepts, 2 nodes per container, containers of 2
+TINY_OPEN["tree_read"] = {**TINY_OPEN["e37a"], "tree_probes": 2, "tree_fan": 2, "tree_train_follow": 2}
+TINY_OPEN["tree_noaux"] = {**TINY_OPEN["tree_read"], "tree_reasoner_dim": 64, "tree_reasoner_heads": 2}
+TINY_OPEN["tree"] = {**TINY_OPEN["tree_noaux"], "tree_codes_coarse": 64, "tree_codes_fine": 128, "tree_code_dim": 16,
+                     "tree_route_queries": 32}
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}
@@ -619,7 +636,7 @@ def main() -> None:
     if a.what == "sizes":   # total parameters per arm for the leaderboard sizes (the board counts everything, once)
         for size in [k for k, z in SIZES.items() if z.get("tied")]:
             V = int(SIZES[size].get("vocab", VOCAB))
-            for arm in ("e37a", "lsa", "catalogue_reuse_n4", "dense_rope", "window"):
+            for arm in ("e37a", "lsa", "catalogue_reuse_n4", "dense_rope", "window", "tree"):
                 args, n = fit(arm, size)
                 tot = count(args, non_embedding=False, vocab=V)
                 print(f"{size} {arm:20} body {n / 1e6:7.2f}M  total {tot / 1e6:7.2f}M  ffn {args['intermediate_size']}"

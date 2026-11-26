@@ -227,29 +227,39 @@ class RowReads:
         return bool((self.follow[:, 2:] == ALL).all()) and bool((self.cap >= top_k).all())
 
 
-def fixed_reads(B: int, levels: int, *, follow: int, top_k: int, device) -> RowReads:
+def fixed_reads(B: int, levels: int, *, follow: int, top_k: int, device, cut: int = 0) -> RowReads:
+    """Every row the same read: `follow` nodes per level (≤ 0: all). `cut` m ≥ 1 (an evaluation switch): nothing
+    below level m is read and no token is opened (m = 1: every concept a summary, the closed book)."""
     f = torch.full((B, levels + 1), int(follow) if follow > 0 else ALL, dtype=torch.long, device=device)
-    return RowReads(follow=f, cap=torch.full((B,), int(top_k), dtype=torch.long, device=device))
+    cap = torch.full((B,), int(top_k), dtype=torch.long, device=device)
+    if cut >= 1:
+        f[:, 2:min(int(cut), levels) + 1] = 0
+        cap = torch.zeros_like(cap)
+    return RowReads(follow=f, cap=cap)
 
 
-def _row_uniform(ids: torch.Tensor, salt: int) -> torch.Tensor:
-    """One number in [0, 1) per row, a fixed function of the row's tokens (the same in every loop pass and in a
-    gradient-checkpoint recomputation). ids [B, S] → [B] fp64."""
-    S = ids.shape[1]
-    w = torch.arange(1, min(S, 257) + 1, device=ids.device, dtype=torch.float64)
-    h = (ids[:, :w.numel()].double() * w).sum(-1) + ids[:, -1].double() * 7919.0 + float(salt) * 104729.0
+def _row_uniform(ids: torch.Tensor, salt: int, n: int) -> torch.Tensor:
+    """One number in [0, 1) per row, a fixed function of the row's first `n` tokens (the same in every loop pass
+    and in a gradient-checkpoint recomputation). ids [B, S] → [B] fp64."""
+    w = torch.arange(1, min(ids.shape[1], max(int(n), 1)) + 1, device=ids.device, dtype=torch.float64)
+    h = (ids[:, :w.numel()].double() * w).sum(-1) + float(salt) * 104729.0
     x = torch.sin(h * 12.9898) * 43758.5453
     return x - torch.floor(x)
 
 
-def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k: int, small: int = 64) -> RowReads:
+def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k: int, small: int = 64,
+              block: int = 512) -> RowReads:
     """The closed-book rows (training): each row draws its read. `mix` = (as normal, bounded, cut) shares.
     As normal: every node followed, `top_k` tokens. Bounded: `follow` nodes per level, `top_k` tokens. Cut: a level
     m ∈ 1 … L drawn evenly; nothing below level m is read (follow 0 at levels ≤ m, every node above) and no token
-    is opened, except that half of the m = 1 rows open `small` tokens."""
+    is opened, except that half of the m = 1 rows open `small` tokens.
+
+    The draw reads the row's first min(256, 2 · block) tokens only: no query among them has a memory to read
+    (its window covers them), so the draw tells no query anything about its own future."""
     B = ids.shape[0]
     dev = ids.device
-    u, u2, u3 = _row_uniform(ids, 1), _row_uniform(ids, 2), _row_uniform(ids, 3)
+    nh = min(256, 2 * int(block))
+    u, u2, u3 = _row_uniform(ids, 1, nh), _row_uniform(ids, 2, nh), _row_uniform(ids, 3, nh)
     p_norm, p_bound = float(mix[0]), float(mix[1])
     f = torch.full((B, levels + 1), ALL, dtype=torch.long, device=dev)
     cap = torch.full((B,), int(top_k), dtype=torch.long, device=dev)
@@ -283,61 +293,79 @@ def tree_choice(q: torch.Tensor, tree: TreeIndex, doc: torch.Tensor, reads: RowR
     X = None if flat else torch.zeros(B, S, E - C1, dtype=torch.bool, device=q.device)
     if tab is None and X is None:
         return None, None
-    look = route == "lookahead"
     for s0 in range(0, S, chunk):
         s1 = min(S, s0 + chunk)
         qp = torch.arange(s0, s1, device=q.device)
-        qd = doc[:, s0:s1]
-        qc = q[:, s0:s1]
-        sc1 = node_logit(qc, tree, 0, C1, variance=variance).amax(2)                    # [B, ch, C1]
-        par_ok = None                                                                    # level 1: parent followed
+        ids, off, Xc = choose_chunk(q[:, s0:s1], doc[:, s0:s1], qp, tree, reads, top_k=top_k, width=width,
+                                    variance=variance, route=route, open_tokens=tab is not None,
+                                    need_x=X is not None)
         if X is not None:
-            up, prev, plo = {}, sc1, 0
-            for lv in range(2, L + 1):
-                lo, hi = tree.span(lv)
-                if look:
-                    plo_, phi_ = tree.span(lv - 1)
-                    up[lv] = _lse_to_parents(prev, tree.par[:, plo_:phi_], tree.pfrm[:, plo_:phi_], lo, hi - lo)
-                    prev = up[lv]
-                else:
-                    up[lv] = node_logit(qc, tree, lo, hi, variance=variance).amax(2)
-            Xc = X[:, s0:s1]
-            for lv in range(L, 1, -1):
-                lo, hi = tree.span(lv)
-                avail = ((tree.frm[:, None, lo:hi] <= qp[None, :, None]) & (tree.doc[:, None, lo:hi] == qd[..., None])
-                         & (qd[..., None] >= 0))
-                root = tree.pfrm[:, None, lo:hi] > qp[None, :, None]
-                if lv < L:
-                    pe = (tree.par[:, lo:hi] - C1).clamp_min(0)[:, None].expand(B, s1 - s0, hi - lo)
-                    cand = avail & (root | Xc.gather(2, pe))
-                else:
-                    cand = avail
-                kf = reads.follow[:, lv]                                                 # [B]
-                if bool((kf == ALL).all()):
-                    sel = cand
-                else:
-                    sc = torch.where(cand & torch.isfinite(up[lv]), up[lv], torch.full_like(up[lv], -math.inf))
-                    kmax = int(min(max(int(kf.max()), 1), hi - lo))
-                    top = sc.topk(kmax, dim=-1).values                                   # [B, ch, kmax]
-                    pick = (kf.clamp(1, kmax) - 1)[:, None, None].expand(B, s1 - s0, 1)
-                    thr = top.gather(2, pick)
-                    sel = cand & (sc >= thr) & torch.isfinite(sc) & (kf > 0)[:, None, None]
-                    sel = torch.where((kf == ALL)[:, None, None], cand, sel)
-                Xc[:, :, lo - C1:hi - C1] = sel
-            pe1 = (tree.par[:, :C1] - C1).clamp_min(0)[:, None].expand(B, s1 - s0, C1)
-            par_ok = (tree.pfrm[:, None, :C1] > qp[None, :, None]) | Xc.gather(2, pe1)
+            X[:, s0:s1] = Xc
         if tab is not None:
-            visible = (gi.g_close[:, None, :] <= qp[None, :, None]) & torch.isfinite(sc1)
-            if par_ok is not None:
-                visible = visible & par_ok
-            visible = visible & (reads.cap > 0)[:, None, None]
-            ids, off = choose(torch.nan_to_num(sc1, neginf=-1e30), visible, gi, qp, m=width, cap=top_k,
-                              raw_window=cidx.block)
-            small = reads.cap < top_k
-            if bool(small.any()):  # a row's smaller budget: groups that start past it stay closed
-                off = torch.where(off.long() < reads.cap[:, None, None], off, torch.full_like(off, top_k))
             tab.add(s0, ids, off)
     return tab, X
+
+
+@torch.no_grad()
+def choose_chunk(qc: torch.Tensor, qd: torch.Tensor, qp: torch.Tensor, tree: TreeIndex, reads: RowReads, *,
+                 top_k: int, width: int, variance: bool = True, route: str = "lookahead", open_tokens: bool = True,
+                 need_x: bool = True):
+    """The top-down choice of one chunk of queries (also one query: the cached decoder). qc [B, ch, h, d], qd
+    [B, ch] their documents, qp [ch] their positions. Returns (ids, off) of `nn.exact_read.choose` (None, None when
+    nothing may be opened) and Xc [B, ch, E − C1] bool, the followed nodes (None unless `need_x`)."""
+    B, ch = qd.shape
+    cidx = tree.cidx
+    gi = cidx.groups
+    C1, L = tree.n_concepts, tree.levels
+    look = route == "lookahead"
+    sc1 = node_logit(qc, tree, 0, C1, variance=variance).amax(2)                        # [B, ch, C1]
+    par_ok, Xc = None, None                                                              # level 1: parent followed
+    if need_x:
+        up, prev = {}, sc1
+        for lv in range(2, L + 1):
+            lo, hi = tree.span(lv)
+            if look:
+                plo_, phi_ = tree.span(lv - 1)
+                up[lv] = _lse_to_parents(prev, tree.par[:, plo_:phi_], tree.pfrm[:, plo_:phi_], lo, hi - lo)
+                prev = up[lv]
+            else:
+                up[lv] = node_logit(qc, tree, lo, hi, variance=variance).amax(2)
+        Xc = torch.zeros(B, ch, tree.n_entries - C1, dtype=torch.bool, device=qc.device)
+        for lv in range(L, 1, -1):
+            lo, hi = tree.span(lv)
+            avail = ((tree.frm[:, None, lo:hi] <= qp[None, :, None]) & (tree.doc[:, None, lo:hi] == qd[..., None])
+                     & (qd[..., None] >= 0))
+            root = tree.pfrm[:, None, lo:hi] > qp[None, :, None]
+            if lv < L:
+                pe = (tree.par[:, lo:hi] - C1).clamp_min(0)[:, None].expand(B, ch, hi - lo)
+                cand = avail & (root | Xc.gather(2, pe))
+            else:
+                cand = avail
+            kf = reads.follow[:, lv]                                                     # [B]
+            if bool((kf == ALL).all()):
+                sel = cand
+            else:
+                sc = torch.where(cand & torch.isfinite(up[lv]), up[lv], torch.full_like(up[lv], -math.inf))
+                kmax = int(min(max(int(kf.max()), 1), hi - lo))
+                top = sc.topk(kmax, dim=-1).values                                       # [B, ch, kmax]
+                pick = (kf.clamp(1, kmax) - 1)[:, None, None].expand(B, ch, 1)
+                thr = top.gather(2, pick)
+                sel = cand & (sc >= thr) & torch.isfinite(sc) & (kf > 0)[:, None, None]
+                sel = torch.where((kf == ALL)[:, None, None], cand, sel)
+            Xc[:, :, lo - C1:hi - C1] = sel
+        pe1 = (tree.par[:, :C1] - C1).clamp_min(0)[:, None].expand(B, ch, C1)
+        par_ok = (tree.pfrm[:, None, :C1] > qp[None, :, None]) | Xc.gather(2, pe1)
+    if not open_tokens:
+        return None, None, Xc
+    visible = (gi.g_close[:, None, :] <= qp[None, :, None]) & torch.isfinite(sc1)
+    if par_ok is not None:
+        visible = visible & par_ok
+    visible = visible & (reads.cap > 0)[:, None, None]
+    ids, off = choose(torch.nan_to_num(sc1, neginf=-1e30), visible, gi, qp, m=width, cap=top_k,
+                      raw_window=cidx.block)
+    if bool((reads.cap < top_k).any()):  # a row's smaller budget: groups that start past it stay closed
+        off = torch.where(off.long() < reads.cap[:, None, None], off, torch.full_like(off, top_k))
+    return ids, off, Xc
 
 
 # ------------------------------------------------------------------------------------------------ the read
@@ -498,3 +526,262 @@ def token_update(tree: TreeIndex, dv1: torch.Tensor, S: int) -> torch.Tensor:
     from nn.concept_memory import token_update as _tu
 
     return _tu(tree.cidx, dv1, S)
+
+
+# ------------------------------------------------------------------------------------------------ the reasoner
+class TreeReasoner(nn.Module):
+    """A small looped transformer over the nodes of level ≥ 2 (ConceptReasoner's block, input injection each loop).
+    A node attends to nodes of its document that became readable no later than itself, so what it writes is safe
+    for every query that may read it. From the reasoned states, all zero at initialisation:
+
+    - a key and a value correction for every node of level ≥ 2, and for every concept (its own state through a
+      small MLP, plus its parent's reasoned state): the summary a query reads is the average plus the correction;
+    - a plan vector per block (the pooled state of the block's level-2 nodes), for the token stream;
+    - the next-concept prediction: after block b, the code histograms of block b + 1's level-2 nodes and concepts.
+
+    Codes (the targets): the nearest entry of a codebook over a fixed random projection of the node states; the
+    codebooks follow the assigned vectors by a moving average, updated once per training forward from the previous
+    forward's sums (so a forward and its gradient-checkpoint recomputation see the same codebook), summed over the
+    cards. z [B, E, H] → dk, dv [B, E, d], plan [B, nb, H], aux [2] (coarse, fine next-concept cross-entropies)."""
+
+    def __init__(self, hidden: int, d_kv: int, *, dim: int = 512, layers: int = 2, heads: int = 8, loops: int = 2,
+                 plan: bool = True, next_concept: bool = True, codes_coarse: int = 1024, codes_fine: int = 4096,
+                 code_dim: int = 64, code_decay: float = 0.99, max_levels: int = 16):
+        super().__init__()
+        self.loops, self.heads, self.dim = max(1, int(loops)), int(heads), int(dim)
+        self.inp = nn.Linear(hidden, dim, bias=False)
+        self.lvl = nn.Embedding(max_levels + 1, dim)
+        self.blocks = nn.ModuleList()
+        for _ in range(int(layers)):
+            self.blocks.append(nn.ModuleDict(dict(
+                n1=nn.RMSNorm(dim), qkv=nn.Linear(dim, 3 * dim, bias=False), o=nn.Linear(dim, dim, bias=False),
+                n2=nn.RMSNorm(dim), up=nn.Linear(dim, 4 * dim, bias=False), down=nn.Linear(4 * dim, dim, bias=False))))
+        self.norm = nn.RMSNorm(dim)
+        self.out_k = nn.Linear(dim, d_kv, bias=False)
+        self.out_v = nn.Linear(dim, d_kv, bias=False)
+        # level 1: the concept's own state and its parent's reasoned state
+        self.inp1 = nn.Linear(hidden, dim, bias=False)
+        self.n1 = nn.RMSNorm(dim)
+        self.up1 = nn.Linear(dim, 2 * dim, bias=False)
+        self.down1 = nn.Linear(2 * dim, dim, bias=False)
+        self.norm1 = nn.RMSNorm(dim)
+        self.out_k1 = nn.Linear(dim, d_kv, bias=False)
+        self.out_v1 = nn.Linear(dim, d_kv, bias=False)
+        self.plan = nn.Linear(dim, hidden, bias=False) if plan else None
+        self.next_concept = bool(next_concept)
+        if self.next_concept:
+            self.pred = nn.Linear(dim, dim, bias=False)
+            self.head_c = nn.Linear(dim, int(codes_coarse), bias=False)
+            self.head_f = nn.Linear(dim, int(codes_fine), bias=False)
+            g = torch.Generator().manual_seed(4141)
+            self.register_buffer("code_proj", torch.randn(hidden, int(code_dim), generator=g) / math.sqrt(hidden))
+            for name, K in (("c", int(codes_coarse)), ("f", int(codes_fine))):
+                self.register_buffer(f"book_{name}", F.normalize(torch.randn(K, int(code_dim), generator=g), dim=-1))
+                self.register_buffer(f"count_{name}", torch.ones(K))
+                # the last forward's sums, applied at the start of the next one: per code the assigned vectors and
+                # their count, then a spare vector and its count (re-seeds a code nothing is assigned to)
+                self.register_buffer(f"pend_{name}", torch.zeros(K, 2 * int(code_dim) + 2), persistent=False)
+            self.code_decay = float(code_decay)
+        self.zero_outputs()
+
+    def zero_outputs(self) -> None:
+        for lin in (self.out_k, self.out_v, self.out_k1, self.out_v1, self.plan):
+            if lin is not None:
+                nn.init.zeros_(lin.weight)
+
+    # -- codebooks -------------------------------------------------------------------------------------
+    @torch.no_grad()
+    def begin_forward(self, training: bool) -> None:
+        """Apply the previous training forward's codebook sums (summed over the cards: every card calls this in
+        every training forward, so they hold the same codebooks)."""
+        if not (self.next_concept and training):
+            return
+        for name in ("c", "f"):
+            pend = getattr(self, f"pend_{name}")
+            tot = pend.clone()
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                torch.distributed.all_reduce(tot, op=torch.distributed.ReduceOp.SUM)
+            pend.zero_()
+            book, count = getattr(self, f"book_{name}"), getattr(self, f"count_{name}")
+            cd = book.shape[1]
+            vec, cnt, spare, scnt = tot[:, :cd], tot[:, cd], tot[:, cd + 1:2 * cd + 1], tot[:, 2 * cd + 1]
+            if float(cnt.sum()) <= 0:
+                continue
+            a = self.code_decay
+            count.mul_(a).add_((1 - a) * cnt)
+            hit = cnt > 0
+            new = F.normalize(a * book + (1 - a) * F.normalize(vec, dim=-1), dim=-1)
+            book.copy_(torch.where(hit[:, None], new, book))
+            dead = (count < 0.05 * float(count.mean())) & (scnt > 0)                      # nothing assigned for long
+            book.copy_(torch.where(dead[:, None], F.normalize(spare, dim=-1), book))
+            count.copy_(torch.where(dead, count.mean().expand_as(count), count))
+
+    @torch.no_grad()
+    def codes(self, z: torch.Tensor, valid: torch.Tensor, name: str) -> torch.Tensor:
+        """Each node's code. z [B, N, H], valid [B, N] → [B, N] long (−1 where not valid); in training the sums for
+        the next codebook update are kept (overwritten by every call: the last one counts)."""
+        book = getattr(self, f"book_{name}")
+        e = F.normalize(z.detach().float() @ self.code_proj.float(), dim=-1)             # [B, N, cd]
+        code = (e @ book.t()).argmax(-1)
+        if self.training:
+            K, cd = book.shape
+            ef = e[valid]
+            cf = code[valid]
+            pend = torch.zeros(K, 2 * cd + 2, device=z.device)
+            pend[:, :cd].index_add_(0, cf, ef)
+            pend[:, cd].index_add_(0, cf, torch.ones_like(cf, dtype=torch.float32))
+            slot = torch.arange(ef.shape[0], device=z.device) % K                        # a spare vector per code
+            pend[:, cd + 1:2 * cd + 1].index_add_(0, slot, ef)
+            pend[:, 2 * cd + 1].index_add_(0, slot, torch.ones_like(slot, dtype=torch.float32))
+            getattr(self, f"pend_{name}").copy_(pend)
+        return torch.where(valid, code, torch.full_like(code, -1))
+
+    # -- forward -----------------------------------------------------------------------------------------
+    def forward(self, tree: TreeIndex):
+        z = tree.z
+        B, E, H = z.shape
+        C1, P = tree.n_concepts, tree.probes
+        dev = z.device
+        zu = z[:, C1:].to(self.inp.weight.dtype)
+        N = zu.shape[1]
+        level = torch.cat([torch.full((tree.off[lv] - tree.off[lv - 1],), lv, dtype=torch.long, device=dev)
+                           for lv in range(2, tree.levels + 1)])
+        frm, doc = tree.frm[:, C1:], tree.doc[:, C1:]
+        ok = frm < BIG
+        u = self.inp(zu) + self.lvl(level.clamp(max=self.lvl.num_embeddings - 1))[None]
+        mask = ((frm[:, :, None] >= frm[:, None, :]) & (doc[:, :, None] == doc[:, None, :])
+                & ok[:, :, None] & ok[:, None, :])
+        mask = mask | torch.eye(N, dtype=torch.bool, device=dev)[None]                   # no empty rows
+        h = torch.zeros_like(u)
+        for _ in range(self.loops):
+            h = h + u                                                                    # input injection
+            for blk in self.blocks:
+                a = blk["qkv"](blk["n1"](h)).view(B, N, 3, self.heads, -1).permute(2, 0, 3, 1, 4)
+                o = F.scaled_dot_product_attention(a[0], a[1], a[2], attn_mask=mask[:, None])
+                h = h + blk["o"](o.transpose(1, 2).reshape(B, N, -1))
+                h = h + blk["down"](F.silu(blk["up"](blk["n2"](h))))
+        hn = self.norm(h) * ok[..., None].to(h.dtype)
+        dk_up, dv_up = self.out_k(hn), self.out_v(hn)
+        # level 1
+        z1 = z[:, :C1].to(self.inp1.weight.dtype)
+        has = (tree.pfrm[:, :C1] < BIG)
+        pe = (tree.par[:, :C1] - C1).clamp_min(0)[..., None].expand(B, C1, self.dim)
+        h1 = self.inp1(z1) + h.gather(1, pe) * has[..., None].to(h.dtype)
+        h1 = h1 + self.down1(F.silu(self.up1(self.n1(h1))))
+        h1n = self.norm1(h1) * (tree.n[:, :C1] > 0)[..., None].to(h1.dtype)
+        dk = torch.cat([self.out_k1(h1n), dk_up], dim=1)
+        dv = torch.cat([self.out_v1(h1n), dv_up], dim=1)
+        # the blocks' pooled states (their level-2 nodes): the plan and the predictor
+        lo2, hi2 = tree.span(2)
+        nb = (hi2 - lo2) // P
+        ok2 = ok[:, :nb * P].view(B, nb, P)
+        pooled = (hn[:, :nb * P].view(B, nb, P, -1) * ok2[..., None].to(hn.dtype)).sum(2)
+        pooled = pooled / ok2.sum(-1, keepdim=True).clamp_min(1).to(hn.dtype)
+        plan = self.plan(pooled) if self.plan is not None else None
+        aux = torch.zeros(2, device=dev, dtype=torch.float32)
+        if self.next_concept:
+            code_c = self.codes(zu[:, :nb * P], ok[:, :nb * P], "c").view(B, nb, P)      # level-2 nodes
+            code_f = self.codes(z1, tree.n[:, :C1] > 0, "f").view(B, nb, -1)             # concepts
+            pr = F.silu(self.pred(pooled))
+            bdoc = doc[:, :nb * P].view(B, nb, P).amax(-1)                               # a block's document (−1 none)
+            pair = ((bdoc[:, :-1] >= 0) & (bdoc[:, :-1] == bdoc[:, 1:])) if nb > 1 else None
+            if pair is not None and bool(pair.any()):
+                losses = []
+                for head, code in ((self.head_c, code_c), (self.head_f, code_f)):
+                    K = head.out_features
+                    tgt = torch.zeros(B, nb, K + 1, device=dev)
+                    tgt.scatter_add_(2, torch.where(code >= 0, code, torch.full_like(code, K)),
+                                     torch.ones_like(code, dtype=torch.float32))
+                    tgt = tgt[:, 1:, :K]                                                 # block b + 1's histogram
+                    tgt = tgt / tgt.sum(-1, keepdim=True).clamp_min(1.0)
+                    logp = F.log_softmax(head(pr[:, :-1]).float(), dim=-1)
+                    ce = -(tgt * logp).sum(-1)                                           # [B, nb − 1]
+                    losses.append((ce * pair).sum() / pair.sum().clamp_min(1))
+                aux = torch.stack(losses)
+            else:  # every parameter in the graph on every card (DDP)
+                aux = aux + 0.0 * (self.head_c.weight.sum() + self.head_f.weight.sum() + pr.sum()).float()
+        return dk, dv, plan, aux
+
+
+@torch.no_grad()
+def read_stats(tree: TreeIndex, X: Optional[torch.Tensor], opened: Optional[OpenTable], doc: torch.Tensor,
+               queries: int = 64) -> dict:
+    """Probe scalars of one read, over a sample of queries: summary entries read per query (all levels, and per
+    level), nodes followed, concepts opened, and the share of readable tokens each query's summaries stand for."""
+    B, S = doc.shape
+    blk = tree.cidx.block
+    qi = torch.linspace(min(2 * blk, S - 1), S - 1, int(min(queries, S)), device=doc.device).long()
+    vis = _visible(tree, X, opened, doc, qi).float()                                     # [B, Q, E]
+    live = (doc[:, qi] >= 0).float()
+    den = live.sum().clamp_min(1.0)
+    out = {"tree/levels": float(tree.levels), "tree/entries": float((vis.sum(-1) * live).sum() / den),
+           "tree/summarised_tokens": float(((vis * tree.n[:, None]).sum(-1) * live).sum() / den)}
+    for lv in range(1, tree.levels + 1):
+        lo, hi = tree.span(lv)
+        out[f"tree/entries_l{lv}"] = float((vis[:, :, lo:hi].sum(-1) * live).sum() / den)
+    if X is not None:
+        out["tree/followed"] = float((X[:, qi].float().sum(-1) * live).sum() / den)
+    if opened is not None:
+        used = (opened.T[:, qi].to(torch.int32) < int(opened.cap)).sum(-1).float()
+        out["tree/opened_concepts"] = float((used * live).sum() / den)
+    return out
+
+
+def plan_tokens(plan: torch.Tensor, tree: TreeIndex, doc: torch.Tensor, lag: int = 2) -> torch.Tensor:
+    """Each token gets the plan written after the newest block it may read (its block − `lag`), when that block is in
+    its document. plan [B, nb, H], doc [B, S] → [B, S, H] (zero elsewhere)."""
+    B, S = doc.shape
+    nb = plan.shape[1]
+    blk, P = tree.cidx.block, tree.probes
+    lo2, _ = tree.span(2)
+    bdoc = tree.doc[:, lo2:lo2 + nb * P].view(B, nb, P).amax(-1)                          # [B, nb]
+    tb = torch.arange(S, device=doc.device) // blk - lag                                 # [S]
+    idx = tb.clamp(0, nb - 1)[None].expand(B, S)
+    ok = (tb >= 0)[None] & (tb < nb)[None] & (bdoc.gather(1, idx) == doc) & (doc >= 0)
+    out = plan.gather(1, idx[..., None].expand(B, S, plan.shape[-1]))
+    return out * ok[..., None].to(out.dtype)
+
+
+def plan_at(plan: torch.Tensor, tree: TreeIndex, t: int, doc_t: torch.Tensor, lag: int = 2) -> torch.Tensor:
+    """`plan_tokens` for the one position t (the cached decoder): plan [B, nb, H], doc_t [B] → [B, H]."""
+    B, nb, H = plan.shape
+    b = t // tree.cidx.block - lag
+    if b < 0 or b >= nb:
+        return torch.zeros(B, H, dtype=plan.dtype, device=plan.device)
+    P = tree.probes
+    lo2, _ = tree.span(2)
+    bdoc = tree.doc[:, lo2 + b * P: lo2 + (b + 1) * P].amax(-1)                           # [B]
+    ok = (bdoc == doc_t) & (doc_t >= 0)
+    return plan[:, b] * ok[:, None].to(plan.dtype)
+
+
+def route_loss(q: torch.Tensor, tree: TreeIndex, dk: torch.Tensor, doc: torch.Tensor, *, queries: int = 256,
+               variance: bool = True) -> torch.Tensor:
+    """Parent predicts children: for a sample of queries, a node's own estimated log-mass (through its key
+    correction only) regresses the log-sum-exp of its concepts' estimates. q [B, S, h, d], dk [B, E, d]; `tree.key`
+    already holds the corrections."""
+    B, S, h, d = q.shape
+    C1, E, L = tree.n_concepts, tree.n_entries, tree.levels
+    blk = tree.cidx.block
+    n_q = int(min(queries, max(S - 2 * blk, 1)))
+    qi = torch.linspace(2 * blk, S - 1, n_q, device=q.device).long()                     # readers with a memory
+    qs = q[:, qi].detach()                                                               # [B, Q, h, d]
+    with torch.no_grad():
+        t = node_logit(qs, tree, 0, C1, variance=variance).reshape(B, n_q * h, C1)
+        tgt = []
+        for lv in range(2, L + 1):
+            lo, hi = tree.span(lv)
+            plo, phi = tree.span(lv - 1)
+            t = _lse_to_parents(t, tree.par[:, plo:phi], tree.pfrm[:, plo:phi], lo, hi - lo)
+            tgt.append(t)
+        tgt = torch.cat(tgt, dim=-1).view(B, n_q, h, E - C1)
+        ok = ((tree.frm[:, None, C1:] <= qi[None, :, None]) & (tree.doc[:, None, C1:] == doc[:, qi][..., None])
+              & (doc[:, qi][..., None] >= 0))[:, :, None] & torch.isfinite(tgt)
+    key = tree.key[:, C1:].detach().float() - dk[:, C1:].detach().float() + dk[:, C1:].float()
+    n = tree.n[:, C1:]
+    est = torch.einsum("bqhd,bed->bqhe", qs.float(), key) / math.sqrt(d)
+    est = est + torch.where(n > 0, n.clamp_min(1.0).log(), torch.zeros_like(n))[:, None, None]
+    if variance:
+        est = est + ((qs.float() ** 2).sum(-1, keepdim=True) / (2 * d)) * tree.var[:, None, None, C1:].detach()
+    err = F.smooth_l1_loss(est, torch.where(ok, tgt, est.detach()), reduction="none")
+    return (err * ok).sum() / ok.sum().clamp_min(1) + 0.0 * dk.sum().float()

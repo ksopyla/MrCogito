@@ -102,5 +102,5 @@ def test_sumonly_refused_without_concepts_and_unknown_modes_refused():
         with memory_mode(m, "sumonly"):
             pass
     with pytest.raises(ValueError, match="unknown memory mode"):
-        with memory_mode(_concept_model(), "flat"):
+        with memory_mode(_concept_model(), "nonsense"):
             pass

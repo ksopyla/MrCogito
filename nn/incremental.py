@@ -149,7 +149,7 @@ def decode_kind(model: PerceiverARLM) -> str:
     if att.concept is not None:
         if m.memory_writer is not None or att.compressor is not None:
             _refuse("the concept read with a notebook or a compressor")
-        if att.concept_stats is not None:
+        if att.concept_stats is not None or getattr(att, "tree_stats", None) is not None:
             _refuse("a concept-read probe is armed")
         return "concept"
     if att.lsa is not None:
@@ -254,7 +254,9 @@ class IncrementalDecoder:
         calls: list = []
         msgs: dict = {}
         gatt = m.layers[self.gi].attn
-        keep_x = self.kind == "concept" and gatt.concept_reasoner is not None  # the reasoner reads the layer input
+        # the reasoner (E37's, or E41's over the tree) reads the layer input
+        keep_x = self.kind == "concept" and (gatt.concept_reasoner is not None
+                                             or getattr(gatt, "tree_reasoner", None) is not None)
 
         def hook(mod, args, kwargs):
             x = args[0]
@@ -331,16 +333,38 @@ class IncrementalDecoder:
         pos = torch.arange(self.S, device=doc.device)[None]
         sink = (pos - ds < int(c["sinks"])) & (doc >= 0)
         self.cc = []
+        self.tt = []  # E41: each pass's tree (with the reasoner's corrections) and its plan per token
+        tc = getattr(att, "tree", None)
+        trs = getattr(att, "tree_reasoner", None)
         for r in range(self.passes):
             if att.concept_off:
                 self.cc.append(None)
+                self.tt.append(None)
                 continue
-            x = self.X[(self.gi, r)] if att.concept_reasoner is not None else None
+            x = self.X[(self.gi, r)] if (att.concept_reasoner is not None or trs is not None) else None
             cidx = build_concepts(self.K[(self.gi, r)], self.V[(self.gi, r)], x, doc, sink, block=int(c["block"]),
                                   per_block=int(c["per_block"]), iters=int(c["iters"]), tau=float(c["tau"]))
             if cidx is None:
                 self.cc.append(None)
+                self.tt.append(None)
                 continue
+            if tc is not None:  # E41 (as `Attention._tree_read`)
+                from nn.concept_tree import build_tree
+                from nn.concept_tree import token_update as tree_token_update
+
+                tree = build_tree(cidx, probes=int(tc["probes"]), fan=int(tc["fan"]), iters=int(c["iters"]),
+                                  tau=float(c["tau"]))
+                dv_tok = plan = None
+                if trs is not None:
+                    dk, dv, plan, _ = trs(tree)
+                    tree.key = tree.key + dk.to(tree.key.dtype)
+                    tree.val = tree.val + dv.to(tree.val.dtype)
+                    if tc["token_update"]:
+                        dv_tok = tree_token_update(tree, dv[:, :tree.n_concepts], self.S)
+                self.cc.append((cidx, None, dv_tok))
+                self.tt.append((tree, plan))  # the plan per block; a token's plan is taken when it is read
+                continue
+            self.tt.append(None)
             dv = dv_tok = None
             if att.concept_reasoner is not None:
                 dv = att.concept_reasoner(cidx.z, cidx.block_of, cidx.c_doc)
@@ -580,7 +604,14 @@ class IncrementalDecoder:
             o = self._notes_read(q, K, V, r, t)
         else:
             o = self._catalogue_read(q, K, V, r, t)
-        return att.wo(o.reshape(B, 1, att.h * att.dh))
+        out = att.wo(o.reshape(B, 1, att.h * att.dh))
+        if att.pattern == "full" and self.kind == "concept" and getattr(att, "tree", None) is not None:
+            tt = self.tt[r] if r < len(self.tt) else None
+            if tt is not None and tt[1] is not None:  # E41: the plan of the token's block
+                from nn.concept_tree import plan_at
+
+                out = out + plan_at(tt[1], tt[0], t, self.doc[:, t])[:, None].to(out.dtype)
+        return out
 
     def _window_read(self, q, K, V, t, w):
         """Keys [t − w + 1, t] of the query's document (make_mask_pred: causal, window, same document)."""
@@ -626,7 +657,53 @@ class IncrementalDecoder:
         vt = V[:, :n]
         ks, vs, sbias = None, None, None
         built = self.cc[r]
-        if built is not None:
+        tree_built = self.tt[r] if (getattr(att, "tree", None) is not None and r < len(self.tt)) else None
+        if built is not None and tree_built is not None:  # E41: the top-down read of the query t
+            from nn.concept_tree import choose_chunk, fixed_reads
+
+            cidx, _, dv_tok = built
+            tree = tree_built[0]
+            tc = att.tree
+            gi = cidx.groups
+            G, C1 = gi.n_groups, tree.n_concepts
+            reads = fixed_reads(B, tree.levels, follow=int(tc["follow"]), top_k=cap, device=q.device,
+                                cut=int(tc.get("cut", 0)))
+            flat = reads.flat(cap)
+            ids, off, Xc = choose_chunk(q, doc_t[:, None], torch.tensor([t], device=q.device), tree, reads,
+                                        top_k=cap, width=int(c["width"]), variance=bool(c["variance"]),
+                                        route=str(tc["route"]), open_tokens=bool(c.get("open", True)),
+                                        need_x=not flat)
+            row = torch.full((B, G), cap, dtype=torch.int32, device=q.device)              # the table's row of t
+            if ids is not None:
+                row.scatter_(1, ids[:, 0], off[:, 0].to(torch.int32))
+                codes = gi.codes[0, :, :n].long()
+                g = torch.div(codes, ORD_MOD, rounding_mode="floor")
+                hit = (codes >= 0) & (row.gather(1, g.clamp(0, G - 1)) + (codes - g * ORD_MOD) < cap)
+                keep = keep | (hit & ((t - jpos) >= blk)[None])
+            if dv_tok is not None:
+                vt = torch.where((jpos < own_lo)[None, :, None, None], vt + dv_tok[:, :n].to(vt.dtype), vt)
+            if c["summaries"]:
+                hi = tree.n_entries if Xc is not None else C1                              # flat: level 1 only
+                vis = ((t >= tree.frm[:, :hi]) & (tree.doc[:, :hi] == doc_t[:, None]) & (doc_t >= 0)[:, None])
+                gone = torch.zeros(B, hi, dtype=torch.bool, device=q.device)
+                gone[:, :C1] = row[:, :C1] < cap
+                if Xc is not None:
+                    gone[:, C1:] = Xc[:, 0]
+                    pe = (tree.par[:, :hi] - C1).clamp_min(0)
+                    vis = vis & ((t < tree.pfrm[:, :hi]) | Xc[:, 0].gather(1, pe))
+                vis = vis & ~gone
+                tn = tree.n[:, :hi]
+                logn = torch.where(tn > 0, tn.clamp_min(1.0).log(), torch.zeros_like(tn))
+                vhalf = 0.5 * tree.var[:, :hi] if c["variance"] else torch.zeros_like(tn)
+                qn2 = (q.float() ** 2).sum(-1)[:, 0] / d                                    # [B, h]
+                sb = logn[:, None, :].float() + qn2[..., None] * vhalf[:, None, :].float()  # [B, h, hi]
+                lr = summary_log_scale(ds[:, :n], n, blk, int(c.get("sum_len", 0) or 0))
+                if lr is not None:
+                    sb = sb + lr[:, t][:, None, None]
+                sbias = sb.masked_fill(~vis[:, None, :], float("-inf"))
+                ks = tree.key[:, :hi, None].to(K.dtype)
+                vs = tree.val[:, :hi, None].to(V.dtype)
+        elif built is not None:
             cidx, dv, dv_tok = built
             gi = cidx.groups
             G = gi.n_groups

@@ -103,6 +103,29 @@ def memory_mode(model, mode: str):
     if mode == "flat":
         raise ValueError("memory mode 'flat' is the living read's (E39)")
     attns = [l.attn for l in model.layers if getattr(l.attn, "concept", None) is not None]
+    # E41 tree read: 'tree<N>' = N nodes followed per level (scored by summed concept mass), 'descent<N>' = the
+    # same scored by a node's own estimate, 'cut<M>' = nothing below level M is read and no token opened
+    # (cut1 = 'sumonly'). The model's other switches are untouched.
+    import re as _re
+
+    tm = _re.fullmatch(r"(tree|descent|cut)(\d+)", mode)
+    if tm is not None:
+        trees = [a for a in attns if getattr(a, "tree", None) is not None]
+        if not trees:
+            raise ValueError(f"memory mode {mode!r} needs a tree read (concept_tree, E41)")
+        kind, num = tm.group(1), int(tm.group(2))
+        prev_t = [(a.tree["follow"], a.tree["route"], a.tree["cut"]) for a in trees]
+        for a in trees:
+            if kind == "cut":
+                a.tree["cut"] = num
+            else:
+                a.tree["follow"], a.tree["route"] = num, ("lookahead" if kind == "tree" else "descent")
+        try:
+            yield
+        finally:
+            for a, (f, rt, ct) in zip(trees, prev_t):
+                a.tree["follow"], a.tree["route"], a.tree["cut"] = f, rt, ct
+        return
     lsa = [l.attn for l in model.layers if getattr(l.attn, "lsa", None) is not None]
     notes = getattr(model, "memory_writer", None) is not None and \
         str(getattr(model.config, "message_override", "real")) == "real"

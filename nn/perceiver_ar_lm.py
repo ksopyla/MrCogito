@@ -301,6 +301,27 @@ class PerceiverARConfig(PretrainedConfig):
         concept_reasoner_dim: int = 512,  # E37: reasoner width
         concept_reasoner_heads: int = 8,  # E37: reasoner heads
         concept_reasoner_loops: int = 2,  # E37: reasoner loops (input injection each loop)
+        # E41 the concept tree (nn/concept_tree.py): levels of summaries over the concept read, a top-down read with
+        # budgets, a reasoner over the tree. All off = the concept read, unchanged.
+        concept_tree: bool = False,       # E41: build the levels above the concepts and read top-down
+        tree_probes: int = 8,             # E41: nodes per container at every level ≥ 2
+        tree_fan: int = 8,                # E41: child containers per container (level ≥ 3)
+        tree_follow: int = 0,             # E41: nodes a query follows per level outside training (0 = all: flat)
+        tree_route: str = "lookahead",    # E41: the choice's score: lookahead (summed concept mass) | descent (own)
+        tree_row_mix: str = "",           # E41: training rows' reads "normal,bounded,cut" shares ("" = all normal)
+        tree_train_follow: int = 16,      # E41: nodes followed per level in a bounded training row
+        tree_reasoner_layers: int = 0,    # E41: layers of the reasoner over the tree's nodes (0 = none)
+        tree_reasoner_dim: int = 512,     # E41: its width
+        tree_reasoner_heads: int = 8,     # E41: its heads
+        tree_reasoner_loops: int = 2,     # E41: its loops (input injection each loop)
+        tree_plan: bool = False,          # E41: the reasoner's plan vector per block, added to the token stream
+        tree_token_update: bool = False,  # E41: opened tokens carry their concept's value correction
+        tree_next_concept: float = 0.0,   # E41: weight of the next-concept loss (0 = no predictor)
+        tree_codes_coarse: int = 1024,    # E41: codebook of the level-2 nodes
+        tree_codes_fine: int = 4096,      # E41: codebook of the concepts
+        tree_code_dim: int = 64,          # E41: width of the fixed random projection the codes live in
+        tree_route_loss: float = 0.0,     # E41: weight of "a node's own estimate = its concepts' summed estimate"
+        tree_route_queries: int = 256,    # E41: queries per row that loss samples
         # E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md, nn/depth_mix.py): DeepCrossAttention's GRN-v3
         # mixes over the stream's depth increments for a layer's query, key and value inputs. "read" = the reading
         # layer's runs only (every loop pass), "dca2" = 2-DCA on every layer run. Exact identity at initialisation.
@@ -499,6 +520,25 @@ class PerceiverARConfig(PretrainedConfig):
         self.concept_reasoner_dim = int(concept_reasoner_dim)
         self.concept_reasoner_heads = int(concept_reasoner_heads)
         self.concept_reasoner_loops = int(concept_reasoner_loops)
+        self.concept_tree = bool(concept_tree)
+        self.tree_probes = int(tree_probes)
+        self.tree_fan = int(tree_fan)
+        self.tree_follow = int(tree_follow or 0)
+        self.tree_route = str(tree_route or "lookahead")
+        self.tree_row_mix = str(tree_row_mix or "")
+        self.tree_train_follow = int(tree_train_follow)
+        self.tree_reasoner_layers = int(tree_reasoner_layers or 0)
+        self.tree_reasoner_dim = int(tree_reasoner_dim)
+        self.tree_reasoner_heads = int(tree_reasoner_heads)
+        self.tree_reasoner_loops = int(tree_reasoner_loops)
+        self.tree_plan = bool(tree_plan)
+        self.tree_token_update = bool(tree_token_update)
+        self.tree_next_concept = float(tree_next_concept or 0.0)
+        self.tree_codes_coarse = int(tree_codes_coarse)
+        self.tree_codes_fine = int(tree_codes_fine)
+        self.tree_code_dim = int(tree_code_dim)
+        self.tree_route_loss = float(tree_route_loss or 0.0)
+        self.tree_route_queries = int(tree_route_queries)
         self.par_depth_mix = str(par_depth_mix or "none")
         self.living_stride = int(living_stride)
         self.living_span_max = int(living_span_max)
@@ -790,6 +830,27 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("concept_top_k in [1, 32767], concept_sinks >= 0, concept_iters >= 1")
             if self.concept_reasoner_layers and self.concept_reasoner_dim % self.concept_reasoner_heads:
                 raise ValueError("concept_reasoner_heads must divide concept_reasoner_dim")
+        if self.concept_tree:  # E41
+            if self.par_global_read != "concept":
+                raise ValueError("concept_tree (E41) extends par_global_read='concept'")
+            if self.tree_probes < 1 or self.concept_per_block % self.tree_probes or self.tree_fan < 2:
+                raise ValueError("tree_probes must divide concept_per_block; tree_fan >= 2")
+            if self.tree_route not in ("lookahead", "descent"):
+                raise ValueError(f"tree_route must be lookahead | descent, got {self.tree_route!r}")
+            if self.concept_reasoner_layers:
+                raise ValueError("concept_tree has its own reasoner (tree_reasoner_layers), not concept_reasoner_layers")
+            if self.tree_reasoner_layers and self.tree_reasoner_dim % self.tree_reasoner_heads:
+                raise ValueError("tree_reasoner_heads must divide tree_reasoner_dim")
+            if (self.tree_plan or self.tree_token_update or self.tree_next_concept > 0
+                    or self.tree_route_loss > 0) and not self.tree_reasoner_layers:
+                raise ValueError("tree_plan / tree_token_update / tree_next_concept / tree_route_loss need the reasoner")
+            if self.tree_row_mix:
+                mix = [float(t) for t in self.tree_row_mix.split(",")]
+                if len(mix) != 3 or min(mix) < 0 or abs(sum(mix) - 1.0) > 1e-6:
+                    raise ValueError("tree_row_mix = 'normal,bounded,cut' shares that sum to 1")
+        elif (self.tree_reasoner_layers or self.tree_row_mix or self.tree_follow or self.tree_plan
+              or self.tree_next_concept > 0 or self.tree_route_loss > 0):
+            raise ValueError("tree_* options need concept_tree=True")
         if self.par_depth_mix not in ("none", "read", "dca2"):
             raise ValueError(f"par_depth_mix must be none | read | dca2, got {self.par_depth_mix!r}")
         if self.par_depth_mix != "none" and (self.message_enabled or int(self.message_read_rounds or 1) != 1):
@@ -2803,6 +2864,27 @@ class Attention(nn.Module):
                     cfg.hidden_size, g * dh, dim=int(cfg.concept_reasoner_dim),
                     layers=int(cfg.concept_reasoner_layers), heads=int(cfg.concept_reasoner_heads),
                     loops=int(cfg.concept_reasoner_loops))
+        # E41: the concept tree over the concept read (nn/concept_tree.py)
+        self.tree = None
+        self.tree_reasoner = None
+        self._tree_aux = None        # this call's auxiliary losses [3] (next concept coarse, fine; route), or None
+        self._tree_plan = None       # this call's plan per token [B, S, H], or None
+        self.tree_stats = None       # last forward's read statistics when armed (dict), for probes
+        if self.concept is not None and bool(getattr(cfg, "concept_tree", False)):
+            mix = tuple(float(t) for t in str(cfg.tree_row_mix).split(",")) if str(cfg.tree_row_mix) else None
+            # "cut" is an evaluation switch (0 = off): nothing below that level is read, no token opened
+            self.tree = dict(probes=int(cfg.tree_probes), fan=int(cfg.tree_fan), follow=int(cfg.tree_follow), cut=0,
+                             route=str(cfg.tree_route), row_mix=mix, train_follow=int(cfg.tree_train_follow),
+                             token_update=bool(cfg.tree_token_update), next_concept=float(cfg.tree_next_concept),
+                             route_loss=float(cfg.tree_route_loss), route_queries=int(cfg.tree_route_queries))
+            if int(cfg.tree_reasoner_layers) > 0:
+                from nn.concept_tree import TreeReasoner
+
+                self.tree_reasoner = TreeReasoner(
+                    cfg.hidden_size, g * dh, dim=int(cfg.tree_reasoner_dim), layers=int(cfg.tree_reasoner_layers),
+                    heads=int(cfg.tree_reasoner_heads), loops=int(cfg.tree_reasoner_loops), plan=bool(cfg.tree_plan),
+                    next_concept=float(cfg.tree_next_concept) > 0, codes_coarse=int(cfg.tree_codes_coarse),
+                    codes_fine=int(cfg.tree_codes_fine), code_dim=int(cfg.tree_code_dim))
         # E39: living concepts on the global layer (nn/living_concepts.py): spans + document-wide concepts
         self.living = None
         self.living_off = False      # eval switch: sinks + window only
@@ -3107,7 +3189,8 @@ class Attention(nn.Module):
         if self.lsa is not None:
             o = self._lsa_read(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
         elif self.concept is not None:  # the reasoner (if any) reads the keys' input, the concepts' own states
-            o = self._concept_read(q, k, v, x if x_kv is None else x_kv[0], doc_ids=doc_ids, key_valid=key_valid)
+            o = self._concept_read(q, k, v, x if x_kv is None else x_kv[0], doc_ids=doc_ids, key_valid=key_valid,
+                                   ids=ids)
         elif self.living is not None:
             o = self._living_read(q, k, v, doc_ids=doc_ids, key_valid=key_valid)
         else:
@@ -3119,6 +3202,9 @@ class Attention(nn.Module):
                 block_masks=block_masks, sink=self.sink, sink_pos=sink_pos,
             )
         o = self.wo(o.reshape(B, S, self.h * self.dh))
+        if self._tree_plan is not None:  # E41: the reasoner's plan for each token's block (zero at initialisation)
+            o = o + self._tree_plan.to(o.dtype)
+            self._tree_plan = None
         if self.compressor is not None:
             o = o + 0.0 * self.compressor.participation().to(o.dtype)
         if self.note_age_slope is not None:
@@ -3155,7 +3241,66 @@ class Attention(nn.Module):
         return attend_lsa(q, k, v, doc=doc, key_valid=key_valid, backend=self.backend, opened=opened,
                           window=c["window"], sink=sink, ds=ds, n_sinks=c["sinks"])
 
-    def _concept_read(self, q, k, v, x, *, doc_ids, key_valid):
+    def _tree_read(self, q, k, v, x, *, doc, ds, sink, key_valid, ids):
+        """E41: the levels above this call's concepts, the reasoner's corrections, plan and predictions, each
+        query's top-down choice under its row's budgets, and one softmax over sinks ‖ block-aligned window ‖ opened
+        members ‖ the readable summaries of every level (nn/concept_tree.py)."""
+        from nn.concept_memory import attend_concepts, build_concepts
+        from nn.concept_tree import (attend_tree, build_tree, fixed_reads, plan_tokens, route_loss, row_reads,
+                                     token_update, tree_choice)
+
+        B, S = q.shape[:2]
+        c, t = self.concept, self.tree
+        rs = self.tree_reasoner
+        self._tree_aux, self._tree_plan = None, None
+        aux_on = self.training and rs is not None and (t["next_concept"] > 0 or t["route_loss"] > 0)
+        cidx = None
+        if not self.concept_off:
+            cidx = build_concepts(k, v, x if rs is not None else None, doc, sink, block=c["block"],
+                                  per_block=c["per_block"], iters=c["iters"], tau=c["tau"])
+        if cidx is None:  # rows shorter than three blocks, or the memory switched off: sinks + window
+            out = attend_concepts(q, k, v, cidx=None, dv=None, doc=doc, key_valid=key_valid, backend=self.backend,
+                                  opened=None, sink=sink, ds=ds, n_sinks=c["sinks"], summaries=False,
+                                  variance=c["variance"], block=c["block"])
+            if rs is not None:  # every parameter in the graph on every card (DDP)
+                pad = 0.0 * sum(p.sum() for p in rs.parameters())
+                out = out + pad.to(out.dtype)
+                if aux_on:
+                    self._tree_aux = torch.zeros(3, device=q.device) + pad.float()
+            return out
+        tree = build_tree(cidx, probes=t["probes"], fan=t["fan"], iters=c["iters"], tau=c["tau"])
+        dv_tok, aux = None, torch.zeros(3, device=q.device)
+        if rs is not None:
+            dk, dv, plan, nc = rs(tree)
+            tree.key = tree.key + dk.to(tree.key.dtype)
+            tree.val = tree.val + dv.to(tree.val.dtype)
+            if t["token_update"]:
+                dv_tok = token_update(tree, dv[:, :tree.n_concepts], S)
+            if plan is not None:
+                self._tree_plan = plan_tokens(plan, tree, doc)
+            if aux_on:
+                rl = (route_loss(q, tree, dk, doc, queries=t["route_queries"], variance=c["variance"])
+                      if t["route_loss"] > 0 else torch.zeros((), device=q.device) + 0.0 * dk.sum().float())
+                aux = torch.cat([nc.float(), rl.float()[None]])
+        if self.training and t["row_mix"] is not None and ids is not None:
+            reads = row_reads(ids, tree.levels, mix=t["row_mix"], follow=t["train_follow"], top_k=c["top_k"],
+                              block=c["block"])
+        else:
+            reads = fixed_reads(B, tree.levels, follow=t["follow"], top_k=c["top_k"], device=q.device,
+                                cut=int(t.get("cut", 0)))
+        opened, X = tree_choice(q, tree, doc, reads, top_k=c["top_k"], width=c["width"], variance=c["variance"],
+                                route=t["route"], open_tokens=bool(c.get("open", True)))
+        if self.tree_stats is not None:
+            from nn.concept_tree import read_stats
+
+            self.tree_stats = read_stats(tree, X, opened, doc)
+        if aux_on:
+            self._tree_aux = aux
+        return attend_tree(q, k, v, tree=tree, X=X, opened=opened, doc=doc, sink=sink, ds=ds, n_sinks=c["sinks"],
+                           key_valid=key_valid, backend=self.backend, variance=c["variance"],
+                           summaries=c["summaries"], dv_tok=dv_tok, sum_len=c.get("sum_len", 0))
+
+    def _concept_read(self, q, k, v, x, *, doc_ids, key_valid, ids=None):
         """E37: concepts of this call's keys (encoder), the reasoner's value update, each query's exact choice, and
         one softmax over sinks ‖ block-aligned window ‖ opened members ‖ concept summaries (nn/concept_memory.py)."""
         from nn.concept_memory import attend_concepts, build_concepts, concept_open_table, token_update
@@ -3169,6 +3314,8 @@ class Attention(nn.Module):
         ds = doc_starts(doc)
         pos = torch.arange(S, device=q.device)[None]
         sink = (pos - ds < c["sinks"]) & (doc >= 0)
+        if self.tree is not None:  # E41
+            return self._tree_read(q, k, v, x, doc=doc, ds=ds, sink=sink, key_valid=key_valid, ids=ids)
         cidx, opened, dv, dv_tok = None, None, None, None
         if not self.concept_off:
             cidx = build_concepts(k, v, x if self.concept_reasoner is not None else None, doc, sink,
@@ -3416,6 +3563,17 @@ Block._forward_mixed = _block_forward_mixed
 
 def _call_block(layer, x, x0, skip, **kwargs):
     return layer(x, x0, skip, **kwargs)
+
+
+def _call_block_aux(layer, x, x0, skip, **kwargs):
+    """E41: a reading layer whose read also returns auxiliary losses. They leave the call as a second output, so
+    under gradient checkpointing their gradient comes from the recomputation like the stream's."""
+    y = layer(x, x0, skip, **kwargs)
+    aux = layer.attn._tree_aux
+    layer.attn._tree_aux = None
+    if aux is None:
+        aux = torch.zeros(3, device=y.device, dtype=torch.float32)
+    return y, aux.float()
 
 
 # Per-pass state of the message context that a reading layer reads or replaces. The backward's recomputation
@@ -3713,6 +3871,8 @@ class PerceiverARLM(PreTrainedModel):
         self._collect_loop_states = False
         self.gradient_checkpointing = False
         self._flce = None
+        self._tree_aux = []                 # E41: this forward's auxiliary losses of the tree read
+        self._tree_acc = torch.zeros(5)     # E41: running sums for the training log (loss, 3 aux, count)
         # default "real"; a no-notebook control (E31c) keeps "none" in its saved config, so evals of
         # its checkpoint never switch on an untrained writer
         self._message_override = str(getattr(config, "message_override", "real") or "real")
@@ -3741,6 +3901,8 @@ class PerceiverARLM(PreTrainedModel):
                 nn.init.zeros_(layer.attn.compressor.delta.weight)   # post_init re-inits Linears
             if getattr(layer.attn, "concept_reasoner", None) is not None:
                 nn.init.zeros_(layer.attn.concept_reasoner.out.weight)  # E37: the read starts as the summary read
+            if getattr(layer.attn, "tree_reasoner", None) is not None:
+                layer.attn.tree_reasoner.zero_outputs()                 # E41: the read starts as the concept read
         if self.memory_writer is not None:
             nn.init.zeros_(self.memory_writer.to_v_state.weight)   # E31: values start as content
             if getattr(self.memory_writer, "keyread_out", None) is not None:
@@ -3891,9 +4053,16 @@ class PerceiverARLM(PreTrainedModel):
                 a.open_impl = v
 
     def pop_train_stats(self) -> dict:
-        """Scalars a read keeps about itself between two training logs (E39: the grouping's own numbers); the
-        trainer merges them into its periodic log. {} for every other model."""
+        """Scalars a read keeps about itself between two training logs (E39: the grouping's own numbers; E41: the
+        next-word loss alone and the tree's auxiliary losses); the trainer merges them into its periodic log.
+        {} for every other model."""
         out = {}
+        acc = getattr(self, "_tree_acc", None)
+        if acc is not None and float(acc[4]) > 0:
+            n = float(acc[4])
+            out.update({"tree/next_word_loss": float(acc[0]) / n, "tree/next_concept_coarse": float(acc[1]) / n,
+                        "tree/next_concept_fine": float(acc[2]) / n, "tree/route": float(acc[3]) / n})
+            acc.zero_()
         for layer in self.layers:
             if getattr(layer.attn, "living", None) is not None:
                 out.update(layer.attn.pop_living_stats())
@@ -4187,6 +4356,11 @@ class PerceiverARLM(PreTrainedModel):
         for layer in self.layers:  # E39: the grouping is built by the first reading-layer call of each forward
             if getattr(layer.attn, "living", None) is not None:
                 layer.attn._living_index = None
+        self._tree_aux = []  # E41: the reading layer's auxiliary losses, one [3] per loop pass
+        for layer in self.layers:
+            if getattr(layer.attn, "tree_reasoner", None) is not None:
+                layer.attn._tree_aux, layer.attn._tree_plan = None, None
+                layer.attn.tree_reasoner.begin_forward(self.training)
         key_valid = None
         if self._needs_key_mask(attention_mask, cfg.block_attention_mode == "causal"):
             key_valid = attention_mask.bool()
@@ -4296,7 +4470,16 @@ class PerceiverARLM(PreTrainedModel):
                           doc_ids=(doc_ids if (is_global or (cut and layer.attn.pattern == "full")) else local_doc),
                           cu_seqlens=cu_seqlens, block_masks=block_masks, sink_pos=sink_pos, pos=pos,
                           message=(msg if is_global else None), rope_theta=cfg.rope_theta, **depth_kw)
-            if self.gradient_checkpointing and self.training:
+            tree_aux = (self.training and getattr(layer.attn, "tree_reasoner", None) is not None
+                        and (layer.attn.tree["next_concept"] > 0 or layer.attn.tree["route_loss"] > 0))
+            if tree_aux:  # E41: the read's auxiliary losses leave the block as a second output
+                fn = partial(_call_block_aux, layer, **kwargs)
+                if self.gradient_checkpointing:
+                    x, aux = torch_checkpoint(fn, x, x0, skip, use_reentrant=False)
+                else:
+                    x, aux = fn(x, x0, skip)
+                self._tree_aux.append(aux)
+            elif self.gradient_checkpointing and self.training:
                 fn = partial(_call_block, layer, **kwargs)
                 if kwargs["message"] is not None:
                     fn = _replay_message_state(fn, kwargs["message"])
@@ -4600,6 +4783,17 @@ class PerceiverARLM(PreTrainedModel):
         ils = getattr(mctx, "index_losses", None) if mctx is not None else None
         if ils:  # E33t: the catalogue learns where the read's attention lands
             loss = loss + float(cfg.lm_index_loss) * torch.stack(ils).mean()
+        tax = getattr(self, "_tree_aux", None)
+        if tax:  # E41: next concept (coarse, fine) and route, averaged over the loop passes
+            aux = torch.stack(tax).mean(0)
+            w_nc, w_rt = float(cfg.tree_next_concept), float(cfg.tree_route_loss)
+            with torch.no_grad():
+                acc = self._tree_acc
+                acc[0] += float(loss)
+                acc[1:4] += aux.detach().float().cpu()
+                acc[4] += 1
+            loss = loss + (w_nc * (aux[0] + aux[1]) + w_rt * aux[2]).to(loss.dtype)
+        self._tree_aux = []
         if mctx is not None:
             mctx.read_losses, mctx.read_targets = None, None
             mctx.index_losses, mctx.open_seen = None, None

@@ -460,6 +460,13 @@ def _plain_loop_kwargs(model_args) -> dict:
                       "concept_reasoner_layers", "concept_reasoner_dim", "concept_reasoner_heads",
                       "concept_reasoner_loops"):
                 out[k] = getattr(model_args, k)
+            if bool(getattr(model_args, "concept_tree", False)):  # E41: the tree over the concept read
+                for k in ("concept_tree", "tree_probes", "tree_fan", "tree_follow", "tree_route", "tree_row_mix",
+                          "tree_train_follow", "tree_reasoner_layers", "tree_reasoner_dim", "tree_reasoner_heads",
+                          "tree_reasoner_loops", "tree_plan", "tree_token_update", "tree_next_concept",
+                          "tree_codes_coarse", "tree_codes_fine", "tree_code_dim", "tree_route_loss",
+                          "tree_route_queries"):
+                    out[k] = getattr(model_args, k)
         if str(model_args.par_global_read) == "living":  # E39: its own fields plus the concept read's shared ones
             for k in ("concept_sinks", "concept_top_k", "concept_summaries", "concept_variance", "concept_sum_len",
                       "living_stride", "living_span_max", "living_span_cap", "living_span_target",

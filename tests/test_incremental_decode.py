@@ -30,7 +30,8 @@ DEEP = dict(pre_layers=2, stack_layers=3)
 REASONER = dict(concept_reasoner_layers=1, concept_reasoner_dim=16, concept_reasoner_heads=2)
 ARMS = ["dense", "dense_rope", "lsa", "catalogue", "notes", "concept", "concept_reasoner", "concept_scaled",
         "concept_dmread", "concept_dca2", "concept_sumonly",
-        "living", "living_spans"]
+        "living", "living_spans",
+        "concept_tree", "concept_treebound", "concept_treedescent"]
 
 
 class _Tok:
@@ -61,6 +62,13 @@ def _model(arm, deep=False):
             kw.update(concept_sum_len=48)
         if arm in ("concept_dmread", "concept_dca2"):  # E40 depth mixes, moved off their identity start
             kw.update(par_depth_mix="read" if arm == "concept_dmread" else "dca2")
+        if arm.startswith("concept_tree"):  # E41: the tree with its reasoner, plan and token updates, off zero
+            kw.update(concept_tree=True, tree_probes=2, tree_fan=2, tree_reasoner_layers=1, tree_reasoner_dim=16,
+                      tree_reasoner_heads=2, tree_plan=True, tree_token_update=True)
+            if arm == "concept_treebound":
+                kw.update(tree_follow=2)
+            if arm == "concept_treedescent":
+                kw.update(tree_follow=1, tree_route="descent")
         torch.manual_seed(3)
         m = PerceiverARLM(lm_base_cfg(**kw)).eval()
         for layer in m.layers:
@@ -69,6 +77,10 @@ def _model(arm, deep=False):
         rs = m.layers[m.config.global_layer_index].attn.concept_reasoner
         if rs is not None:
             rs.out.weight.data.normal_(0, 0.2)
+        trs = m.layers[m.config.global_layer_index].attn.tree_reasoner
+        if trs is not None:
+            for lin in (trs.out_k, trs.out_v, trs.out_k1, trs.out_v1, trs.plan):
+                lin.weight.data.normal_(0, 0.2)
         if m.depth_mix is not None:
             for prm in m.depth_mix.parameters():
                 prm.data.normal_(0, 0.3)
