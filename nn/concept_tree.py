@@ -249,7 +249,7 @@ def _row_uniform(ids: torch.Tensor, salt: int, n: int) -> torch.Tensor:
 
 
 def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k: int, small: int = 64,
-              block: int = 512) -> RowReads:
+              block: int = 512, step: Optional[int] = None) -> RowReads:
     """The closed-book rows (training): each row draws its read. `mix` = (as normal, bounded, cut) shares.
     As normal: every node followed, `top_k` tokens. Bounded: a budget drawn evenly from `follow` / 4, / 2, × 1, × 4
     nodes per level, `top_k` tokens; half of the bounded rows choose by `descent` (a node's own estimate), half by
@@ -257,11 +257,20 @@ def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k:
     node above) and no token is opened, except that half of the m = 1 rows open `small` tokens.
 
     The draw reads the row's first min(256, 2 · block) tokens only: no query among them has a memory to read
-    (its window covers them), so the draw tells no query anything about its own future."""
+    (its window covers them), so the draw tells no query anything about its own future.
+
+    `step` (an int): the draw is a function of that number alone, the same for every row (and, with the forward's
+    count as the number, on every card). With several cards every step waits for the slowest card, and a bounded
+    row is 1.3 × a flat row while a cut row is several times faster: drawn per row, most steps hold a slow row
+    (run 1: 0.75 × the recall run's speed); drawn per step, cut steps are fast on every card."""
     B = ids.shape[0]
     dev = ids.device
     nh = min(256, 2 * int(block))
-    u, u2, u3 = _row_uniform(ids, 1, nh), _row_uniform(ids, 2, nh), _row_uniform(ids, 3, nh)
+    if step is not None:
+        seed = torch.full((B, 1), float(int(step) % 1000003), dtype=torch.float64, device=dev)
+        u, u2, u3 = _row_uniform(seed, 1, 1), _row_uniform(seed, 2, 1), _row_uniform(seed, 3, 1)
+    else:
+        u, u2, u3 = _row_uniform(ids, 1, nh), _row_uniform(ids, 2, nh), _row_uniform(ids, 3, nh)
     p_norm, p_bound = float(mix[0]), float(mix[1])
     f = torch.full((B, levels + 1), ALL, dtype=torch.long, device=dev)
     cap = torch.full((B,), int(top_k), dtype=torch.long, device=dev)

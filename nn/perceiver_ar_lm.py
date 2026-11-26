@@ -309,6 +309,7 @@ class PerceiverARConfig(PretrainedConfig):
         tree_follow: int = 0,             # E41: nodes a query follows per level outside training (0 = all: flat)
         tree_route: str = "lookahead",    # E41: the choice's score: lookahead (summed concept mass) | descent (own)
         tree_row_mix: str = "",           # E41: training rows' reads "normal,bounded,cut" shares ("" = all normal)
+        tree_row_draw: str = "row",       # E41: the read is drawn per row, or per step (the same on every row and card)
         tree_train_follow: int = 16,      # E41: nodes followed per level in a bounded training row
         tree_reasoner_layers: int = 0,    # E41: layers of the reasoner over the tree's nodes (0 = none)
         tree_reasoner_dim: int = 512,     # E41: its width
@@ -526,6 +527,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.tree_follow = int(tree_follow or 0)
         self.tree_route = str(tree_route or "lookahead")
         self.tree_row_mix = str(tree_row_mix or "")
+        self.tree_row_draw = str(tree_row_draw or "row")
         self.tree_train_follow = int(tree_train_follow)
         self.tree_reasoner_layers = int(tree_reasoner_layers or 0)
         self.tree_reasoner_dim = int(tree_reasoner_dim)
@@ -835,6 +837,8 @@ class PerceiverARConfig(PretrainedConfig):
                 raise ValueError("concept_tree (E41) extends par_global_read='concept'")
             if self.tree_probes < 1 or self.concept_per_block % self.tree_probes or self.tree_fan < 2:
                 raise ValueError("tree_probes must divide concept_per_block; tree_fan >= 2")
+            if self.tree_row_draw not in ("row", "step"):
+                raise ValueError(f"tree_row_draw must be row | step, got {self.tree_row_draw!r}")
             if self.tree_route not in ("lookahead", "descent"):
                 raise ValueError(f"tree_route must be lookahead | descent, got {self.tree_route!r}")
             if self.concept_reasoner_layers:
@@ -2870,11 +2874,13 @@ class Attention(nn.Module):
         self._tree_aux = None        # this call's auxiliary losses [3] (next concept coarse, fine; route), or None
         self._tree_plan = None       # this call's plan per token [B, S, H], or None
         self.tree_stats = None       # last forward's read statistics when armed (dict), for probes
+        self._tree_step = 0          # training forwards so far (the per-step draw's number; the same on every card)
         if self.concept is not None and bool(getattr(cfg, "concept_tree", False)):
             mix = tuple(float(t) for t in str(cfg.tree_row_mix).split(",")) if str(cfg.tree_row_mix) else None
             # "cut" is an evaluation switch (0 = off): nothing below that level is read, no token opened
             self.tree = dict(probes=int(cfg.tree_probes), fan=int(cfg.tree_fan), follow=int(cfg.tree_follow), cut=0,
                              route=str(cfg.tree_route), row_mix=mix, train_follow=int(cfg.tree_train_follow),
+                             row_draw=str(getattr(cfg, "tree_row_draw", "row")),
                              token_update=bool(cfg.tree_token_update), next_concept=float(cfg.tree_next_concept),
                              route_loss=float(cfg.tree_route_loss), route_queries=int(cfg.tree_route_queries))
             if int(cfg.tree_reasoner_layers) > 0:
@@ -3285,7 +3291,7 @@ class Attention(nn.Module):
                 aux = torch.cat([nc.float(), rl.float()[None]])
         if self.training and t["row_mix"] is not None and ids is not None:
             reads = row_reads(ids, tree.levels, mix=t["row_mix"], follow=t["train_follow"], top_k=c["top_k"],
-                              block=c["block"])
+                              block=c["block"], step=self._tree_step if t.get("row_draw") == "step" else None)
         else:
             reads = fixed_reads(B, tree.levels, follow=t["follow"], top_k=c["top_k"], device=q.device,
                                 cut=int(t.get("cut", 0)))
@@ -4368,6 +4374,8 @@ class PerceiverARLM(PreTrainedModel):
                 layer.attn._living_index = None
         self._tree_aux = []  # E41: the reading layer's auxiliary losses, one [3] per loop pass
         for layer in self.layers:
+            if getattr(layer.attn, "tree", None) is not None and self.training:
+                layer.attn._tree_step += 1  # once per forward (a checkpoint recomputation does not pass here)
             if getattr(layer.attn, "tree_reasoner", None) is not None:
                 layer.attn._tree_aux, layer.attn._tree_plan = None, None
                 layer.attn.tree_reasoner.begin_forward(self.training)

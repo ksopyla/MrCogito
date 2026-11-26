@@ -405,6 +405,27 @@ def test_the_tree_model_never_reads_ahead(kw):
             assert (d < 1e-4).all(), (t, d.nonzero()[:5].tolist())
 
 
+def test_a_draw_per_step_is_the_same_for_every_row_and_changes_with_the_step():
+    ids = _ids(S=224, B=6)
+    seen = set()
+    for step in range(1, 200):
+        r = row_reads(ids, 5, mix=(0.4, 0.2, 0.4), follow=16, top_k=512, block=BLK, step=step)
+        assert (r.follow == r.follow[:1]).all() and (r.cap == r.cap[:1]).all()
+        seen.add((tuple(r.follow[0].tolist()), int(r.cap[0])))
+    assert len(seen) >= 8                                                                # normal, 4 budgets, cuts
+    normal = sum(1 for f, c in seen if all(x == ALL for x in f[2:]) and c == 512)
+    assert normal == 1
+    m = _model(**{**TREE, **REASON, **AUX, "tree_row_mix": "0.4,0.2,0.4", "tree_row_draw": "step"})
+    att = m.layers[m.config.global_layer_index].attn
+    m.train()
+    m(ids, labels=ids).loss.backward()
+    m(ids, labels=ids).loss.backward()
+    assert att._tree_step == 2
+    m.eval()
+    m(ids)
+    assert att._tree_step == 2                                                           # evaluation does not count
+
+
 def test_training_rows_draw_depends_on_the_row_only():
     """The draw must not change between a forward and its recomputation, nor between loop passes."""
     ids = _ids(S=224, B=6)

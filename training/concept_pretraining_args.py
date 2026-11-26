@@ -508,6 +508,9 @@ class ModelArguments:
         "help": "E41: the choice's score: lookahead (a node's summed concept mass) | descent (its own estimate)."})
     tree_row_mix: str = field(default="", metadata={
         "help": "E41: shares of training rows read 'as normal,bounded,cut' (e.g. 0.4,0.2,0.4); empty = all normal."})
+    tree_row_draw: str = field(default="row", metadata={
+        "help": "E41: the read is drawn per row, or per step (the same on every row and card: steps of cut rows "
+                "are then fast on every card)."})
     tree_train_follow: int = field(default=16, metadata={"help": "E41: nodes followed per level in a bounded row."})
     tree_reasoner_layers: int = field(default=0, metadata={"help": "E41: reasoner layers over the tree (0 = none)."})
     tree_reasoner_dim: int = field(default=512, metadata={"help": "E41: reasoner width."})
