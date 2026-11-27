@@ -5,6 +5,7 @@
 #   setsid nohup bash scripts/e41_ck_watch.sh eval NAS_DIR OUT_DIR GPU TOKENIZER_DIR [LENGTHS] > /dev/null 2>&1 &
 # Both end once the run's `final` folder is done. Results: OUT_DIR/needle.log (one line per checkpoint, UTC) and
 # OUT_DIR/needle_<checkpoint>.json. The evaluation waits while its card runs another job.
+# NEEDLE_MIX (held-out text: a mix folder with *_val_*.bin), NEEDLE_DEPTHS (default 8), NEEDLE_MODES (on,descent16).
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1
@@ -39,8 +40,9 @@ elif [ "$MODE" = eval ]; then
         done
       fi
       while [ -n "$(nvidia-smi -i "$GPU" --query-compute-apps=pid --format=csv,noheader 2>/dev/null)" ]; do sleep 30; done
-      CUDA_VISIBLE_DEVICES="$GPU" uv run python scripts/e41_long_needle.py --checkpoint "$d" --mix Cache/e40/m21v2_e40 \
-        --lengths "$LENGTHS" --depths 8 --modes on,descent16 --out "$OUT/needle_$n.json" > "$OUT/needle_$n.log" 2>&1
+      CUDA_VISIBLE_DEVICES="$GPU" uv run python scripts/e41_long_needle.py --checkpoint "$d" \
+        --mix "${NEEDLE_MIX:-Cache/e40/m21v2_e40}" --lengths "$LENGTHS" --depths "${NEEDLE_DEPTHS:-8}" \
+        --modes "${NEEDLE_MODES:-on,descent16}" --out "$OUT/needle_$n.json" > "$OUT/needle_$n.log" 2>&1
       echo "[$(date -u +%FT%TZ)] $n: $(grep -E '^L=.*depth 8/8' "$OUT/needle_$n.log" | tr '\n' ' ')" >> "$OUT/needle.log"
     done
     [ -f "$OUT/needle_final.json" ] && break
