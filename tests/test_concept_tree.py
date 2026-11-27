@@ -373,7 +373,9 @@ def test_the_top_down_read_equals_the_streamed_read(docs, kind, cap, scan):
     q, k, v = q.requires_grad_(), k.requires_grad_(), v.requires_grad_()
     tree = _tree(k, v, x, doc, sink)
     assert tree.levels >= 6
-    tree.val_h = 0.5 * torch.randn(B, tree.n_entries, q.shape[2], q.shape[3]) if kind in ("two", "rows") else None
+    vh = (0.5 * torch.randn(B, tree.n_entries, q.shape[2], q.shape[3])).requires_grad_() \
+        if kind in ("two", "rows") else None                                # wide summaries, with their gradient
+    tree.val_h = vh
     reads = _reads(tree, B, kind, cap)
     assert reads_top_down(reads, "lookahead")
     dv_tok = 0.3 * torch.randn(B, S, 1, k.shape[-1])
@@ -389,10 +391,19 @@ def test_the_top_down_read_equals_the_streamed_read(docs, kind, cap, scan):
         torch.testing.assert_close(tree_read_sparse(q, k, v, chunk=ch, **kw), out, atol=2e-5, rtol=1e-4)
     part = tree_read_sparse(q[:, 300:411], k, v, q_offset=300, index=sparse_index(tree), **kw)
     torch.testing.assert_close(part, out[:, 300:411], atol=2e-5, rtol=1e-4)
-    g_ref = torch.autograd.grad(ref.pow(2).sum(), [q, k, v], retain_graph=True)
-    g_out = torch.autograd.grad(out.pow(2).sum(), [q, k, v])
+    wrt = [q, k, v] + ([vh] if vh is not None and cap + int(kind.startswith("cut")) >= 0 else [])
+    g_ref = torch.autograd.grad(ref.pow(2).sum(), wrt, retain_graph=True, allow_unused=True)
+    g_out = torch.autograd.grad(out.pow(2).sum(), wrt, retain_graph=True, allow_unused=True)
     for a, b in zip(g_out, g_ref):
-        torch.testing.assert_close(a, b, atol=5e-4, rtol=5e-3)
+        assert (a is None) == (b is None)
+        if a is not None:
+            torch.testing.assert_close(a, b, atol=5e-4, rtol=5e-3)
+    for ch in (48, 100):                                              # several blocks a chunk: the same gradients
+        g_ch = torch.autograd.grad(tree_read_sparse(q, k, v, chunk=ch, **kw).pow(2).sum(), wrt, retain_graph=True,
+                                   allow_unused=True)
+        for a, b in zip(g_ch, g_ref):
+            if a is not None:
+                torch.testing.assert_close(a, b, atol=5e-4, rtol=5e-3)
     with torch.no_grad():                                                                # no gradient: no checkpoints
         torch.testing.assert_close(tree_read_sparse(q, k, v, **kw), out, atol=2e-5, rtol=1e-4)
 
