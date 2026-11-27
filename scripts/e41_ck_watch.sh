@@ -43,7 +43,8 @@ elif [ "$MODE" = eval ]; then
       CUDA_VISIBLE_DEVICES="$GPU" uv run python scripts/e41_long_needle.py --checkpoint "$d" \
         --mix "${NEEDLE_MIX:-Cache/e40/m21v2_e40}" --lengths "$LENGTHS" --depths "${NEEDLE_DEPTHS:-8}" \
         --modes "${NEEDLE_MODES:-on,descent16}" --out "$OUT/needle_$n.json" > "$OUT/needle_$n.log" 2>&1
-      echo "[$(date -u +%FT%TZ)] $n: $(grep -E '^L=.*depth 8/8' "$OUT/needle_$n.log" | tr '\n' ' ')" >> "$OUT/needle.log"
+      D="${NEEDLE_DEPTHS:-8}"
+      echo "[$(date -u +%FT%TZ)] $n: $(grep -E "^L=.*depth $D/$D" "$OUT/needle_$n.log" | tr '\n' ' ')" >> "$OUT/needle.log"
     done
     [ -f "$OUT/needle_final.json" ] && break
     sleep 60
