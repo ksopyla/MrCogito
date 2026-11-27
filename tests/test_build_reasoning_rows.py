@@ -470,7 +470,7 @@ LIST = {"kind": "lookup", "seq_len": 2048, "tokens": 2048 * 9, "facts": (4, 8), 
 
 
 def test_list_facts_and_templates():
-    assert set(b.LIST_SETS) == {"list_16k", "list_64k", "recall_16k", "recall_64k", "recall_256k"}
+    assert set(b.LIST_SETS) == {"list_16k", "list_64k", "recall_16k", "recall_64k", "recall_128k", "recall_256k"}
     assert not set(b.LIST_SETS) & set(b.SETS)
     for s in b.list_templates():
         assert b.banned_in(s) is None, s

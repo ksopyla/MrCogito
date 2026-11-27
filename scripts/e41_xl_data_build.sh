@@ -10,9 +10,18 @@
 # Usage (Odra, from the repo root):  setsid nohup bash scripts/e41_xl_data_build.sh [OUT] > /dev/null 2>&1 &
 #   OUT default Cache/e41/m21xl_home; E40 mix from E40_MIX (default ~/dev/MrCogito-e40/Cache/e40/m21v2_e40);
 #   progress OUT/_logs/events.log (UTC), the last line "mix.json written".
+#   E41_ROW=128k: the same at rows of 131,072 tokens (recipe m21_mix_xl128.json, set recall_128k: what a 24 GB card
+#   trains on), OUT default Cache/e41/m21xl128_home; the long documents are linked from E41_LONG_FROM (default
+#   Cache/e41/m21xl_home) when it has them, so only the recall rows are built.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
-D="${1:-Cache/e41/m21xl_home}"
+ROW="${E41_ROW:-256k}"
+case "$ROW" in 256k) RECIPE=data/mix_recipes/m21_mix_xl1.json; D0=Cache/e41/m21xl_home ;;
+  128k) RECIPE=data/mix_recipes/m21_mix_xl128.json; D0=Cache/e41/m21xl128_home ;;
+  *) echo "E41_ROW must be 256k or 128k"; exit 2 ;; esac
+RECALL="recall_$ROW"
+LONG_FROM="$(cd "${E41_LONG_FROM:-Cache/e41/m21xl_home}" 2>/dev/null && pwd || true)"
+D="${1:-$D0}"
 SRC="${E40_MIX:-$HOME/dev/MrCogito-e40/Cache/e40/m21v2_e40}"
 mkdir -p "$D/_logs"
 D="$(cd "$D" && pwd)"
@@ -20,7 +29,6 @@ EV="$D/_logs/events.log"
 stamp() { echo "[$(date -u +%FT%TZ)] $*" >> "$EV"; }
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1
 PY=(.venv/bin/python)
-RECIPE=data/mix_recipes/m21_mix_xl1.json
 WORKERS="${E41_WORKERS:-3}"
 SOURCES=(books:${E41_BOOKS_SCALE:-0.25} usgpo:${E41_USGPO_SCALE:-0.2} doab:${E41_DOAB_SCALE:-0.2})
 RECALL_SCALE="${E41_RECALL_SCALE:-0.5}"
@@ -32,6 +40,13 @@ for n in pdfs code_repos arxiv multihop_64k lookup_64k; do
   for f in "$SRC/$n.done.json" "$SRC/$n"_train_*.bin "$SRC/$n"_val_*.bin; do ln -sf "$f" "$D/"; done
 done
 [ -d "$D/tokenizer" ] || cp -r "$SRC/tokenizer" "$D/tokenizer"
+if [ -n "$LONG_FROM" ] && [ "$LONG_FROM" != "$D" ]; then   # long documents built for another row length: the same shards
+  for n in books usgpo doab; do
+    [ -f "$LONG_FROM/$n.done.json" ] && [ ! -e "$D/$n.done.json" ] || continue
+    for f in "$LONG_FROM/$n.done.json" "$LONG_FROM/$n"_train_*.bin "$LONG_FROM/$n"_val_*.bin; do ln -sf "$f" "$D/"; done
+    stamp "$n: linked from $LONG_FROM"
+  done
+fi
 
 one() {  # one source at its own scale; skipped when its done.json exists (resume)
   local n="${1%%:*}" s="${1##*:}" rc
@@ -43,10 +58,10 @@ one() {  # one source at its own scale; skipped when its done.json exists (resum
   stamp "$n: exit $rc"
   return "$rc"
 }
-( stamp "recall_256k: start at scale $RECALL_SCALE"
-  "${PY[@]}" scripts/build_reasoning_rows.py --out "$D" --scale "$RECALL_SCALE" --only recall_256k --val_rows 8 \
-      --tokenizer "$D/tokenizer" >> "$D/_logs/recall_256k.log" 2>&1
-  stamp "recall_256k: exit $?" ) &
+( stamp "$RECALL: start at scale $RECALL_SCALE"
+  "${PY[@]}" scripts/build_reasoning_rows.py --out "$D" --scale "$RECALL_SCALE" --only "$RECALL" --val_rows 8 \
+      --tokenizer "$D/tokenizer" >> "$D/_logs/$RECALL.log" 2>&1
+  stamp "$RECALL: exit $?" ) &
 RPID=$!
 XRC=0
 for s in "${SOURCES[@]}"; do one "$s" & done

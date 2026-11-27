@@ -147,6 +147,10 @@ LIST_SETS["recall_256k"] = {"kind": "lookup", "seq_len": 262144, "tokens": 0.08e
                             "lists": (3, 6), "list_values": (2, 6), "multi": (3, 5), "multi_keys": (2, 4),
                             "spans_per_book": 1, "statements": 0.5, "join": True,
                             "buckets": {"val": (6, 26), "train": (26, 56)}}
+# The same at 131,072 tokens: the longest row a 24 GB card trains on (a 256k row's saved layer inputs alone take
+# 19 GB), for the home screen of the long stage.
+LIST_SETS["recall_128k"] = {**LIST_SETS["recall_256k"], "seq_len": 131072, "tokens": 0.04e9, "facts": (12, 32),
+                            "lists": (2, 5), "multi": (2, 4)}
 JOIN_CHARS = 5.0       # a joined text is emitted once it holds this many characters per token of the row
 P_REVISED = 0.15       # share of planted facts stated twice (the later statement wins)
 P_MISSING_ROW = 0.15   # share of lookup rows with 1-2 questions about something never planted
