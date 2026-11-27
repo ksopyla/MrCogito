@@ -605,6 +605,21 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   08:00 UTC (the author); all three nodes, keepers and watchers had survived the gap: run 4 at step 140 of 286
   (held-out 2.4528 at step 100), run 5 at step 50 (16–19k tokens/s, the scan costs no speed), run 2 at step 2,980
   of stage 2 (2.1041 at step 2,800).
+- **2026-11-27 09:25 UTC, a million tokens on a home card** (the same step-150 checkpoint, read window by window: 65,536-token windows, 8,192 overlap, the far read's
+  keys and values carried along; one RTX 3090, peak 5.9 GB; 8 needles a length):
+
+  | text | all seven digits | first token | seconds a text |
+  |---|---|---|---|
+  | 512k | 5 of 8 | 8 of 8 | 122 |
+  | 1M | **3 of 8** | 8 of 8 | 327 |
+
+  It finds where the number is in every text at 1M tokens, eight times the longest row it has trained on, and
+  reads all of it in 3 of 8. The screen's later checkpoints on 16 needles (64k / 128k): 13 / 10 at step 250,
+  14 / 9 at 300: 128k has levelled at 9–12 of 16 since step 100.
+- **2026-11-27 08:25 UTC, run 4's watcher left on one failed S3 read** ("no long log 3 h after the start": its
+  speed was never read because the stage logs fewer than 33 lines, and the rule then treated a single failed read
+  as a missing log). Fixed (`infra/aws/watch_run.sh`: only when the log was never read; `WATCH_SPEED_LINES` for
+  short stages, commit `27b804eb`); the watchers of runs 4 and 5 restarted 08:31 UTC.
 
 ## Result
 <Filled in after, by experiment-track.>
