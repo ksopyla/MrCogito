@@ -297,5 +297,16 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   next-concept predictor, which predicts the block that reads the plan and is the only thing the prediction loss
   trains (`tree_pred`, Odra card 0).
 
+- **2026-11-27 02:06 UTC, run 2: K2 passed and the first evaluation ties the recall run.** Median 66.3k tokens/s
+  (0.95 × the recall run; run 1 had 51.9k: the per-step draw works). Held-out loss at step 200: **2.3077** (the
+  recall run 2.3081).
+- **2026-11-27 02:16 UTC, it is the plan.** Step 286 against the control's 1.9275: values and the plan from the
+  reasoned state (`tree_vp`) 1.9369 (+0.009); values and a plan from the predictor (`tree_pred`) 1.9509 (+0.023, as
+  bad as run 1's recipe); values only at step 572 1.9273 (+0.002, equal to no reasoner); keys, values and plan at
+  step 572 1.9316 (+0.006). A vector added to every token's stream is what the model does not tolerate; corrections
+  to the summaries' keys and values are. Next (started 02:17 UTC): key and value corrections without a plan
+  (`tree_kv`, Polonez card 0) and the same with both losses shaping the reasoned states (`tree_np`, Odra card 0),
+  the next-concept loss as the author meant it, without the plan.
+
 ## Result
 <Filled in after, by experiment-track.>
