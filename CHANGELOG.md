@@ -15,6 +15,48 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-27] - E41: the planted-number test's fair score, a recorder of the read's choices, the re-rank
+
+**Why:**
+- The planted-number test counted a number as read only when the first predicted token was its first token; a
+  model that says a colon or a quote first and then copies every digit scored half. Two wrong readings were
+  logged before this was seen (corrected in the spec's log).
+- Run 5's remaining misses at 128k-256k: the digit to copy scores among the best tokens of the whole row for the
+  query in every pass of the reading layer, while the summary of its concept (about 8 tokens) ranks in the
+  hundreds, so the place is opened in some passes only.
+
+**What changed:**
+- [changed] `scripts/e41_long_needle.py` - reports `digits_after_first` (every token after the first right) and
+  `said_first_instead` next to the strict score; `--top_k`, `--width`, `--rerank` overrides.
+- [added] `nn/concept_tree.py` - `WATCH`, a recorder for diagnostics (off unless set): per call of the top-down
+  read, which watched source positions a query opened, where its attention went (window, sinks, opened tokens,
+  summaries, the watched tokens), the scan rank of the watched tokens' concepts and the rank of the tokens
+  themselves among every token the query may open. `scripts/e41_needle_why.py` runs the planted-number texts
+  with it.
+- [added] `tree_rerank` n (config, args, `nn/concept_tree.py` `member_table`, `member_best`; the top-down read,
+  the cached decoder's `choose_chunk`, the streamed read): the scan's best n concepts are put in the order of
+  their best member token's own score for the query (the first 16 members of a concept), and the best
+  `concept_width` of those open tokens. Arm `tree_xl_scan_rr` (n = 512). Costs about a quarter more read time at
+  128k (13.7 s to 17.0 s per forward on one RTX 3090; the first form, gathering element by element over the
+  padded member table, tripled it).
+- [added] `scripts/gpu_when_free.sh` (a per-card queue with a lock for home tests), `scripts/e41_home_screen.sh`
+  (one long-stage screen with its checkpoint copier and evaluator), `SCHED=decay` in `scripts/e40_train.sh`;
+  `scripts/e41_ck_watch.sh` takes its card through the queue.
+- [changed] `infra/aws/jobs/e41_long.sh` - a fourth argument to skip the on-node planted-number part, and
+  `E37_EVAL_NO_OLDLOOP=1` (`infra/aws/jobs/e37_evals_long.sh`) drops the old-loop decode check that kept two paid
+  nodes busy for hours after their real tests.
+
+**Impact:**
+- Every planted-number figure logged before 16:08 UTC on 2026-11-27 is the strict score and undercounts models
+  that open with a quote or a colon; the spec's log carries both scores from then on.
+- Nothing changes for models without `tree_rerank`; the recorder is inert unless set.
+
+**Tests:** `tests/test_concept_tree.py` (the re-rank: unchanged when every candidate is opened anyway, causal,
+independent of the chunking, the row's best-scoring token always opened; the cached decoder and the streamed read
+with it).
+
+---
+
 ## [2026-11-27] - E41: tokens opened from the best concepts of the whole row; reading window by window
 
 **Why:**
