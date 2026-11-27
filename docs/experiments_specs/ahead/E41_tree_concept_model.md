@@ -780,6 +780,25 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   the guard is back at pause 78 C / resume 70 C, checked every 5 s.
 - **Run 6 stands** (256k rows at a third of the start rate; step 80 at 15:43 UTC, 13-14k tokens/s): its reason is
   now only the RULER lookups among distractors and the size of the drift, not a lost lookup.
+- **2026-11-27 16:57 UTC, planted numbers with both scores: run 5 against the model it started from** (Odra card
+  0, `Cache/e41/evals/fair/`; the battery's 32 texts per length, each in one forward, each model's own read). A
+  number is read when every token after the first is right; the strict score (the first token too) in brackets:
+
+  | model | 64k | 128k | 256k |
+  |---|---|---|---|
+  | the recall run, its own read (every concept scored for every query: no row beyond 128k fits) | 23 (9) | 4 (3) | - |
+  | run 5, 256k rows, every concept scored | **32** (16) | **23** (14) | **20** (10) |
+
+  What each says first when it is not the number's first token: the recall run ` the`, a quote, a line break; run
+  5 `:` and ` the` (at 256k ` the` in 15 of 17). Run 5 reads every planted number at 64k where the recall run
+  reads 23 of 32, and 23 of 32 at 128k where the recall run reads 4. With the node's tests (ordinary reading
+  within 0.003 to 64k, 128k documents 0.018 better, RULER and core level) run 5 is the first E41 model ahead of
+  the recall run: at long range, at no cost below it. Still to come on these texts: run 4, run 5's step-150
+  weights, the first home screen's step 150, and where the attention went on the wrong tokens.
+- **2026-11-27 16:58 UTC, standing:** run 6 at step 130 of 286, held-out loss on the 256k rows 2.4236 at step
+  100 (run 5: 2.4305, run 4: 2.4528), $23.62; run 2 in its 64k stage at step 390 (held-out 1.9748, 1.9719, 1.9645),
+  $125.01; the gentle home screen at step 330 of 360, held-out on the 128k rows 2.5503, 2.5442, 2.5416, 2.5353,
+  2.5328 (the lowest of all the home screens: the constant final rates ended at 2.5333).
 
 ## Result
 <Filled in after, by experiment-track.>
