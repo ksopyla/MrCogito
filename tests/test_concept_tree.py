@@ -760,6 +760,31 @@ def test_a_top_down_model_reads_what_the_bounded_model_reads(kw):
         torch.testing.assert_close(m(ids).logits, dense(ids).logits, atol=1e-5, rtol=1e-4)
 
 
+@pytest.mark.parametrize("kw", [{}, WIDE, {"tree_follow": 1}], ids=["read", "wide", "one"])
+def test_cached_decoding_of_a_top_down_model(kw):
+    """The cached decoder (one query at a time, its own read) writes the top-down forward's states."""
+    from nn.incremental import IncrementalDecoder
+
+    m = _model(warm=True, **{**TREE, **SPARSE, **kw})
+    if "tree_wide" in kw:
+        _warm_writer(m)
+    ids = _ids(S=224, B=2)
+    L0, S = 200, 224
+    buf = torch.zeros(2, S, dtype=torch.long)
+    buf[:, :L0] = ids[:, :L0]
+    doc = torch.full((2, S), -1, dtype=torch.long)
+    doc[:, :L0] = 0
+    with torch.no_grad():
+        dec = IncrementalDecoder(m)
+        dec.prefill(buf.clone(), doc.clone(), L0)
+        for t in range(L0, S):
+            h = dec.step(ids[:, t])
+            buf[:, t], doc[:, t] = ids[:, t], 0
+            ref = m.hidden_states(buf, doc_ids=doc)[:, t]
+            h = h[:, -1] if h.dim() == 3 else h
+            assert float((h - ref).abs().max()) < 2e-4, t
+
+
 def test_a_top_down_model_trains_and_checkpointing_agrees():
     cfg_kw = {**TREE, **SPARSE, **WIDE, "tree_row_mix": "0.3,0.4,0.3", "tree_train_follow": 2}
     m = _model(warm=True, **cfg_kw).train()
@@ -777,6 +802,9 @@ def test_a_top_down_model_trains_and_checkpointing_agrees():
             torch.testing.assert_close(p.grad, p2.grad, atol=1e-5, rtol=2e-3, msg=name)
             n += int(p.grad.abs().sum() > 0)
     assert n > 10 and float(m.layers[m.config.global_layer_index].attn.tree_writer.weight.grad.abs().sum()) > 0
+    # the recomputation took every read's output from the forward pass; without checkpointing nothing was taken
+    g = m.config.global_layer_index
+    assert len(twin.layers[g].attn._sparse_seen) == 0 and len(m.layers[g].attn._sparse_seen) >= 1
 
 
 def test_short_rows_run_and_keep_the_reasoner_in_the_graph():

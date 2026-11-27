@@ -2890,6 +2890,7 @@ class Attention(nn.Module):
         self.tree_stats = None       # last forward's read statistics when armed (dict), for probes
         self.tree_writer = None      # wide summaries: Linear(hidden → heads · head_dim) on a node's mean state
         self._tree_step = 0          # training forwards so far (the per-step draw's number; the same on every card)
+        self._sparse_seen = {}       # this forward's top-down read outputs, for the layer's checkpoint recomputation
         if self.concept is not None and bool(getattr(cfg, "concept_tree", False)):
             mix = tuple(float(t) for t in str(cfg.tree_row_mix).split(",")) if str(cfg.tree_row_mix) else None
             # "cut" is an evaluation switch (0 = off): nothing below that level is read, no token opened
@@ -3329,11 +3330,22 @@ class Attention(nn.Module):
         # the top-down read: a bounded read by a node's own estimate costs the same per query at any row length
         # (training and evaluation; the row's memory does not grow with it either)
         if t.get("sparse") and self.tree_stats is None and reads_top_down(reads, t["route"]):
-            return tree_read_sparse(q, k, v, tree=tree, reads=reads, doc=doc, ds=ds, n_sinks=c["sinks"],
-                                    key_valid=key_valid, top_k=c["top_k"], width=c["width"],
-                                    variance=c["variance"], summaries=c["summaries"],
-                                    open_tokens=bool(c.get("open", True)), dv_tok=dv_tok,
-                                    sum_len=c.get("sum_len", 0))
+            # with gradient checkpointing the layer runs twice on the same inputs (the forward, then the
+            # recomputation for its backward): the second run takes the first one's output (a third of a long
+            # row's far-read time). The key is the call's queries; the store is emptied at every forward.
+            key, done = None, None
+            if self.training and torch.is_grad_enabled():
+                qf = q.detach().float()
+                key = (tuple(q.shape), float(qf.abs().sum()), float(qf[:, ::max(S // 257, 1)].sum()))
+                done = self._sparse_seen.pop(key, None)
+            out = tree_read_sparse(q, k, v, tree=tree, reads=reads, doc=doc, ds=ds, n_sinks=c["sinks"],
+                                   key_valid=key_valid, top_k=c["top_k"], width=c["width"],
+                                   variance=c["variance"], summaries=c["summaries"],
+                                   open_tokens=bool(c.get("open", True)), dv_tok=dv_tok,
+                                   sum_len=c.get("sum_len", 0), reuse=done)
+            if key is not None and done is None:
+                self._sparse_seen[key] = out.detach()
+            return out
         # rows too long for the per-query tables (T [B, S, concepts]: 4 GB at 128k), and the `list` switch: the
         # same read chunk by chunk (evaluation only)
         if not torch.is_grad_enabled() and self.tree_stats is None and (
@@ -4415,6 +4427,7 @@ class PerceiverARLM(PreTrainedModel):
         for layer in self.layers:
             if getattr(layer.attn, "tree", None) is not None and self.training:
                 layer.attn._tree_step += 1  # once per forward (a checkpoint recomputation does not pass here)
+                layer.attn._sparse_seen = {}
             if getattr(layer.attn, "tree_reasoner", None) is not None:
                 layer.attn._tree_aux, layer.attn._tree_plan = None, None
                 layer.attn.tree_reasoner.begin_forward(self.training)

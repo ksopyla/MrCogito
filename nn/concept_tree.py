@@ -737,7 +737,7 @@ def reads_top_down(reads: RowReads, route: str) -> bool:
 def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_sinks: int, key_valid, top_k: int,
                      width: int, variance: bool = True, summaries: bool = True, open_tokens: bool = True,
                      dv_tok: Optional[torch.Tensor] = None, sum_len: int = 0, q_offset: int = 0, chunk: int = 0,
-                     index: Optional[dict] = None) -> torch.Tensor:
+                     index: Optional[dict] = None, reuse: Optional[torch.Tensor] = None) -> torch.Tensor:
     """The bounded read made top-down, for rows of any length (2026-11-27). The table and streamed reads score every
     concept of the row for every query before they bound what is read, so their cost per query grows with the row
     (the reason no row was longer than 65,536 tokens). Here a query scores, level by level from the top, only the
@@ -750,7 +750,10 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     is computed without a graph and recomputed for its own backward (`_SparseChunk`), and what it owes the row's
     tensors (keys, values, node keys and values) is added to one buffer per tensor that reaches them once
     (`_SparseAnchor`): neither the memory nor the time of a training step grows faster than the row.
-    q [B, Q, h, d] holds the queries [q_offset, q_offset + Q). Returns [B, Q, h, d]."""
+    q [B, Q, h, d] holds the queries [q_offset, q_offset + Q). Returns [B, Q, h, d].
+
+    `reuse` [B, Q, h, d]: this call's output, computed before from the same inputs (a gradient checkpoint's
+    recomputation of the layer): the chunks hand it on instead of computing it again; their backward is unchanged."""
     from nn.exact_read import ChoiceList, counts
 
     B, Q, h, d = q.shape
@@ -975,7 +978,11 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
         cs = chunk or max(8, min(blk, (1 << 27) // max(B * per, 1)))
         s1 = min(q0 + Q, (tau + 1) * blk, s0 + cs)
         qc = q[:, s0 - q0:s1 - q0]
-        out.append(_SparseChunk.apply(run, s0, s1, qc, anchor) if grad else one(s0, s1, qc).to(wd))
+        if grad:
+            out.append(_SparseChunk.apply(run, s0, s1, qc, anchor,
+                                          None if reuse is None else reuse[:, s0 - q0:s1 - q0]))
+        else:
+            out.append(one(s0, s1, qc).to(wd))
         s0 = s1
     return torch.cat(out, dim=1)
 
@@ -1013,9 +1020,11 @@ class _SparseChunk(torch.autograd.Function):
     row's tensors."""
 
     @staticmethod
-    def forward(ctx, run, s0, s1, qc, anchor):
+    def forward(ctx, run, s0, s1, qc, anchor, done):
         ctx.run, ctx.span = run, (s0, s1)
         ctx.save_for_backward(qc)
+        if done is not None:  # computed by the forward pass this call recomputes
+            return done.to(run.dtype).clone()
         return run.fn(s0, s1, qc).to(run.dtype)
 
     @staticmethod
@@ -1028,7 +1037,7 @@ class _SparseChunk(torch.autograd.Function):
             o = run.fn(s0, s1, q_, leaves).to(run.dtype)
             grads = torch.autograd.grad(o, [q_] + [t for _, _, t in leaves], g, allow_unused=True)
         run.accumulate(leaves, grads[1:])
-        return None, None, None, grads[0], g.new_zeros(())
+        return None, None, None, grads[0], g.new_zeros(()), None
 
 
 def _mix(logits: list, vals: list) -> torch.Tensor:
