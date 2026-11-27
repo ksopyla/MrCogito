@@ -2891,6 +2891,7 @@ class Attention(nn.Module):
         self.tree_writer = None      # wide summaries: Linear(hidden → heads · head_dim) on a node's mean state
         self._tree_step = 0          # training forwards so far (the per-step draw's number; the same on every card)
         self._sparse_seen = {}       # this forward's top-down read outputs, for the layer's checkpoint recomputation
+        self.stream = None           # streamed reading (`PerceiverARLM.hidden_states_streamed`): the row's memory
         if self.concept is not None and bool(getattr(cfg, "concept_tree", False)):
             mix = tuple(float(t) for t in str(cfg.tree_row_mix).split(",")) if str(cfg.tree_row_mix) else None
             # "cut" is an evaluation switch (0 = off): nothing below that level is read, no token opened
@@ -3365,6 +3366,56 @@ class Attention(nn.Module):
                            key_valid=key_valid, backend=self.backend, variance=c["variance"],
                            summaries=c["summaries"], dv_tok=dv_tok, sum_len=c.get("sum_len", 0))
 
+    @torch.no_grad()
+    def _tree_read_window(self, q, k, v, doc):
+        """E41 streamed reading (evaluation): this call's tokens are the end of a longer row whose earlier keys and
+        values, one pair per loop pass, are in `self.stream`. The call's first `overlap` tokens are in that memory
+        already (they are here as the local layers' left context, and their keys here are not exact: the memory's
+        are used). The read is the top-down read of the whole row for this call's queries; the memory then holds
+        the row up to this call's end."""
+        from nn.concept_memory import attend_concepts, build_concepts
+        from nn.concept_tree import build_tree, fixed_reads, reads_top_down, tree_read_sparse
+        from nn.exact_read import doc_starts
+
+        st, c, t = self.stream, self.concept, self.tree
+        i = st["pass"]
+        st["pass"] += 1
+        if st["len"] > 0:
+            o = int(st["overlap"])
+            k_all = torch.cat([st["mem"][i][0], k[:, o:]], 1)
+            v_all = torch.cat([st["mem"][i][1], v[:, o:]], 1)
+            doc_all = torch.cat([st["doc"], doc[:, o:]], 1)
+        else:
+            k_all, v_all, doc_all = k, v, doc
+        if i < len(st["mem"]):
+            st["mem"][i] = (k_all, v_all)
+        else:
+            st["mem"].append((k_all, v_all))
+        st["doc_new"] = doc_all
+        B, S_all = doc_all.shape
+        ds = doc_starts(doc_all)
+        sink = (torch.arange(S_all, device=q.device)[None] - ds < c["sinks"]) & (doc_all >= 0)
+        cidx = None
+        if not self.concept_off:
+            cidx = build_concepts(k_all, v_all, None, doc_all, sink, block=c["block"], per_block=c["per_block"],
+                                  iters=c["iters"], tau=c["tau"])
+        if cidx is None:  # shorter than three blocks, or the memory switched off: sinks + window
+            if S_all != q.shape[1]:
+                raise ValueError("streamed reading with the memory off needs windows that do not overlap")
+            return attend_concepts(q, k, v, cidx=None, dv=None, doc=doc, key_valid=None, backend=self.backend,
+                                   opened=None, sink=sink, ds=ds, n_sinks=c["sinks"], summaries=False,
+                                   variance=c["variance"], block=c["block"])
+        tree = build_tree(cidx, probes=t["probes"], fan=t["fan"], iters=c["iters"], tau=c["tau"])
+        reads = fixed_reads(B, tree.levels, follow=t["follow"], top_k=c["top_k"], device=q.device,
+                            cut=int(t.get("cut", 0)))
+        if not reads_top_down(reads, t["route"]):
+            raise ValueError("streamed reading needs a bounded read by a node's own estimate "
+                             "(tree_follow > 0, tree_route descent)")
+        return tree_read_sparse(q, k_all, v_all, tree=tree, reads=reads, doc=doc_all, ds=ds, n_sinks=c["sinks"],
+                                key_valid=None, top_k=c["top_k"], width=c["width"], variance=c["variance"],
+                                summaries=c["summaries"], open_tokens=bool(c.get("open", True)),
+                                sum_len=c.get("sum_len", 0), q_offset=S_all - q.shape[1])
+
     def _concept_read(self, q, k, v, x, *, doc_ids, key_valid, ids=None):
         """E37: concepts of this call's keys (encoder), the reasoner's value update, each query's exact choice, and
         one softmax over sinks ‖ block-aligned window ‖ opened members ‖ concept summaries (nn/concept_memory.py)."""
@@ -3379,6 +3430,8 @@ class Attention(nn.Module):
         ds = doc_starts(doc)
         pos = torch.arange(S, device=q.device)[None]
         sink = (pos - ds < c["sinks"]) & (doc >= 0)
+        if self.tree is not None and self.stream is not None:  # E41: a window of a longer row
+            return self._tree_read_window(q, k, v, doc)
         if self.tree is not None:  # E41
             return self._tree_read(q, k, v, x, doc=doc, ds=ds, sink=sink, key_valid=key_valid, ids=ids)
         cidx, opened, dv, dv_tok = None, None, None, None
@@ -4678,6 +4731,51 @@ class PerceiverARLM(PreTrainedModel):
         )
         x = self._run_layers(input_ids, attention_mask, doc_ids, None, cut_ids=self._pad_cuts(cut_ids, input_ids))
         return self.final_norm(x)[:, :S_orig]
+
+    @torch.no_grad()
+    def hidden_states_streamed(self, input_ids: torch.Tensor, *, window: int = 65536, overlap: int = 8192,
+                               keep_last: int = 0, doc_ids: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """E41: `hidden_states` of a row too long for one forward, read window by window (evaluation).
+
+        One forward keeps every layer's states of the whole row (about 33 GB at 1M tokens for the 150M model). Only
+        the reading layer looks further back than a few thousand tokens, and what it needs of the past is its keys
+        and values (64 numbers each per token and loop pass). So the row is read in windows of `window` tokens, each
+        starting `overlap` tokens before the previous one's end: the local layers see the overlap as left context,
+        the reading layer reads the whole row so far through the top-down tree read (the keys and values of earlier
+        windows are kept; the concepts and the tree are rebuilt from them at every window).
+
+        The states of the positions past the overlap equal the single forward's as far as the local layers' reach
+        is inside the overlap (each local layer looks at most two of its blocks back). Needs a tree read with a
+        bound by descent (`tree_follow` > 0, `tree_route` descent), no reasoner and no wide summaries. `window` and
+        `overlap` are multiples of the concept block. Returns the states of the last `keep_last` positions [B, n, d]
+        (0: of every position)."""
+        att = self.layers[self.config.global_layer_index].attn
+        if att.tree is None or att.tree_reasoner is not None or att.tree_writer is not None:
+            raise NotImplementedError("streamed reading: a tree read without a reasoner or wide summaries")
+        blk = int(att.concept["block"])
+        if window % blk or overlap % blk or not 0 <= overlap < window:
+            raise ValueError(f"window and overlap must be multiples of {blk}, overlap below window")
+        B, S = input_ids.shape
+        doc = doc_ids if doc_ids is not None else torch.zeros_like(input_ids)
+        att.stream = {"overlap": int(overlap), "pass": 0, "mem": [], "doc": None, "len": 0, "doc_new": None}
+        outs = []
+        try:
+            a = 0
+            while a < S:
+                lo = max(0, a - overlap)
+                b = min(S, lo + window)
+                h = self.hidden_states(input_ids[:, lo:b], doc_ids=doc[:, lo:b])[:, a - lo:]
+                if keep_last:
+                    outs = [torch.cat(outs + [h], 1)[:, -keep_last:]]
+                else:
+                    outs.append(h)
+                st = att.stream
+                st["doc"], st["len"], st["pass"] = st["doc_new"][:, :b], b, 0
+                st["mem"] = [(km[:, :b], vm[:, :b]) for km, vm in st["mem"]]              # without a padded tail
+                a = b
+        finally:
+            att.stream = None
+        return torch.cat(outs, 1)
 
     @staticmethod
     def _pad_cuts(cut_ids: Optional[torch.Tensor], input_ids: torch.Tensor) -> Optional[torch.Tensor]:

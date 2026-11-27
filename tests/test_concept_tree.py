@@ -785,6 +785,25 @@ def test_cached_decoding_of_a_top_down_model(kw):
             assert float((h - ref).abs().max()) < 2e-4, t
 
 
+@pytest.mark.parametrize("window,overlap", [(128, 64), (160, 96), (96, 48)])
+def test_streamed_reading_gives_the_single_forward_states(window, overlap):
+    """A long row read window by window, the reading layer's keys and values carried along: the states of the single
+    forward (the local layers' reach is inside the overlap), for every position and for the last ones only."""
+    m = _model(warm=True, **{**TREE, **SPARSE})
+    ids = _ids(S=592, B=2)
+    with torch.no_grad():
+        ref = m.hidden_states(ids)
+        out = m.hidden_states_streamed(ids, window=window, overlap=overlap)
+        assert out.shape == ref.shape
+        torch.testing.assert_close(out, ref, atol=3e-4, rtol=1e-3)
+        last = m.hidden_states_streamed(ids, window=window, overlap=overlap, keep_last=40)
+        torch.testing.assert_close(last, ref[:, -40:], atol=3e-4, rtol=1e-3)
+        assert m.layers[m.config.global_layer_index].attn.stream is None
+        torch.testing.assert_close(m.hidden_states(ids), ref, atol=1e-6, rtol=1e-6)      # nothing left behind
+    with pytest.raises(ValueError):
+        m.hidden_states_streamed(ids, window=100, overlap=48)
+
+
 def test_a_top_down_model_trains_and_checkpointing_agrees():
     cfg_kw = {**TREE, **SPARSE, **WIDE, "tree_row_mix": "0.3,0.4,0.3", "tree_train_follow": 2}
     m = _model(warm=True, **cfg_kw).train()

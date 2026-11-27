@@ -60,6 +60,12 @@ def main() -> None:
     ap.add_argument("--modes", default="on,tree64,tree16,descent16")
     ap.add_argument("--list_from", type=int, default=131072, help="rows this long or longer read without tables")
     ap.add_argument("--seed", type=int, default=1234)
+    ap.add_argument("--stream_from", type=int, default=0,
+                    help="rows this long or longer are read window by window (hidden_states_streamed: the far "
+                         "read's keys and values carried along), so a 1M row fits a 24 GB card; 0 = never. Needs "
+                         "bounded reads by descent (modes descent<N>, or a top-down model's own read)")
+    ap.add_argument("--window", type=int, default=65536)
+    ap.add_argument("--overlap", type=int, default=8192)
     ap.add_argument("--top_down", action="store_true",
                     help="bounded reads by descent go through the top-down path (tree_sparse) whatever the "
                          "checkpoint's config says")
@@ -105,15 +111,20 @@ def main() -> None:
             for m in out["modes"]:
                 torch.cuda.synchronize()
                 t0 = time.time()
+                def states():  # the states that predict the answer's tokens: positions S − n − 1 … S − 2
+                    if a.stream_from and S >= a.stream_from:
+                        return model.hidden_states_streamed(x, window=a.window, overlap=a.overlap,
+                                                            keep_last=n + 1)[0][:-1]
+                    return model.hidden_states(x)[0][S - n - 1:S - 1]
+
                 with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
                     with model.open_impl("list" if S >= a.list_from else None):
                         if m == "on":
-                            h = model.hidden_states(x)[0]
+                            h = states()
                         else:
                             with memory_mode(model, m):
-                                h = model.hidden_states(x)[0]
-                    pred = torch.nn.functional.linear(h[S - n - 1:S - 1].float(),
-                                                      model.lm_head.weight.float()).argmax(-1).tolist()
+                                h = states()
+                    pred = torch.nn.functional.linear(h.float(), model.lm_head.weight.float()).argmax(-1).tolist()
                 torch.cuda.synchronize()
                 r = res[m]
                 r["all"] += int(pred == ans)
