@@ -651,6 +651,63 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   1M tests were dropped to free card 0 for the next screen: only the reading layer's attention trains
   (`tree_xl_scan_read`: 1.72M of 141.5M parameters; the first screen's rates, rows and order;
   `Cache/e41/retro/tree_xl128_scan_read`, started 10:23:25 UTC), needle at 64k, 128k, 256k at every checkpoint.
+- **2026-11-27 10:42 and 12:11 UTC, the two 256k cloud runs finished training** (286 steps of four rows of
+  262,144 tokens from the recall run's final weights; Muon from 1e-3 to 1e-4, AdamW from 6e-5 to 6e-6). Held-out
+  loss on the 256k rows at steps 100 and 200: run 4 (the walk down chooses what is opened) 2.4528, 2.4349; run 5
+  (every concept of the row scored) 2.4305, 2.4144.
+- **2026-11-27 13:31 UTC, their tests on the nodes, against the recall run's own** (the model each continued; the
+  same scripts, files `long_evals/` under each run on S3; copies in `Cache/e41/aws/`):
+
+  | loss per token on whole held-out documents (five sources, 8 rows each) | recall run | run 4, walk down | run 5, every concept scored |
+  |---|---|---|---|
+  | 4k | 2.0655 | 2.0688 (+0.003) | 2.0676 (+0.002) |
+  | 16k | 1.8899 | 1.8940 (+0.004) | 1.8912 (+0.001) |
+  | 32k | 1.9040 | 1.9114 (+0.007) | 1.9069 (+0.003) |
+  | 64k | 1.8811 | 1.8916 (+0.010) | 1.8840 (+0.003) |
+  | 128k | 1.7746 | 1.7713 (−0.003) | **1.7567 (−0.018)** |
+
+  | RULER, mean of 13 tasks, 100 documents each | recall run | run 4 | run 5 |
+  |---|---|---|---|
+  | 4k | 0.572 | 0.528 | 0.555 |
+  | 8k | 0.526 | 0.467 | 0.508 |
+  | 16k | 0.405 | 0.377 | 0.398 |
+  | 32k | 0.360 | 0.304 | 0.362 |
+
+  Core benchmarks: level within a point on all seven for both (ARC-Easy 0.491 / 0.482 / 0.487, HellaSwag 0.301 /
+  0.299 / 0.299, PIQA 0.625 / 0.633 / 0.626, WikiText bits per byte 0.964 / 0.967 / 0.966); LAMBADA perplexity
+  50.3 / 53.0 / 52.7.
+  Run 5 keeps the ordinary reading to 64k within 0.003 and reads 128k documents 0.018 better (the last quarter of
+  the document: 1.7000 against 1.7367); RULER is level on the mean, with the tasks moved: one planted number among
+  distractor numbers down (16k: 0.44 to 0.11; 32k: 0.59 to 0.38), the second key of several at 8k down (0.62 to
+  0.38), several queries and several values up (32k: 0.155 to 0.280 and 0.378 to 0.400). Run 4 is behind on both
+  tables: the walk down costs short-range reading as well as the long lookup.
+- **2026-11-27 13:33 UTC, both nodes stopped by hand** (`i-075b008f5141b1f63` spot, `i-00df522eef49da934` on
+  demand; keepers and watchers stopped by PID). Every test above was done; what still ran was the 4k check of
+  cached decoding against the old loop, which takes a top-down model 13.5-16.5 s per request (829 and 613 of 1,300
+  done, 2 h and 2.5 h left) on one card of a four-card node. Spend: run 4 $64.5, run 5 $69.7. The final weights
+  are on S3 and were fetched to Odra through signed links (`Cache/ops/to_odra.sh`, `Cache/e41/aws_models/`); the
+  planted-number tests run there (`scripts/e41_needle_battery.sh`). Fix: `E37_EVAL_NO_OLDLOOP=1` in
+  `infra/aws/jobs/e37_evals_long.sh`, set by `e41_long.sh`, whose needle part is now optional (commit `8712585c`).
+- **2026-11-27 13:46 UTC, the two follow-up screens on 128k rows ended** (360 rows each, Odra; 16 numbers per
+  checkpoint at 64k / 128k / 256k):
+
+  | checkpoint | the released model's final rates (Muon 1e-4, AdamW 6e-6) | only the reading layer's attention trains (3e-4 / 2e-5) | first screen, all weights at 3e-4 / 2e-5 |
+  |---|---|---|---|
+  | 50 | 9 / 9 / 10 | 5 / 9 / 8 | 14 / 6 / - |
+  | 100 | 12 / 10 / 7 | 9 / 9 / 5 | 12 / 11 / - |
+  | 150 | 10 / 10 / 9 | 8 / 9 / 7 | 14 / 10 / 22 of 32 |
+  | 200 | 14 / 9 / 11 | not tested | 16 / 12 / - |
+
+  Held-out loss on the 128k rows, last evaluation: 2.5333 (final rates), 2.5449 (reading layer only), 2.5367
+  (first screen). The lookup also comes at the final rates, more slowly, and with the lowest held-out loss of the
+  three; the reading layer alone learns it least, so the token layers' queries and keys are part of what has to
+  move. The reading-layer screen's later checkpoints were not tested (card 2 given to the tests below).
+- **2026-11-27 13:41 UTC, run 6 queued** (`e41-xls3`, branch `e41-run6` at `8712585c`, spot): run 5 with one
+  change, the starting rate a third of run 5's (Muon 3e-4 to 3e-5, AdamW 1.8e-5 to 1.8e-6: where the first home
+  screen learned the lookup, and decaying so the ordinary reading does not drift). Why: run 5 reads 16 of the
+  first 32 planted numbers at 64k and the first home screen 29 of 32; the cloud runs started at ten times the
+  released model's final rate, and their RULER lookups at 8k-32k fell where the recall run was strong. The node
+  stops with its tests (no needle part, no old-loop check). Waiting for a spot slot: the stopped node still counted.
 
 ## Result
 <Filled in after, by experiment-track.>
