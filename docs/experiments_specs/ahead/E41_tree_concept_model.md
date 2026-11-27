@@ -989,6 +989,30 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
 - **2026-11-27 22:25 UTC, the re-rank screen's third checkpoint** (step 150): 16 / 11 / 15 of 16 at 64k / 128k /
   256k (steps 50 and 100: 16 / 9 / 14 and 16 / 12 / 12).
 - **Spend, 22:38 UTC:** E41's nodes sum to $405.71; one node left running (run 7, 1.2 h in).
+- **2026-11-27 23:11 UTC, the 16k lookups by read and by weights: the bounded read loses the long value, not
+  the cut rows.** RULER at 16k, 100 documents, at home (Odra card 0, batch 4, `Cache/e41/evals/ruler_home/`):
+
+  | weights, read | `niah_single_3` (a 36-character value) | `niah_multikey_2` (one pair among many alike) |
+  |---|---|---|
+  | the recall run, its own read (node, batch 8) | 0.44 | 0.25 |
+  | the recall run, read run 5's way (summaries bounded by the walk, 64 followed per level) | 0.08 | 0.65 |
+  | run 5, its own read | 0.19 | 0.28 |
+  | run 5, with the re-rank | 0.18 | 0.29 |
+  | run 5, read the recall run's way (every concept's summary readable) | 0.10 | 0.23 |
+
+  The 22:35 entry's working reading (rows cut at a level teach the model to answer without opened tokens) is
+  withdrawn: the recall run's weights never saw such a row and lose the long value as soon as they are read
+  bounded (0.44 to 0.08), while the lookup among many similar pairs more than doubles under the same read (0.25
+  to 0.65). So the two tasks pull opposite ways on how much of the row's fine summaries a query reads: under the
+  bounded read three quarters of a 16k row is seen through coarser nodes (about 64 tokens each) instead of its
+  concepts (8 tokens). Run 5's weights have adapted part of the way (0.19 under the bounded read) and have lost
+  the whole read (0.10). Arm `tree_xl_scan_rr_open` (no cut rows, commit `b3835172`) stays unlaunched until the
+  cause is known. Next, measured the planted-number way (`scripts/e41_long_needle.py --value uuid`: a planted
+  UUID at 16k, 32k, 64k, every answer token scored; Odra card 0, `Cache/e41/evals/uuid/`): both models under
+  both reads and with the re-rank, then where the place of a wrong token ranked.
+- **2026-11-27 22:53 UTC, the re-rank screen's fourth checkpoint** (step 200): 16 / 11 / 16 of 16 at 64k / 128k /
+  256k; held-out loss at step 240 2.5302 (without the re-rank 2.5353). At 256k the four checkpoints read 14, 12,
+  15, 16 of 16; at 128k 9, 12, 11, 11.
 
 ## Result
 <Filled in after, by experiment-track.>
