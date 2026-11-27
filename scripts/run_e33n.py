@@ -197,6 +197,9 @@ ARMS["tree_xl_scan"] = {**ARMS["tree_xl"], "tree_scan": "true"}
 # model's final rates taught the long lookup and cost 0.018 on every read, the last 1k tokens alone included, so
 # the cost is the token layers drifting, not the far read
 ARMS["tree_xl_scan_read"] = {**ARMS["tree_xl_scan"], "train_only_params": "layers.3.attn."}
+# the scan's best 512 concepts re-ranked by their best member token's own score before tokens are opened (2026-11-27:
+# run 5's missed planted numbers at 128k-256k are places one pass finds and the next loses by the summary's rank)
+ARMS["tree_xl_scan_rr"] = {**ARMS["tree_xl_scan"], "tree_rerank": 512}
 # run 3: tree_np with the read drawn per step (several cards), next to run 2's tree_read_step
 ARMS["tree_np_step"] = {**ARMS["tree_np"], "tree_row_draw": "step"}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
@@ -241,7 +244,7 @@ TINY_OPEN["tree_gentle"] = TINY_OPEN["tree_pred"] = TINY_OPEN["tree"]
 TINY_OPEN["tree_vp"] = TINY_OPEN["tree_kv"] = TINY_OPEN["tree_noaux"]
 TINY_OPEN["tree_np"] = TINY_OPEN["tree_np_step"] = TINY_OPEN["tree_np_side"] = TINY_OPEN["tree"]
 TINY_OPEN["tree_wide"] = TINY_OPEN["tree_xl"] = TINY_OPEN["tree_xl_wide"] = TINY_OPEN["tree_read"]
-TINY_OPEN["tree_xl_scan"] = TINY_OPEN["tree_xl_scan_read"] = TINY_OPEN["tree_read"]
+TINY_OPEN["tree_xl_scan"] = TINY_OPEN["tree_xl_scan_read"] = TINY_OPEN["tree_xl_scan_rr"] = TINY_OPEN["tree_read"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}

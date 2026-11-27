@@ -42,6 +42,9 @@ def main() -> None:
     ap.add_argument("--top_down", action="store_true")
     ap.add_argument("--top_k", type=int, default=0, help="tokens a query may open (0: the checkpoint's own, 512)")
     ap.add_argument("--width", type=int, default=0, help="concepts a query ranks for opening (0: the checkpoint's own)")
+    ap.add_argument("--rerank", type=int, default=-1,
+                    help="the scan's best n concepts are re-ranked by their best member token (tree_rerank); "
+                         "default: the checkpoint's own")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -64,6 +67,8 @@ def main() -> None:
         if isinstance(getattr(mod, "tree", None), dict):
             if a.top_down:
                 mod.tree["sparse"] = True
+            if a.rerank >= 0:
+                mod.tree["rerank"] = a.rerank
             if a.scan:
                 mod.tree["scan"] = True
     rng = random.Random(a.seed)

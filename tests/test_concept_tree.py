@@ -851,6 +851,80 @@ def test_spans_after_opened_tokens_stay_causal_and_inside_the_cap(scan):
         assert float((out2 - out)[:, :t].abs().max()) < 1e-4
 
 
+def test_the_rerank_opens_by_the_best_member_token():
+    """tree_rerank: the scan's candidates are put in the order of their best member token's own score. With a budget
+    that opens every candidate anyway the read is unchanged; with a small one it differs, stays causal, does not
+    depend on the chunking, and the token that scores best for a query is always among its opened tokens."""
+    import nn.concept_tree as ctm
+    from nn.concept_tree import tree_read_sparse
+
+    q, k, v, x, doc, sink, ds = _inputs(S=592, seed=31, docs=True)
+    B, S = doc.shape
+    tree = _tree(k, v, x, doc, sink)
+    C1 = tree.n_concepts
+    base = dict(tree=tree, doc=doc, ds=ds, n_sinks=2, key_valid=None, scan=True)
+    big = dict(reads=_reads(tree, B, "two", 4096), top_k=4096, width=C1, **base)
+    torch.testing.assert_close(tree_read_sparse(q, k, v, rerank=C1, **big), tree_read_sparse(q, k, v, **big),
+                               atol=2e-5, rtol=1e-4)
+    kw = dict(reads=_reads(tree, B, "two", 24), top_k=24, width=6, **base)
+    plain = tree_read_sparse(q, k, v, **kw)
+    torch.testing.assert_close(tree_read_sparse(q, k, v, rerank=0, **kw), plain)
+    out = tree_read_sparse(q, k, v, rerank=C1, **kw)
+    assert not torch.allclose(out, plain, atol=1e-3)
+    for ch in (5, 48):
+        torch.testing.assert_close(tree_read_sparse(q, k, v, rerank=C1, chunk=ch, **kw), out, atol=2e-5, rtol=1e-4)
+    for t in (200, 400):
+        v2 = v.clone()
+        v2[:, t:] += 5.0
+        assert float((tree_read_sparse(q, k, v2, rerank=C1, **kw) - out)[:, :t].abs().max()) < 1e-4
+    # the last queries: the token of their document, before their window, that scores best (any head) is opened
+    n = 6
+    qp = torch.arange(S - n, S)
+    sc = torch.einsum("bnhd,bsd->bnhs", q[:, S - n:], k[:, :, 0]).amax(2)                 # [B, n, S]
+    at = torch.arange(S)
+    may = ((at[None, None, :] <= (qp - BLK)[None, :, None]) & (doc[:, None, :] == doc[:, qp][..., None])
+           & ~sink[:, None, :])
+    best = sc.masked_fill(~may, float("-inf")).argmax(-1)                                # [B, n]
+    for b in range(B):
+        for i in range(n):
+            ctm.WATCH = {"q0": S - n + i, "pos": best[b, i:i + 1], "log": []}
+            try:
+                tree_read_sparse(q, k, v, rerank=C1, **kw)
+                (wq, hit, _), = [e for e in ctm.WATCH["log"]][-1:]
+            finally:
+                ctm.WATCH = None
+            assert bool(hit[b, 0, 0]), (b, i)
+
+
+def test_cached_decoding_and_streaming_with_the_rerank():
+    """The cached decoder and the streamed read make the re-ranked choice of the single forward."""
+    from nn.incremental import IncrementalDecoder
+
+    m = _model(warm=True, **{**TREE, **SPARSE, "tree_scan": True, "tree_rerank": 16})
+    plain = _model(warm=True, **{**TREE, **SPARSE, "tree_scan": True})
+    plain.load_state_dict(m.state_dict())
+    ids = _ids(S=224, B=2)
+    L0, S = 200, 224
+    buf = torch.zeros(2, S, dtype=torch.long)
+    buf[:, :L0] = ids[:, :L0]
+    doc = torch.full((2, S), -1, dtype=torch.long)
+    doc[:, :L0] = 0
+    with torch.no_grad():
+        assert not torch.allclose(m.hidden_states(ids), plain.hidden_states(ids), atol=1e-4)
+        dec = IncrementalDecoder(m)
+        dec.prefill(buf.clone(), doc.clone(), L0)
+        for t in range(L0, S):
+            h = dec.step(ids[:, t])
+            buf[:, t], doc[:, t] = ids[:, t], 0
+            ref = m.hidden_states(buf, doc_ids=doc)[:, t]
+            h = h[:, -1] if h.dim() == 3 else h
+            assert float((h - ref).abs().max()) < 2e-4, t
+        long = _ids(S=592, B=2)
+        ref = m.hidden_states(long)
+        d = (m.hidden_states_streamed(long, window=128, overlap=64) - ref).abs()
+        assert float((d > 3e-4).float().mean()) < 2e-3 and float(d.max()) < 0.05, (float(d.max()), int((d > 3e-4).sum()))
+
+
 def test_a_top_down_model_trains_and_checkpointing_agrees():
     cfg_kw = {**TREE, **SPARSE, **WIDE, "tree_row_mix": "0.3,0.4,0.3", "tree_train_follow": 2}
     m = _model(warm=True, **cfg_kw).train()

@@ -363,7 +363,7 @@ def tree_choice(q: torch.Tensor, tree: TreeIndex, doc: torch.Tensor, reads: RowR
 @torch.no_grad()
 def choose_chunk(qc: torch.Tensor, qd: torch.Tensor, qp: torch.Tensor, tree: TreeIndex, reads: RowReads, *,
                  top_k: int, width: int, variance: bool = True, route: str = "lookahead", open_tokens: bool = True,
-                 need_x: bool = True, scan: bool = False):
+                 need_x: bool = True, scan: bool = False, rerank: int = 0, kt: Optional[torch.Tensor] = None):
     """The top-down choice of one chunk of queries (also one query: the cached decoder). qc [B, ch, h, d], qd
     [B, ch] their documents, qp [ch] their positions. Returns (ids, off) of `nn.exact_read.choose` (None, None when
     nothing may be opened) and Xc [B, ch, E − C1] bool, the followed nodes (None unless `need_x`).
@@ -424,8 +424,17 @@ def choose_chunk(qc: torch.Tensor, qd: torch.Tensor, qp: torch.Tensor, tree: Tre
     if par_ok is not None and not scan:
         visible = visible & par_ok
     visible = visible & (reads.cap > 0)[:, None, None]
-    ids, off = choose(torch.nan_to_num(sc1, neginf=-1e30), visible, gi, qp, m=width, cap=top_k,
-                      raw_window=cidx.block)
+    score = torch.nan_to_num(sc1, neginf=-1e30)
+    if rerank > 0 and scan:
+        # `tree_read_sparse`'s re-rank: the scan's best concepts in the order of their best member token's own score
+        if kt is None:
+            raise ValueError("the re-rank needs the token keys")
+        top = score.masked_fill(~visible, NEG).topk(min(max(int(width), int(rerank)), C1), dim=-1)
+        best = member_best(qc, kt, member_table(gi), top.indices, top.values > NEG, gi.doc_start[:, qp],
+                           (qp - cidx.block)[None])
+        score = torch.full_like(score, -1e30).scatter_(2, top.indices, torch.nan_to_num(best, neginf=-1e30))
+        visible = visible & (score > -1e29)
+    ids, off = choose(score, visible, gi, qp, m=width, cap=top_k, raw_window=cidx.block)
     if bool((reads.cap < top_k).any()):  # a row's smaller budget: groups that start past it stay closed
         off = torch.where(off.long() < reads.cap[:, None, None], off, torch.full_like(off, top_k))
     return ids, off, Xc
@@ -736,6 +745,35 @@ def _pick(x: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
     return x.gather(1, idx).view(*ids.shape, *x.shape[2:])
 
 
+def member_table(gi) -> torch.Tensor:
+    """[B, G, F] long: each concept's member positions, oldest first (−1 = none); built once per index."""
+    mem = getattr(gi, "_member_table", None)
+    if mem is None:
+        from nn.exact_read import ChoiceList
+
+        mem = ChoiceList(gi, int(gi.codes.shape[1]), 1, cap=1, m=1).members()
+        object.__setattr__(gi, "_member_table", mem)
+    return mem
+
+
+@torch.no_grad()
+def member_best(q: torch.Tensor, kt: torch.Tensor, mem: torch.Tensor, gids: torch.Tensor, valid: torch.Tensor,
+                lo: torch.Tensor, hi: torch.Tensor, key_valid: Optional[torch.Tensor] = None) -> torch.Tensor:
+    """The exact score of each of a query's candidate concepts: the best of its member tokens' own scores (q·k, the
+    best head) among the members the query may open, positions in [lo, hi]. q [B, ch, h, d], kt [B, S, d] the token
+    keys, mem [B, G, F] (`member_table`), gids / valid [B, ch, m], lo / hi [B or 1, ch]. Returns [B, ch, m] fp32
+    (−inf: no member to open)."""
+    B, ch, m = gids.shape
+    Fm = mem.shape[2]
+    pos = _pick(mem, gids)                                                               # [B, ch, m, F]
+    ok = valid[..., None] & (pos >= lo[..., None, None]) & (pos <= hi[..., None, None])
+    pc = pos.clamp_min(0).view(B, ch, m * Fm)
+    if key_valid is not None:
+        ok = ok & _take(key_valid.bool(), pc).view(B, ch, m, Fm)
+    s = torch.einsum("bqhd,bqpd->bqhp", q, _take(kt, pc).to(q.dtype)).float().amax(2).view(B, ch, m, Fm)
+    return s.masked_fill(~ok, NEG).amax(-1)
+
+
 @torch.no_grad()
 def sparse_index(tree: TreeIndex) -> dict:
     """What the top-down read needs besides the tree. `kids[ℓ]` = (order [B, n_ℓ] long, start [B, n_{ℓ+1}] long,
@@ -778,7 +816,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                      width: int, variance: bool = True, summaries: bool = True, open_tokens: bool = True,
                      dv_tok: Optional[torch.Tensor] = None, sum_len: int = 0, q_offset: int = 0, chunk: int = 0,
                      index: Optional[dict] = None, reuse: Optional[torch.Tensor] = None,
-                     scan: bool = False, span: int = 0) -> torch.Tensor:
+                     scan: bool = False, span: int = 0, rerank: int = 0) -> torch.Tensor:
     """The bounded read made top-down, for rows of any length (2026-11-27). The table and streamed reads score every
     concept of the row for every query before they bound what is read, so their cost per query grows with the row
     (the reason no row was longer than 65,536 tokens). Here a query scores, level by level from the top, only the
@@ -803,6 +841,12 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     cap. A fact is a run of tokens: the released model finds where a planted number starts at 256k (the first
     token right in 6 of 8) and loses the digits after it, because each later digit must win the choice again by a
     weak cue (the digit before it), while the place itself keeps matching the question.
+
+    `rerank` n > 0 (with `scan`): the scan's best n concepts (by the summary's estimate) are put in the order of
+    their best member token's own score for the query (`member_best`), and the best `width` of those open tokens.
+    A summary stands for about 8 tokens: the one token a query wants can score at the top of the row while its
+    summary ranks in the hundreds (planted numbers at 128k-256k, 2026-11-27), and a place found by one pass of the
+    reading layer is lost by the next. The cost is n × 8 more keys gathered per query, whatever the row's length.
 
     `reuse` [B, Q, h, d]: this call's output, computed before from the same inputs (a gradient checkpoint's
     recomputation of the layer): the chunks hand it on instead of computing it again; their backward is unchanged."""
@@ -838,6 +882,9 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     needs = [t is not None and t.requires_grad for t in orig]
     opens = open_tokens and bool((reads.cap > 0).any())
     members = [None]
+    rr = int(rerank) if (scan and opens) else 0
+    if rr > 0:
+        members[0] = member_table(gi)
     # a query's own candidates: about 8 children per followed node (the chunk size's estimate, with a margin)
     n_own = sum(max(kmax[lv + 1], 1) * 12 + 8 for lv in range(1, L))
     n_sh = sum((ix["roots"][lv][0].shape[1] if ix["roots"][lv] is not None else 0) + (2 * fan + 1) * P
@@ -846,6 +893,8 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     C1 = tree.n_concepts
     if scan:
         per += 2 * C1                                                                    # a query's row of the scan
+    if rr > 0:                                                                           # the candidates' member keys
+        per += min(max(rr, int(width)), C1) * int(members[0].shape[2]) * (d + h + 2)
     grad = torch.is_grad_enabled() and (q.requires_grad or any(needs))
     acc: dict = {}                                                                       # slot → the gradient so far
     scan_keys: list = []                                                                 # the scan's key matrix, once
@@ -886,7 +935,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
         may = ((gi.g_close[:, None, :] <= qp[None, :, None]) & (tree.n[:, None, :C1] > 0)
                & (reads.cap > 0)[:, None, None])
         score = (best.float() + logn[:, None, :C1]).masked_fill(~may, NEG)
-        top = score.topk(min(int(width), C1), dim=-1)
+        top = score.topk(min(max(int(width), rr), C1), dim=-1)
         if WATCH is not None and "rank" in WATCH:
             sel = qp >= WATCH["q0"]
             if bool(sel.any()):
@@ -914,6 +963,13 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 rk = (st[:, :, None, :] > mine[..., None]).sum(-1)
                 rk = torch.where(mine > NEG, rk, torch.full_like(rk, -1))
                 WATCH["tok_rank"].append((qs.cpu(), rk.cpu()))
+        if rr > 0:
+            # the candidates in the order of their best member token's own score; the best `width` are the choice
+            gids = top.indices
+            best = member_best(qw, bigs[KT], members[0], gids, top.values > NEG, gi.doc_start[:, qp],
+                               (qp - blk)[None], key_valid)
+            top = best.topk(min(int(width), gids.shape[2]), dim=-1)
+            return gids.gather(2, top.indices), top.values > NEG
         return top.indices, top.values > NEG
 
     @torch.no_grad()

@@ -533,6 +533,10 @@ class ModelArguments:
         "help": "E41: tokens are opened from the best concepts of the whole row (every concept scored, the concept "
                 "read's choice); the followed nodes bound the summaries only. Walking down by a node's own estimate "
                 "loses single facts on long rows (a node of thousands of tokens averages them away)."})
+    tree_rerank: int = field(default=0, metadata={
+        "help": "E41 (with tree_scan and tree_sparse): the scan's best n concepts are put in the order of their best "
+                "member token's own score for the query, and the best concept_width of those open tokens (0: the "
+                "summary's estimate alone decides)."})
     tree_sparse: bool = field(default=False, metadata={
         "help": "E41 top-down read: a query scores only the children of the nodes it followed, so a bounded read "
                 "costs the same per query at any row length (rows of 262,144 tokens and beyond). Training rows are "
