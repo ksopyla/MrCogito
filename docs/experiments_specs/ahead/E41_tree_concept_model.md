@@ -308,5 +308,36 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   (`tree_kv`, Polonez card 0) and the same with both losses shaping the reasoned states (`tree_np`, Odra card 0),
   the next-concept loss as the author meant it, without the plan.
 
+- **2026-11-27 02:59–03:38 UTC, home readings.** Key and value corrections without a plan (`tree_kv`) 1.9291 at
+  step 286 (+0.002); the same with both losses shaping the reasoned states (`tree_np`) 1.9303 (+0.003): without the
+  plan the next-concept loss does not hurt. Neither has helped the cut rows yet (training loss on the same rows
+  against `tree_read`: `tree_vals` +0.0002 over 960 steps, `tree_np` +0.0014 over 290). `tree_read` finished its 16k
+  part (02:45 UTC): a steady +0.002 behind the control at all five evaluations.
+- **2026-11-27 03:38 UTC, what 93.7M tokens of closed-book rows did** (`tree_read` retrofit after its 16k part, 120
+  documents at 16k, against the released model; Polonez card 1):
+
+  | read | released | after the retrofit | change |
+  |---|---|---|---|
+  | whole document | 2.1257 | 2.1229 | −0.003 |
+  | 16 followed per level | 2.1344 | 2.1292 | −0.005 |
+  | 16 per level, by a node's own estimate | 2.1488 | 2.1397 | −0.009 |
+  | concept summaries only | 2.3323 | 2.3070 | −0.025 |
+  | level-2 summaries only | 2.4032 | 2.3695 | −0.034 |
+  | level-3 summaries only | 2.4165 | 2.3757 | −0.041 |
+  | no far read | 2.3968 | 2.3856 | −0.011 |
+  | last 1k tokens only | 2.2200 | 2.2150 | −0.005 |
+
+  Every read improved and the normal read did not pay, but the notebook's value is still negative (−0.092 against
+  the cut, from −0.112): at the released model's tiny final rates the summaries learn slowly.
+- **2026-11-27 03:32 UTC, run 3 launched** next to run 2 (the second spot slot came free when E39a finished): arm
+  `tree_np_step` (148.9M: the reasoner with key and value corrections, both losses at 0.1 shaping the reasoned
+  states, no plan; the read drawn per step), branch `e41-run3` at `7124da59`, S3
+  `runs/e41/e33n_m120t_tree_np_step_muon0.01_tok8.0e9_seed42`, spot g6e.12xlarge `i-054b0dd1a34c11be6` (us-east-1d).
+  Keeper `Cache/keepers/e41-np.sh`, watcher `Cache/keepers/e41-np-watch.sh`, the same marks.
+- **2026-11-27 03:37 UTC, run 2 passed K1:** held-out loss at steps 200 … 1,000: 2.3077, 2.2616, 2.2332, 2.2025,
+  **2.1863** (the recall run 2.3081, 2.2554, 2.2226, 2.1947, 2.1773; mark 2.227). Behind by −0.000, 0.006, 0.011,
+  0.008, 0.009 on the normal read. Its training loss on the same rows is 0.061 above the recall run's at the start
+  and 0.051 by step 1,000 (the cost of the cut and bounded rows; the number to watch fall).
+
 ## Result
 <Filled in after, by experiment-track.>
