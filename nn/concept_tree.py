@@ -698,10 +698,11 @@ def _pick(x: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
 
 @torch.no_grad()
 def sparse_index(tree: TreeIndex) -> dict:
-    """What the top-down read needs besides the tree. `kids[ℓ]` [B, n_{ℓ+1}, c] long: the children at level ℓ of
-    every node of level ℓ + 1, padded with −1 (c = the most children any node has). `roots[ℓ]` = (ids [B, R] long,
-    ok [B, R] bool): the level's nodes that never get a parent (the top level, a document's last containers, the
-    children of a container that holds two documents), or None when the level has none."""
+    """What the top-down read needs besides the tree. `kids[ℓ]` = (order [B, n_ℓ] long, start [B, n_{ℓ+1}] long,
+    count [B, n_{ℓ+1}] long): the entries of level ℓ sorted by parent, and where each node of level ℓ + 1 finds its
+    children in that order (a node has 8 children on average and up to 64: packed, not padded). `roots[ℓ]` = (ids
+    [B, R] long, ok [B, R] bool): the level's nodes that never get a parent (the top level, a document's last
+    containers, the children of a container that holds two documents), or None when the level has none."""
     B = tree.n.shape[0]
     dev = tree.n.device
     kids, roots = {}, {}
@@ -721,15 +722,9 @@ def sparse_index(tree: TreeIndex) -> dict:
         has = (frm < BIG) & (pfrm < BIG)
         key = torch.where(has, tree.par[:, lo:hi] - plo, torch.full_like(frm, n_par))
         order = key.argsort(dim=1, stable=True)
-        skey = key.gather(1, order)
         cnt = torch.zeros(B, n_par + 1, dtype=torch.long, device=dev).scatter_add_(1, key, torch.ones_like(key))
         start = cnt.cumsum(1) - cnt
-        rank = torch.arange(n_c, device=dev)[None] - start.gather(1, skey)
-        cmax = max(int(cnt[:, :n_par].max()) if n_par else 0, 1)
-        tab = torch.full((B, n_par * cmax + 1), -1, dtype=torch.long, device=dev)
-        dest = torch.where(skey < n_par, skey * cmax + rank, torch.full_like(skey, n_par * cmax))
-        tab.scatter_(1, dest, order + lo)
-        kids[lv] = tab[:, :n_par * cmax].view(B, n_par, cmax)
+        kids[lv] = (order + lo, start[:, :n_par], cnt[:, :n_par])
     return {"kids": kids, "roots": roots}
 
 
@@ -781,7 +776,8 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     var = tree.var.detach().float()
     opens = open_tokens and bool((reads.cap > 0).any())
     members = [None]
-    n_own = sum(max(kmax[lv + 1], 1) * ix["kids"][lv].shape[-1] for lv in range(1, L))
+    # a query's own candidates: about 8 children per followed node (the chunk size's estimate, with a margin)
+    n_own = sum(max(kmax[lv + 1], 1) * 12 + 8 for lv in range(1, L))
     n_sh = sum((ix["roots"][lv][0].shape[1] if ix["roots"][lv] is not None else 0) + (2 * fan + 1) * P
                for lv in range(1, L + 1))
     per = (2 * blk + n_sh) * h + (n_sinks + top_k + n_own) * (h + 2 * d) + (n_own * h * d if wide else 0)
@@ -850,12 +846,19 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
             # each query's own candidates: the children of the nodes it followed one level up
             oid, no = None, 0
             if lv < L and f_ids is not None:
-                kd = ix["kids"][lv]
-                kk, cm = f_ids.shape[-1], kd.shape[-1]
-                oid = _pick(kd, (f_ids - tree.span(lv + 1)[0]).clamp_min(0)).reshape(B, ch, kk * cm)
-                o_cand = (oid >= 0) & f_ok[..., None].expand(B, ch, kk, cm).reshape(B, ch, kk * cm)
-                oid = oid.clamp_min(0)
-                no = kk * cm
+                order, start, count = ix["kids"][lv]
+                pl = (f_ids - tree.span(lv + 1)[0]).clamp_min(0)
+                c_f = torch.where(f_ok, _pick(count, pl), torch.zeros_like(pl))          # [B, ch, kk] children each
+                cum = c_f.cumsum(-1)
+                tot = cum[..., -1:]
+                W = int(tot.max())
+            if lv < L and f_ids is not None and W > 0:
+                j = torch.arange(W, device=dev).expand(B, ch, W).contiguous()            # the packed places
+                slot = torch.searchsorted(cum, j, right=True).clamp(max=f_ids.shape[-1] - 1)
+                at = _pick(start, pl).gather(2, slot) + j - (cum - c_f).gather(2, slot)
+                o_cand = j < tot
+                oid = torch.where(o_cand, _pick(order, at.clamp(0, order.shape[1] - 1)), torch.zeros_like(j))
+                no = W
                 o_lg = torch.einsum("bqhd,bqnd->bqhn", qc, _pick(tree.key, oid).float()) * sc \
                     + _pick(logn, oid)[:, :, None, :]
                 if variance:

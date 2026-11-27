@@ -409,10 +409,11 @@ def test_the_top_down_index_lists_children_and_roots():
                 assert never.numel() == int(live.sum())                                  # the top: every node a root
                 continue
             plo, phi = tree.span(lv + 1)
-            kd = ix["kids"][lv][b]
+            order, start, count = (t[b] for t in ix["kids"][lv])
             for p in range(plo, phi):
                 mine = ((tree.par[b, lo:hi] == p) & live & (tree.pfrm[b, lo:hi] < BIG)).nonzero().squeeze(-1) + lo
-                assert sorted(mine.tolist()) == sorted(kd[p - plo][kd[p - plo] >= 0].tolist())
+                s0, n = int(start[p - plo]), int(count[p - plo])
+                assert sorted(mine.tolist()) == sorted(order[s0:s0 + n].tolist())
 
 
 def test_top_down_rows_are_all_bounded_and_by_descent():
