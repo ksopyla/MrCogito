@@ -522,6 +522,10 @@ class ModelArguments:
         "help": "E41: the reasoner also corrects the summaries' keys (False: values only)."})
     tree_aux_detach: bool = field(default=False, metadata={
         "help": "E41: the next-concept prediction trains its own layers only (no gradient into the reasoned states)."})
+    tree_plan_from: str = field(default="state", metadata={
+        "help": "E41: the plan is read from the reasoned state, or from the next-concept predictor's layer (pred)."})
+    tree_predict_ahead: int = field(default=1, metadata={
+        "help": "E41: the block the next-concept prediction is about (b + this; 2 = the block that reads the plan)."})
     tree_token_update: bool = field(default=False, metadata={
         "help": "E41: opened tokens carry their concept's value correction."})
     tree_next_concept: float = field(default=0.0, metadata={

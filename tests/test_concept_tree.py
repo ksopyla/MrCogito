@@ -555,6 +555,28 @@ def test_a_model_cast_to_another_float_type_still_reads_and_decodes():
     assert torch.isfinite(loss)
 
 
+def test_the_plan_from_the_predictor_trains_it_and_never_reads_ahead():
+    kw = {**TREE, **REASON, "tree_reasoner_keys": False, "tree_plan_from": "pred", "tree_predict_ahead": 2,
+          "tree_next_concept": 0.1, "tree_aux_detach": True, "tree_codes_coarse": 8, "tree_codes_fine": 16,
+          "tree_code_dim": 8}
+    m = _model(warm=True, **kw)
+    rs = m.layers[m.config.global_layer_index].attn.tree_reasoner
+    rs.pred.weight.data.normal_(0, 0.2)
+    ids = _ids(S=224, B=2)
+    with torch.no_grad():                                                                # no look-ahead
+        base = m(ids).logits
+        for t in range(40, 224, 31):
+            ids2 = ids.clone()
+            ids2[:, t:] = (ids2[:, t:] + 7) % 57 + 3
+            assert ((base - m(ids2).logits)[:, :t].abs().amax(-1) < 1e-4).all(), t
+    m.train()
+    m(ids, labels=ids).loss.backward()
+    assert float(rs.pred.weight.grad.abs().sum()) > 0 and float(rs.plan.weight.grad.abs().sum()) > 0
+    assert rs.out_k.weight.grad is None or float(rs.out_k.weight.grad.abs().sum()) == 0   # no key corrections
+    st = m.pop_train_stats()
+    assert st["tree/next_concept_fine"] > 0
+
+
 def test_short_rows_run_and_keep_the_reasoner_in_the_graph():
     m = _model(**{**TREE, **REASON, **AUX})
     rs = m.layers[m.config.global_layer_index].attn.tree_reasoner

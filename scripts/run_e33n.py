@@ -166,6 +166,12 @@ ARMS["tree_vals"] = {**ARMS["tree_read"], "tree_reasoner_layers": 2, "tree_reaso
 # … and the full reasoner with small extra losses that do not reach the token layers
 ARMS["tree_gentle"] = {**ARMS["tree_noaux"], "tree_next_concept": 0.02, "tree_route_loss": 0.02,
                        "tree_aux_detach": "true"}
+# values and the plan from the reasoned state (no key corrections, no losses): is the plan or the keys the cost?
+ARMS["tree_vp"] = {**ARMS["tree_vals"], "tree_plan": "true"}
+# values, and a plan read from the next-concept predictor, which predicts the block that reads it (two ahead); the
+# prediction loss trains the predictor's own layers only, the next-word loss decides how the plan is used
+ARMS["tree_pred"] = {**ARMS["tree_vals"], "tree_plan": "true", "tree_plan_from": "pred", "tree_predict_ahead": 2,
+                     "tree_next_concept": 0.1, "tree_aux_detach": "true"}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
 # E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
 # mixes for the query, key and value inputs (nn/depth_mix.py): the reading layer's runs only, or 2-DCA on every run.
@@ -204,7 +210,8 @@ TINY_OPEN["tree"] = {**TINY_OPEN["tree_noaux"], "tree_codes_coarse": 64, "tree_c
 TINY_OPEN["tree_soft"] = TINY_OPEN["tree_step"] = TINY_OPEN["tree_flat"] = TINY_OPEN["tree"]
 TINY_OPEN["tree_read_step"] = TINY_OPEN["tree_read"]
 TINY_OPEN["tree_vals"] = TINY_OPEN["tree_noaux"]
-TINY_OPEN["tree_gentle"] = TINY_OPEN["tree"]
+TINY_OPEN["tree_gentle"] = TINY_OPEN["tree_pred"] = TINY_OPEN["tree"]
+TINY_OPEN["tree_vp"] = TINY_OPEN["tree_noaux"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}

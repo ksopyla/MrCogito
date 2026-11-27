@@ -693,12 +693,15 @@ class TreeReasoner(nn.Module):
     def __init__(self, hidden: int, d_kv: int, *, dim: int = 512, layers: int = 2, heads: int = 8, loops: int = 2,
                  plan: bool = True, next_concept: bool = True, codes_coarse: int = 1024, codes_fine: int = 4096,
                  code_dim: int = 64, code_decay: float = 0.99, max_levels: int = 16, keys: bool = True,
-                 aux_detach: bool = False):
+                 aux_detach: bool = False, plan_from: str = "state", ahead: int = 1):
         super().__init__()
         # keys False: no key corrections (the summaries' keys stay the exact means: the choice and the logits of
         # the concept read); aux_detach: the next-concept prediction reads the reasoned states without gradient
         # into them (it trains its own layers only), so the extra loss cannot move what the read uses
         self.keys, self.aux_detach = bool(keys), bool(aux_detach)
+        # plan_from "pred": the plan is read from the predictor's layer (what it expects next), not from the
+        # reasoned state; `ahead`: the block the prediction is about (2 = the block whose tokens read this plan)
+        self.plan_from, self.ahead = str(plan_from), max(1, int(ahead))
         self.loops, self.heads, self.dim = max(1, int(loops)), int(heads), int(dim)
         self.inp = nn.Linear(hidden, dim, bias=False)
         self.lvl = nn.Embedding(max_levels + 1, dim)
@@ -832,14 +835,20 @@ class TreeReasoner(nn.Module):
         ok2 = ok[:, :nb * P].view(B, nb, P)
         pooled = (hn[:, :nb * P].view(B, nb, P, -1) * ok2[..., None].to(hn.dtype)).sum(2)
         pooled = pooled / ok2.sum(-1, keepdim=True).clamp_min(1).to(hn.dtype)
-        plan = self.plan(pooled) if self.plan is not None else None
+        pr = None
+        if self.next_concept:
+            pr = F.silu(self.pred(pooled.detach() if self.aux_detach else pooled))
+        if self.plan is None:
+            plan = None
+        else:
+            plan = self.plan(pr if (self.plan_from == "pred" and pr is not None) else pooled)
         aux = torch.zeros(2, device=dev, dtype=torch.float32)
         if self.next_concept and self.training:  # the prediction is a training signal only
             code_c = self.codes(zu[:, :nb * P], ok[:, :nb * P], "c").view(B, nb, P)      # level-2 nodes
             code_f = self.codes(z1, tree.n[:, :C1] > 0, "f").view(B, nb, -1)             # concepts
-            pr = F.silu(self.pred(pooled.detach() if self.aux_detach else pooled))
+            ah = self.ahead
             bdoc = doc[:, :nb * P].view(B, nb, P).amax(-1)                               # a block's document (−1 none)
-            pair = ((bdoc[:, :-1] >= 0) & (bdoc[:, :-1] == bdoc[:, 1:])) if nb > 1 else None
+            pair = ((bdoc[:, :-ah] >= 0) & (bdoc[:, :-ah] == bdoc[:, ah:])) if nb > ah else None
             if pair is not None and bool(pair.any()):
                 losses = []
                 for head, code in ((self.head_c, code_c), (self.head_f, code_f)):
@@ -847,9 +856,9 @@ class TreeReasoner(nn.Module):
                     tgt = torch.zeros(B, nb, K + 1, device=dev)
                     tgt.scatter_add_(2, torch.where(code >= 0, code, torch.full_like(code, K)),
                                      torch.ones_like(code, dtype=torch.float32))
-                    tgt = tgt[:, 1:, :K]                                                 # block b + 1's histogram
+                    tgt = tgt[:, ah:, :K]                                                # block b + ahead's histogram
                     tgt = tgt / tgt.sum(-1, keepdim=True).clamp_min(1.0)
-                    logp = F.log_softmax(head(pr[:, :-1]).float(), dim=-1)
+                    logp = F.log_softmax(head(pr[:, :-ah]).float(), dim=-1)
                     ce = -(tgt * logp).sum(-1)                                           # [B, nb − 1]
                     losses.append((ce * pair).sum() / pair.sum().clamp_min(1))
                 aux = torch.stack(losses)

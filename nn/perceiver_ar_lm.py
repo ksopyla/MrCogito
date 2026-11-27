@@ -318,6 +318,8 @@ class PerceiverARConfig(PretrainedConfig):
         tree_plan: bool = False,          # E41: the reasoner's plan vector per block, added to the token stream
         tree_reasoner_keys: bool = True,  # E41: the reasoner also corrects the summaries' keys (False: values only)
         tree_aux_detach: bool = False,    # E41: the extra losses do not reach the token layers (node states detached)
+        tree_plan_from: str = "state",    # E41: the plan is read from the reasoned state, or from the predictor (pred)
+        tree_predict_ahead: int = 1,      # E41: the block the next-concept prediction is about (b + this)
         tree_token_update: bool = False,  # E41: opened tokens carry their concept's value correction
         tree_next_concept: float = 0.0,   # E41: weight of the next-concept loss (0 = no predictor)
         tree_codes_coarse: int = 1024,    # E41: codebook of the level-2 nodes
@@ -538,6 +540,8 @@ class PerceiverARConfig(PretrainedConfig):
         self.tree_plan = bool(tree_plan)
         self.tree_reasoner_keys = bool(tree_reasoner_keys)
         self.tree_aux_detach = bool(tree_aux_detach)
+        self.tree_plan_from = str(tree_plan_from or "state")
+        self.tree_predict_ahead = int(tree_predict_ahead or 1)
         self.tree_token_update = bool(tree_token_update)
         self.tree_next_concept = float(tree_next_concept or 0.0)
         self.tree_codes_coarse = int(tree_codes_coarse)
@@ -2896,7 +2900,9 @@ class Attention(nn.Module):
                     next_concept=float(cfg.tree_next_concept) > 0, codes_coarse=int(cfg.tree_codes_coarse),
                     codes_fine=int(cfg.tree_codes_fine), code_dim=int(cfg.tree_code_dim),
                     keys=bool(getattr(cfg, "tree_reasoner_keys", True)),
-                    aux_detach=bool(getattr(cfg, "tree_aux_detach", False)))
+                    aux_detach=bool(getattr(cfg, "tree_aux_detach", False)),
+                    plan_from=str(getattr(cfg, "tree_plan_from", "state")),
+                    ahead=int(getattr(cfg, "tree_predict_ahead", 1)))
         # E39: living concepts on the global layer (nn/living_concepts.py): spans + document-wide concepts
         self.living = None
         self.living_off = False      # eval switch: sinks + window only
