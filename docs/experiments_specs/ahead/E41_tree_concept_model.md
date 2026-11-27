@@ -573,6 +573,22 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   on the released weights: the walk down 1 of 16 at 64k and 0 at 128k (2 and 0 without it), the scan 1 and 1 (5 and
   1 without it). Fewer concepts fit the cap and the model has never read such runs. Parked: it would need its own
   training screen, and the scan variant already learns the later digits.
+- **2026-11-27 07:54 UTC, the two 128k screens, later checkpoints** (16 needles, all seven digits right):
+
+  | steps | walk down, 64k | walk down, 128k | scan, 64k | scan, 128k |
+  |---|---|---|---|---|
+  | 0 | 2 | 0 | 5 | 1 |
+  | 50 | 9 | 3 | 14 | 6 |
+  | 100 | 8 | 2 | 12 | **11** |
+  | 150 | 7 | 3 | | |
+  | 200 | 10 | 2 | | |
+
+  Held-out loss of the screens' own rows at steps 60, 120, 180: the walk down 2.5663, 2.5610, 2.5631; the scan
+  2.5554, 2.5497 (0.011 lower at both). The walk down stays at 2–3 of 16 at 128k through 200 steps; the scan is at
+  11 of 16 after 100. The walk-down screen was stopped at step 200 (07:54 UTC, its question answered) and card 0
+  runs the scan screen's step-150 checkpoint through longer tests: 32 needles at 64k, 128k and 256k in one
+  forward, 8 needles at 512k and 1M read window by window, then 256k again window by window on the same needles
+  (`Cache/e41/evals/scan_ck150/` on Odra).
 
 ## Result
 <Filled in after, by experiment-track.>
