@@ -818,71 +818,104 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 leaves.append((slot, where, t))
             return t
 
-        tau = s0 // blk
         ch = s1 - s0
+        t0 = s0 // blk
+        # several whole blocks (each read against its own window and its own last nodes), or part of one block
+        multi = t0 >= 2 and s0 % blk == 0 and ch % blk == 0
+        nbk, blen = (ch // blk, blk) if multi else (1, ch)
+        tb = torch.arange(t0, t0 + nbk, device=dev)                                      # [nbk] the blocks
         qp = torch.arange(s0, s1, device=dev)
+        qpb = qp.view(nbk, blen)
         qw = qc.to(wd)
         qc = qc.float()
         qd = doc[:, s0:s1]
         okq = (qd >= 0)[..., None]
-        own_lo = tau * blk
         logits, vals = [], []
         # the window: the query's block and the one before (its own block read raw)
-        j0 = max(0, (tau - 1) * blk)
-        jw = torch.arange(j0, s1, device=dev)
-        ok = (jw[None, :] <= qp[:, None])[None] & (doc[:, j0:s1][:, None, :] == qd[..., None]) & okq
-        if key_valid is not None:
-            ok = ok & (key_valid.bool()[:, j0:s1][:, None, :] | (jw[None, :] == qp[:, None])[None])
-        lw = torch.einsum("bqhd,bkd->bqhk", qw, big(KT, slice(j0, s1))).float() * sc
-        logits.append(lw.masked_fill(~ok[:, :, None, :], NEG))
-        if VU == VT:
-            vals.append(("shared", big(VT, slice(j0, s1))))
+        if multi:
+            a0_ = (t0 - 1) * blk
+            pair = lambda x: torch.cat([x[:, :-1], x[:, 1:]], dim=2)                     # [B, nbk + 1, blk, …] → pairs
+            jw = (tb[:, None] - 1) * blk + torch.arange(2 * blk, device=dev)[None]       # [nbk, 2 blk] key positions
+            dw = pair(doc[:, a0_:s1].view(B, nbk + 1, blk))
+            ok = ((jw[:, None, :] <= qpb[:, :, None])[None] & (dw[:, :, None, :] == qd.view(B, nbk, blk)[..., None])
+                  & okq.view(B, nbk, blk, 1))
+            if key_valid is not None:
+                kvw = pair(key_valid.bool()[:, a0_:s1].view(B, nbk + 1, blk))
+                ok = ok & (kvw[:, :, None, :] | (jw[:, None, :] == qpb[:, :, None])[None])
+            lw = torch.einsum("bnqhd,bnkd->bnqhk", qw.view(B, nbk, blk, h, d),
+                              pair(big(KT, slice(a0_, s1)).view(B, nbk + 1, blk, d))).float() * sc
+            logits.append(lw.masked_fill(~ok[:, :, :, None, :], NEG).reshape(B, ch, h, 2 * blk))
+            if VU == VT:
+                vals.append(("block", pair(big(VT, slice(a0_, s1)).view(B, nbk + 1, blk, d))))
+            else:  # the block before: with the update; the query's own block: raw
+                vals.append(("block", torch.cat([big(VU, slice(a0_, s1 - blk)).view(B, nbk, blk, d),
+                                                 big(VT, slice(a0_ + blk, s1)).view(B, nbk, blk, d)], dim=2)))
         else:
-            vals.append(("shared", torch.where((jw < own_lo)[None, :, None], big(VU, slice(j0, s1)),
-                                               big(VT, slice(j0, s1)))))
+            own_lo = t0 * blk
+            j0 = max(0, (t0 - 1) * blk)
+            jw = torch.arange(j0, s1, device=dev)
+            ok = (jw[None, :] <= qp[:, None])[None] & (doc[:, j0:s1][:, None, :] == qd[..., None]) & okq
+            if key_valid is not None:
+                ok = ok & (key_valid.bool()[:, j0:s1][:, None, :] | (jw[None, :] == qp[:, None])[None])
+            lw = torch.einsum("bqhd,bkd->bqhk", qw, big(KT, slice(j0, s1))).float() * sc
+            logits.append(lw.masked_fill(~ok[:, :, None, :], NEG))
+            if VU == VT:
+                vals.append(("shared", big(VT, slice(j0, s1))))
+            else:
+                vals.append(("shared", torch.where((jw < own_lo)[None, :, None], big(VU, slice(j0, s1)),
+                                                   big(VT, slice(j0, s1)))))
         # the document's sinks outside the window
-        if n_sinks and j0 > 0:
+        j0q = ((qp // blk - 1) * blk).clamp_min(0)                                       # [ch] each window's start
+        if n_sinks and t0 + nbk - 2 > 0:
             sp = ds[:, s0:s1][..., None] + torch.arange(n_sinks, device=dev)
             spc = sp.clamp(max=S - 1)
-            ok = (sp < j0) & (_take(doc, spc) == qd[..., None]) & okq
+            ok = (sp < j0q[None, :, None]) & (_take(doc, spc) == qd[..., None]) & okq
             if key_valid is not None:
                 ok = ok & _take(key_valid.bool(), spc)
             ls = torch.einsum("bqhd,bqpd->bqhp", qw, big(KT, spc)).float() * sc
             logits.append(ls.masked_fill(~ok[:, :, None, :], NEG))
             vals.append(("own", big(VU, spc)))
-        if tau < 2:
+        if t0 < 2:
             return _mix(logits, vals)
         qq = (qc.detach() ** 2).sum(-1, keepdim=True) / (2 * d) if variance else None     # [B, ch, h, 1]
         rho = logrho[:, s0:s1][:, :, None, None] if logrho is not None else 0.0
+        cat = lambda *ts: torch.cat([t for t in ts if t is not None], -1)
         f_ids, f_ok = None, None                                                         # followed one level up
         for lv in range(L, 0, -1):
             lo, hi = tree.span(lv)
-            # candidates every query of the chunk shares: the level's roots
-            parts = []
-            if ix["roots"][lv] is not None:                                              # never a parent
+            # roots every query of the row shares: nodes that never get a parent
+            rid, nr, r_root, r_cand, r_lg = None, 0, None, None, None
+            if ix["roots"][lv] is not None:
                 rid, rok = ix["roots"][lv]
-                parts.append((rid, rok[:, None, :] & (_pick(tree.frm, rid)[:, None, :] <= qp[None, :, None])))
-            if 2 <= lv < L:                                                              # no parent yet: the last ones
-                u = (tau - 1) // fan ** (lv - 2)
-                c0, c1 = max(0, (u // fan - 1) * fan), min(u + 1, (hi - lo) // P)
-                if c1 > c0:
-                    tid = torch.arange(lo + c0 * P, lo + c1 * P, device=dev)
-                    pf = tree.pfrm[:, tid]
-                    av = ((tree.frm[:, tid][:, None, :] <= qp[None, :, None]) & (pf < BIG)[:, None, :]
-                          & (pf[:, None, :] > qp[None, :, None]))
-                    parts.append((tid[None].expand(B, -1), av))
-            sid, ns = None, 0
-            if parts:
-                sid = torch.cat([p[0] for p in parts], 1)                                # [B, ns]
-                ns = sid.shape[1]
-                s_root = torch.cat([p[1] for p in parts], 2)                             # [B, ch, ns]
-                s_cand = s_root & (_pick(tree.doc, sid)[:, None, :] == qd[..., None]) & okq
-                s_lg = torch.einsum("bqhd,bnd->bqhn", qw, big(KEY, sid)).float() * sc \
-                    + _pick(logn, sid)[:, None, None, :]
+                nr = rid.shape[1]
+                r_root = rok[:, None, :] & (_pick(tree.frm, rid)[:, None, :] <= qp[None, :, None])
+                r_cand = r_root & (_pick(tree.doc, rid)[:, None, :] == qd[..., None]) & okq
+                r_lg = torch.einsum("bqhd,bnd->bqhn", qw, big(KEY, rid)).float() * sc \
+                    + _pick(logn, rid)[:, None, None, :]
                 if variance:
-                    s_lg = s_lg + qq * _pick(var, sid)[:, None, None, :]
+                    r_lg = r_lg + qq * _pick(var, rid)[:, None, None, :]
+            # roots the queries of a block share: its last nodes, whose parent is not closed yet
+            tid, nt, t_cand, t_lg = None, 0, None, None
+            if 2 <= lv < L:
+                u = torch.div(tb - 1, fan ** (lv - 2), rounding_mode="floor")            # [nbk]
+                c0 = ((torch.div(u, fan, rounding_mode="floor") - 1) * fan).clamp_min(0)
+                c1 = (u + 1).clamp(max=(hi - lo) // P)
+                nt = (2 * fan + 1) * P
+                rel = c0[:, None] * P + torch.arange(nt, device=dev)[None]               # [nbk, nt] places in the level
+                tv = rel < (c1 * P)[:, None]
+                tid = (lo + rel.clamp(max=max(hi - lo - 1, 0)))[None].expand(B, nbk, nt)
+                pf = _pick(tree.pfrm, tid)
+                t_root = (tv[None, :, None, :] & (_pick(tree.frm, tid)[:, :, None, :] <= qpb[None, :, :, None])
+                          & (pf < BIG)[:, :, None, :] & (pf[:, :, None, :] > qpb[None, :, :, None]))
+                t_cand = (t_root & (_pick(tree.doc, tid)[:, :, None, :] == qd.view(B, nbk, blen)[..., None])
+                          & okq.view(B, nbk, blen, 1)).reshape(B, ch, nt)
+                t_lg = torch.einsum("bnqhd,bnkd->bnqhk", qw.view(B, nbk, blen, h, d), big(KEY, tid)).float() * sc \
+                    + _pick(logn, tid)[:, :, None, None, :]
+                if variance:
+                    t_lg = t_lg + qq.view(B, nbk, blen, h, 1) * _pick(var, tid)[:, :, None, None, :]
+                t_lg = t_lg.reshape(B, ch, h, nt)
             # each query's own candidates: the children of the nodes it followed one level up
-            oid, no = None, 0
+            oid, o_cand, o_lg = None, None, None
             if lv < L and f_ids is not None:
                 order, start, count = ix["kids"][lv]
                 pl = (f_ids - tree.span(lv + 1)[0]).clamp_min(0)
@@ -896,20 +929,20 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 at = _pick(start, pl).gather(2, slot) + j - (cum - c_f).gather(2, slot)
                 o_cand = j < tot
                 oid = torch.where(o_cand, _pick(order, at.clamp(0, order.shape[1] - 1)), torch.zeros_like(j))
-                no = W
                 o_lg = torch.einsum("bqhd,bqnd->bqhn", qw, big(KEY, oid)).float() * sc \
                     + _pick(logn, oid)[:, :, None, :]
                 if variance:
                     o_lg = o_lg + qq * _pick(var, oid)[:, :, None, :]
-            if sid is None and oid is None:
+            if rid is None and tid is None and oid is None:
                 f_ids, f_ok = None, None
                 continue
             with torch.no_grad():
-                both = lambda a, b: torch.cat([t for t in (a, b) if t is not None], -1)
-                cand = both(s_cand if sid is not None else None, o_cand if oid is not None else None)
-                score = both(s_lg.detach().amax(2) if sid is not None else None,
-                             o_lg.detach().amax(2) if oid is not None else None)        # [B, ch, N]
-                ids_all = both(sid[:, None, :].expand(B, ch, ns) if sid is not None else None, oid)
+                amax = lambda x: None if x is None else x.detach().amax(2)
+                cand = cat(r_cand, t_cand, o_cand)
+                score = cat(amax(r_lg), amax(t_lg), amax(o_lg))                          # [B, ch, N]
+                ids_all = cat(None if rid is None else rid[:, None, :].expand(B, ch, nr),
+                              None if tid is None else tid[:, :, None, :].expand(B, nbk, blen, nt).reshape(B, ch, nt),
+                              oid)
                 N = cand.shape[-1]
                 taken = torch.zeros(B, ch, N, dtype=torch.bool, device=dev)              # followed / opened
                 opened = None
@@ -922,9 +955,8 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                     f_ids, f_ok = ids_all.gather(2, top.indices), sel
                 elif opens:
                     # the tokens: the best concepts a query may open, until the row's cap
-                    may = both((s_root & (_pick(gi.g_close, sid)[:, None, :] <= qp[None, :, None]))
-                               if sid is not None else None,
-                               (o_cand & (_pick(gi.g_close, oid) <= qp[None, :, None])) if oid is not None else None)
+                    may = cat(None if rid is None else r_root & (_pick(gi.g_close, rid)[:, None, :] <= qp[None, :, None]),
+                              None if oid is None else o_cand & (_pick(gi.g_close, oid) <= qp[None, :, None]))
                     may = may & (reads.cap > 0)[:, None, None]
                     mm = min(int(width), N)
                     top = score.masked_fill(~may, NEG).topk(mm, dim=-1)
@@ -955,28 +987,33 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 logits.append(lo_t.masked_fill(~okp[:, :, None, :], NEG))
                 vals.append(("own", big(VU, pk)))
             if summaries:
-                if sid is not None:
-                    logits.append((s_lg + rho).masked_fill(~vis[:, :, None, :ns], NEG))
-                    if wide:
-                        vals.append(("heads", big(VAL, sid)[:, :, None] + big(VALH, sid)))
-                    else:
-                        vals.append(("shared", big(VAL, sid)))
+                if rid is not None:
+                    logits.append((r_lg + rho).masked_fill(~vis[:, :, None, :nr], NEG))
+                    vals.append(("heads", big(VAL, rid)[:, :, None] + big(VALH, rid)) if wide
+                                else ("shared", big(VAL, rid)))
+                if tid is not None:
+                    logits.append((t_lg + rho).masked_fill(~vis[:, :, None, nr:nr + nt], NEG))
+                    vals.append(("blockheads", big(VAL, tid)[:, :, :, None] + big(VALH, tid)) if wide
+                                else ("block", big(VAL, tid)))
                 if oid is not None:
-                    logits.append((o_lg + rho).masked_fill(~vis[:, :, None, ns:], NEG))
-                    if wide:
-                        vals.append(("ownheads", big(VAL, oid)[:, :, :, None] + big(VALH, oid)))
-                    else:
-                        vals.append(("own", big(VAL, oid)))
+                    logits.append((o_lg + rho).masked_fill(~vis[:, :, None, nr + nt:], NEG))
+                    vals.append(("ownheads", big(VAL, oid)[:, :, :, None] + big(VALH, oid)) if wide
+                                else ("own", big(VAL, oid)))
         return _mix(logits, vals)
 
     out = []
     s0 = q0
     run = _ChunkRun(one, accumulate, wd)
     anchor = _SparseAnchor.apply(acc, *orig) if grad else None
+    budget = max(8, (1 << 28) // max(B * per, 1))                                        # queries per chunk
     while s0 < q0 + Q:
         tau = s0 // blk
-        cs = chunk or max(8, min(blk, (1 << 27) // max(B * per, 1)))
-        s1 = min(q0 + Q, (tau + 1) * blk, s0 + cs)
+        cs = chunk or budget
+        nb = min(cs, q0 + Q - s0) // blk
+        if tau >= 2 and s0 % blk == 0 and nb >= 1:                                       # whole blocks
+            s1 = s0 + nb * blk
+        else:
+            s1 = min(q0 + Q, (tau + 1) * blk, s0 + cs)
         qc = q[:, s0 - q0:s1 - q0]
         if grad:
             out.append(_SparseChunk.apply(run, s0, s1, qc, anchor,
@@ -1042,7 +1079,8 @@ class _SparseChunk(torch.autograd.Function):
 
 def _mix(logits: list, vals: list) -> torch.Tensor:
     """One softmax over the parts' logits [B, ch, h, n_i]; the weighted values. A part's values are shared by the
-    chunk ([B, n, d]; `heads`: [B, n, h, d]) or each query's own ([B, ch, n, d]; `ownheads`: [B, ch, n, h, d])."""
+    chunk ([B, n, d]; `heads`: [B, n, h, d]), by each block of its queries (`block`: [B, nbk, n, d]; `blockheads`:
+    [B, nbk, n, h, d]) or each query's own ([B, ch, n, d]; `ownheads`: [B, ch, n, h, d])."""
     w = torch.nan_to_num(torch.softmax(torch.cat(logits, dim=-1), dim=-1), nan=0.0)
     o, a = 0.0, 0
     for lg, (kind, val) in zip(logits, vals):
@@ -1055,6 +1093,11 @@ def _mix(logits: list, vals: list) -> torch.Tensor:
             o = o + torch.einsum("bqhk,bkhd->bqhd", wi, val)
         elif kind == "ownheads":
             o = o + torch.einsum("bqhp,bqphd->bqhd", wi, val)
+        elif kind in ("block", "blockheads"):  # val [B, nbk, n, (h,) d]: one set of values per block of queries
+            Bq, ch_, h_, _ = wi.shape
+            wb = wi.reshape(Bq, val.shape[1], ch_ // val.shape[1], h_, n_)
+            ob = torch.einsum("bnqhk,bnkd->bnqhd" if kind == "block" else "bnqhk,bnkhd->bnqhd", wb, val)
+            o = o + ob.reshape(Bq, ch_, h_, -1)
         else:
             o = o + torch.einsum("bqhp,bqpd->bqhd", wi, val)
     return o

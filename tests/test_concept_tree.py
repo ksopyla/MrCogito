@@ -380,7 +380,7 @@ def test_the_top_down_read_equals_the_streamed_read(docs, kind, cap):
     ref = tree_read_stream(q, k, v, route="descent", **kw)
     out = tree_read_sparse(q, k, v, **kw)
     torch.testing.assert_close(out, ref, atol=3e-5, rtol=1e-4)
-    for ch in (5, 16):
+    for ch in (5, 16, 48, 100):                                      # part of a block, one block, three, six and a bit
         torch.testing.assert_close(tree_read_sparse(q, k, v, chunk=ch, **kw), out, atol=2e-5, rtol=1e-4)
     part = tree_read_sparse(q[:, 300:411], k, v, q_offset=300, index=sparse_index(tree), **kw)
     torch.testing.assert_close(part, out[:, 300:411], atol=2e-5, rtol=1e-4)
