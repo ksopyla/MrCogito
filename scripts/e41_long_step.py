@@ -32,6 +32,7 @@ def main() -> None:
     ap.add_argument("--steps", type=int, default=3)
     ap.add_argument("--wide", action="store_true", help="wide summaries on (a fresh writer)")
     ap.add_argument("--top_down", action="store_true", help="the top-down read (tree_sparse): every row bounded")
+    ap.add_argument("--scan", action="store_true", help="every concept scored for opening (tree_scan)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -44,6 +45,7 @@ def main() -> None:
         cfg.tree_row_mix, cfg.tree_train_follow, cfg.tree_row_draw = mix, a.follow, "step"
         cfg.tree_wide = bool(a.wide)
         cfg.tree_sparse = bool(a.top_down)
+        cfg.tree_scan = bool(a.scan)
         model = PerceiverARLM.from_pretrained(a.checkpoint, config=cfg).cuda().train()
         model.gradient_checkpointing_enable()
         opt = torch.optim.AdamW(model.parameters(), lr=1e-6)

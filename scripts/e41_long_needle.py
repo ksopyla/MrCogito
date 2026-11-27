@@ -66,6 +66,9 @@ def main() -> None:
                          "bounded reads by descent (modes descent<N>, or a top-down model's own read)")
     ap.add_argument("--window", type=int, default=65536)
     ap.add_argument("--overlap", type=int, default=8192)
+    ap.add_argument("--scan", action="store_true",
+                    help="tokens are opened from the best concepts of the whole row (tree_scan) whatever the "
+                         "checkpoint's config says; the followed nodes bound the summaries")
     ap.add_argument("--top_down", action="store_true",
                     help="bounded reads by descent go through the top-down path (tree_sparse) whatever the "
                          "checkpoint's config says")
@@ -80,10 +83,12 @@ def main() -> None:
     tok = AutoTokenizer.from_pretrained(a.checkpoint)
     model = PerceiverARLM.from_pretrained(a.checkpoint).cuda().eval()
     eot = int(model.config.eos_token_id if model.config.eos_token_id is not None else 0)
-    if a.top_down:
-        for mod in model.modules():
-            if isinstance(getattr(mod, "tree", None), dict):
+    for mod in model.modules():
+        if isinstance(getattr(mod, "tree", None), dict):
+            if a.top_down:
                 mod.tree["sparse"] = True
+            if a.scan:
+                mod.tree["scan"] = True
     rng = random.Random(a.seed)
     lengths = [int(x) for x in a.lengths.split(",")]
     text = filler(a.mix, a.sources.split(","), max(lengths) + 4096, eot)

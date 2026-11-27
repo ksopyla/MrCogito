@@ -27,6 +27,7 @@ def main() -> None:
     ap.add_argument("--lengths", default="16384,65536,262144")
     ap.add_argument("--reads", default="table,top_down")
     ap.add_argument("--follow", type=int, default=16)
+    ap.add_argument("--scan", action="store_true", help="every concept scored for opening (tree_scan)")
     ap.add_argument("--repeats", type=int, default=2)
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
@@ -36,7 +37,7 @@ def main() -> None:
 
     cfg = PerceiverARConfig.from_pretrained(a.checkpoint)
     cfg.concept_tree, cfg.tree_probes, cfg.tree_fan = True, 8, 8
-    cfg.tree_follow, cfg.tree_route = a.follow, "descent"
+    cfg.tree_follow, cfg.tree_route, cfg.tree_scan = a.follow, "descent", bool(a.scan)
     model = PerceiverARLM.from_pretrained(a.checkpoint, config=cfg).cuda().eval()
     trees = [m for m in model.modules() if isinstance(getattr(m, "tree", None), dict)]
     spent = {"t": 0.0, "calls": 0, "shape": None}
