@@ -745,6 +745,9 @@ def _pick(x: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
     return x.gather(1, idx).view(*ids.shape, *x.shape[2:])
 
 
+MEMBER_CAP = 16  # members of a concept the re-rank scores (concepts average 8; under 1 % have more than 16)
+
+
 def member_table(gi) -> torch.Tensor:
     """[B, G, F] long: each concept's member positions, oldest first (−1 = none); built once per index."""
     mem = getattr(gi, "_member_table", None)
@@ -762,16 +765,25 @@ def member_best(q: torch.Tensor, kt: torch.Tensor, mem: torch.Tensor, gids: torc
     """The exact score of each of a query's candidate concepts: the best of its member tokens' own scores (q·k, the
     best head) among the members the query may open, positions in [lo, hi]. q [B, ch, h, d], kt [B, S, d] the token
     keys, mem [B, G, F] (`member_table`), gids / valid [B, ch, m], lo / hi [B or 1, ch]. Returns [B, ch, m] fp32
-    (−inf: no member to open)."""
+    (−inf: no member to open). A concept's first `MEMBER_CAP` members are scored (the rare larger concept is judged
+    by those); the queries go in slices, so the gathered keys stay near 2²⁷ numbers whatever the chunk."""
     B, ch, m = gids.shape
+    mem = mem[:, :, :MEMBER_CAP]
     Fm = mem.shape[2]
-    pos = _pick(mem, gids)                                                               # [B, ch, m, F]
-    ok = valid[..., None] & (pos >= lo[..., None, None]) & (pos <= hi[..., None, None])
-    pc = pos.clamp_min(0).view(B, ch, m * Fm)
-    if key_valid is not None:
-        ok = ok & _take(key_valid.bool(), pc).view(B, ch, m, Fm)
-    s = torch.einsum("bqhd,bqpd->bqhp", q, _take(kt, pc).to(q.dtype)).float().amax(2).view(B, ch, m, Fm)
-    return s.masked_fill(~ok, NEG).amax(-1)
+    bi = torch.arange(B, device=gids.device)[:, None, None]
+    step = max(1, (1 << 27) // max(B * m * Fm * q.shape[-1], 1))
+    kv = None if key_valid is None else key_valid.bool()
+    out = []
+    for a in range(0, ch, step):
+        z = slice(a, a + step)
+        pos = mem[bi, gids[:, z]]                                                        # [B, c, m, F]
+        ok = valid[:, z, :, None] & (pos >= lo[:, z, None, None]) & (pos <= hi[:, z, None, None])
+        pc = pos.clamp_min(0).flatten(2)                                                 # [B, c, m·F]
+        if kv is not None:
+            ok = ok & kv[bi, pc].view_as(ok)
+        sc = torch.matmul(q[:, z], kt[bi, pc].to(q.dtype).transpose(2, 3))               # [B, c, h, m·F]
+        out.append(sc.amax(2).float().view(pos.shape).masked_fill(~ok, NEG).amax(-1))
+    return torch.cat(out, dim=1)
 
 
 @torch.no_grad()
@@ -893,8 +905,6 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     C1 = tree.n_concepts
     if scan:
         per += 2 * C1                                                                    # a query's row of the scan
-    if rr > 0:                                                                           # the candidates' member keys
-        per += min(max(rr, int(width)), C1) * int(members[0].shape[2]) * (d + h + 2)
     grad = torch.is_grad_enabled() and (q.requires_grad or any(needs))
     acc: dict = {}                                                                       # slot → the gradient so far
     scan_keys: list = []                                                                 # the scan's key matrix, once
