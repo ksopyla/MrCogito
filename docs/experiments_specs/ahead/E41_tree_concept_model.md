@@ -553,6 +553,9 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   before it, a common pattern in 128k of text), while the place itself keeps matching the question; a fact is a
   run of tokens, so the index should find the place and the reader read on from it. Zero-shot test on the
   released weights queued on Odra card 2 (16 depths, 64k and 128k, a run of 4).
+- **2026-11-27 07:02 UTC, the baseline on the same 16 needles:** the released weights through the walk-down read (64 followed per level) find the number in 2 of 16 at 64k
+  and 0 of 16 at 128k. So 50–100 steps on 128k rows took the walk-down read from 2 to 8–9 of 16 at 64k and from
+  0 to 2–3 of 16 at 128k; the scan, untrained, starts higher than the walk down (5 and 1 of 16).
 
 ## Result
 <Filled in after, by experiment-track.>
