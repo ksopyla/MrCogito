@@ -811,7 +811,7 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   | run 4, 256k rows, walk down | 13 (6) | 8 (5) | 2 (1) |
   | run 5, 256k rows, every concept scored, final | **32** (16) | **23** (14) | 20 (10) |
   | run 5 at step 150 of 286 | 22 (15) | 15 (14) | not run |
-  | first home screen (128k rows, the released model's final rates held), step 150 | 32 (29) | 22 (22) | **22** (22) |
+  | first home screen (128k rows, three times the released model's final rates, held), step 150 | 32 (29) | 22 (22) | **22** (22) |
   | gentle home screen (128k rows, 3e-4 falling to 3e-5), final, step 360 | 31 (26) | 22 (22) | 20 (19) |
   | run 5 final, four times the opening budget (2,048 tokens from 512 concepts) | 28 (13) | 23 (16) | 19 (11) |
 
@@ -857,6 +857,52 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   at steps 100 and 200 (run 5: 2.4305, 2.4144: level), $42.33; run 2 at step 740 of its 64k stage (held-out
   1.9541, falling), $143.48; the gentle home screen ended 17:09 UTC at 2.5314 on the 128k rows (the constant
   final rates: 2.5333; run 5's rates stopped at step 240: 2.5459).
+- **2026-11-27 19:55 UTC, the summary is the weak link, not the question.** The recorder now also ranks each
+  answer token's source token itself among every token the query may open, by its own key (the best head; 0 =
+  the row's best: the choice an exact read would make). Run 5's final weights, 32 texts per length (Odra,
+  `Cache/e41/evals/why4/`, saved as `run5_final_summary_rank_and_token_rank_*.json`; the 256k texts are a
+  separate draw, 18 of 32 read):
+
+  | the digits after the first: places a pass did not open (of 224) | pass 1 | pass 2 | pass 3 | pass 4 |
+  |---|---|---|---|---|
+  | 64k: not opened | 64 | 8 | 0 | 0 |
+  | 64k: of those, the token itself among the row's best 64 for the query | 63 | 8 | - | - |
+  | 128k: not opened | 65 | 28 | 5 | 5 |
+  | 128k: of those, the token among the best 64 | 61 | 27 | 4 | 5 |
+  | 256k: not opened | 80 | 37 | 13 | 26 |
+  | 256k: of those, the token among the best 64 | 74 | 37 | 10 | 14 |
+  | 256k: ... and its summary among the best 512 / 2,048 concepts | 40 / 62 | 24 / 36 | 6 / 10 | 12 / 13 |
+
+  The digits that end wrong: the token's own rank, median per pass, 6, 0, 1, 0 at 128k and 3, 0, 1, 7 at 256k,
+  while its summary ranks 381, 48, 4, 0 and 347, 51, 23, 247. So from the first pass on the query points at the
+  right token (it is the best or nearly the best of 131,072-262,144), and the summary of its concept, an
+  average of about 8 tokens, ranks in the hundreds: the concept is not among the 64 or so the cap opens. (The
+  number's first token is different: its own rank is as poor as its summary's, 4121, 53, 3, 7 against 638, 75,
+  1, 7 at 128k; the question forms over the passes there, and the model, copying "is: N", looks for the colon.)
+  Also tried on the trained model as it is: an opened token bringing the two tokens after it (`--span 2`) reads
+  26 of 32 at 64k (plain 32) and 5 of the first 11 at 128k (plain 6); stopped by hand, `tree_span` stays parked.
+- **2026-11-27 20:05 UTC, `tree_rerank` built** (commits `a2ae00b6`, `08697b6a`): the scan's best n concepts by
+  the summary's estimate are put in the order of their best member token's own score for the query (a concept's
+  first 16 members), and the best `concept_width` of those open tokens, as before, whole concepts until the cap.
+  The top-down read, the cached decoder and the streamed read; arm `tree_xl_scan_rr` (n = 512). A forward of
+  128k tokens on one RTX 3090: 13.7 s without, 17.0 s with n = 512, 15.2 s with 256, 20.9 s with 1,024 (the first
+  form gathered keys element by element over the member table padded to its largest concept, 27 members, and
+  took 47.7 s).
+- **2026-11-27 20:41 UTC, the re-rank on run 5's trained model as it is** (n = 512, never trained with it; Odra
+  card 0, `fair/run5_final_rr512.json`, the same 32 texts per length): numbers read 30 / 25 / 24 of 32 at 64k /
+  128k / 256k against 32 / 23 / 20 without it (strict 10 / 16 / 13 against 16 / 14 / 10). Four more at 256k and
+  two more at 128k, two fewer at 64k, from a model that learnt its read with the summary-ranked choice.
+- **2026-11-27 20:05 UTC, home screen `xl128_scan_rr_d3e-4`** (Odra card 1): the gentle screen's recipe (128k rows,
+  Muon 3e-4 falling to 3e-5, AdamW 2e-5, 360 steps, from the recall run's final weights) with the re-rank,
+  `scripts/e41_home_screen.sh`, every checkpoint tested on card 0. Step 60: held-out loss on the 128k rows 2.5462
+  (the gentle screen without it: 2.5503); 37 s per step against 27. Ends about 23:50 UTC.
+- **2026-11-27 20:43 UTC, run 7 launched: run 5's recipe with the re-rank.** Name `e41-xlrr`, branch `e41-run7`
+  frozen at `596df7ae`, arm `tree_xl_scan_rr`, the 256k stage from the recall run's final weights at run 5's rates
+  (Muon 1e-3 falling to 1e-4), no planted-number part on the node (the home cards test it), spot. Keeper PID in
+  `Cache/keepers/e41-xlrr.pid`, events in `Cache/ops/e41-xlrr_events.log`, results under
+  `runs/e41/e33n_m120t_tree_xl_scan_rr_muon0.01-xl_tok8.0e9_seed42/`. The account's spot limit is full with runs 2
+  and 6: the keeper retries until run 6's node stops (its tests end about 21:50 UTC). One change against run 5,
+  so the two compare directly: the planted numbers at 64k-1M, RULER, the long-document loss.
 
 ## Result
 <Filled in after, by experiment-track.>
