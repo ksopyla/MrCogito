@@ -360,6 +360,42 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   records of at least 262,144 tokens) and planted-fact recall rows at 256k (`scripts/build_reasoning_rows.py`, a new
   set `recall_256k`); (3) a home screen from the released weights: does the number at 256k and 1M get found;
   (4) on AWS as stage 4 of the best stages-2-3 run.
+- **2026-11-27 04:20 UTC, why no row was longer than 64k** (a real training step of the released weights through
+  the tree, one RTX 3090, bf16, gradient checkpointing; `scripts/e41_long_step.py`): 64k rows 19 s a step with the
+  whole read and 10.4 GB; 128k rows 62–65 s and 20.6 GB; 256k rows do not fit (one allocation of 15.9 GB). The
+  bounded read as built bounds what a query *reads*, not what it *scores*: `choose_chunk` still scores every concept
+  of the row for every query (the summed-mass score needs them all), so cost and memory grow with the square of the
+  row whatever the budget.
+- **2026-11-27 04:25–04:38 UTC, the top-down read built** (`tree_read_sparse`, config `tree_sparse`, commits
+  `287f1acc`, `0db415c6`, `272dafbb`). A query scores, level by level from the top, only the nodes it may reach: the
+  children of the nodes it followed one level up (packed lists: a node has 8 children on average and up to 64) and
+  the level's roots (nodes whose parent is not closed yet, or never will be). It is the same read as the streamed
+  one for bounded rows chosen by a node's own estimate: 18 comparison cases (one to five followed per level, a bound
+  per row, cuts at levels 2–4, no tokens, a small token cap, wide summaries, token updates, packed documents), output
+  and gradients; a model with `tree_sparse` gives the bounded model's logits and never reads ahead; with gradients
+  on, every chunk of queries is its own gradient checkpoint, so a step's memory does not grow with the row. A
+  `tree_sparse` model draws only bounded rows in training (an as-normal row follows 4 × the budget; a cut row keeps
+  its bound above the cut; every row by descent). 199 tests on the laptop, 30 on a GPU.
+  One forward of the released weights, 16 followed per level, one RTX 3090 (`scripts/e41_read_profile.py`):
+
+  | row | table read (flex) | top-down read | peak memory, top-down |
+  |---|---|---|---|
+  | 16k | 0.9 s | 1.0 s | 1.3 GB |
+  | 64k | 10.1 s | 4.4 s | 2.9 GB |
+  | 256k | does not fit (streamed: 72–106 s) | 19.2 s | 8.2 GB |
+
+  The cost per token is now flat in the row's length (73 µs at 256k, 66 µs at 64k).
+- **2026-11-27 04:16 UTC, rows of 262,144 tokens built at home** (Odra, 8 minutes, `scripts/e41_xl_data_build.sh`,
+  recipe `data/mix_recipes/m21_mix_xl1.json`): single documents that long from books (93 rows), US government
+  publications (130) and open-access academic books (48); 153 recall rows (`recall_256k`: several books in a row,
+  25 planted items a row on average, 3,853 asked items, the answer's distance 162k tokens at the median); packed
+  rows of PDFs, code and papers. The home copies of the other long sources hold no document that long (PDFs stop at
+  154k tokens there).
+- **2026-11-27 04:38 UTC, home screens at their later evaluations** (held-out loss, steps 286 … 1,430): value
+  corrections 1.9298, 1.9273, 1.9265, 1.9251, 1.9233; the reasoner with its plan and no extra losses 1.9358, 1.9316,
+  1.9299, 1.9272, 1.9240; key and value corrections 1.9291, 1.9267, 1.9256 (running); those with both losses
+  1.9303, 1.9280, 1.9276 (running). The plan's cost fades with training (+0.006 at step 286, +0.001 at step 1,430
+  against value corrections alone); nothing with a reasoner is ahead of the closed-book rows alone yet.
 
 ## Result
 <Filled in after, by experiment-track.>
