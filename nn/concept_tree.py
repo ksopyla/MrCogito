@@ -830,15 +830,19 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
         heads): ids [B, ch, m] best first, and which of them are real choices."""
         # a concept's score for a head is q·key/√d + |q|² var / 2d + log n: the first two are one product of the
         # query with [key/√d, var] (the row's concepts, built once), the last does not depend on the head
+        # In fp32 whatever the model's precision: the choice is among tens of thousands of concepts, and bf16 steps
+        # of 0.125-0.25 at these scores would reorder the ones near the cut (the table read scores in fp32 too).
         if not scan_keys:
-            k1 = bigs[KEY][:, :C1] * sc
-            scan_keys.append(torch.cat([k1, var[:, :C1, None].to(wd)], -1).transpose(1, 2) if variance
+            k1 = bigs[KEY][:, :C1].float() * sc
+            scan_keys.append(torch.cat([k1, var[:, :C1, None]], -1).transpose(1, 2) if variance
                              else k1.transpose(1, 2))                                    # [B, d (+1), C1]
-        qa = torch.cat([qw, qq.to(wd)], -1) if variance else qw                          # [B, ch, h, d (+1)]
+        qf = qw.float()
+        qa = torch.cat([qf, qq], -1) if variance else qf                                 # [B, ch, h, d (+1)]
         best = None
-        for hh in range(h):
-            sh = torch.bmm(qa[:, :, hh], scan_keys[0])                                   # [B, ch, C1]
-            best = sh if best is None else torch.maximum(best, sh)
+        with torch.autocast(device_type=qa.device.type, enabled=False):
+            for hh in range(h):
+                sh = torch.bmm(qa[:, :, hh], scan_keys[0])                               # [B, ch, C1]
+                best = sh if best is None else torch.maximum(best, sh)
         may = ((gi.g_close[:, None, :] <= qp[None, :, None]) & (tree.n[:, None, :C1] > 0)
                & (reads.cap > 0)[:, None, None])
         top = (best.float() + logn[:, None, :C1]).masked_fill(~may, NEG).topk(min(int(width), C1), dim=-1)
