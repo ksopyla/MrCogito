@@ -75,6 +75,8 @@ def main() -> None:
     ap.add_argument("--top_down", action="store_true",
                     help="bounded reads by descent go through the top-down path (tree_sparse) whatever the "
                          "checkpoint's config says")
+    ap.add_argument("--top_k", type=int, default=0, help="tokens a query may open (0: the checkpoint's own, 512)")
+    ap.add_argument("--width", type=int, default=0, help="concepts a query ranks for opening (0: the checkpoint's own)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -87,6 +89,12 @@ def main() -> None:
     model = PerceiverARLM.from_pretrained(a.checkpoint).cuda().eval()
     eot = int(model.config.eos_token_id if model.config.eos_token_id is not None else 0)
     for mod in model.modules():
+        c_ = getattr(mod, "concept", None)
+        if isinstance(c_, dict) and "top_k" in c_:
+            if a.top_k:
+                c_["top_k"] = a.top_k
+            if a.width:
+                c_["width"] = a.width
         if isinstance(getattr(mod, "tree", None), dict):
             if a.top_down:
                 mod.tree["sparse"] = True

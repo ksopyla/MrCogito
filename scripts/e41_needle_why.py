@@ -40,6 +40,8 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--scan", action="store_true")
     ap.add_argument("--top_down", action="store_true")
+    ap.add_argument("--top_k", type=int, default=0, help="tokens a query may open (0: the checkpoint's own, 512)")
+    ap.add_argument("--width", type=int, default=0, help="concepts a query ranks for opening (0: the checkpoint's own)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -53,6 +55,12 @@ def main() -> None:
     model = PerceiverARLM.from_pretrained(a.checkpoint).cuda().eval()
     eot = int(model.config.eos_token_id if model.config.eos_token_id is not None else 0)
     for mod in model.modules():
+        c_ = getattr(mod, "concept", None)
+        if isinstance(c_, dict) and "top_k" in c_:
+            if a.top_k:
+                c_["top_k"] = a.top_k
+            if a.width:
+                c_["width"] = a.width
         if isinstance(getattr(mod, "tree", None), dict):
             if a.top_down:
                 mod.tree["sparse"] = True
@@ -86,13 +94,13 @@ def main() -> None:
                 continue
             p0 = 1 + at + k                                     # the row position of the number's first token
             x = torch.tensor(ids, device="cuda")[None]
-            ct.WATCH = {"q0": S - n - 1, "pos": torch.arange(p0 - 1, p0 + n), "log": [], "mass": []}
+            ct.WATCH = {"q0": S - n - 1, "pos": torch.arange(p0 - 1, p0 + n), "log": [], "mass": [], "rank": []}
             try:
                 with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
                     with model.open_impl("list" if S >= a.list_from else None):
                         h = model.hidden_states(x)[0][S - n - 1:S - 1]
                     pred = torch.nn.functional.linear(h.float(), model.lm_head.weight.float()).argmax(-1).tolist()
-                log, mass = ct.WATCH["log"], ct.WATCH["mass"]
+                log, mass, ranks = ct.WATCH["log"], ct.WATCH["mass"], ct.WATCH["rank"]
             finally:
                 ct.WATCH = None
             # per pass of the reading layer: [n answer queries, n + 1 source positions]
@@ -117,6 +125,15 @@ def main() -> None:
                         for k, v in rec.items():
                             m[k][j] = v[0, i]
                 att.append(m)
+            # the scan rank of the concept that holds each answer token's source, per pass (-1: not scored)
+            rk = []
+            for qp, r_ in ranks:
+                m = torch.full((n,), -1, dtype=torch.long)
+                for i, q in enumerate(qp.tolist()):
+                    j = q - (S - n - 1)
+                    if 0 <= j < n:
+                        m[j] = r_[0, i, j + 1]
+                rk.append(m)
             toks = []
             for j in range(n):
                 # the source of answer token j: positions p0 + j - 1 (context) and p0 + j (the token) = columns j, j + 1
@@ -125,6 +142,7 @@ def main() -> None:
                              "before_opened": [bool(m[j, j]) for m in passes],
                              "any_of_number_opened": [bool(m[j].any()) for m in passes],
                              "opened": [int(c[j]) for c in opened_n],
+                             "scan_rank": [int(m[j]) for m in rk],
                              # per pass: the best head's share on the token to copy, on the one before it, on
                              # the whole number; and the heads' mean share by part
                              "on_token": [round(float(m["tgt"][j, :, j + 1].max()), 4) for m in att],

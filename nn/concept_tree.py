@@ -885,7 +885,20 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 best = sh if best is None else torch.maximum(best, sh)
         may = ((gi.g_close[:, None, :] <= qp[None, :, None]) & (tree.n[:, None, :C1] > 0)
                & (reads.cap > 0)[:, None, None])
-        top = (best.float() + logn[:, None, :C1]).masked_fill(~may, NEG).topk(min(int(width), C1), dim=-1)
+        score = (best.float() + logn[:, None, :C1]).masked_fill(~may, NEG)
+        top = score.topk(min(int(width), C1), dim=-1)
+        if WATCH is not None and "rank" in WATCH:
+            sel = qp >= WATCH["q0"]
+            if bool(sel.any()):
+                # the watched positions' concepts (layer 0's codes: concept id x 512 + order; negative = none) and
+                # how many concepts of the row score above each, for each watched query
+                code = gi.codes[0][:, WATCH["pos"].to(dev)]                              # [B, T]
+                cid = torch.div(code, 512, rounding_mode="floor").clamp(0, C1 - 1).long()
+                ss = score[:, sel]                                                       # [B, n, C1]
+                mine = ss.gather(2, cid[:, None, :].expand(B, ss.shape[1], cid.shape[1]))
+                rank = (ss[:, :, None, :] > mine[..., None]).sum(-1)
+                rank = torch.where((code >= 0)[:, None, :] & torch.isfinite(mine), rank, torch.full_like(rank, -1))
+                WATCH["rank"].append((qp[sel].cpu(), rank.cpu()))
         return top.indices, top.values > NEG
 
     @torch.no_grad()
