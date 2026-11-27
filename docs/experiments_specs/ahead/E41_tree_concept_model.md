@@ -589,6 +589,22 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   runs the scan screen's step-150 checkpoint through longer tests: 32 needles at 64k, 128k and 256k in one
   forward, 8 needles at 512k and 1M read window by window, then 256k again window by window on the same needles
   (`Cache/e41/evals/scan_ck150/` on Odra).
+- **2026-11-27 08:24 UTC, the number is found at 256k** (the scan screen's step-150 checkpoint: the released weights after 150 rows of 131,072 tokens, 19.7M
+  tokens; 32 needles a length, one forward, the model's own read: 64 followed per level for the summaries, every
+  concept scored for the tokens; Odra card 0, peak 8.7 GB):
+
+  | text | all seven digits | first token |
+  |---|---|---|
+  | 64k | 29 of 32 | 29 of 32 |
+  | 128k | 22 of 32 | 32 of 32 |
+  | 256k | **22 of 32** | 31 of 32 |
+
+  The released model was at 0 of 8 at 256k in every read, and no row here was longer than 131,072 tokens. The
+  screen's checkpoints on 16 needles (64k / 128k): 5 / 1 untrained, 14 / 6 at step 50, 12 / 11 at 100, 14 / 10 at
+  150, 16 / 12 at 200; its held-out loss 2.5554, 2.5497, 2.5511 at steps 60, 120, 180. The AWS login came back at
+  08:00 UTC (the author); all three nodes, keepers and watchers had survived the gap: run 4 at step 140 of 286
+  (held-out 2.4528 at step 100), run 5 at step 50 (16–19k tokens/s, the scan costs no speed), run 2 at step 2,980
+  of stage 2 (2.1041 at step 2,800).
 
 ## Result
 <Filled in after, by experiment-track.>
