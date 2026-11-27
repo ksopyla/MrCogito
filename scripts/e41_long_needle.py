@@ -103,7 +103,7 @@ def main() -> None:
         return tok(s, add_special_tokens=False)["input_ids"]
 
     for S in lengths:
-        res = {m: {"all": 0, "first": 0, "seconds": 0.0, "n": 0} for m in out["modes"]}
+        res = {m: {"all": 0, "first": 0, "rest": 0, "said": {}, "seconds": 0.0, "n": 0} for m in out["modes"]}
         for d in range(a.depths):
             word = rng.choice(WORDS)
             number = "".join(rng.choice("0123456789") for _ in range(7))
@@ -139,12 +139,22 @@ def main() -> None:
                 r = res[m]
                 r["all"] += int(pred == ans)
                 r["first"] += int(pred[0] == ans[0])
+                # `rest`: every token after the first right (the first one given). The planted sentence reads
+                # "... is: 1234567." and the question ends "... is": a reader that copies the sentence says ":"
+                # first and then the digits, which `all` counts as a miss although the number was found and read
+                # (RULER, which generates and looks for the number in the output, counts it as read). `said`:
+                # what was said first when it was not the number's first token.
+                r["rest"] += int(pred[1:] == ans[1:])
+                if pred[0] != ans[0]:
+                    w = tok.decode([pred[0]])
+                    r["said"][w] = r["said"].get(w, 0) + 1
                 r["seconds"] += time.time() - t0
                 r["n"] += 1
             print(f"L={S} depth {d + 1}/{a.depths}: " + "  ".join(
-                f"{m} {res[m]['all']}/{res[m]['n']} ({res[m]['seconds'] / res[m]['n']:.0f}s)" for m in out["modes"]),
-                flush=True)
+                f"{m} {res[m]['all']}/{res[m]['n']} ({res[m]['seconds'] / res[m]['n']:.0f}s)" for m in out["modes"])
+                + "   after the first: " + " ".join(f"{res[m]['rest']}" for m in out["modes"]), flush=True)
         out["lengths"][str(S)] = {m: {"all_digits": r["all"] / max(r["n"], 1), "first_token": r["first"] / max(r["n"], 1),
+                                      "digits_after_first": r["rest"] / max(r["n"], 1), "said_first_instead": r["said"],
                                       "seconds_per_row": r["seconds"] / max(r["n"], 1), "rows": r["n"]}
                                   for m, r in res.items()}
         out["peak_gpu_gb"] = torch.cuda.max_memory_allocated() / 2 ** 30
