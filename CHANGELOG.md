@@ -15,6 +15,51 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-27] - E41: the top-down read, rows of 262,144 tokens, wide summaries
+
+**Why:**
+- No row was ever longer than 65,536 tokens: the concept read, and the tree's bounded read as first built, score
+  every concept of the row for every query, so a training step's cost and memory grow with the square of the row
+  (128k rows fill a 24 GB card, 256k rows do not fit). The released 150M models find a planted number at 64k and
+  never at 256k. The author's roadmap starts with memory on text at 256k (spec log, 2026-11-27).
+- A summary handed a reader 64 numbers shared by all 14 heads; the reasoner's corrections to them had not helped
+  the closed-book rows.
+
+**What changed:**
+- [added] `nn/concept_tree.py` - `tree_read_sparse` (config `tree_sparse`): the bounded read made top-down. A query
+  scores, level by level, only the children of the nodes it followed (packed lists from `sparse_index`) and each
+  level's roots; the same read as `tree_read_stream` for bounded rows chosen by descent (`reads_top_down`). Its own
+  backward: a chunk of queries is computed without a graph and recomputed alone (`_SparseChunk`); gradients to the
+  row's keys, values and nodes go through one buffer per tensor (`_SparseAnchor`). Cost per token flat in the row's
+  length (one RTX 3090: a 256k forward 19 s and 8 GB; training rows of 64k and 128k both about 4k tokens/s).
+  `row_reads(top_down=True)`: every training row bounded, by descent; a cut row keeps its bound above the cut.
+- [added] wide summaries (`tree_wide`): `Attention.tree_writer`, a zero-initialised linear read of a node's mean
+  state that gives every query head its own value slice (`TreeIndex.val_h`), in the reference, flex, streamed,
+  top-down and cached reads. Trained in the reasoner's AdamW group (`--tree_reasoner_lr`).
+- [added] `scripts/run_e33n.py` arms `tree_wide`, `tree_xl` (top-down, rows 80 % bounded and 20 % cut, evaluation
+  at 64 followed per level by descent), `tree_xl_wide`.
+- [added] `scripts/build_reasoning_rows.py` - sets `recall_256k` and `recall_128k`: recall rows whose prose is
+  several books in a row (`join`), since one book in twenty holds 262,144 tokens.
+- [added] `data/mix_recipes/m21_mix_xl1.json` (one phase at 262,144 tokens: single long documents 40 %, recall rows
+  25 %, packed shorter documents 35 %) and `m21_mix_xl128.json` (the same at 131,072, for 24 GB cards);
+  `scripts/e41_xl_data_build.sh` (home build), `infra/aws/jobs/m21xl1_data_build.sh` (AWS; `M21_COPY_ONLY` in
+  `m21v3_data_build.sh` copies only the sources a mix reads).
+- [added] `infra/aws/jobs/e41_long.sh` - the 256k stage as `e33n_run.sh`'s `long` phase on `m21mix_xl1` from a
+  finished model (the run folder is seeded with it as stages 1 and 2); `E33N_LONG_STAGE` names the phase on W&B.
+- [added] `scripts/e41_long_step.py` (time and memory of a training step by row length), `scripts/e41_read_profile.py`
+  (a forward's time by read), `--top_down` in `scripts/e41_long_needle.py`.
+- [changed] `scripts/e40_train.sh` - `MUON_LR` / `ADAMW_LR` (other constant rates), arms `tree_xl*`.
+
+**Impact:**
+- Rows of any length can be trained where the saved layer inputs fit (0.94 GB per block at 256k: 48 GB cards).
+- With every tree option off nothing changes; a model without `tree_sparse` reads as before.
+
+**Tests:** `tests/test_concept_tree.py` (78: the top-down read against the streamed read in 18 cases, forward and
+gradients; the model with `tree_sparse` against the bounded model; checkpointing; wide summaries),
+`tests/test_concept_tree_cuda.py` (30), `tests/test_build_reasoning_rows.py` (28).
+
+---
+
 ## [2026-11-26] - E41 tree concept model: the concept tree over the concept read
 
 **Why:**
