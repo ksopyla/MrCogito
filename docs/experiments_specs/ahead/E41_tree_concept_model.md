@@ -949,6 +949,17 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   to 0.003 on ordinary reading and 2.4 points of LAMBADA perplexity; run 6's costs nothing there and reads a
   little less far. Run 7 was moved to run 6's rate before this was known: if the re-rank does not close that
   gap, the same run at run 5's rate is the follow-up.
+- **2026-11-27 21:58 UTC, the re-rank screen's second checkpoint** (step 100 of 360, 16 numbers per length):
+  read 16 / 12 / 12 of 16 at 64k / 128k / 256k (step 50: 16 / 9 / 14). Held-out loss on the 128k rows at steps
+  60, 120, 180: 2.5462, 2.5399, 2.5372, each 0.004 under the same screen without the re-rank (2.5503, 2.5442,
+  2.5416). The final weights get the 32-number test for the comparison with that screen's 31 / 22 / 20.
+- **2026-11-27 22:00 UTC, the standard release tests started for run 5, then run 6** (`scripts/release_evals.sh`
+  on Odra cards 0 and 1, each job when its card is free; results `Cache/e41/release/run5`, `run6`; memory modes
+  off, no summaries, summaries only): BLiMP and the board tier, the seven core tasks, the long-document tests
+  paired by document at 16k / 64k / 128k, the cross-model long-document row, RULER 4k-32k with each task's own
+  answer length, sampled text. Until now runs 4-6 had the node tests only (the seven core tasks in full, RULER's
+  first 100 documents, the long-document loss by position): the spec's marks S1, S3 and S5's BLiMP are decided
+  by this set. The models are 141.5M parameters, the recall model's count (the tree read adds no weights).
 
 ## Result
 <Filled in after, by experiment-track.>
