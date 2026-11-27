@@ -94,13 +94,15 @@ def main() -> None:
                 continue
             p0 = 1 + at + k                                     # the row position of the number's first token
             x = torch.tensor(ids, device="cuda")[None]
-            ct.WATCH = {"q0": S - n - 1, "pos": torch.arange(p0 - 1, p0 + n), "log": [], "mass": [], "rank": []}
+            ct.WATCH = {"q0": S - n - 1, "pos": torch.arange(p0 - 1, p0 + n), "log": [], "mass": [], "rank": [],
+                        "tok_rank": []}
             try:
                 with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
                     with model.open_impl("list" if S >= a.list_from else None):
                         h = model.hidden_states(x)[0][S - n - 1:S - 1]
                     pred = torch.nn.functional.linear(h.float(), model.lm_head.weight.float()).argmax(-1).tolist()
                 log, mass, ranks = ct.WATCH["log"], ct.WATCH["mass"], ct.WATCH["rank"]
+                tranks = ct.WATCH["tok_rank"]
             finally:
                 ct.WATCH = None
             # per pass of the reading layer: [n answer queries, n + 1 source positions]
@@ -134,6 +136,15 @@ def main() -> None:
                     if 0 <= j < n:
                         m[j] = r_[0, i, j + 1]
                 rk.append(m)
+            # the same for the source token itself among every token the query may open (an exact choice's rank)
+            trk = []
+            for qp, r_ in tranks:
+                m = torch.full((n,), -1, dtype=torch.long)
+                for i, q in enumerate(qp.tolist()):
+                    j = q - (S - n - 1)
+                    if 0 <= j < n:
+                        m[j] = r_[0, i, j + 1]
+                trk.append(m)
             toks = []
             for j in range(n):
                 # the source of answer token j: positions p0 + j - 1 (context) and p0 + j (the token) = columns j, j + 1
@@ -143,6 +154,7 @@ def main() -> None:
                              "any_of_number_opened": [bool(m[j].any()) for m in passes],
                              "opened": [int(c[j]) for c in opened_n],
                              "scan_rank": [int(m[j]) for m in rk],
+                             "token_rank": [int(m[j]) for m in trk],
                              # per pass: the best head's share on the token to copy, on the one before it, on
                              # the whole number; and the heads' mean share by part
                              "on_token": [round(float(m["tgt"][j, :, j + 1].max()), 4) for m in att],

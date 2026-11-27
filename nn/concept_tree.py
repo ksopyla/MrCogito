@@ -899,6 +899,21 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 rank = (ss[:, :, None, :] > mine[..., None]).sum(-1)
                 rank = torch.where((code >= 0)[:, None, :] & torch.isfinite(mine), rank, torch.full_like(rank, -1))
                 WATCH["rank"].append((qp[sel].cpu(), rank.cpu()))
+        if WATCH is not None and "tok_rank" in WATCH:
+            sel = qp >= WATCH["q0"]
+            if bool(sel.any()):
+                # the watched positions themselves: how many of the tokens the query may open (its document, before
+                # its window) score above each by their own key (the best head): the choice an exact read would make
+                tgt = WATCH["pos"].to(dev)
+                st = torch.einsum("bnhd,bsd->bnhs", qf[:, sel], bigs[KT].float()).amax(2)  # [B, n, S]
+                at = torch.arange(S, device=dev)[None, None, :]
+                qs = qp[sel]
+                st = st.masked_fill(~((at <= (qs - blk)[None, :, None])
+                                      & (at >= gi.doc_start[:, qs][..., None])), NEG)
+                mine = st[:, :, tgt]                                                     # [B, n, T]
+                rk = (st[:, :, None, :] > mine[..., None]).sum(-1)
+                rk = torch.where(mine > NEG, rk, torch.full_like(rk, -1))
+                WATCH["tok_rank"].append((qs.cpu(), rk.cpu()))
         return top.indices, top.values > NEG
 
     @torch.no_grad()
