@@ -521,6 +521,38 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   model far off, so the screen needs a gentler one). Every checkpoint (each 50 steps, and step 0) gets the needle
   test at 64k and 128k with 16 depths on card 2 (`scripts/e41_ck_watch.sh`; results `Cache/e41/evals/tree_xl128*/
   needle.log` on Odra).
+- **2026-11-27 06:52 UTC, run 5 launched on demand: the 256k stage with the scan** (arm `tree_xl_scan`; everything else run 4's: the recall run's final weights, mix `m21mix_xl1`, 0.3B
+  tokens). The account's spot quota for these cards is two nodes (both in use) and its on-demand quota is eight, so
+  this one runs on demand ($10.49/h; no capacity in any zone at 06:41 UTC, a node at 06:52 UTC): g6e.12xlarge
+  `i-00df522eef49da934` (us-east-1c, 14 h cap), branch `e41-run5` at `850bcc20`, S3
+  `runs/e41/e33n_m120t_tree_xl_scan_muon0.01-xl_tok8.0e9_seed42`, keeper `Cache/keepers/e41-xls.sh`, watcher
+  `Cache/keepers/e41-xls-watch.sh` (cap $180), started by `Cache/ops/start_long.sh`. Its scan scores in bf16 (the
+  branch predates the change to fp32 below).
+- **2026-11-27 06:52 UTC, the AWS login on the laptop expired** (SSO token; `aws sso login --profile m21-research`
+  is the author's to run; a phone notification was sent 06:57 UTC). The three nodes train on (each ends its own
+  job and has a hard cap in hours: run 2 30 h, runs 4 and 5 14 h); until the login is back the keepers cannot
+  relaunch an interrupted spot node and the watchers cannot read S3 or enforce the money caps. Run 5's launch
+  line was followed by a failed wait for the node (the token had just gone): the node is assumed up.
+- **2026-11-27 06:39–06:55 UTC, needle readings with 16 depths** (Odra card 2, all seven digits right; the card
+  sits at 78 °C next to card 1 and the heat guard keeps pausing it, so these come slowly):
+
+  | model | 64k | 128k |
+  |---|---|---|
+  | the walk-down screen after 50 steps | 9 of 16 | 3 of 16 |
+  | the walk-down screen after 100 steps | 8 of 16 | 2 of 16 |
+  | released weights with the scan, untrained | 5 of 16 | 1 of 16 |
+
+  The untrained scan at 128k was 4 of 8 on Polonez with other needles: eight or sixteen needles do not carry a
+  comparison; the trend over checkpoints has to.
+- **2026-11-27 06:57 UTC, the scan's scores in fp32** (commit `1a5d5772`): the choice is among tens of thousands
+  of concepts and bf16 steps are 0.125–0.25 at these scores (the table read scores in fp32 too).
+- **2026-11-27 07:00 UTC, `tree_span` (experimental, the top-down read's forward only; commit `59ebacd6`):** an
+  opened token brings the n tokens after it (each position once, the same cap, inside the document and before the
+  window). Why: the released model finds where the number starts at every length (first token right in 6–8 of 8
+  up to 256k) and then loses the digits. Each later digit must win the choice again by a weak cue (the digit
+  before it, a common pattern in 128k of text), while the place itself keeps matching the question; a fact is a
+  run of tokens, so the index should find the place and the reader read on from it. Zero-shot test on the
+  released weights queued on Odra card 2 (16 depths, 64k and 128k, a run of 4).
 
 ## Result
 <Filled in after, by experiment-track.>
