@@ -518,6 +518,10 @@ class ModelArguments:
     tree_reasoner_loops: int = field(default=2, metadata={"help": "E41: reasoner loops."})
     tree_plan: bool = field(default=False, metadata={
         "help": "E41: the reasoner's plan vector per block, added to the token stream (zero at the start)."})
+    tree_reasoner_keys: bool = field(default=True, metadata={
+        "help": "E41: the reasoner also corrects the summaries' keys (False: values only)."})
+    tree_aux_detach: bool = field(default=False, metadata={
+        "help": "E41: the next-concept prediction trains its own layers only (no gradient into the reasoned states)."})
     tree_token_update: bool = field(default=False, metadata={
         "help": "E41: opened tokens carry their concept's value correction."})
     tree_next_concept: float = field(default=0.0, metadata={

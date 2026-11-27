@@ -692,8 +692,13 @@ class TreeReasoner(nn.Module):
 
     def __init__(self, hidden: int, d_kv: int, *, dim: int = 512, layers: int = 2, heads: int = 8, loops: int = 2,
                  plan: bool = True, next_concept: bool = True, codes_coarse: int = 1024, codes_fine: int = 4096,
-                 code_dim: int = 64, code_decay: float = 0.99, max_levels: int = 16):
+                 code_dim: int = 64, code_decay: float = 0.99, max_levels: int = 16, keys: bool = True,
+                 aux_detach: bool = False):
         super().__init__()
+        # keys False: no key corrections (the summaries' keys stay the exact means: the choice and the logits of
+        # the concept read); aux_detach: the next-concept prediction reads the reasoned states without gradient
+        # into them (it trains its own layers only), so the extra loss cannot move what the read uses
+        self.keys, self.aux_detach = bool(keys), bool(aux_detach)
         self.loops, self.heads, self.dim = max(1, int(loops)), int(heads), int(dim)
         self.inp = nn.Linear(hidden, dim, bias=False)
         self.lvl = nn.Embedding(max_levels + 1, dim)
@@ -819,6 +824,8 @@ class TreeReasoner(nn.Module):
         h1n = self.norm1(h1) * (tree.n[:, :C1] > 0)[..., None].to(h1.dtype)
         dk = torch.cat([self.out_k1(h1n), dk_up], dim=1)
         dv = torch.cat([self.out_v1(h1n), dv_up], dim=1)
+        if not self.keys:
+            dk = dk * 0.0
         # the blocks' pooled states (their level-2 nodes): the plan and the predictor
         lo2, hi2 = tree.span(2)
         nb = (hi2 - lo2) // P
@@ -830,7 +837,7 @@ class TreeReasoner(nn.Module):
         if self.next_concept and self.training:  # the prediction is a training signal only
             code_c = self.codes(zu[:, :nb * P], ok[:, :nb * P], "c").view(B, nb, P)      # level-2 nodes
             code_f = self.codes(z1, tree.n[:, :C1] > 0, "f").view(B, nb, -1)             # concepts
-            pr = F.silu(self.pred(pooled))
+            pr = F.silu(self.pred(pooled.detach() if self.aux_detach else pooled))
             bdoc = doc[:, :nb * P].view(B, nb, P).amax(-1)                               # a block's document (−1 none)
             pair = ((bdoc[:, :-1] >= 0) & (bdoc[:, :-1] == bdoc[:, 1:])) if nb > 1 else None
             if pair is not None and bool(pair.any()):

@@ -462,7 +462,7 @@ def _plain_loop_kwargs(model_args) -> dict:
                 out[k] = getattr(model_args, k)
             if bool(getattr(model_args, "concept_tree", False)):  # E41: the tree over the concept read
                 for k in ("concept_tree", "tree_probes", "tree_fan", "tree_follow", "tree_route", "tree_row_mix",
-                          "tree_row_draw",
+                          "tree_row_draw", "tree_reasoner_keys", "tree_aux_detach",
                           "tree_train_follow", "tree_reasoner_layers", "tree_reasoner_dim", "tree_reasoner_heads",
                           "tree_reasoner_loops", "tree_plan", "tree_token_update", "tree_next_concept",
                           "tree_codes_coarse", "tree_codes_fine", "tree_code_dim", "tree_route_loss",

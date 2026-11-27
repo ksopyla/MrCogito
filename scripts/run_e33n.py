@@ -157,6 +157,15 @@ ARMS["tree_step"] = {**ARMS["tree"], "tree_row_draw": "step"}
 # every row read as normal (no closed-book or bounded rows): the reasoner, the plan and the two losses on the
 # recall recipe's own read; with `tree` it separates what the closed-book rows do from what the reasoner does
 ARMS["tree_flat"] = {**ARMS["tree"], "tree_row_mix": ""}
+# run 2 (2026-11-27): the tree read and the closed-book rows without the reasoner (home retrofits: closed-book rows
+# alone cost the normal read +0.002, the reasoner with its losses +0.021), the read drawn per step
+ARMS["tree_read_step"] = {**ARMS["tree_read"], "tree_row_draw": "step"}
+# the reasoner taken apart (home retrofits): values only (no key corrections), no plan, no extra losses …
+ARMS["tree_vals"] = {**ARMS["tree_read"], "tree_reasoner_layers": 2, "tree_reasoner_dim": 384,
+                     "tree_reasoner_heads": 6, "tree_reasoner_loops": 2, "tree_reasoner_keys": "false"}
+# … and the full reasoner with small extra losses that do not reach the token layers
+ARMS["tree_gentle"] = {**ARMS["tree_noaux"], "tree_next_concept": 0.02, "tree_route_loss": 0.02,
+                       "tree_aux_detach": "true"}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
 # E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
 # mixes for the query, key and value inputs (nn/depth_mix.py): the reading layer's runs only, or 2-DCA on every run.
@@ -193,6 +202,9 @@ TINY_OPEN["tree_noaux"] = {**TINY_OPEN["tree_read"], "tree_reasoner_dim": 64, "t
 TINY_OPEN["tree"] = {**TINY_OPEN["tree_noaux"], "tree_codes_coarse": 64, "tree_codes_fine": 128, "tree_code_dim": 16,
                      "tree_route_queries": 32}
 TINY_OPEN["tree_soft"] = TINY_OPEN["tree_step"] = TINY_OPEN["tree_flat"] = TINY_OPEN["tree"]
+TINY_OPEN["tree_read_step"] = TINY_OPEN["tree_read"]
+TINY_OPEN["tree_vals"] = TINY_OPEN["tree_noaux"]
+TINY_OPEN["tree_gentle"] = TINY_OPEN["tree"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}
