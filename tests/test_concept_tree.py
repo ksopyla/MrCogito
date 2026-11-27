@@ -13,6 +13,7 @@ What must hold:
 """
 from __future__ import annotations
 
+import copy
 import math
 
 import pytest
@@ -339,6 +340,96 @@ from tests.test_latent_memory import cfg  # noqa: E402
 CONCEPT = dict(message_boundary_token_id=-1, message_loop_rounds=2, global_nope=True, num_kv_heads=1,
                par_global_read="concept", concept_block=BLK, concept_per_block=PER, concept_sinks=2,
                concept_top_k=8, concept_iters=3)
+# ------------------------------------------------------------------ T10 the top-down read
+def _reads(tree, B, kind, cap):
+    f = torch.full((B, tree.levels + 1), 2, dtype=torch.long)
+    if kind == "one":
+        f[:] = 1
+    elif kind == "wide":
+        f[:] = 5
+    elif kind == "rows":                                                                 # each row its own bound
+        f[0], f[1] = 1, 3
+    elif kind.startswith("cut"):                                                         # nothing below level m
+        f[:, 2:int(kind[3:]) + 1] = 0
+    return RowReads(follow=f, cap=torch.full((B,), cap, dtype=torch.long), descent=torch.ones(B, dtype=torch.bool))
+
+
+@pytest.mark.parametrize("docs", [False, True])
+@pytest.mark.parametrize("kind,cap", [("two", 24), ("one", 24), ("wide", 24), ("rows", 24), ("two", 0), ("cut2", 0),
+                                      ("cut3", 0), ("cut4", 0), ("two", 6)])
+def test_the_top_down_read_equals_the_streamed_read(docs, kind, cap):
+    """A query that scores only the children of the nodes it followed reads what the dense bounded read reads: the
+    same output for every query, for part of the queries, with token updates and wide summaries, and the same
+    gradients (each chunk of queries its own gradient checkpoint)."""
+    from nn.concept_tree import reads_top_down, sparse_index, tree_read_sparse, tree_read_stream
+
+    q, k, v, x, doc, sink, ds = _inputs(S=592, seed=21, docs=docs)                       # 37 blocks: levels 1 … 7
+    B, S = doc.shape
+    if docs:
+        doc[1, 200:420] = 1                                                              # three documents in row 1
+        doc[1, 420:] = 2
+        sink, ds = _sink(doc)
+    q, k, v = q.requires_grad_(), k.requires_grad_(), v.requires_grad_()
+    tree = _tree(k, v, x, doc, sink)
+    assert tree.levels >= 6
+    tree.val_h = 0.5 * torch.randn(B, tree.n_entries, q.shape[2], q.shape[3]) if kind in ("two", "rows") else None
+    reads = _reads(tree, B, kind, cap)
+    assert reads_top_down(reads, "lookahead")
+    dv_tok = 0.3 * torch.randn(B, S, 1, k.shape[-1])
+    kw = dict(tree=tree, reads=reads, doc=doc, ds=ds, n_sinks=2, key_valid=None, top_k=24, width=12, dv_tok=dv_tok)
+    ref = tree_read_stream(q, k, v, route="descent", **kw)
+    out = tree_read_sparse(q, k, v, **kw)
+    torch.testing.assert_close(out, ref, atol=3e-5, rtol=1e-4)
+    for ch in (5, 16):
+        torch.testing.assert_close(tree_read_sparse(q, k, v, chunk=ch, **kw), out, atol=2e-5, rtol=1e-4)
+    part = tree_read_sparse(q[:, 300:411], k, v, q_offset=300, index=sparse_index(tree), **kw)
+    torch.testing.assert_close(part, out[:, 300:411], atol=2e-5, rtol=1e-4)
+    g_ref = torch.autograd.grad(ref.pow(2).sum(), [q, k, v], retain_graph=True)
+    g_out = torch.autograd.grad(out.pow(2).sum(), [q, k, v])
+    for a, b in zip(g_out, g_ref):
+        torch.testing.assert_close(a, b, atol=5e-4, rtol=5e-3)
+    with torch.no_grad():                                                                # no gradient: no checkpoints
+        torch.testing.assert_close(tree_read_sparse(q, k, v, **kw), out, atol=2e-5, rtol=1e-4)
+
+
+def test_the_top_down_index_lists_children_and_roots():
+    from nn.concept_tree import sparse_index
+
+    q, k, v, x, doc, sink, ds = _inputs(S=592, seed=3, docs=True)
+    tree = _tree(k, v, None, doc, sink)
+    ix = sparse_index(tree)
+    for b in range(doc.shape[0]):
+        for lv in range(1, tree.levels + 1):
+            lo, hi = tree.span(lv)
+            live = tree.frm[b, lo:hi] < BIG
+            never = (live & (tree.pfrm[b, lo:hi] >= BIG)).nonzero().squeeze(-1) + lo
+            got = ix["roots"][lv]
+            assert sorted(never.tolist()) == sorted(got[0][b][got[1][b]].tolist() if got is not None else [])
+            if lv == tree.levels:
+                assert never.numel() == int(live.sum())                                  # the top: every node a root
+                continue
+            plo, phi = tree.span(lv + 1)
+            kd = ix["kids"][lv][b]
+            for p in range(plo, phi):
+                mine = ((tree.par[b, lo:hi] == p) & live & (tree.pfrm[b, lo:hi] < BIG)).nonzero().squeeze(-1) + lo
+                assert sorted(mine.tolist()) == sorted(kd[p - plo][kd[p - plo] >= 0].tolist())
+
+
+def test_top_down_rows_are_all_bounded_and_by_descent():
+    ids = torch.randint(3, 50, (64, 300))
+    for step in (None, 7):
+        r = row_reads(ids, 5, mix=(0.3, 0.4, 0.3), follow=8, top_k=32, block=16, step=step, top_down=True)
+        assert bool(r.descent.all()) and not bool((r.follow[:, 2:] == ALL).any())
+        assert set(r.follow[:, 5].tolist()) <= {0, 2, 4, 8, 32}
+    r = row_reads(ids, 5, mix=(0.3, 0.4, 0.3), follow=8, top_k=32, block=16, top_down=True)
+    old = row_reads(ids, 5, mix=(0.3, 0.4, 0.3), follow=8, top_k=32, block=16)
+    assert torch.equal(r.cap, old.cap)                                                   # the same rows open nothing
+    normal = (old.follow[:, 2:] == ALL).all(1) & (old.cap == 32)                         # not a closed book
+    assert bool((r.follow[normal, 2:] == 32).all())                                      # as normal: 4 × follow
+    cut = old.cap < 32
+    assert torch.equal((r.follow[cut] == 0), (old.follow[cut] == 0))                     # the same levels cut
+
+
 TREE = dict(concept_tree=True, tree_probes=P, tree_fan=FAN)
 REASON = dict(tree_reasoner_layers=1, tree_reasoner_dim=16, tree_reasoner_heads=2, tree_plan=True)
 AUX = dict(tree_next_concept=0.1, tree_route_loss=0.1, tree_codes_coarse=8, tree_codes_fine=16, tree_code_dim=8,
@@ -635,6 +726,56 @@ def test_wide_summaries_never_read_ahead_and_the_three_reads_agree(kw):
             ref = m.hidden_states(buf, doc_ids=doc)[:, t]
             h = h[:, -1] if h.dim() == 3 else h
             assert float((h - ref).abs().max()) < 2e-4, t
+
+
+# ------------------------------------------------------------------ the top-down read in the model
+SPARSE = dict(tree_sparse=True, tree_follow=2, tree_route="descent")
+
+
+@pytest.mark.parametrize("kw", [{}, WIDE, REASON, {"tree_follow": 1}], ids=["read", "wide", "reasoner", "one"])
+def test_a_top_down_model_reads_what_the_bounded_model_reads(kw):
+    """tree_sparse changes how a bounded read by descent is computed, not what it reads; it never reads ahead; a
+    read the top-down path cannot make (every node followed) is still the concept read."""
+    cfg_kw = {**TREE, **SPARSE, **kw}
+    dense = _model(warm=True, **{**cfg_kw, "tree_sparse": False})
+    m = _model(warm=True, **cfg_kw)
+    m.load_state_dict(dense.state_dict())
+    if "tree_wide" in kw:
+        for mm in (m, dense):
+            _warm_writer(mm)
+        m.load_state_dict(dense.state_dict())
+    ids = _ids(S=224, B=2)
+    with torch.no_grad():
+        base = m(ids).logits
+        torch.testing.assert_close(base, dense(ids).logits, atol=2e-4, rtol=1e-3)
+        for t in range(40, 224, 37):
+            ids2 = ids.clone()
+            ids2[:, t:] = (ids2[:, t:] + 7) % 57 + 3
+            assert ((base - m(ids2).logits)[:, :t].abs().amax(-1) < 1e-4).all(), t
+        att = m.layers[m.config.global_layer_index].attn
+        att.tree["follow"], att.tree["route"] = 0, "lookahead"                           # every node followed
+        datt = dense.layers[dense.config.global_layer_index].attn
+        datt.tree["follow"], datt.tree["route"] = 0, "lookahead"
+        torch.testing.assert_close(m(ids).logits, dense(ids).logits, atol=1e-5, rtol=1e-4)
+
+
+def test_a_top_down_model_trains_and_checkpointing_agrees():
+    cfg_kw = {**TREE, **SPARSE, **WIDE, "tree_row_mix": "0.3,0.4,0.3", "tree_train_follow": 2}
+    m = _model(warm=True, **cfg_kw).train()
+    _warm_writer(m)
+    twin = copy.deepcopy(m)
+    twin.gradient_checkpointing_enable()
+    ids = _ids(S=224, B=3)
+    a, b = m(ids, labels=ids), twin(ids, labels=ids)
+    torch.testing.assert_close(a.loss, b.loss, atol=1e-5, rtol=1e-5)
+    a.loss.backward()
+    b.loss.backward()
+    n = 0
+    for (name, p), (_, p2) in zip(m.named_parameters(), twin.named_parameters()):
+        if p.grad is not None:
+            torch.testing.assert_close(p.grad, p2.grad, atol=1e-5, rtol=2e-3, msg=name)
+            n += int(p.grad.abs().sum() > 0)
+    assert n > 10 and float(m.layers[m.config.global_layer_index].attn.tree_writer.weight.grad.abs().sum()) > 0
 
 
 def test_short_rows_run_and_keep_the_reasoner_in_the_graph():

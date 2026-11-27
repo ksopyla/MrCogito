@@ -529,6 +529,10 @@ class ModelArguments:
     tree_wide: bool = field(default=False, metadata={
         "help": "E41 wide summaries: a learned linear read of a node's mean state gives every query head its own "
                 "value slice (64 numbers per summary become heads x 64); zero at the start."})
+    tree_sparse: bool = field(default=False, metadata={
+        "help": "E41 top-down read: a query scores only the children of the nodes it followed, so a bounded read "
+                "costs the same per query at any row length (rows of 262,144 tokens and beyond). Training rows are "
+                "then all bounded (an as-normal row follows 4 x tree_train_follow) and chosen by descent."})
     tree_token_update: bool = field(default=False, metadata={
         "help": "E41: opened tokens carry their concept's value correction."})
     tree_next_concept: float = field(default=0.0, metadata={

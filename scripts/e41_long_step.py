@@ -31,17 +31,19 @@ def main() -> None:
     ap.add_argument("--follow", type=int, default=16, help="nodes followed per level on a bounded row")
     ap.add_argument("--steps", type=int, default=3)
     ap.add_argument("--wide", action="store_true", help="wide summaries on (a fresh writer)")
+    ap.add_argument("--top_down", action="store_true", help="the top-down read (tree_sparse): every row bounded")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
     from nn.perceiver_ar_lm import PerceiverARConfig, PerceiverARLM
 
-    out = {"checkpoint": a.checkpoint, "follow": a.follow, "rows": []}
+    out = {"checkpoint": a.checkpoint, "follow": a.follow, "top_down": bool(a.top_down), "rows": []}
     for mix in a.mixes.split(":"):
         cfg = PerceiverARConfig.from_pretrained(a.checkpoint)
         cfg.concept_tree, cfg.tree_probes, cfg.tree_fan = True, 8, 8
         cfg.tree_row_mix, cfg.tree_train_follow, cfg.tree_row_draw = mix, a.follow, "step"
         cfg.tree_wide = bool(a.wide)
+        cfg.tree_sparse = bool(a.top_down)
         model = PerceiverARLM.from_pretrained(a.checkpoint, config=cfg).cuda().train()
         model.gradient_checkpointing_enable()
         opt = torch.optim.AdamW(model.parameters(), lr=1e-6)

@@ -250,7 +250,7 @@ def _row_uniform(ids: torch.Tensor, salt: int, n: int) -> torch.Tensor:
 
 
 def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k: int, small: int = 64,
-              block: int = 512, step: Optional[int] = None) -> RowReads:
+              block: int = 512, step: Optional[int] = None, top_down: bool = False) -> RowReads:
     """The closed-book rows (training): each row draws its read. `mix` = (as normal, bounded, cut) shares.
     As normal: every node followed, `top_k` tokens. Bounded: a budget drawn evenly from `follow` / 4, / 2, × 1, × 4
     nodes per level, `top_k` tokens; half of the bounded rows choose by `descent` (a node's own estimate), half by
@@ -263,7 +263,10 @@ def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k:
     `step` (an int): the draw is a function of that number alone, the same for every row (and, with the forward's
     count as the number, on every card). With several cards every step waits for the slowest card, and a bounded
     row is 1.3 × a flat row while a cut row is several times faster: drawn per row, most steps hold a slow row
-    (run 1: 0.75 × the recall run's speed); drawn per step, cut steps are fast on every card."""
+    (run 1: 0.75 × the recall run's speed); drawn per step, cut steps are fast on every card.
+
+    `top_down` (rows of any length, `tree_read_sparse`): no row follows every node. An as-normal row follows
+    4 × `follow` per level, a cut row keeps its drawn bound above the cut, and every row chooses by `descent`."""
     B = ids.shape[0]
     dev = ids.device
     nh = min(256, 2 * int(block))
@@ -280,12 +283,14 @@ def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k:
     sizes = torch.tensor([max(follow // 4, 1), max(follow // 2, 1), int(follow), 4 * int(follow)], device=dev)
     fb = sizes[(u2 * 4).long().clamp(max=3)]                                              # [B]
     f[:, 2:] = torch.where(bounded[:, None], fb[:, None].expand(B, levels - 1), f[:, 2:])
+    if top_down:
+        f[:, 2:] = torch.where((bounded | cut)[:, None], fb[:, None], sizes[3].expand(B)[:, None]).expand(B, levels - 1)
     m = (u2 * levels).long().clamp(max=levels - 1) + 1                                   # 1 … L
     lv = torch.arange(levels + 1, device=dev)[None]
     f = torch.where(cut[:, None] & (lv <= m[:, None]) & (lv >= 2), torch.zeros_like(f), f)
     cap = torch.where(cut, torch.where((m == 1) & (u3 < 0.5), torch.full_like(cap, int(small)),
                                        torch.zeros_like(cap)), cap)
-    return RowReads(follow=f, cap=cap, descent=bounded & (u3 < 0.5))
+    return RowReads(follow=f, cap=cap, descent=torch.ones_like(bounded) if top_down else bounded & (u3 < 0.5))
 
 
 # ------------------------------------------------------------------------------------------------ the choice
@@ -681,6 +686,280 @@ def tree_read_stream(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
         out.append(o.to(q.dtype))
         s0 = s1
     return torch.cat(out, dim=1)
+
+
+# ------------------------------------------------------------------------------------------------ the top-down read
+def _pick(x: torch.Tensor, ids: torch.Tensor) -> torch.Tensor:
+    """x [B, E, …] at ids [B, …] → [B, …, …]."""
+    B = x.shape[0]
+    idx = ids.reshape(B, -1, *([1] * (x.dim() - 2))).expand(-1, -1, *x.shape[2:])
+    return x.gather(1, idx).view(*ids.shape, *x.shape[2:])
+
+
+@torch.no_grad()
+def sparse_index(tree: TreeIndex) -> dict:
+    """What the top-down read needs besides the tree. `kids[ℓ]` [B, n_{ℓ+1}, c] long: the children at level ℓ of
+    every node of level ℓ + 1, padded with −1 (c = the most children any node has). `roots[ℓ]` = (ids [B, R] long,
+    ok [B, R] bool): the level's nodes that never get a parent (the top level, a document's last containers, the
+    children of a container that holds two documents), or None when the level has none."""
+    B = tree.n.shape[0]
+    dev = tree.n.device
+    kids, roots = {}, {}
+    for lv in range(1, tree.levels + 1):
+        lo, hi = tree.span(lv)
+        frm, pfrm = tree.frm[:, lo:hi], tree.pfrm[:, lo:hi]
+        fr = (frm < BIG) & (pfrm >= BIG)
+        R = int(fr.sum(1).max()) if hi > lo else 0
+        roots[lv] = None
+        if R:
+            idx = fr.to(torch.int8).argsort(dim=1, descending=True, stable=True)[:, :R]
+            roots[lv] = (idx + lo, fr.gather(1, idx))
+        if lv == tree.levels:
+            break
+        plo, phi = tree.span(lv + 1)
+        n_par, n_c = phi - plo, hi - lo
+        has = (frm < BIG) & (pfrm < BIG)
+        key = torch.where(has, tree.par[:, lo:hi] - plo, torch.full_like(frm, n_par))
+        order = key.argsort(dim=1, stable=True)
+        skey = key.gather(1, order)
+        cnt = torch.zeros(B, n_par + 1, dtype=torch.long, device=dev).scatter_add_(1, key, torch.ones_like(key))
+        start = cnt.cumsum(1) - cnt
+        rank = torch.arange(n_c, device=dev)[None] - start.gather(1, skey)
+        cmax = max(int(cnt[:, :n_par].max()) if n_par else 0, 1)
+        tab = torch.full((B, n_par * cmax + 1), -1, dtype=torch.long, device=dev)
+        dest = torch.where(skey < n_par, skey * cmax + rank, torch.full_like(skey, n_par * cmax))
+        tab.scatter_(1, dest, order + lo)
+        kids[lv] = tab[:, :n_par * cmax].view(B, n_par, cmax)
+    return {"kids": kids, "roots": roots}
+
+
+def reads_top_down(reads: RowReads, route: str) -> bool:
+    """A read the top-down path can make: a bound at every level, every row choosing by a node's own estimate."""
+    own = bool(reads.descent.all()) if reads.descent is not None else route != "lookahead"
+    return own and bool((reads.follow[:, 2:] != ALL).all())
+
+
+def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_sinks: int, key_valid, top_k: int,
+                     width: int, variance: bool = True, summaries: bool = True, open_tokens: bool = True,
+                     dv_tok: Optional[torch.Tensor] = None, sum_len: int = 0, q_offset: int = 0, chunk: int = 0,
+                     index: Optional[dict] = None) -> torch.Tensor:
+    """The bounded read made top-down, for rows of any length (2026-11-27). The table and streamed reads score every
+    concept of the row for every query before they bound what is read, so their cost per query grows with the row
+    (the reason no row was longer than 65,536 tokens). Here a query scores, level by level from the top, only the
+    nodes it may reach: the children of the nodes it followed one level up, and the level's roots (nodes whose
+    parent is not closed yet, or never will be). Its cost is `follow` × children per level whatever the row's length.
+
+    The same read as `tree_read_stream` for rows that choose by a node's own estimate (`descent`) with a bound at
+    every level (`reads_top_down`): the same followed nodes, opened tokens and readable summaries, one fp32 softmax
+    over the window ‖ sinks ‖ opened tokens ‖ summaries. Differentiable; with gradients on, every chunk of queries
+    is its own gradient checkpoint, so the memory of a training step does not grow with the row either.
+    q [B, Q, h, d] holds the queries [q_offset, q_offset + Q). Returns [B, Q, h, d]."""
+    from functools import partial
+
+    from torch.utils.checkpoint import checkpoint
+
+    from nn.exact_read import ChoiceList, counts
+
+    B, Q, h, d = q.shape
+    S = int(k.shape[1])
+    q0 = int(q_offset)
+    dev = q.device
+    sc = d ** -0.5
+    blk = tree.cidx.block
+    L, P, fan = tree.levels, tree.probes, tree.fan
+    if bool((reads.follow[:, 2:] == ALL).any()):
+        raise ValueError("the top-down read needs a bound on the nodes followed at every level")
+    kt, vt = k[:, :, 0], v[:, :, 0]
+    vu = vt if dv_tok is None else vt + dv_tok[:, :, 0].to(vt.dtype)
+    gi = tree.cidx.groups
+    ix = index if index is not None else sparse_index(tree)
+    logrho = summary_log_scale(ds, S, blk, sum_len) if summaries else None
+    wide = tree.val_h is not None
+    fol = reads.follow
+    kmax = [0, 0] + [int(fol[:, lv].max()) for lv in range(2, L + 1)]
+    logn = torch.where(tree.n > 0, tree.n.clamp_min(1.0).log(), torch.zeros_like(tree.n)).detach().float()
+    var = tree.var.detach().float()
+    opens = open_tokens and bool((reads.cap > 0).any())
+    members = [None]
+    n_own = sum(max(kmax[lv + 1], 1) * ix["kids"][lv].shape[-1] for lv in range(1, L))
+    n_sh = sum((ix["roots"][lv][0].shape[1] if ix["roots"][lv] is not None else 0) + (2 * fan + 1) * P
+               for lv in range(1, L + 1))
+    per = (2 * blk + n_sh) * h + (n_sinks + top_k + n_own) * (h + 2 * d) + (n_own * h * d if wide else 0)
+    grad = torch.is_grad_enabled() and any(t is not None and t.requires_grad
+                                           for t in (q, k, v, tree.key, tree.val, tree.val_h, dv_tok))
+
+    def one(s0: int, s1: int, qc: torch.Tensor) -> torch.Tensor:
+        tau = s0 // blk
+        ch = s1 - s0
+        qp = torch.arange(s0, s1, device=dev)
+        qc = qc.float()
+        qd = doc[:, s0:s1]
+        okq = (qd >= 0)[..., None]
+        own_lo = tau * blk
+        logits, vals = [], []
+        # the window: the query's block and the one before (its own block read raw)
+        j0 = max(0, (tau - 1) * blk)
+        jw = torch.arange(j0, s1, device=dev)
+        ok = (jw[None, :] <= qp[:, None])[None] & (doc[:, j0:s1][:, None, :] == qd[..., None]) & okq
+        if key_valid is not None:
+            ok = ok & (key_valid.bool()[:, j0:s1][:, None, :] | (jw[None, :] == qp[:, None])[None])
+        lw = torch.einsum("bqhd,bkd->bqhk", qc, kt[:, j0:s1].float()) * sc
+        logits.append(lw.masked_fill(~ok[:, :, None, :], NEG))
+        vals.append(("shared", torch.where((jw < own_lo)[None, :, None], vu[:, j0:s1], vt[:, j0:s1]).float()))
+        # the document's sinks outside the window
+        if n_sinks and j0 > 0:
+            sp = ds[:, s0:s1][..., None] + torch.arange(n_sinks, device=dev)
+            spc = sp.clamp(max=S - 1)
+            ok = (sp < j0) & (_take(doc, spc) == qd[..., None]) & okq
+            if key_valid is not None:
+                ok = ok & _take(key_valid.bool(), spc)
+            ls = torch.einsum("bqhd,bqpd->bqhp", qc, _take(kt, spc).float()) * sc
+            logits.append(ls.masked_fill(~ok[:, :, None, :], NEG))
+            vals.append(("own", _take(vu, spc).float()))
+        if tau < 2:
+            return _mix(logits, vals)
+        qq = (qc.detach() ** 2).sum(-1, keepdim=True) / (2 * d) if variance else None     # [B, ch, h, 1]
+        rho = logrho[:, s0:s1][:, :, None, None] if logrho is not None else 0.0
+        f_ids, f_ok = None, None                                                         # followed one level up
+        for lv in range(L, 0, -1):
+            lo, hi = tree.span(lv)
+            # candidates every query of the chunk shares: the level's roots
+            parts = []
+            if ix["roots"][lv] is not None:                                              # never a parent
+                rid, rok = ix["roots"][lv]
+                parts.append((rid, rok[:, None, :] & (_pick(tree.frm, rid)[:, None, :] <= qp[None, :, None])))
+            if 2 <= lv < L:                                                              # no parent yet: the last ones
+                u = (tau - 1) // fan ** (lv - 2)
+                c0, c1 = max(0, (u // fan - 1) * fan), min(u + 1, (hi - lo) // P)
+                if c1 > c0:
+                    tid = torch.arange(lo + c0 * P, lo + c1 * P, device=dev)
+                    pf = tree.pfrm[:, tid]
+                    av = ((tree.frm[:, tid][:, None, :] <= qp[None, :, None]) & (pf < BIG)[:, None, :]
+                          & (pf[:, None, :] > qp[None, :, None]))
+                    parts.append((tid[None].expand(B, -1), av))
+            sid, ns = None, 0
+            if parts:
+                sid = torch.cat([p[0] for p in parts], 1)                                # [B, ns]
+                ns = sid.shape[1]
+                s_root = torch.cat([p[1] for p in parts], 2)                             # [B, ch, ns]
+                s_cand = s_root & (_pick(tree.doc, sid)[:, None, :] == qd[..., None]) & okq
+                s_lg = torch.einsum("bqhd,bnd->bqhn", qc, _pick(tree.key, sid).float()) * sc \
+                    + _pick(logn, sid)[:, None, None, :]
+                if variance:
+                    s_lg = s_lg + qq * _pick(var, sid)[:, None, None, :]
+            # each query's own candidates: the children of the nodes it followed one level up
+            oid, no = None, 0
+            if lv < L and f_ids is not None:
+                kd = ix["kids"][lv]
+                kk, cm = f_ids.shape[-1], kd.shape[-1]
+                oid = _pick(kd, (f_ids - tree.span(lv + 1)[0]).clamp_min(0)).reshape(B, ch, kk * cm)
+                o_cand = (oid >= 0) & f_ok[..., None].expand(B, ch, kk, cm).reshape(B, ch, kk * cm)
+                oid = oid.clamp_min(0)
+                no = kk * cm
+                o_lg = torch.einsum("bqhd,bqnd->bqhn", qc, _pick(tree.key, oid).float()) * sc \
+                    + _pick(logn, oid)[:, :, None, :]
+                if variance:
+                    o_lg = o_lg + qq * _pick(var, oid)[:, :, None, :]
+            if sid is None and oid is None:
+                f_ids, f_ok = None, None
+                continue
+            with torch.no_grad():
+                both = lambda a, b: torch.cat([t for t in (a, b) if t is not None], -1)
+                cand = both(s_cand if sid is not None else None, o_cand if oid is not None else None)
+                score = both(s_lg.detach().amax(2) if sid is not None else None,
+                             o_lg.detach().amax(2) if oid is not None else None)        # [B, ch, N]
+                ids_all = both(sid[:, None, :].expand(B, ch, ns) if sid is not None else None, oid)
+                N = cand.shape[-1]
+                taken = torch.zeros(B, ch, N, dtype=torch.bool, device=dev)              # followed / opened
+                opened = None
+                if lv >= 2:
+                    km = min(max(kmax[lv], 1), N)
+                    top = score.masked_fill(~cand, NEG).topk(km, dim=-1)
+                    sel = torch.isfinite(top.values) & (torch.arange(km, device=dev)[None, None, :]
+                                                         < fol[:, lv][:, None, None])
+                    taken.scatter_(2, top.indices, sel)
+                    f_ids, f_ok = ids_all.gather(2, top.indices), sel
+                elif opens:
+                    # the tokens: the best concepts a query may open, until the row's cap
+                    may = both((s_root & (_pick(gi.g_close, sid)[:, None, :] <= qp[None, :, None]))
+                               if sid is not None else None,
+                               (o_cand & (_pick(gi.g_close, oid) <= qp[None, :, None])) if oid is not None else None)
+                    may = may & (reads.cap > 0)[:, None, None]
+                    mm = min(int(width), N)
+                    top = score.masked_fill(~may, NEG).topk(mm, dim=-1)
+                    valid = top.values > NEG
+                    gids = ids_all.gather(2, top.indices)
+                    lo_ = gi.doc_start[:, qp][..., None].expand(B, ch, mm)
+                    hi_ = (qp - blk)[None, :, None].expand(B, ch, mm)
+                    cnt = torch.where(valid, counts(gi, gids, lo_, hi_), torch.zeros_like(gids, dtype=torch.int32))
+                    off = cnt.cumsum(-1) - cnt
+                    off = torch.where(valid & (off < top_k), off, torch.full_like(off, top_k))
+                    off = torch.where(off.long() < reads.cap[:, None, None], off, torch.full_like(off, top_k))
+                    taken.scatter_(2, top.indices, off < top_k)
+                    cl = ChoiceList(gi, B, ch, cap=top_k, m=mm, row0=s0, members=members[0])
+                    cl.add(s0, gids, off.to(torch.int32))
+                    pos, okp = cl.opened(s0, s1, blk)
+                    members[0] = cl.members()
+                    Pn = int(min(top_k, pos.shape[-1]))
+                    dest = torch.where(okp, okp.long().cumsum(-1) - 1, torch.full_like(pos, Pn)).clamp(max=Pn)
+                    pk = torch.zeros(B, ch, Pn + 1, dtype=torch.long, device=dev).scatter_(2, dest, pos)[..., :Pn]
+                    okp = (torch.arange(Pn, device=dev) < okp.sum(-1, keepdim=True)) & okq
+                    if key_valid is not None:
+                        okp = okp & _take(key_valid.bool(), pk)
+                    opened = (pk, okp)
+                vis = cand & ~taken
+            if opened is not None:
+                pk, okp = opened
+                lo_t = torch.einsum("bqhd,bqpd->bqhp", qc, _take(kt, pk).float()) * sc
+                logits.append(lo_t.masked_fill(~okp[:, :, None, :], NEG))
+                vals.append(("own", _take(vu, pk).float()))
+            if summaries:
+                if sid is not None:
+                    logits.append((s_lg + rho).masked_fill(~vis[:, :, None, :ns], NEG))
+                    if wide:
+                        vals.append(("heads", _pick(tree.val, sid)[:, :, None].float() + _pick(tree.val_h, sid).float()))
+                    else:
+                        vals.append(("shared", _pick(tree.val, sid).float()))
+                if oid is not None:
+                    logits.append((o_lg + rho).masked_fill(~vis[:, :, None, ns:], NEG))
+                    if wide:
+                        vals.append(("ownheads", _pick(tree.val, oid)[:, :, :, None].float()
+                                     + _pick(tree.val_h, oid).float()))
+                    else:
+                        vals.append(("own", _pick(tree.val, oid).float()))
+        return _mix(logits, vals)
+
+    out = []
+    s0 = q0
+    while s0 < q0 + Q:
+        tau = s0 // blk
+        cs = chunk or max(8, min(blk, (1 << 26) // max(B * per, 1)))
+        s1 = min(q0 + Q, (tau + 1) * blk, s0 + cs)
+        qc = q[:, s0 - q0:s1 - q0]
+        o = checkpoint(partial(one, s0, s1), qc, use_reentrant=False) if grad else one(s0, s1, qc)
+        out.append(o.to(q.dtype))
+        s0 = s1
+    return torch.cat(out, dim=1)
+
+
+def _mix(logits: list, vals: list) -> torch.Tensor:
+    """One softmax over the parts' logits [B, ch, h, n_i]; the weighted values. A part's values are shared by the
+    chunk ([B, n, d]; `heads`: [B, n, h, d]) or each query's own ([B, ch, n, d]; `ownheads`: [B, ch, n, h, d])."""
+    w = torch.nan_to_num(torch.softmax(torch.cat(logits, dim=-1), dim=-1), nan=0.0)
+    o, a = 0.0, 0
+    for lg, (kind, val) in zip(logits, vals):
+        n_ = lg.shape[-1]
+        wi = w[..., a:a + n_]
+        a += n_
+        if kind == "shared":
+            o = o + torch.einsum("bqhk,bkd->bqhd", wi, val)
+        elif kind == "heads":
+            o = o + torch.einsum("bqhk,bkhd->bqhd", wi, val)
+        elif kind == "ownheads":
+            o = o + torch.einsum("bqhp,bqphd->bqhd", wi, val)
+        else:
+            o = o + torch.einsum("bqhp,bqpd->bqhd", wi, val)
+    return o
 
 
 def token_update(tree: TreeIndex, dv1: torch.Tensor, S: int) -> torch.Tensor:

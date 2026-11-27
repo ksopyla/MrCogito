@@ -32,6 +32,8 @@ CASES = {
     "wide_bounded": dict(BASE, tree_wide=True, tree_follow=2),
     "wide_training_rows": dict(BASE, tree_wide=True, tree_row_mix="0.3,0.3,0.4", tree_train_follow=2),
     "wide_flat": dict(BASE, tree_wide=True),
+    "top_down_rows": dict(BASE, tree_sparse=True, tree_row_mix="0.3,0.4,0.3", tree_train_follow=2),
+    "top_down_wide": dict(BASE, tree_sparse=True, tree_wide=True, tree_row_mix="0.0,0.7,0.3", tree_train_follow=4),
 }
 
 
@@ -81,7 +83,7 @@ def test_flex_equals_sdpa_forward_and_backward(name, packed):
     print(name, packed, "worst relative grad diff", worst)
 
 
-@pytest.mark.parametrize("name", ["bounded", "training_rows"])
+@pytest.mark.parametrize("name", ["bounded", "training_rows", "top_down_rows", "top_down_wide"])
 def test_bf16_autocast_trains(name):
     flex, _ = _pair(name)
     opt = torch.optim.AdamW(flex.parameters(), lr=1e-3)
@@ -122,6 +124,25 @@ def test_fresh_tree_model_is_the_concept_model_on_flex():
     ids = torch.randint(3, 80, (2, 2048), device="cuda")
     with torch.no_grad():
         assert torch.allclose(tree(ids).logits, base(ids).logits, atol=1e-4, rtol=1e-4)
+
+
+def test_top_down_read_equals_the_flex_read_on_gpu():
+    """The same bounded read by descent through the flex kernel and through the top-down path (fp32 and bf16)."""
+    kw = dict(BASE, tree_follow=2, tree_route="descent", attn_backend="flex")
+    torch.manual_seed(0)
+    dense = PerceiverARLM(cfg(**kw)).cuda().eval()
+    for layer in dense.layers:
+        layer.attn.wo.weight.data.normal_(0, 0.2)
+        layer.mlp.down.weight.data.normal_(0, 0.2)
+    sparse = PerceiverARLM(cfg(**dict(kw, tree_sparse=True))).cuda().eval()
+    sparse.load_state_dict(dense.state_dict())
+    ids = torch.randint(3, 80, (2, 4096), device="cuda")
+    with torch.no_grad():
+        a, b = dense(ids).logits, sparse(ids).logits
+        assert torch.allclose(a, b, atol=2e-4, rtol=1e-3), float((a - b).abs().max())
+        with torch.autocast("cuda", dtype=torch.bfloat16):
+            a, b = dense(ids).logits.float(), sparse(ids).logits.float()
+        assert float((a - b).abs().max()) < 0.2 and float((a - b).abs().mean()) < 0.01
 
 
 def test_150m_shapes_run_at_16k():

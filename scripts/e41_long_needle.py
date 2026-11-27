@@ -60,6 +60,9 @@ def main() -> None:
     ap.add_argument("--modes", default="on,tree64,tree16,descent16")
     ap.add_argument("--list_from", type=int, default=131072, help="rows this long or longer read without tables")
     ap.add_argument("--seed", type=int, default=1234)
+    ap.add_argument("--top_down", action="store_true",
+                    help="bounded reads by descent go through the top-down path (tree_sparse) whatever the "
+                         "checkpoint's config says")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -71,6 +74,10 @@ def main() -> None:
     tok = AutoTokenizer.from_pretrained(a.checkpoint)
     model = PerceiverARLM.from_pretrained(a.checkpoint).cuda().eval()
     eot = int(model.config.eos_token_id if model.config.eos_token_id is not None else 0)
+    if a.top_down:
+        for mod in model.modules():
+            if isinstance(getattr(mod, "tree", None), dict):
+                mod.tree["sparse"] = True
     rng = random.Random(a.seed)
     lengths = [int(x) for x in a.lengths.split(",")]
     text = filler(a.mix, a.sources.split(","), max(lengths) + 4096, eot)

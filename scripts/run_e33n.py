@@ -182,7 +182,10 @@ ARMS["tree_np"] = {**ARMS["tree_kv"], "tree_next_concept": 0.1, "tree_route_loss
 ARMS["tree_wide"] = {**ARMS["tree_read"], "tree_wide": "true"}
 # the stage on rows of 262,144 tokens (mix m21mix_xl1, phase `long`): no whole read, which ranks every concept for
 # every query (the cost that kept rows at 65,536); 80 % of the steps a bounded read, 20 % a read cut at a level
-ARMS["tree_xl"] = {**ARMS["tree_read"], "tree_row_mix": "0.0,0.8,0.2", "tree_row_draw": "step"}
+# tree_sparse: the top-down read (a query scores only the children of the nodes it followed); evaluation reads the
+# way the stage trains (64 followed per level, by a node's own estimate) unless a mode says otherwise
+ARMS["tree_xl"] = {**ARMS["tree_read"], "tree_row_mix": "0.0,0.8,0.2", "tree_row_draw": "step",
+                   "tree_sparse": "true", "tree_follow": 64, "tree_route": "descent"}
 ARMS["tree_xl_wide"] = {**ARMS["tree_xl"], "tree_wide": "true"}
 # run 3: tree_np with the read drawn per step (several cards), next to run 2's tree_read_step
 ARMS["tree_np_step"] = {**ARMS["tree_np"], "tree_row_draw": "step"}

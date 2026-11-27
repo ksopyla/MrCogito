@@ -322,6 +322,8 @@ class PerceiverARConfig(PretrainedConfig):
         tree_wide: bool = False,          # E41: wide summaries: a learned linear read of a node's mean state gives
                                           # every query head its own value slice (hidden → heads · head_dim, zero start)
         tree_predict_ahead: int = 1,      # E41: the block the next-concept prediction is about (b + this)
+        tree_sparse: bool = False,        # E41: the top-down read (a query scores only the children of the nodes it
+                                          # followed: rows of any length); training rows are all bounded, by descent
         tree_token_update: bool = False,  # E41: opened tokens carry their concept's value correction
         tree_next_concept: float = 0.0,   # E41: weight of the next-concept loss (0 = no predictor)
         tree_codes_coarse: int = 1024,    # E41: codebook of the level-2 nodes
@@ -544,6 +546,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.tree_aux_detach = bool(tree_aux_detach)
         self.tree_plan_from = str(tree_plan_from or "state")
         self.tree_wide = bool(tree_wide)
+        self.tree_sparse = bool(tree_sparse)
         self.tree_predict_ahead = int(tree_predict_ahead or 1)
         self.tree_token_update = bool(tree_token_update)
         self.tree_next_concept = float(tree_next_concept or 0.0)
@@ -2893,6 +2896,7 @@ class Attention(nn.Module):
             self.tree = dict(probes=int(cfg.tree_probes), fan=int(cfg.tree_fan), follow=int(cfg.tree_follow), cut=0,
                              route=str(cfg.tree_route), row_mix=mix, train_follow=int(cfg.tree_train_follow),
                              row_draw=str(getattr(cfg, "tree_row_draw", "row")),
+                             sparse=bool(getattr(cfg, "tree_sparse", False)),
                              token_update=bool(cfg.tree_token_update), next_concept=float(cfg.tree_next_concept),
                              route_loss=float(cfg.tree_route_loss), route_queries=int(cfg.tree_route_queries))
             if bool(getattr(cfg, "tree_wide", False)):
@@ -3270,8 +3274,8 @@ class Attention(nn.Module):
         query's top-down choice under its row's budgets, and one softmax over sinks ‖ block-aligned window ‖ opened
         members ‖ the readable summaries of every level (nn/concept_tree.py)."""
         from nn.concept_memory import attend_concepts, build_concepts
-        from nn.concept_tree import (attend_tree, build_tree, fixed_reads, plan_tokens, route_loss, row_reads,
-                                     token_update, tree_choice, tree_read_stream)
+        from nn.concept_tree import (attend_tree, build_tree, fixed_reads, plan_tokens, reads_top_down, route_loss,
+                                     row_reads, token_update, tree_choice, tree_read_sparse, tree_read_stream)
         from nn.exact_read import _FLEX_MAX_NUMEL
 
         B, S = q.shape[:2]
@@ -3315,12 +3319,21 @@ class Attention(nn.Module):
                 aux = torch.cat([nc.float(), rl.float()[None]])
         if self.training and t["row_mix"] is not None and ids is not None:
             reads = row_reads(ids, tree.levels, mix=t["row_mix"], follow=t["train_follow"], top_k=c["top_k"],
-                              block=c["block"], step=self._tree_step if t.get("row_draw") == "step" else None)
+                              block=c["block"], step=self._tree_step if t.get("row_draw") == "step" else None,
+                              top_down=bool(t.get("sparse")))
         else:
             reads = fixed_reads(B, tree.levels, follow=t["follow"], top_k=c["top_k"], device=q.device,
                                 cut=int(t.get("cut", 0)))
         if aux_on:
             self._tree_aux = aux
+        # the top-down read: a bounded read by a node's own estimate costs the same per query at any row length
+        # (training and evaluation; the row's memory does not grow with it either)
+        if t.get("sparse") and self.tree_stats is None and reads_top_down(reads, t["route"]):
+            return tree_read_sparse(q, k, v, tree=tree, reads=reads, doc=doc, ds=ds, n_sinks=c["sinks"],
+                                    key_valid=key_valid, top_k=c["top_k"], width=c["width"],
+                                    variance=c["variance"], summaries=c["summaries"],
+                                    open_tokens=bool(c.get("open", True)), dv_tok=dv_tok,
+                                    sum_len=c.get("sum_len", 0))
         # rows too long for the per-query tables (T [B, S, concepts]: 4 GB at 128k), and the `list` switch: the
         # same read chunk by chunk (evaluation only)
         if not torch.is_grad_enabled() and self.tree_stats is None and (
