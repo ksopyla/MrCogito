@@ -35,6 +35,7 @@
 #   FineWeb-Edu / LongDocs-lite shards: its tokenizer, sources, row lengths and tokens per phase (run_e33n.py --mix).
 # E33N_CKPT_S3=1 (AWS spot nodes): checkpoints go to S3 with the rest, and a relaunched node first pulls the run
 #   folder back, so an interrupted run resumes from its newest checkpoint instead of starting over.
+# E33N_LONG_STAGE (e.g. "stage 4"): the long phase's name on W&B when the run continues a finished model.
 # E33N_LATE_NOTE (e.g. "with recall questions"): added to the W&B name of stages 2 and 3 only, for a run whose
 #   later stages read another mix than its stage 1 did (E39, 2026-11-24).
 set -uo pipefail
@@ -95,7 +96,9 @@ phase() {
       # E33N_PLAIN (e.g. "150M concept memory, Muon"): the W&B display name in plain words, plus the stage
       if [ -n "${E33N_PLAIN:-}" ]; then
         late="${E33N_LATE_NOTE:+, $E33N_LATE_NOTE}"
-        case "$name" in trunk) st="stage 1 of 3";; decay) st="stage 2 of 3$late";; long) st="stage 3 of 3$late";; *) st="$name";; esac
+        # E33N_LONG_STAGE (e41_long.sh: "stage 4"): what the long phase is called when it is not the third stage
+        case "$name" in trunk) st="stage 1 of 3";; decay) st="stage 2 of 3$late";;
+          long) st="${E33N_LONG_STAGE:-stage 3 of 3}$late";; *) st="$name";; esac
         export MC_WANDB_NAME="$E33N_PLAIN, $st"
       fi
       eval "$cmd${E33N_BURST_H:+ --max_train_hours $E33N_BURST_H}${ck:+ --resume_from_checkpoint $ck}" ) \

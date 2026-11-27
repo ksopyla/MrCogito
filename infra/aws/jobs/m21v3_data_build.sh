@@ -20,9 +20,15 @@ mkdir -p "$D/_logs"
 # (2026-11-23 17:01 UTC: every shard over 8 MB failed with AccessDenied on GetObjectTagging). So the copy is made
 # beforehand from the laptop (the same command with the admin profile); here it only fills in what is missing,
 # without the tags, and a failure is reported but does not stop the build of the list sets.
-echo "[m21v3] $(now) copying what $V3 still lacks from $V2 (server side)"
-aws s3 sync --only-show-errors --copy-props none "$V2/" "$V3/" --exclude "mix.json" --exclude "_logs/*" \
-  --exclude "_raw*" || echo "[m21v3] $(now) !! the copy reported errors (see above); continuing"
+# M21_COPY_ONLY (m21xl1_data_build.sh): the sources the new mix reads, when it is not all of v2
+INC=(--exclude "mix.json" --exclude "_logs/*" --exclude "_raw*")
+if [ -n "${M21_COPY_ONLY:-}" ]; then
+  INC=(--exclude "*" --include "tokenizer/*")
+  for n in $M21_COPY_ONLY; do INC+=(--include "${n}_train_*.bin" --include "${n}_val_*.bin" --include "$n.done.json"); done
+fi
+echo "[m21v3] $(now) copying what $V3 still lacks from $V2 (server side)${M21_COPY_ONLY:+: $M21_COPY_ONLY}"
+aws s3 sync --only-show-errors --copy-props none "$V2/" "$V3/" "${INC[@]}" \
+  || echo "[m21v3] $(now) !! the copy reported errors (see above); continuing"
 for n in "${SETS[@]}"; do   # a relaunch: a set already in S3 is skipped
   [ -f "$D/$n.done.json" ] || aws s3 cp --only-show-errors "$V3/$n.done.json" "$D/$n.done.json" 2>/dev/null || true
 done
