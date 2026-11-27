@@ -247,5 +247,34 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   released model does not look up past its training length whichever way it reads; the trained tree model gets
   the same test (S4), and rows longer than 64k in training (stage 4) are the likely requirement.
 
+- **2026-11-27 00:52:50 UTC, run 1 stopped by K1** (the watcher, by itself). Held-out loss on the normal read at
+  steps 200 … 1,000 of stage 2: 2.339, 2.326, 2.290, 2.260, **2.236** against the recall run's 2.308, 2.255, 2.223,
+  2.195, 2.177: behind by 0.031, 0.071, 0.068, 0.065, 0.059 (mark 2.227). Node `i-0881ec244a58d5d8c` terminated;
+  3.07 h, **$24.13**. Next-concept loss fell from chance to about 3.0 (coarse) and 5.3 (fine); route 0.16 → 0.31.
+- **Why, from the home retrofits (released model, E40's rows and schedule, held-out loss on the normal read at step
+  286 and 572; E40's control 1.9275 and 1.9257):**
+
+  | recipe | step 286 | step 572 | against the control |
+  |---|---|---|---|
+  | closed-book and bounded rows only, no reasoner (`tree_read`, Polonez) | 1.9295 | — | +0.002 |
+  | the reasoner, plan and both losses, every row normal (`tree_flat`, Polonez) | 1.9487 | — | +0.021 |
+  | everything, run 1's recipe (`tree`, Odra) | 1.9509 | 1.9458 | +0.023, +0.020 |
+  | everything, fewer closed-book rows (`tree_soft`, Odra) | 1.9493 | 1.9416 | +0.022, +0.016 |
+
+  The closed-book rows cost the normal read almost nothing; the reasoner with its plan and losses is what hurts
+  (new weights that start at zero move fast under Muon and AdamW, and the next-concept loss keeps moving the states
+  the corrections are read from). `tree_read` also trains faster than the control (8.7k against 7.3k tokens/s on
+  one card: a cut row is cheap).
+- **2026-11-27 00:44 UTC, the reasoner taken apart on home cards** (three retrofits, first reading about 01:30 UTC):
+  values only, no plan, no losses (`tree_vals`, Odra card 1, replacing `tree_soft`); the reasoner and plan without
+  the losses (`tree_noaux`, Polonez card 3); the full reasoner with losses of weight 0.02 that do not reach the
+  reasoned states (`tree_gentle`, Polonez card 0, replacing `tree_flat`).
+- **2026-11-27 00:54 UTC, run 2 queued:** arm `tree_read_step` (141.5M, no new weights: the tree read, closed-book
+  and bounded rows 40 / 20 / 40, the read drawn per step so that every card of a step holds the same kind of row),
+  stages 2–3 from concept memory's stage-1 final on `m21mix_v4`, branch `e41-run2` at `21fd2c05`, S3
+  `runs/e41/e33n_m120t_tree_read_step_muon0.01_tok8.0e9_seed42`. Keeper `Cache/keepers/e41-read.sh`, watcher
+  `Cache/keepers/e41-read-watch.sh` with the same marks (K1 2.227, K2 48.6k tokens/s, $220). The first launch
+  attempt met the spot limit while run 1's node was shutting down; the keeper retries every 10 minutes.
+
 ## Result
 <Filled in after, by experiment-track.>
