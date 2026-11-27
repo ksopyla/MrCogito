@@ -746,13 +746,11 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
 
     The same read as `tree_read_stream` for rows that choose by a node's own estimate (`descent`) with a bound at
     every level (`reads_top_down`): the same followed nodes, opened tokens and readable summaries, one fp32 softmax
-    over the window ‖ sinks ‖ opened tokens ‖ summaries. Differentiable; with gradients on, every chunk of queries
-    is its own gradient checkpoint, so the memory of a training step does not grow with the row either.
+    over the window ‖ sinks ‖ opened tokens ‖ summaries. Differentiable. With gradients on, a chunk of queries
+    is computed without a graph and recomputed for its own backward (`_SparseChunk`), and what it owes the row's
+    tensors (keys, values, node keys and values) is added to one buffer per tensor that reaches them once
+    (`_SparseAnchor`): neither the memory nor the time of a training step grows faster than the row.
     q [B, Q, h, d] holds the queries [q_offset, q_offset + Q). Returns [B, Q, h, d]."""
-    from functools import partial
-
-    from torch.utils.checkpoint import checkpoint
-
     from nn.exact_read import ChoiceList, counts
 
     B, Q, h, d = q.shape
@@ -777,9 +775,12 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     # dot products and values in the queries' own precision (bf16 under autocast, as the flex kernel); logits and
     # the softmax in fp32
     wd = q.dtype
-    kt, vt, vu = kt.to(wd), vt.to(wd), vu.to(wd)
-    key_w, val_w = tree.key.to(wd), tree.val.to(wd)
-    valh_w = tree.val_h.to(wd) if wide else None
+    # the row's tensors, by slot: the graph's own (`orig`) and their data (`bigs`, what a chunk reads)
+    KT, VT, VU, KEY, VAL, VALH = 0, 1, (1 if dv_tok is None else 2), 3, 4, 5
+    orig = [kt.to(wd), vt.to(wd), None if dv_tok is None else vu.to(wd), tree.key.to(wd), tree.val.to(wd),
+            tree.val_h.to(wd) if wide else None]
+    bigs = [None if t is None else t.detach() for t in orig]
+    needs = [t is not None and t.requires_grad for t in orig]
     opens = open_tokens and bool((reads.cap > 0).any())
     members = [None]
     # a query's own candidates: about 8 children per followed node (the chunk size's estimate, with a margin)
@@ -787,10 +788,33 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     n_sh = sum((ix["roots"][lv][0].shape[1] if ix["roots"][lv] is not None else 0) + (2 * fan + 1) * P
                for lv in range(1, L + 1))
     per = (2 * blk + n_sh) * h + (n_sinks + top_k + n_own) * (h + 2 * d) + (n_own * h * d if wide else 0)
-    grad = torch.is_grad_enabled() and any(t is not None and t.requires_grad
-                                           for t in (q, k, v, tree.key, tree.val, tree.val_h, dv_tok))
+    grad = torch.is_grad_enabled() and (q.requires_grad or any(needs))
+    acc: dict = {}                                                                       # slot → the gradient so far
 
-    def one(s0: int, s1: int, qc: torch.Tensor) -> torch.Tensor:
+    def accumulate(leaves: list, grads) -> None:
+        for (slot, where, _), g in zip(leaves, grads):
+            if g is None:
+                continue
+            a = acc.get(slot)
+            if a is None:
+                a = acc[slot] = torch.zeros(bigs[slot].shape, dtype=torch.float32, device=dev)
+            if isinstance(where, slice):
+                a[:, where] += g.float()
+            else:
+                idx = where.reshape(B, -1)
+                gg = g.reshape(B, idx.shape[1], *a.shape[2:]).float()
+                a.scatter_add_(1, idx.reshape(B, -1, *([1] * (a.dim() - 2))).expand_as(gg), gg)
+
+    def one(s0: int, s1: int, qc: torch.Tensor, leaves: Optional[list] = None) -> torch.Tensor:
+        def big(slot: int, where) -> torch.Tensor:
+            """Rows of one of the row's tensors: a slice of positions, or the rows at `where` [B, …]. When the
+            chunk is recomputed for its gradient they are leaves, and their gradient goes back by `accumulate`."""
+            t = bigs[slot][:, where] if isinstance(where, slice) else _pick(bigs[slot], where)
+            if leaves is not None and needs[slot]:
+                t = t.detach().requires_grad_()
+                leaves.append((slot, where, t))
+            return t
+
         tau = s0 // blk
         ch = s1 - s0
         qp = torch.arange(s0, s1, device=dev)
@@ -806,9 +830,13 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
         ok = (jw[None, :] <= qp[:, None])[None] & (doc[:, j0:s1][:, None, :] == qd[..., None]) & okq
         if key_valid is not None:
             ok = ok & (key_valid.bool()[:, j0:s1][:, None, :] | (jw[None, :] == qp[:, None])[None])
-        lw = torch.einsum("bqhd,bkd->bqhk", qw, kt[:, j0:s1]).float() * sc
+        lw = torch.einsum("bqhd,bkd->bqhk", qw, big(KT, slice(j0, s1))).float() * sc
         logits.append(lw.masked_fill(~ok[:, :, None, :], NEG))
-        vals.append(("shared", torch.where((jw < own_lo)[None, :, None], vu[:, j0:s1], vt[:, j0:s1])))
+        if VU == VT:
+            vals.append(("shared", big(VT, slice(j0, s1))))
+        else:
+            vals.append(("shared", torch.where((jw < own_lo)[None, :, None], big(VU, slice(j0, s1)),
+                                               big(VT, slice(j0, s1)))))
         # the document's sinks outside the window
         if n_sinks and j0 > 0:
             sp = ds[:, s0:s1][..., None] + torch.arange(n_sinks, device=dev)
@@ -816,9 +844,9 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
             ok = (sp < j0) & (_take(doc, spc) == qd[..., None]) & okq
             if key_valid is not None:
                 ok = ok & _take(key_valid.bool(), spc)
-            ls = torch.einsum("bqhd,bqpd->bqhp", qw, _take(kt, spc)).float() * sc
+            ls = torch.einsum("bqhd,bqpd->bqhp", qw, big(KT, spc)).float() * sc
             logits.append(ls.masked_fill(~ok[:, :, None, :], NEG))
-            vals.append(("own", _take(vu, spc)))
+            vals.append(("own", big(VU, spc)))
         if tau < 2:
             return _mix(logits, vals)
         qq = (qc.detach() ** 2).sum(-1, keepdim=True) / (2 * d) if variance else None     # [B, ch, h, 1]
@@ -846,7 +874,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 ns = sid.shape[1]
                 s_root = torch.cat([p[1] for p in parts], 2)                             # [B, ch, ns]
                 s_cand = s_root & (_pick(tree.doc, sid)[:, None, :] == qd[..., None]) & okq
-                s_lg = torch.einsum("bqhd,bnd->bqhn", qw, _pick(key_w, sid)).float() * sc \
+                s_lg = torch.einsum("bqhd,bnd->bqhn", qw, big(KEY, sid)).float() * sc \
                     + _pick(logn, sid)[:, None, None, :]
                 if variance:
                     s_lg = s_lg + qq * _pick(var, sid)[:, None, None, :]
@@ -866,7 +894,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 o_cand = j < tot
                 oid = torch.where(o_cand, _pick(order, at.clamp(0, order.shape[1] - 1)), torch.zeros_like(j))
                 no = W
-                o_lg = torch.einsum("bqhd,bqnd->bqhn", qw, _pick(key_w, oid)).float() * sc \
+                o_lg = torch.einsum("bqhd,bqnd->bqhn", qw, big(KEY, oid)).float() * sc \
                     + _pick(logn, oid)[:, :, None, :]
                 if variance:
                     o_lg = o_lg + qq * _pick(var, oid)[:, :, None, :]
@@ -920,35 +948,87 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 vis = cand & ~taken
             if opened is not None:
                 pk, okp = opened
-                lo_t = torch.einsum("bqhd,bqpd->bqhp", qw, _take(kt, pk)).float() * sc
+                lo_t = torch.einsum("bqhd,bqpd->bqhp", qw, big(KT, pk)).float() * sc
                 logits.append(lo_t.masked_fill(~okp[:, :, None, :], NEG))
-                vals.append(("own", _take(vu, pk)))
+                vals.append(("own", big(VU, pk)))
             if summaries:
                 if sid is not None:
                     logits.append((s_lg + rho).masked_fill(~vis[:, :, None, :ns], NEG))
                     if wide:
-                        vals.append(("heads", _pick(val_w, sid)[:, :, None] + _pick(valh_w, sid)))
+                        vals.append(("heads", big(VAL, sid)[:, :, None] + big(VALH, sid)))
                     else:
-                        vals.append(("shared", _pick(val_w, sid)))
+                        vals.append(("shared", big(VAL, sid)))
                 if oid is not None:
                     logits.append((o_lg + rho).masked_fill(~vis[:, :, None, ns:], NEG))
                     if wide:
-                        vals.append(("ownheads", _pick(val_w, oid)[:, :, :, None] + _pick(valh_w, oid)))
+                        vals.append(("ownheads", big(VAL, oid)[:, :, :, None] + big(VALH, oid)))
                     else:
-                        vals.append(("own", _pick(val_w, oid)))
+                        vals.append(("own", big(VAL, oid)))
         return _mix(logits, vals)
 
     out = []
     s0 = q0
+    run = _ChunkRun(one, accumulate, wd)
+    anchor = _SparseAnchor.apply(acc, *orig) if grad else None
     while s0 < q0 + Q:
         tau = s0 // blk
         cs = chunk or max(8, min(blk, (1 << 27) // max(B * per, 1)))
         s1 = min(q0 + Q, (tau + 1) * blk, s0 + cs)
         qc = q[:, s0 - q0:s1 - q0]
-        o = checkpoint(partial(one, s0, s1), qc, use_reentrant=False) if grad else one(s0, s1, qc)
-        out.append(o.to(q.dtype))
+        out.append(_SparseChunk.apply(run, s0, s1, qc, anchor) if grad else one(s0, s1, qc).to(wd))
         s0 = s1
     return torch.cat(out, dim=1)
+
+
+class _ChunkRun:
+    """One read's chunk function, the side channel of its gradients, and its output's precision."""
+
+    def __init__(self, fn, accumulate, dtype):
+        self.fn, self.accumulate, self.dtype = fn, accumulate, dtype
+
+
+class _SparseAnchor(torch.autograd.Function):
+    """The row's tensors of one top-down read. Its output is an input of every chunk, so its backward runs after
+    all of theirs and hands each tensor the gradient the chunks accumulated for it, once."""
+
+    @staticmethod
+    def forward(ctx, acc, *tensors):
+        ctx.acc = acc
+        ctx.dtypes = [None if t is None else t.dtype for t in tensors]
+        ref = next(t for t in tensors if t is not None)
+        return ref.new_zeros(())
+
+    @staticmethod
+    def backward(ctx, _):
+        out = []
+        for slot, dt in enumerate(ctx.dtypes):
+            g = ctx.acc.pop(slot, None)
+            out.append(None if g is None or dt is None else g.to(dt))
+        return (None, *out)
+
+
+class _SparseChunk(torch.autograd.Function):
+    """One chunk of queries of a top-down read: computed without a graph; for its backward, computed again with one
+    (only this chunk's graph is alive at a time), the gradient returned for its queries and accumulated for the
+    row's tensors."""
+
+    @staticmethod
+    def forward(ctx, run, s0, s1, qc, anchor):
+        ctx.run, ctx.span = run, (s0, s1)
+        ctx.save_for_backward(qc)
+        return run.fn(s0, s1, qc).to(run.dtype)
+
+    @staticmethod
+    def backward(ctx, g):
+        (qc,) = ctx.saved_tensors
+        run, (s0, s1) = ctx.run, ctx.span
+        with torch.enable_grad():
+            q_ = qc.detach().requires_grad_()
+            leaves: list = []
+            o = run.fn(s0, s1, q_, leaves).to(run.dtype)
+            grads = torch.autograd.grad(o, [q_] + [t for _, _, t in leaves], g, allow_unused=True)
+        run.accumulate(leaves, grads[1:])
+        return None, None, None, grads[0], g.new_zeros(())
 
 
 def _mix(logits: list, vals: list) -> torch.Tensor:
