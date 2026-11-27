@@ -52,6 +52,11 @@ from nn.concept_memory import ConceptIndex, concept_labels, summary_log_scale
 from nn.exact_read import OpenTable, choose
 
 BIG = 1 << 30
+# For scripts that ask where a read went (None: off; nothing in training or the tests sets it). A dict
+# {"q0": first query position watched, "pos": LongTensor [T] of source positions, "log": []}: every call of the
+# top-down read appends (the watched queries' positions [n], whether each source position was opened for each of
+# them [B, n, T], how many tokens each of them opened [B, n]). scripts/e41_needle_why.py.
+WATCH: Optional[dict] = None
 ALL = -1  # a "follow" budget: every readable node of the level is followed
 
 
@@ -896,6 +901,12 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
             top = torch.where(good, pr, torch.full_like(pr, n2)).topk(min(top_k, n2), dim=-1, largest=False)
             pk = ps.gather(2, top.indices).clamp(max=S - 1)
             okp = top.values < n2
+        if WATCH is not None:
+            sel = qp >= WATCH["q0"]
+            if bool(sel.any()):
+                tgt = WATCH["pos"].to(dev)
+                hit = ((pk[:, sel][..., None] == tgt) & okp[:, sel][..., None]).any(2)
+                WATCH["log"].append((qp[sel].cpu(), hit.cpu(), okp[:, sel].sum(-1).cpu()))
         return pk, okp, off
 
     def one(s0: int, s1: int, qc: torch.Tensor, leaves: Optional[list] = None) -> torch.Tensor:
