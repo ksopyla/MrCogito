@@ -319,6 +319,8 @@ class PerceiverARConfig(PretrainedConfig):
         tree_reasoner_keys: bool = True,  # E41: the reasoner also corrects the summaries' keys (False: values only)
         tree_aux_detach: bool = False,    # E41: the extra losses do not reach the token layers (node states detached)
         tree_plan_from: str = "state",    # E41: the plan is read from the reasoned state, or from the predictor (pred)
+        tree_wide: bool = False,          # E41: wide summaries: a learned linear read of a node's mean state gives
+                                          # every query head its own value slice (hidden → heads · head_dim, zero start)
         tree_predict_ahead: int = 1,      # E41: the block the next-concept prediction is about (b + this)
         tree_token_update: bool = False,  # E41: opened tokens carry their concept's value correction
         tree_next_concept: float = 0.0,   # E41: weight of the next-concept loss (0 = no predictor)
@@ -541,6 +543,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.tree_reasoner_keys = bool(tree_reasoner_keys)
         self.tree_aux_detach = bool(tree_aux_detach)
         self.tree_plan_from = str(tree_plan_from or "state")
+        self.tree_wide = bool(tree_wide)
         self.tree_predict_ahead = int(tree_predict_ahead or 1)
         self.tree_token_update = bool(tree_token_update)
         self.tree_next_concept = float(tree_next_concept or 0.0)
@@ -2882,6 +2885,7 @@ class Attention(nn.Module):
         self._tree_aux = None        # this call's auxiliary losses [3] (next concept coarse, fine; route), or None
         self._tree_plan = None       # this call's plan per token [B, S, H], or None
         self.tree_stats = None       # last forward's read statistics when armed (dict), for probes
+        self.tree_writer = None      # wide summaries: Linear(hidden → heads · head_dim) on a node's mean state
         self._tree_step = 0          # training forwards so far (the per-step draw's number; the same on every card)
         if self.concept is not None and bool(getattr(cfg, "concept_tree", False)):
             mix = tuple(float(t) for t in str(cfg.tree_row_mix).split(",")) if str(cfg.tree_row_mix) else None
@@ -2891,6 +2895,8 @@ class Attention(nn.Module):
                              row_draw=str(getattr(cfg, "tree_row_draw", "row")),
                              token_update=bool(cfg.tree_token_update), next_concept=float(cfg.tree_next_concept),
                              route_loss=float(cfg.tree_route_loss), route_queries=int(cfg.tree_route_queries))
+            if bool(getattr(cfg, "tree_wide", False)):
+                self.tree_writer = nn.Linear(cfg.hidden_size, self.h * dh, bias=False)
             if int(cfg.tree_reasoner_layers) > 0:
                 from nn.concept_tree import TreeReasoner
 
@@ -3273,10 +3279,11 @@ class Attention(nn.Module):
         rs = self.tree_reasoner
         self._tree_aux, self._tree_plan = None, None
         aux_on = self.training and rs is not None and (t["next_concept"] > 0 or t["route_loss"] > 0)
+        wr = self.tree_writer
         cidx = None
         if not self.concept_off:
-            cidx = build_concepts(k, v, x if rs is not None else None, doc, sink, block=c["block"],
-                                  per_block=c["per_block"], iters=c["iters"], tau=c["tau"])
+            cidx = build_concepts(k, v, x if (rs is not None or wr is not None) else None, doc, sink,
+                                  block=c["block"], per_block=c["per_block"], iters=c["iters"], tau=c["tau"])
         if cidx is None:  # rows shorter than three blocks, or the memory switched off: sinks + window
             out = attend_concepts(q, k, v, cidx=None, dv=None, doc=doc, key_valid=key_valid, backend=self.backend,
                                   opened=None, sink=sink, ds=ds, n_sinks=c["sinks"], summaries=False,
@@ -3286,8 +3293,13 @@ class Attention(nn.Module):
                 out = out + pad.to(out.dtype)
                 if aux_on:
                     self._tree_aux = torch.zeros(3, device=q.device) + pad.float()
+            if wr is not None:
+                out = out + (0.0 * wr.weight.sum()).to(out.dtype)
             return out
         tree = build_tree(cidx, probes=t["probes"], fan=t["fan"], iters=c["iters"], tau=c["tau"])
+        if wr is not None:  # wide summaries: every head its own slice of a linear read of the node's mean state
+            tree.val_h = wr(tree.z.to(wr.weight.dtype)).view(B, tree.n_entries, self.h, self.dh).float() \
+                * (tree.n > 0)[..., None, None]
         dv_tok, aux = None, torch.zeros(3, device=q.device)
         if rs is not None:
             dk, dv, plan, nc = rs(tree)
@@ -3931,6 +3943,8 @@ class PerceiverARLM(PreTrainedModel):
                 nn.init.zeros_(layer.attn.concept_reasoner.out.weight)  # E37: the read starts as the summary read
             if getattr(layer.attn, "tree_reasoner", None) is not None:
                 layer.attn.tree_reasoner.zero_outputs()                 # E41: the read starts as the concept read
+            if getattr(layer.attn, "tree_writer", None) is not None:
+                nn.init.zeros_(layer.attn.tree_writer.weight)           # E41: wide summaries start as the averages
         if self.memory_writer is not None:
             nn.init.zeros_(self.memory_writer.to_v_state.weight)   # E31: values start as content
             if getattr(self.memory_writer, "keyread_out", None) is not None:

@@ -526,6 +526,9 @@ class ModelArguments:
         "help": "E41: the plan is read from the reasoned state, or from the next-concept predictor's layer (pred)."})
     tree_predict_ahead: int = field(default=1, metadata={
         "help": "E41: the block the next-concept prediction is about (b + this; 2 = the block that reads the plan)."})
+    tree_wide: bool = field(default=False, metadata={
+        "help": "E41 wide summaries: a learned linear read of a node's mean state gives every query head its own "
+                "value slice (64 numbers per summary become heads x 64); zero at the start."})
     tree_token_update: bool = field(default=False, metadata={
         "help": "E41: opened tokens carry their concept's value correction."})
     tree_next_concept: float = field(default=0.0, metadata={

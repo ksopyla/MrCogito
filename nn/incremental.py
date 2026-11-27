@@ -256,7 +256,8 @@ class IncrementalDecoder:
         gatt = m.layers[self.gi].attn
         # the reasoner (E37's, or E41's over the tree) reads the layer input
         keep_x = self.kind == "concept" and (gatt.concept_reasoner is not None
-                                             or getattr(gatt, "tree_reasoner", None) is not None)
+                                             or getattr(gatt, "tree_reasoner", None) is not None
+                                             or getattr(gatt, "tree_writer", None) is not None)
 
         def hook(mod, args, kwargs):
             x = args[0]
@@ -341,7 +342,9 @@ class IncrementalDecoder:
                 self.cc.append(None)
                 self.tt.append(None)
                 continue
-            x = self.X[(self.gi, r)] if (att.concept_reasoner is not None or trs is not None) else None
+            twr = getattr(att, "tree_writer", None)
+            x = self.X[(self.gi, r)] if (att.concept_reasoner is not None or trs is not None
+                                         or twr is not None) else None
             cidx = build_concepts(self.K[(self.gi, r)], self.V[(self.gi, r)], x, doc, sink, block=int(c["block"]),
                                   per_block=int(c["per_block"]), iters=int(c["iters"]), tau=float(c["tau"]))
             if cidx is None:
@@ -355,6 +358,9 @@ class IncrementalDecoder:
                 tree = build_tree(cidx, probes=int(tc["probes"]), fan=int(tc["fan"]), iters=int(c["iters"]),
                                   tau=float(c["tau"]))
                 dv_tok = plan = None
+                if twr is not None:  # wide summaries (as `Attention._tree_read`)
+                    tree.val_h = twr(tree.z.to(twr.weight.dtype)).view(
+                        tree.z.shape[0], tree.n_entries, att.h, att.dh).float() * (tree.n > 0)[..., None, None]
                 if trs is not None:
                     dk, dv, plan, _ = trs(tree)
                     tree.key = tree.key + dk.to(tree.key.dtype)
@@ -656,6 +662,7 @@ class IncrementalDecoder:
         keep = (jpos >= own_lo - blk)[None] | sink
         vt = V[:, :n]
         ks, vs, sbias = None, None, None
+        wide_h = None  # E41 wide summaries: [B, entries, h, d], a value slice per head
         built = self.cc[r]
         tree_built = self.tt[r] if (getattr(att, "tree", None) is not None and r < len(self.tt)) else None
         if built is not None and tree_built is not None:  # E41: the top-down read of the query t
@@ -703,6 +710,7 @@ class IncrementalDecoder:
                 sbias = sb.masked_fill(~vis[:, None, :], float("-inf"))
                 ks = tree.key[:, :hi, None].to(K.dtype)
                 vs = tree.val[:, :hi, None].to(V.dtype)
+                wide_h = tree.val_h[:, :hi] if tree.val_h is not None else None
         elif built is not None:
             cidx, dv, dv_tok = built
             gi = cidx.groups
@@ -744,7 +752,10 @@ class IncrementalDecoder:
             vv = torch.cat([vv, vs[:, :, 0].float()], 1)
             bias = torch.cat([bias, sbias], -1)
         lg = torch.einsum("bhd,bkd->bhk", q[:, 0].float(), kk) / math.sqrt(d) + bias
-        o = torch.einsum("bhk,bkd->bhd", torch.softmax(lg, -1), vv)
+        w = torch.softmax(lg, -1)
+        o = torch.einsum("bhk,bkd->bhd", w, vv)
+        if sbias is not None and wide_h is not None:  # E41 wide summaries: a slice per head
+            o = o + torch.einsum("bhc,bchd->bhd", w[..., n:], wide_h.float())
         return o[:, None].to(q.dtype)
 
     def _living_read(self, q, K, V, r, t, att):

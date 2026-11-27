@@ -36,7 +36,7 @@ case "$ARM" in
   e40_*) EXTRA=(--depth_mix_lr "$DEPTH_LR") ;;
   # E41 retrofits (docs/experiments_specs/ahead/E41_tree_concept_model.md): the tree's reasoner is new, so it gets
   # its own AdamW rate (the released recipe's peak); tree_read has no new weights
-  tree_read) ;;
+  tree_read|tree_read_step) ;;
   tree*) EXTRA=(--tree_reasoner_lr "${TREE_LR:-6e-4}") ;;
 esac
 

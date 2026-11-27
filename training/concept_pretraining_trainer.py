@@ -220,7 +220,8 @@ class PerceiverDenoiseTrainer(Trainer):
             # decay; everything else as before. E40: the depth mixes (`depth_mix.`); E41: the tree's reasoner
             # (`tree_reasoner.`) in a retrofit, where the body trains at the released model's tiny final rates.
             own = [(tag, lr) for tag, lr in (("depth_mix.", self.depth_mix_lr),
-                                             ("tree_reasoner.", self.tree_reasoner_lr)) if lr is not None]
+                                             ("tree_reasoner.", self.tree_reasoner_lr),
+                                             ("tree_writer.", self.tree_reasoner_lr)) if lr is not None]
             if own:
                 named = [(n, p) for n, p in self.model.named_parameters() if p.requires_grad]
                 tags = tuple(t for t, _ in own)
@@ -228,6 +229,8 @@ class PerceiverDenoiseTrainer(Trainer):
                 for tag, lr in own:
                     grp = [p for n, p in named if tag in n]
                     if not grp:
+                        if tag in ("tree_reasoner.", "tree_writer."):  # either may be absent (one rate for both)
+                            continue
                         raise ValueError(f"a learning rate is set for {tag!r} but the model has no such parameters")
                     params.append({"params": grp, "adamw_lr": float(lr), "weight_decay": 0.0,
                                    "follow_schedule": False, "max_aspect": 0.0})

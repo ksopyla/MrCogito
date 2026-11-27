@@ -577,6 +577,66 @@ def test_the_plan_from_the_predictor_trains_it_and_never_reads_ahead():
     assert st["tree/next_concept_fine"] > 0
 
 
+# ------------------------------------------------------------------ wide summaries
+WIDE = dict(tree_wide=True)
+
+
+def _warm_writer(m, std=0.3):
+    wr = m.layers[m.config.global_layer_index].attn.tree_writer
+    wr.weight.data.normal_(0, std)
+    return wr
+
+
+def test_wide_summaries_start_as_the_concept_model_and_learn():
+    base = _model()
+    m = _model(**{**TREE, **WIDE})
+    missing, unexpected = m.load_state_dict(base.state_dict(), strict=False)
+    assert not unexpected and all("tree_writer" in k for k in missing)
+    ids = _ids()
+    with torch.no_grad():
+        torch.testing.assert_close(m(ids).logits, base(ids).logits, atol=1e-5, rtol=1e-4)
+    wr = m.layers[m.config.global_layer_index].attn.tree_writer
+    m.train()
+    m(ids, labels=ids).loss.backward()
+    assert float(wr.weight.grad.abs().sum()) > 0                                         # learns from zero
+    _warm_writer(m)
+    m.eval()
+    with torch.no_grad():
+        assert not torch.allclose(m(ids).logits[:, 64:], base(ids).logits[:, 64:], atol=1e-3)
+
+
+@pytest.mark.parametrize("kw", [{}, {"tree_follow": 2}, {"tree_follow": 1, "tree_route": "descent"},
+                                {**REASON, "tree_follow": 2}], ids=["flat", "bounded", "descent", "reasoner"])
+def test_wide_summaries_never_read_ahead_and_the_three_reads_agree(kw):
+    from nn.incremental import IncrementalDecoder
+
+    m = _model(warm=True, **{**TREE, **WIDE, **kw})
+    _warm_writer(m)
+    ids = _ids(S=224, B=2)
+    with torch.no_grad():
+        base = m(ids).logits
+        for t in range(40, 224, 37):
+            ids2 = ids.clone()
+            ids2[:, t:] = (ids2[:, t:] + 7) % 57 + 3
+            assert ((base - m(ids2).logits)[:, :t].abs().amax(-1) < 1e-4).all(), t
+        with m.open_impl("list"):                                                        # the streamed read
+            torch.testing.assert_close(m(ids).logits, base, atol=2e-4, rtol=1e-3)
+        # the cached decoder: each step is the full forward's state
+        L0, S = 200, 224
+        buf = torch.zeros(2, S, dtype=torch.long)
+        buf[:, :L0] = ids[:, :L0]
+        doc = torch.full((2, S), -1, dtype=torch.long)
+        doc[:, :L0] = 0
+        dec = IncrementalDecoder(m)
+        dec.prefill(buf.clone(), doc.clone(), L0)
+        for t in range(L0, S):
+            h = dec.step(ids[:, t])
+            buf[:, t], doc[:, t] = ids[:, t], 0
+            ref = m.hidden_states(buf, doc_ids=doc)[:, t]
+            h = h[:, -1] if h.dim() == 3 else h
+            assert float((h - ref).abs().max()) < 2e-4, t
+
+
 def test_short_rows_run_and_keep_the_reasoner_in_the_graph():
     m = _model(**{**TREE, **REASON, **AUX})
     rs = m.layers[m.config.global_layer_index].attn.tree_reasoner

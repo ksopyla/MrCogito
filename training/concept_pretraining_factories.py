@@ -463,7 +463,7 @@ def _plain_loop_kwargs(model_args) -> dict:
             if bool(getattr(model_args, "concept_tree", False)):  # E41: the tree over the concept read
                 for k in ("concept_tree", "tree_probes", "tree_fan", "tree_follow", "tree_route", "tree_row_mix",
                           "tree_row_draw", "tree_reasoner_keys", "tree_aux_detach", "tree_plan_from",
-                          "tree_predict_ahead",
+                          "tree_predict_ahead", "tree_wide",
                           "tree_train_follow", "tree_reasoner_layers", "tree_reasoner_dim", "tree_reasoner_heads",
                           "tree_reasoner_loops", "tree_plan", "tree_token_update", "tree_next_concept",
                           "tree_codes_coarse", "tree_codes_fine", "tree_code_dim", "tree_route_loss",
@@ -645,6 +645,7 @@ def _build_perceiver_ar_model(tokenizer, model_args, data_args):
                           "loop_control.",  # E33c: the question control (its gate starts at 0)
                           "depth_mix.",  # E40: the depth mixes start as the identity (b = 1, w = 0)
                           "tree_reasoner.",  # E41: the tree's reasoner writes zero at the start (= concept memory)
+                          "tree_writer.",  # E41: wide summaries start as the averages (zero weight)
                           *skip)
         unexplained = [k for k in missing if not any(tag in k for tag in _ALLOWED_FRESH)]
         if unexpected or unexplained:

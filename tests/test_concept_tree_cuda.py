@@ -29,6 +29,9 @@ CASES = {
     "reasoner_bounded": dict(BASE, **REASON, tree_follow=2, tree_token_update=True),
     "training_rows": dict(BASE, **REASON, **AUX, tree_row_mix="0.3,0.3,0.4", tree_train_follow=2),
     "sum_len": dict(BASE, **REASON, tree_follow=2, concept_sum_len=384),
+    "wide_bounded": dict(BASE, tree_wide=True, tree_follow=2),
+    "wide_training_rows": dict(BASE, tree_wide=True, tree_row_mix="0.3,0.3,0.4", tree_train_follow=2),
+    "wide_flat": dict(BASE, tree_wide=True),
 }
 
 
@@ -44,6 +47,8 @@ def _pair(name):
             if rs is not None:
                 for lin in (rs.out_k, rs.out_v, rs.out_k1, rs.out_v1, rs.plan):
                     lin.weight.data.normal_(0, 0.2)
+            if layer.attn.tree_writer is not None:
+                layer.attn.tree_writer.weight.data.normal_(0, 0.3)
         out.append(m)
     out[1].load_state_dict(out[0].state_dict())
     return out

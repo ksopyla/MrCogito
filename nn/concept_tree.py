@@ -74,6 +74,7 @@ class TreeIndex:
     doc: torch.Tensor    # [B, E] long: the entry's document (−1 = none: never a summary)
     probes: int
     fan: int
+    val_h: Optional[torch.Tensor] = None  # [B, E, h, d] a value per query head, added to `val` (wide summaries)
 
     @property
     def levels(self) -> int:
@@ -439,6 +440,9 @@ def attend_tree(q, k, v, *, tree: TreeIndex, X: Optional[torch.Tensor], opened: 
     if g != h:
         kt = kt.repeat_interleave(h // g, dim=1)
         vt = vt.repeat_interleave(h // g, dim=1)
+    if n_e and tree.val_h is not None:  # wide summaries: each head reads its own slice
+        vt = torch.cat([vt[:, :, :KV - hi_e], vt[:, :, KV - hi_e:] + tree.val_h[:, :hi_e].transpose(1, 2).to(vt.dtype)],
+                       dim=2)
     qi = torch.arange(S, device=q.device)[:, None]
     j = torch.arange(S, device=q.device)[None, :]
     own_lo = (qi // blk) * blk
@@ -496,6 +500,11 @@ def _attend_tree_flex(q, k, v, v1, *, tree: TreeIndex, X, opened, doc, sink, ds,
         return o1.transpose(1, 2)
     Ks = tree.key[:, :n_e, None].to(k.dtype)
     Vs = tree.val[:, :n_e, None].to(v.dtype)
+    gs = g                                                                               # key/value heads of the call
+    if tree.val_h is not None:  # wide summaries: a value per query head (the keys repeat)
+        Vs = Vs + tree.val_h[:, :n_e].to(v.dtype)
+        Ks = Ks.expand(B, n_e, h, d)
+        gs = h
     n = tree.n[:, :n_e]
     # captured by score_mod / mask_mod: no gradient (see attend_concepts on atomic adds into shared entries)
     logn = torch.where(n > 0, n.clamp_min(1.0).log(), torch.zeros_like(n)).detach().contiguous()
@@ -533,7 +542,7 @@ def _attend_tree_flex(q, k, v, v1, *, tree: TreeIndex, X, opened, doc, sink, ds,
         bm = create_block_mask(spred, B=B, H=None, Q_LEN=S, KV_LEN=n_e, device=q.device,
                                _compile=torch.cuda.is_available())
     o2, aux2 = _get_flex()(q.transpose(1, 2).contiguous(), Ks.transpose(1, 2).contiguous(),
-                           Vs.transpose(1, 2).contiguous(), block_mask=bm, score_mod=smod, enable_gqa=(g != h),
+                           Vs.transpose(1, 2).contiguous(), block_mask=bm, score_mod=smod, enable_gqa=(gs != h),
                            return_aux=AuxRequest(lse=True))
     return merge_calls(o1, l1, o2, aux2.lse, logrho, q.dtype).transpose(1, 2)
 
@@ -653,15 +662,22 @@ def tree_read_stream(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                     bias = bias + logrho[:, s0:s1][:, :, None, None]
                 lsum = torch.einsum("bqhd,bcd->bqhc", qc, tree.key[:, sel].float()) * sc + bias
                 logits.append(lsum.masked_fill(~vis[:, :, None, :], NEG))
-                vals.append(("shared", tree.val[:, sel].float()))
+                if tree.val_h is not None:
+                    vals.append(("heads", tree.val[:, sel, None].float() + tree.val_h[:, sel].float()))
+                else:
+                    vals.append(("shared", tree.val[:, sel].float()))
         w = torch.nan_to_num(torch.softmax(torch.cat(logits, dim=-1), dim=-1), nan=0.0)
         o, a = 0.0, 0
         for lg, (kind, val) in zip(logits, vals):
             n_ = lg.shape[-1]
             wi = w[..., a:a + n_]
             a += n_
-            o = o + (torch.einsum("bqhk,bkd->bqhd", wi, val) if kind == "shared"
-                     else torch.einsum("bqhp,bqpd->bqhd", wi, val))
+            if kind == "shared":
+                o = o + torch.einsum("bqhk,bkd->bqhd", wi, val)
+            elif kind == "heads":
+                o = o + torch.einsum("bqhk,bkhd->bqhd", wi, val)
+            else:
+                o = o + torch.einsum("bqhp,bqpd->bqhd", wi, val)
         out.append(o.to(q.dtype))
         s0 = s1
     return torch.cat(out, dim=1)
