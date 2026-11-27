@@ -426,6 +426,40 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   for its backward, and its gradients to the row's keys, values and nodes go through one buffer per tensor. 64k
   training rows on one RTX 3090: 16–31 s a step by the budget drawn (23–39 s before; the whole read through the
   flex kernel 19 s).
+- **2026-11-27 04:53 UTC, the home screen of the long stage** (Odra card 0, `Cache/e41/retro/tree_xl128`): arm `tree_xl` (the top-down read; 80 % of the steps a
+  bounded read, 20 % cut; evaluation at 64 followed per level by descent) from the released weights on rows of
+  131,072 tokens (mix `m21xl128_home`: books 629 rows, government publications 306, academic books 220, recall rows
+  153, packed PDFs, code and papers), 360 steps of one row, constant rates Muon 3e-4 and AdamW 2e-5, evaluation
+  every 60 steps. A 128k training row through the top-down read: 34–37 s and 16.6 GB on one RTX 3090 (3.9k
+  tokens/s, the same per token as at 64k; the table read took 62–65 s and 20.6 GB). First ten steps: loss 1.545.
+- **2026-11-27 04:53 UTC, the 256k mix is on S3** (`data/m21mix_xl1/`, built in 9 minutes): books 386 rows, government
+  publications 435, academic books 217, `recall_256k` 305 rows (64 held out), packed PDFs 4,574, code 2,287, papers
+  1,143, 64k multi-hop 229 and lookup 114; every source covers its share of 0.3B tokens.
+- **2026-11-27 05:12 UTC, run 4 launched: the stage on 256k rows** from the recall run's final weights (its folder
+  seeded with them as stages 1 and 2): arm `tree_xl`, mix `m21mix_xl1`, 0.3B tokens = 286 steps of four rows
+  (1.05M tokens a step, twice the 64k stage's), the rate starting at 1e-3 as the 64k stage did; branch `e41-run4` at
+  `d4c58cce`, S3 `runs/e41/e33n_m120t_tree_xl_muon0.01-xl_tok8.0e9_seed42`, spot g6e.12xlarge
+  `i-075b008f5141b1f63` (us-east-1d, 14 h cap); "long start" 05:14:19 UTC. Keeper `Cache/keepers/e41-xl.sh`, watcher
+  `Cache/keepers/e41-xl-watch.sh` (started by `Cache/ops/start_run4.sh`; no loss mark, money cap $150). After the
+  tests the job hides one number in 64k … 1M tokens (`scripts/e41_long_needle.py`, 8 depths) for the trained model
+  and, at 256k and 1M, for the model it continued.
+- **2026-11-27 05:16 UTC, the released model's needle through the top-down read** (8 depths a length; all seven
+  digits right / first token right; Polonez card 3):
+
+  | text | 16 followed per level | 64 followed per level |
+  |---|---|---|
+  | 64k | 0 of 8 / 8 of 8 | 3 of 8 / 8 of 8 |
+  | 128k | 0 of 8 / 7 of 8 | 2 of 8 / 8 of 8 |
+  | 256k | 0 of 8 / 6 of 8 | 0 of 8 / 6 of 8 |
+
+  (The whole read at 64k: 3 of 4.) It finds where the number is at every length (the first token) and then loses
+  it: the choice by a node's own estimate was never trained, and the later digits need the same tokens opened again.
+- **2026-11-27 05:07–05:18 UTC, two more speed changes to the top-down read** (commits `d4c58cce`, `51ebb281`):
+  a gradient-checkpoint recomputation of the layer takes the forward pass's read output (it is hit on every call,
+  but saved little: the cost is in the backward); and a chunk holds several whole blocks of queries, each read
+  against its own window and its own last nodes (fewer, larger operations). 64k training rows on one RTX 3090:
+  11–12 s a step, 20 s with 64 followed per level (16–17 s and 29 s before; the table read 19 s); a 64k forward
+  4.0 s, a 32k forward 1.7 s. Run 4 has the first change, not the second.
 
 ## Result
 <Filled in after, by experiment-track.>
