@@ -45,13 +45,15 @@ def main() -> None:
     ap.add_argument("--rerank", type=int, default=-1,
                     help="the scan's best n concepts are re-ranked by their best member token (tree_rerank); "
                          "default: the checkpoint's own")
+    ap.add_argument("--value", default="number", choices=("number", "uuid"),
+                    help="what is planted: a 7-digit number, or a UUID (a long value to copy)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
     from transformers import AutoTokenizer
 
     import nn.concept_tree as ct
-    from e41_long_needle import WORDS, filler
+    from e41_long_needle import WORDS, filler, planted
     from nn.perceiver_ar_lm import PerceiverARLM
 
     tok = AutoTokenizer.from_pretrained(a.checkpoint)
@@ -83,11 +85,7 @@ def main() -> None:
         rows = []
         for d in range(a.depths):
             word = rng.choice(WORDS)
-            number = "".join(rng.choice("0123456789") for _ in range(7))
-            needle = enc(f" One of the special magic numbers for {word} is: {number}.")
-            ask = enc(f"\nWhat is the special magic number for {word} mentioned in the provided text? "
-                      f"The special magic number for {word} mentioned in the provided text is")
-            ans = enc(f" {number}")
+            needle, ask, ans = (enc(t) for t in planted(rng, word, a.value))
             body = S - 1 - len(needle) - len(ask) - len(ans)
             off = rng.randrange(0, max(len(text) - body, 1))
             fill = text[off:off + body].tolist()

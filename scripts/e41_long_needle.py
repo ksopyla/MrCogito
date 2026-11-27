@@ -33,6 +33,20 @@ WORDS = ["amber", "willow", "copper", "falcon", "harbor", "meadow", "quartz", "s
          "juniper", "lantern", "marble", "nectar", "orchid", "pebble"]
 
 
+def planted(rng, word: str, kind: str) -> tuple[str, str, str]:
+    """The planted sentence, the question and the answer text. `number`: 7 digits; `uuid`: a version-4 UUID (36
+    characters, RULER's niah_single_3 value: about 20 tokens that also occur all over ordinary text)."""
+    import uuid
+
+    if kind == "uuid":
+        value, noun = str(uuid.UUID(int=rng.getrandbits(128), version=4)), "uuid"
+    else:
+        value, noun = "".join(rng.choice("0123456789") for _ in range(7)), "number"
+    return (f" One of the special magic {noun}s for {word} is: {value}.",
+            f"\nWhat is the special magic {noun} for {word} mentioned in the provided text? "
+            f"The special magic {noun} for {word} mentioned in the provided text is", f" {value}")
+
+
 def filler(mix: Path, sources: list[str], need: int, eot: int) -> np.ndarray:
     """`need` tokens of held-out text: the sources' val shards in turn, document marks dropped."""
     parts, have = [], 0
@@ -80,6 +94,8 @@ def main() -> None:
     ap.add_argument("--rerank", type=int, default=-1,
                     help="the scan's best n concepts are re-ranked by their best member token (tree_rerank); "
                          "default: the checkpoint's own")
+    ap.add_argument("--value", default="number", choices=("number", "uuid"),
+                    help="what is planted: a 7-digit number, or a UUID (a long value to copy)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
 
@@ -116,14 +132,11 @@ def main() -> None:
         return tok(s, add_special_tokens=False)["input_ids"]
 
     for S in lengths:
-        res = {m: {"all": 0, "first": 0, "rest": 0, "said": {}, "seconds": 0.0, "n": 0} for m in out["modes"]}
+        res = {m: {"all": 0, "first": 0, "rest": 0, "said": {}, "seconds": 0.0, "n": 0, "tok": 0, "toks": 0}
+               for m in out["modes"]}
         for d in range(a.depths):
             word = rng.choice(WORDS)
-            number = "".join(rng.choice("0123456789") for _ in range(7))
-            needle = enc(f" One of the special magic numbers for {word} is: {number}.")
-            ask = enc(f"\nWhat is the special magic number for {word} mentioned in the provided text? "
-                      f"The special magic number for {word} mentioned in the provided text is")
-            ans = enc(f" {number}")
+            needle, ask, ans = (enc(t) for t in planted(rng, word, a.value))
             body = S - 1 - len(needle) - len(ask) - len(ans)
             off = rng.randrange(0, max(len(text) - body, 1))
             fill = text[off:off + body].tolist()
@@ -158,6 +171,8 @@ def main() -> None:
                 # (RULER, which generates and looks for the number in the output, counts it as read). `said`:
                 # what was said first when it was not the number's first token.
                 r["rest"] += int(pred[1:] == ans[1:])
+                r["tok"] += sum(int(p == t) for p, t in zip(pred[1:], ans[1:]))
+                r["toks"] += len(ans) - 1
                 if pred[0] != ans[0]:
                     w = tok.decode([pred[0]])
                     r["said"][w] = r["said"].get(w, 0) + 1
@@ -165,9 +180,12 @@ def main() -> None:
                 r["n"] += 1
             print(f"L={S} depth {d + 1}/{a.depths}: " + "  ".join(
                 f"{m} {res[m]['all']}/{res[m]['n']} ({res[m]['seconds'] / res[m]['n']:.0f}s)" for m in out["modes"])
-                + "   after the first: " + " ".join(f"{res[m]['rest']}" for m in out["modes"]), flush=True)
+                + "   after the first: " + " ".join(f"{res[m]['rest']}" for m in out["modes"])
+                + "   later tokens right: " + " ".join(f"{res[m]['tok']}/{res[m]['toks']}" for m in out["modes"]),
+                flush=True)
         out["lengths"][str(S)] = {m: {"all_digits": r["all"] / max(r["n"], 1), "first_token": r["first"] / max(r["n"], 1),
                                       "digits_after_first": r["rest"] / max(r["n"], 1), "said_first_instead": r["said"],
+                                      "later_tokens_right": r["tok"] / max(r["toks"], 1), "later_tokens": r["toks"],
                                       "seconds_per_row": r["seconds"] / max(r["n"], 1), "rows": r["n"]}
                                   for m, r in res.items()}
         out["peak_gpu_gb"] = torch.cuda.max_memory_allocated() / 2 ** 30
