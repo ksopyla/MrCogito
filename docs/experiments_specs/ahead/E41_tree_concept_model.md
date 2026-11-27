@@ -556,6 +556,23 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
 - **2026-11-27 07:02 UTC, the baseline on the same 16 needles:** the released weights through the walk-down read (64 followed per level) find the number in 2 of 16 at 64k
   and 0 of 16 at 128k. So 50–100 steps on 128k rows took the walk-down read from 2 to 8–9 of 16 at 64k and from
   0 to 2–3 of 16 at 128k; the scan, untrained, starts higher than the walk down (5 and 1 of 16).
+- **2026-11-27 07:31 UTC, the scan learns the long lookup much faster than the walk down** (the two 128k screens, the same rows and rates, the same 16 needles; all seven digits right, and
+  in brackets the first token right):
+
+  | | 64k | 128k |
+  |---|---|---|
+  | walk down, untrained | 2 (9) | 0 (16) |
+  | walk down, 50 steps | 9 (14) | 3 (16) |
+  | walk down, 100 steps | 8 (14) | 2 (16) |
+  | scan, untrained | 5 (8) | 1 (15) |
+  | scan, 50 steps | **14 (14)** | **6 (16)** |
+
+  After 6.5M tokens of 128k rows the scan variant reads the whole number in 14 of 16 texts at 64k and 6 of 16 at
+  128k. Run 5 (the scan at 256k) is the run to watch; run 4 is its control.
+- **2026-11-27 07:30 UTC, `tree_span` does nothing without training:** a run of 4 tokens after every opened token,
+  on the released weights: the walk down 1 of 16 at 64k and 0 at 128k (2 and 0 without it), the scan 1 and 1 (5 and
+  1 without it). Fewer concepts fit the cap and the model has never read such runs. Parked: it would need its own
+  training screen, and the scan variant already learns the later digits.
 
 ## Result
 <Filled in after, by experiment-track.>
