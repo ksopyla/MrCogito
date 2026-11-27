@@ -34,6 +34,8 @@ CASES = {
     "wide_flat": dict(BASE, tree_wide=True),
     "top_down_rows": dict(BASE, tree_sparse=True, tree_row_mix="0.3,0.4,0.3", tree_train_follow=2),
     "top_down_wide": dict(BASE, tree_sparse=True, tree_wide=True, tree_row_mix="0.0,0.7,0.3", tree_train_follow=4),
+    "top_down_scan": dict(BASE, tree_sparse=True, tree_scan=True, tree_row_mix="0.0,0.7,0.3", tree_train_follow=4),
+    "scan_bounded": dict(BASE, tree_scan=True, tree_follow=2, tree_route="descent"),
 }
 
 
@@ -83,7 +85,7 @@ def test_flex_equals_sdpa_forward_and_backward(name, packed):
     print(name, packed, "worst relative grad diff", worst)
 
 
-@pytest.mark.parametrize("name", ["bounded", "training_rows", "top_down_rows", "top_down_wide"])
+@pytest.mark.parametrize("name", ["bounded", "training_rows", "top_down_rows", "top_down_wide", "top_down_scan"])
 def test_bf16_autocast_trains(name):
     flex, _ = _pair(name)
     opt = torch.optim.AdamW(flex.parameters(), lr=1e-3)
@@ -126,9 +128,11 @@ def test_fresh_tree_model_is_the_concept_model_on_flex():
         assert torch.allclose(tree(ids).logits, base(ids).logits, atol=1e-4, rtol=1e-4)
 
 
-def test_top_down_read_equals_the_flex_read_on_gpu():
-    """The same bounded read by descent through the flex kernel and through the top-down path (fp32 and bf16)."""
-    kw = dict(BASE, tree_follow=2, tree_route="descent", attn_backend="flex")
+@pytest.mark.parametrize("scan", [False, True])
+def test_top_down_read_equals_the_flex_read_on_gpu(scan):
+    """The same bounded read by descent through the flex kernel and through the top-down path (fp32 and bf16), also
+    with the tokens opened from the best concepts of the whole row."""
+    kw = dict(BASE, tree_follow=2, tree_route="descent", attn_backend="flex", tree_scan=scan)
     torch.manual_seed(0)
     dense = PerceiverARLM(cfg(**kw)).cuda().eval()
     for layer in dense.layers:
