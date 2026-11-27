@@ -646,6 +646,11 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   attention training (arm `tree_xl_scan_read`, `--train_only_params layers.3.attn.`) at the first screen's rates.
   The two 256k cloud runs end at a tenth of their starting rate (1e-4, the released model's final rate), so their
   own no-harm reading is the one that counts for them.
+- **2026-11-27 10:23 UTC, the scan screen's final weights on 32 needles:** 64k 26, 128k 23, 256k 14 (first token 27, 32, 30); the step-150 checkpoint had 29, 22, 22. The lengths it
+  trained at hold; the length beyond them fell back (22 to 14 of 32) with 210 more rows at that rate. Its 512k and
+  1M tests were dropped to free card 0 for the next screen: only the reading layer's attention trains
+  (`tree_xl_scan_read`: 1.72M of 141.5M parameters; the first screen's rates, rows and order;
+  `Cache/e41/retro/tree_xl128_scan_read`, started 10:23:25 UTC), needle at 64k, 128k, 256k at every checkpoint.
 
 ## Result
 <Filled in after, by experiment-track.>
