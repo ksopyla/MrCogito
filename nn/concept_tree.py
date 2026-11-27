@@ -296,7 +296,8 @@ def row_reads(ids: torch.Tensor, levels: int, *, mix: tuple, follow: int, top_k:
 # ------------------------------------------------------------------------------------------------ the choice
 @torch.no_grad()
 def tree_choice(q: torch.Tensor, tree: TreeIndex, doc: torch.Tensor, reads: RowReads, *, top_k: int, width: int,
-                variance: bool = True, route: str = "lookahead", open_tokens: bool = True, chunk: int = 0):
+                variance: bool = True, route: str = "lookahead", open_tokens: bool = True, chunk: int = 0,
+                scan: bool = False):
     """Each query's top-down choice. q [B, S, h, d], doc [B, S] (−1 = pad).
 
     Returns (opened, X): the open table of the member tokens (None when nothing may be opened) and X [B, S, E − C1]
@@ -317,7 +318,7 @@ def tree_choice(q: torch.Tensor, tree: TreeIndex, doc: torch.Tensor, reads: RowR
         qp = torch.arange(s0, s1, device=q.device)
         ids, off, Xc = choose_chunk(q[:, s0:s1], doc[:, s0:s1], qp, tree, reads, top_k=top_k, width=width,
                                     variance=variance, route=route, open_tokens=tab is not None,
-                                    need_x=X is not None)
+                                    need_x=X is not None, scan=scan)
         if X is not None:
             X[:, s0:s1] = Xc
         if tab is not None:
@@ -328,10 +329,15 @@ def tree_choice(q: torch.Tensor, tree: TreeIndex, doc: torch.Tensor, reads: RowR
 @torch.no_grad()
 def choose_chunk(qc: torch.Tensor, qd: torch.Tensor, qp: torch.Tensor, tree: TreeIndex, reads: RowReads, *,
                  top_k: int, width: int, variance: bool = True, route: str = "lookahead", open_tokens: bool = True,
-                 need_x: bool = True):
+                 need_x: bool = True, scan: bool = False):
     """The top-down choice of one chunk of queries (also one query: the cached decoder). qc [B, ch, h, d], qd
     [B, ch] their documents, qp [ch] their positions. Returns (ids, off) of `nn.exact_read.choose` (None, None when
-    nothing may be opened) and Xc [B, ch, E − C1] bool, the followed nodes (None unless `need_x`)."""
+    nothing may be opened) and Xc [B, ch, E − C1] bool, the followed nodes (None unless `need_x`).
+
+    `scan` (2026-11-27): the tokens are opened from the best concepts of the whole row, as the concept read chooses
+    them, whatever was followed; the followed nodes then bound the summaries only. A node of thousands of tokens
+    averages one fact away, so walking down by a node's own estimate loses single facts on long rows; a concept
+    (about 8 tokens) does not."""
     B, ch = qd.shape
     cidx = tree.cidx
     gi = cidx.groups
@@ -381,7 +387,7 @@ def choose_chunk(qc: torch.Tensor, qd: torch.Tensor, qp: torch.Tensor, tree: Tre
     if not open_tokens:
         return None, None, Xc
     visible = (gi.g_close[:, None, :] <= qp[None, :, None]) & torch.isfinite(sc1)
-    if par_ok is not None:
+    if par_ok is not None and not scan:
         visible = visible & par_ok
     visible = visible & (reads.cap > 0)[:, None, None]
     ids, off = choose(torch.nan_to_num(sc1, neginf=-1e30), visible, gi, qp, m=width, cap=top_k,
@@ -567,7 +573,7 @@ def _take(x: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
 def tree_read_stream(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_sinks: int, key_valid, top_k: int,
                      width: int, variance: bool = True, route: str = "lookahead", summaries: bool = True,
                      open_tokens: bool = True, dv_tok: Optional[torch.Tensor] = None, sum_len: int = 0,
-                     q_offset: int = 0, chunk: int = 0) -> torch.Tensor:
+                     q_offset: int = 0, chunk: int = 0, scan: bool = False) -> torch.Tensor:
     """The same read without a [B, S, ·] table (long rows: T is 4 GB at 128k and 260 GB at 1M): per chunk of
     queries of one block, the top-down choice, then one fp32 softmax over the window ‖ the document's sinks outside
     it ‖ the opened tokens (gathered) ‖ the summary entries the chunk may read. Differentiable (the choice carries
@@ -628,7 +634,7 @@ def tree_read_stream(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
         if tau >= 2:
             ids, off, Xc = choose_chunk(qc.detach(), qd, qp, tree, reads, top_k=top_k, width=width,
                                         variance=variance, route=route, open_tokens=open_tokens,
-                                        need_x=not flat)
+                                        need_x=not flat, scan=scan)
             chosen = torch.zeros(B, ch, C1, dtype=torch.bool, device=dev)
             if ids is not None:
                 cl = ChoiceList(gi, B, ch, cap=top_k, m=ids.shape[-1], row0=s0, members=members)
@@ -737,7 +743,8 @@ def reads_top_down(reads: RowReads, route: str) -> bool:
 def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_sinks: int, key_valid, top_k: int,
                      width: int, variance: bool = True, summaries: bool = True, open_tokens: bool = True,
                      dv_tok: Optional[torch.Tensor] = None, sum_len: int = 0, q_offset: int = 0, chunk: int = 0,
-                     index: Optional[dict] = None, reuse: Optional[torch.Tensor] = None) -> torch.Tensor:
+                     index: Optional[dict] = None, reuse: Optional[torch.Tensor] = None,
+                     scan: bool = False) -> torch.Tensor:
     """The bounded read made top-down, for rows of any length (2026-11-27). The table and streamed reads score every
     concept of the row for every query before they bound what is read, so their cost per query grows with the row
     (the reason no row was longer than 65,536 tokens). Here a query scores, level by level from the top, only the
@@ -751,6 +758,11 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     tensors (keys, values, node keys and values) is added to one buffer per tensor that reaches them once
     (`_SparseAnchor`): neither the memory nor the time of a training step grows faster than the row.
     q [B, Q, h, d] holds the queries [q_offset, q_offset + Q). Returns [B, Q, h, d].
+
+    `scan`: the tokens are opened from the best concepts of the whole row (`choose_chunk`'s `scan`): every closed
+    concept is scored, head by head with a running maximum (one matrix product each: 8 numbers per token of the
+    row, no table), and the walk down bounds the summaries only. The cost per query then grows with the row, with
+    a small constant.
 
     `reuse` [B, Q, h, d]: this call's output, computed before from the same inputs (a gradient checkpoint's
     recomputation of the layer): the chunks hand it on instead of computing it again; their backward is unchanged."""
@@ -791,6 +803,9 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     n_sh = sum((ix["roots"][lv][0].shape[1] if ix["roots"][lv] is not None else 0) + (2 * fan + 1) * P
                for lv in range(1, L + 1))
     per = (2 * blk + n_sh) * h + (n_sinks + top_k + n_own) * (h + 2 * d) + (n_own * h * d if wide else 0)
+    C1 = tree.n_concepts
+    if scan:
+        per += 2 * C1                                                                    # a query's row of the scan
     grad = torch.is_grad_enabled() and (q.requires_grad or any(needs))
     acc: dict = {}                                                                       # slot → the gradient so far
 
@@ -807,6 +822,46 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 idx = where.reshape(B, -1)
                 gg = g.reshape(B, idx.shape[1], *a.shape[2:]).float()
                 a.scatter_add_(1, idx.reshape(B, -1, *([1] * (a.dim() - 2))).expand_as(gg), gg)
+
+    @torch.no_grad()
+    def scan_concepts(qw, qq, qp):
+        """The best `width` concepts of the whole row for each query, by estimated mass (the largest over the
+        heads): ids [B, ch, m] best first, and which of them are real choices."""
+        ch = qp.numel()
+        k1 = bigs[KEY][:, :C1]
+        best = None
+        for hh in range(h):
+            sh = torch.einsum("bqd,bcd->bqc", qw[:, :, hh], k1).float() * sc + logn[:, None, :C1]
+            if variance:
+                sh = sh + qq[:, :, hh] * var[:, None, :C1]
+            best = sh if best is None else torch.maximum(best, sh)
+        may = ((gi.g_close[:, None, :] <= qp[None, :, None]) & (tree.n[:, None, :C1] > 0)
+               & (reads.cap > 0)[:, None, None])
+        top = best.masked_fill(~may, NEG).topk(min(int(width), C1), dim=-1)
+        return top.indices, top.values > NEG
+
+    @torch.no_grad()
+    def open_from(gids, valid, qp, okq, s0, s1):
+        """The tokens the chosen concepts open, best first until the row's cap: positions pk [B, ch, P], which of
+        them are real okp, and the places used before each concept, off [B, ch, m] (`top_k`: not opened)."""
+        ch, mm = gids.shape[1], gids.shape[2]
+        lo_ = gi.doc_start[:, qp][..., None].expand(B, ch, mm)
+        hi_ = (qp - blk)[None, :, None].expand(B, ch, mm)
+        cnt = torch.where(valid, counts(gi, gids, lo_, hi_), torch.zeros_like(gids, dtype=torch.int32))
+        off = cnt.cumsum(-1) - cnt
+        off = torch.where(valid & (off < top_k), off, torch.full_like(off, top_k))
+        off = torch.where(off.long() < reads.cap[:, None, None], off, torch.full_like(off, top_k))
+        cl = ChoiceList(gi, B, ch, cap=top_k, m=mm, row0=s0, members=members[0])
+        cl.add(s0, gids, off.to(torch.int32))
+        pos, okp = cl.opened(s0, s1, blk)
+        members[0] = cl.members()
+        Pn = int(min(top_k, pos.shape[-1]))
+        dest = torch.where(okp, okp.long().cumsum(-1) - 1, torch.full_like(pos, Pn)).clamp(max=Pn)
+        pk = torch.zeros(B, ch, Pn + 1, dtype=torch.long, device=dev).scatter_(2, dest, pos)[..., :Pn]
+        okp = (torch.arange(Pn, device=dev) < okp.sum(-1, keepdim=True)) & okq
+        if key_valid is not None:
+            okp = okp & _take(key_valid.bool(), pk)
+        return pk, okp, off
 
     def one(s0: int, s1: int, qc: torch.Tensor, leaves: Optional[list] = None) -> torch.Tensor:
         def big(slot: int, where) -> torch.Tensor:
@@ -935,6 +990,11 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                     o_lg = o_lg + qq * _pick(var, oid)[:, :, None, :]
             if rid is None and tid is None and oid is None:
                 f_ids, f_ok = None, None
+                if lv == 1 and scan and opens:  # nothing to summarise, but the scan still opens tokens
+                    pk, okp, _ = open_from(*scan_concepts(qw, qq, qp), qp, okq, s0, s1)
+                    lo_t = torch.einsum("bqhd,bqpd->bqhp", qw, big(KT, pk)).float() * sc
+                    logits.append(lo_t.masked_fill(~okp[:, :, None, :], NEG))
+                    vals.append(("own", big(VU, pk)))
                 continue
             with torch.no_grad():
                 amax = lambda x: None if x is None else x.detach().amax(2)
@@ -953,32 +1013,22 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                                                          < fol[:, lv][:, None, None])
                     taken.scatter_(2, top.indices, sel)
                     f_ids, f_ok = ids_all.gather(2, top.indices), sel
+                elif opens and scan:
+                    # the tokens: the best concepts of the whole row; those among this query's summaries are read
+                    # as tokens instead
+                    gids, valid = scan_concepts(qw, qq, qp)
+                    pk, okp, off = open_from(gids, valid, qp, okq, s0, s1)
+                    chosen = torch.zeros(B, ch, C1, dtype=torch.bool, device=dev).scatter_(2, gids, off < top_k)
+                    taken = chosen.gather(2, ids_all)
+                    opened = (pk, okp)
                 elif opens:
                     # the tokens: the best concepts a query may open, until the row's cap
                     may = cat(None if rid is None else r_root & (_pick(gi.g_close, rid)[:, None, :] <= qp[None, :, None]),
                               None if oid is None else o_cand & (_pick(gi.g_close, oid) <= qp[None, :, None]))
                     may = may & (reads.cap > 0)[:, None, None]
-                    mm = min(int(width), N)
-                    top = score.masked_fill(~may, NEG).topk(mm, dim=-1)
-                    valid = top.values > NEG
-                    gids = ids_all.gather(2, top.indices)
-                    lo_ = gi.doc_start[:, qp][..., None].expand(B, ch, mm)
-                    hi_ = (qp - blk)[None, :, None].expand(B, ch, mm)
-                    cnt = torch.where(valid, counts(gi, gids, lo_, hi_), torch.zeros_like(gids, dtype=torch.int32))
-                    off = cnt.cumsum(-1) - cnt
-                    off = torch.where(valid & (off < top_k), off, torch.full_like(off, top_k))
-                    off = torch.where(off.long() < reads.cap[:, None, None], off, torch.full_like(off, top_k))
+                    top = score.masked_fill(~may, NEG).topk(min(int(width), N), dim=-1)
+                    pk, okp, off = open_from(ids_all.gather(2, top.indices), top.values > NEG, qp, okq, s0, s1)
                     taken.scatter_(2, top.indices, off < top_k)
-                    cl = ChoiceList(gi, B, ch, cap=top_k, m=mm, row0=s0, members=members[0])
-                    cl.add(s0, gids, off.to(torch.int32))
-                    pos, okp = cl.opened(s0, s1, blk)
-                    members[0] = cl.members()
-                    Pn = int(min(top_k, pos.shape[-1]))
-                    dest = torch.where(okp, okp.long().cumsum(-1) - 1, torch.full_like(pos, Pn)).clamp(max=Pn)
-                    pk = torch.zeros(B, ch, Pn + 1, dtype=torch.long, device=dev).scatter_(2, dest, pos)[..., :Pn]
-                    okp = (torch.arange(Pn, device=dev) < okp.sum(-1, keepdim=True)) & okq
-                    if key_valid is not None:
-                        okp = okp & _take(key_valid.bool(), pk)
                     opened = (pk, okp)
                 vis = cand & ~taken
             if opened is not None:

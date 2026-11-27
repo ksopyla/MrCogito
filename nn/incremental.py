@@ -679,7 +679,7 @@ class IncrementalDecoder:
             ids, off, Xc = choose_chunk(q, doc_t[:, None], torch.tensor([t], device=q.device), tree, reads,
                                         top_k=cap, width=int(c["width"]), variance=bool(c["variance"]),
                                         route=str(tc["route"]), open_tokens=bool(c.get("open", True)),
-                                        need_x=not flat)
+                                        need_x=not flat, scan=bool(tc.get("scan")))
             row = torch.full((B, G), cap, dtype=torch.int32, device=q.device)              # the table's row of t
             if ids is not None:
                 row.scatter_(1, ids[:, 0], off[:, 0].to(torch.int32))

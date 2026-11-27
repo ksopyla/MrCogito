@@ -55,7 +55,9 @@ for ARM in "$@"; do
     tree_read_step) ARMP="tree read with closed-book rows";;
     tree_np_step) ARMP="tree concept model, reasoner and next-concept loss, no plan";;
     tree_wide) ARMP="tree read with wide summaries";; tree_xl) ARMP="tree concept model, top-down read";;
-    tree_xl_wide) ARMP="tree concept model, top-down read, wide summaries";; *) ARMP="$ARM";; esac
+    tree_xl_wide) ARMP="tree concept model, top-down read, wide summaries";;
+    tree_xl_scan) ARMP="tree concept model, top-down summaries, every concept scored for opening";;
+    *) ARMP="$ARM";; esac
   export E33N_PLAIN="$SZP $ARMP${E38_PLAIN_NOTE:+ $E38_PLAIN_NOTE}, $OPTP"
   export MC_WANDB_TAGS="$EXPT,$SIZE,$MIX,$ARM,opt-$OPT,seed$SEED${E38_BOARD:+,leaderboard}"
   export MC_WANDB_NOTES="$SZP $ARMP, $OPTP${E38_BOARD:+, for the Tiny-ML leaderboard}. Code: arm $ARM, size $SIZE, mix $MIX, optimizer $OPT, seed $SEED, run $RUN."

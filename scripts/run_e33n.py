@@ -191,6 +191,8 @@ ARMS["tree_wide"] = {**ARMS["tree_read"], "tree_wide": "true"}
 ARMS["tree_xl"] = {**ARMS["tree_read"], "tree_row_mix": "0.0,0.8,0.2", "tree_row_draw": "step",
                    "tree_sparse": "true", "tree_follow": 64, "tree_route": "descent"}
 ARMS["tree_xl_wide"] = {**ARMS["tree_xl"], "tree_wide": "true"}
+# tokens opened from the best concepts of the whole row (every concept scored); the walk down bounds the summaries
+ARMS["tree_xl_scan"] = {**ARMS["tree_xl"], "tree_scan": "true"}
 # run 3: tree_np with the read drawn per step (several cards), next to run 2's tree_read_step
 ARMS["tree_np_step"] = {**ARMS["tree_np"], "tree_row_draw": "step"}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
@@ -235,6 +237,7 @@ TINY_OPEN["tree_gentle"] = TINY_OPEN["tree_pred"] = TINY_OPEN["tree"]
 TINY_OPEN["tree_vp"] = TINY_OPEN["tree_kv"] = TINY_OPEN["tree_noaux"]
 TINY_OPEN["tree_np"] = TINY_OPEN["tree_np_step"] = TINY_OPEN["tree_np_side"] = TINY_OPEN["tree"]
 TINY_OPEN["tree_wide"] = TINY_OPEN["tree_xl"] = TINY_OPEN["tree_xl_wide"] = TINY_OPEN["tree_read"]
+TINY_OPEN["tree_xl_scan"] = TINY_OPEN["tree_read"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}

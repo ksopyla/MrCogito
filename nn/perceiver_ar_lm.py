@@ -322,6 +322,8 @@ class PerceiverARConfig(PretrainedConfig):
         tree_wide: bool = False,          # E41: wide summaries: a learned linear read of a node's mean state gives
                                           # every query head its own value slice (hidden → heads · head_dim, zero start)
         tree_predict_ahead: int = 1,      # E41: the block the next-concept prediction is about (b + this)
+        tree_scan: bool = False,          # E41: tokens are opened from the best concepts of the whole row (every
+                                          # concept scored, as the concept read chooses); the tree bounds the summaries
         tree_sparse: bool = False,        # E41: the top-down read (a query scores only the children of the nodes it
                                           # followed: rows of any length); training rows are all bounded, by descent
         tree_token_update: bool = False,  # E41: opened tokens carry their concept's value correction
@@ -547,6 +549,7 @@ class PerceiverARConfig(PretrainedConfig):
         self.tree_plan_from = str(tree_plan_from or "state")
         self.tree_wide = bool(tree_wide)
         self.tree_sparse = bool(tree_sparse)
+        self.tree_scan = bool(tree_scan)
         self.tree_predict_ahead = int(tree_predict_ahead or 1)
         self.tree_token_update = bool(tree_token_update)
         self.tree_next_concept = float(tree_next_concept or 0.0)
@@ -2899,6 +2902,7 @@ class Attention(nn.Module):
                              route=str(cfg.tree_route), row_mix=mix, train_follow=int(cfg.tree_train_follow),
                              row_draw=str(getattr(cfg, "tree_row_draw", "row")),
                              sparse=bool(getattr(cfg, "tree_sparse", False)),
+                             scan=bool(getattr(cfg, "tree_scan", False)),
                              token_update=bool(cfg.tree_token_update), next_concept=float(cfg.tree_next_concept),
                              route_loss=float(cfg.tree_route_loss), route_queries=int(cfg.tree_route_queries))
             if bool(getattr(cfg, "tree_wide", False)):
@@ -3343,7 +3347,7 @@ class Attention(nn.Module):
                                    key_valid=key_valid, top_k=c["top_k"], width=c["width"],
                                    variance=c["variance"], summaries=c["summaries"],
                                    open_tokens=bool(c.get("open", True)), dv_tok=dv_tok,
-                                   sum_len=c.get("sum_len", 0), reuse=done)
+                                   sum_len=c.get("sum_len", 0), reuse=done, scan=bool(t.get("scan")))
             if key is not None and done is None:
                 self._sparse_seen[key] = out.detach()
             return out
@@ -3355,9 +3359,9 @@ class Attention(nn.Module):
                                     key_valid=key_valid, top_k=c["top_k"], width=c["width"],
                                     variance=c["variance"], route=t["route"], summaries=c["summaries"],
                                     open_tokens=bool(c.get("open", True)), dv_tok=dv_tok,
-                                    sum_len=c.get("sum_len", 0))
+                                    sum_len=c.get("sum_len", 0), scan=bool(t.get("scan")))
         opened, X = tree_choice(q, tree, doc, reads, top_k=c["top_k"], width=c["width"], variance=c["variance"],
-                                route=t["route"], open_tokens=bool(c.get("open", True)))
+                                route=t["route"], open_tokens=bool(c.get("open", True)), scan=bool(t.get("scan")))
         if self.tree_stats is not None:
             from nn.concept_tree import read_stats
 
@@ -3414,7 +3418,7 @@ class Attention(nn.Module):
         return tree_read_sparse(q, k_all, v_all, tree=tree, reads=reads, doc=doc_all, ds=ds, n_sinks=c["sinks"],
                                 key_valid=None, top_k=c["top_k"], width=c["width"], variance=c["variance"],
                                 summaries=c["summaries"], open_tokens=bool(c.get("open", True)),
-                                sum_len=c.get("sum_len", 0), q_offset=S_all - q.shape[1])
+                                sum_len=c.get("sum_len", 0), q_offset=S_all - q.shape[1], scan=bool(t.get("scan")))
 
     def _concept_read(self, q, k, v, x, *, doc_ids, key_valid, ids=None):
         """E37: concepts of this call's keys (encoder), the reasoner's value update, each query's exact choice, and
