@@ -460,6 +460,38 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   against its own window and its own last nodes (fewer, larger operations). 64k training rows on one RTX 3090:
   11–12 s a step, 20 s with 64 followed per level (16–17 s and 29 s before; the table read 19 s); a 64k forward
   4.0 s, a 32k forward 1.7 s. Run 4 has the first change, not the second.
+- **2026-11-27 05:22 UTC, run 2 against the recall run, every evaluation so far** (held-out loss, the normal read): steps 200 … 1,800: −0.000, +0.006, +0.011, +0.008, +0.009, +0.008,
+  +0.009, +0.007, +0.010; its training loss stays 0.05 above on the same steps (the closed-book rows). The gap is
+  steady, not closing: closed-book rows through all of stage 2 cost the normal read about 0.008. The first pass
+  mark (64k documents 0.010 better than the recall run) is not in reach of this recipe; its case is the bounded and
+  closed-book reads.
+- **2026-11-27 05:28 UTC, streamed reading** (`PerceiverARLM.hidden_states_streamed`, commit `9fb01b7d`): a row too
+  long for one forward is read in windows (default 65,536 tokens, each starting 8,192 before the last one's end).
+  One forward keeps every layer's states of the whole row (4.2 GB at 98k, about 33 GB at 1M); only the reading
+  layer looks further back than about 4k tokens, and what it needs of the past is its keys and values (64 numbers
+  each per token and loop pass), so those are carried from window to window and the top-down read runs over the
+  whole row. Tiny model: the single forward's states to 1e-6 once the overlap covers the local layers' reach (no
+  overlap: off by 3.0). 150M model, fp32: states within 0.5 % on average and the same next token at 99.6–100 % of
+  positions (bf16: 96 % on random tokens): the remainder is discrete choices (which concept a key joins, which
+  nodes are followed) turning rounding differences into a few different reads, not the overlap (2,048 and 8,192
+  give the same). `scripts/e41_long_needle.py --stream_from N` reads long rows this way.
+- **2026-11-27 05:43 UTC, home screens finished:** key and value corrections without a plan (`tree_kv`) 1.9291,
+  1.9267, 1.9256, 1.9242, 1.9225 at steps 286 … 1,430: the lowest of the reasoner screens at the end (value
+  corrections 1.9233, the plan without extra losses 1.9240). Wide summaries at 5e-5: 1.9311 at step 286, training
+  loss +0.0005 against the closed-book rows alone over 230 steps (no harm, no gain yet).
+- **2026-11-27 05:50 UTC, run 4's first steps:** 15.1k tokens/s on four L40S at rows of 262,144 (a step of four rows
+  in 70 s); training loss 2.11, 2.18 over the first 20 steps; expected end of training about 10:50 UTC.
+- **2026-11-27 05:55 UTC, the first sign that long rows teach the read** (the 128k home screen after 50 steps,
+  6.5M tokens; one number hidden at 8 depths, all seven digits right):
+
+  | text | released model, 64 per level | after 50 steps, 64 per level | 16 per level (both) |
+  |---|---|---|---|
+  | 64k | 3 of 8 | 6 of 8 | 0 of 8 |
+  | 128k | 2 of 8 | 1 of 8 | 0 of 8 |
+
+  Its held-out loss at step 60 is 2.566 (its own rows; no baseline yet). 512k on the released model: 0 of 6.
+  A second screen at the cloud run's rate (Muon 1e-3, AdamW 6e-5, constant) is queued on Polonez card 0 for
+  06:03 UTC, after the 20-minute cooldown (`Cache/e41/retro/tree_xl128_lr1e-3`).
 
 ## Result
 <Filled in after, by experiment-track.>
