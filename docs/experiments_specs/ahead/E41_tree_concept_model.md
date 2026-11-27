@@ -276,5 +276,26 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   `Cache/keepers/e41-read-watch.sh` with the same marks (K1 2.227, K2 48.6k tokens/s, $220). The first launch
   attempt met the spot limit while run 1's node was shutting down; the keeper retries every 10 minutes.
 
+- **2026-11-27 01:04:27 UTC, run 2 launched** on spot g6e.12xlarge `i-01b73cd7e0f8c41d8` (us-east-1c, up to $7.87/h).
+- **2026-11-27 01:28 UTC, the reasoner's cost by part** (home retrofits, held-out loss on the normal read at step
+  286; control 1.9275):
+
+  | what the model has besides the tree read and the closed-book rows | step 286 | against the control |
+  |---|---|---|
+  | nothing (`tree_read`) | 1.9295 (step 572: 1.9273, control 1.9257) | +0.002 |
+  | the reasoner, value corrections only (`tree_vals`) | 1.9298 | +0.002 |
+  | the reasoner with key corrections and the plan (`tree_noaux`) | 1.9358 | +0.008 |
+  | the same with both losses at weight 0.02, kept off the reasoned states (`tree_gentle`) | 1.9368 | +0.009 |
+  | the same with both losses at weight 0.1 into the reasoned states (`tree`, run 1) | 1.9509 (step 858: 1.9417, control 1.9241) | +0.023, +0.018 |
+
+  Value corrections are free; key corrections and the plan together cost 0.006; the losses pushed into the states
+  cost 0.015 more and recover slowly. Training loss on the same rows: `tree_vals` equals `tree_read` so far (paired
+  difference +0.0003 over 310 steps), so the value corrections have not helped the cut rows yet either; the mixed
+  rows cost 0.054 against all-normal rows at the start and 0.046 over the next 280 steps.
+- **2026-11-27 01:30 UTC, two more retrofits** in place of `tree` and `tree_gentle`: values and the plan from the
+  reasoned state (`tree_vp`, Polonez card 0: is it the plan or the keys?), and values with a plan read from the
+  next-concept predictor, which predicts the block that reads the plan and is the only thing the prediction loss
+  trains (`tree_pred`, Odra card 0).
+
 ## Result
 <Filled in after, by experiment-track.>
