@@ -935,6 +935,20 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   model stopped at (20-22 of 32); at 128k it is at or just below it. One early checkpoint, 16 texts.
 - **2026-11-27 21:10 UTC, spend:** E41's nodes sum to $384.42 (runs 1-6 and the data build; run 2 still
   training); the family heartbeats stand at $4,111 of the launchers' $5,000 stop.
+- **2026-11-27 21:13-21:25 UTC, run 7 moved to run 6's rate before any node launched.** Run 6's node tests
+  (above) made the gentler rate the cleaner recipe, and the spot slot had not come yet: keeper and watcher of
+  `e41-xlrr` stopped by PID, the run re-seeded and restarted as `e41-xlrr3` (`PEAK=0.003`: Muon 3e-4 falling to
+  3e-5; branch `e41-run7` at `596df7ae`, arm `tree_xl_scan_rr`; results under
+  `runs/e41/e33n_m120t_tree_xl_scan_rr_muon0.003-xl_tok8.0e9_seed42/`; keeper `Cache/keepers/e41-xlrr3.pid`,
+  events `Cache/ops/e41-xlrr3_events.log`). Launched on a spot g6e.12xlarge at 21:25:17 UTC. It compares with run 6
+  by one change (the re-rank). The folder seeded for the first attempt
+  (`..._tree_xl_scan_rr_muon0.01-xl_...`) holds only the two copies of the starting weights.
+- **2026-11-27 21:40 UTC, run 6's planted numbers** (Odra card 0, `fair/run6_final.json`, the same 32 texts):
+  read 28 / 21 / 18 of 32 at 64k / 128k / 256k (strict 13 / 13 / 12), against run 5's 32 / 23 / 20. So the two
+  rates trade: run 5's (three times higher) reads 2-4 more planted numbers of 32 at every length and costs 0.002
+  to 0.003 on ordinary reading and 2.4 points of LAMBADA perplexity; run 6's costs nothing there and reads a
+  little less far. Run 7 was moved to run 6's rate before this was known: if the re-rank does not close that
+  gap, the same run at run 5's rate is the follow-up.
 
 ## Result
 <Filled in after, by experiment-track.>
