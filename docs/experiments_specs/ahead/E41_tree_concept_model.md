@@ -708,6 +708,38 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   first 32 planted numbers at 64k and the first home screen 29 of 32; the cloud runs started at ten times the
   released model's final rate, and their RULER lookups at 8k-32k fell where the recall run was strong. The node
   stops with its tests (no needle part, no old-loop check). Waiting for a spot slot: the stopped node still counted.
+- **2026-11-27 13:52:53 UTC, run 6 launched** on a spot g6e.12xlarge (`e41-xls3`, keeper and watcher in
+  `Cache/keepers/`, cap $180).
+- **2026-11-27 14:05 UTC, planted numbers of the two cloud models** (Odra cards 0 and 1,
+  `scripts/e41_needle_battery.sh`: 32 seven-digit numbers per length, each text in one forward, the model's own
+  read; `Cache/e41/evals/aws_xls`, `aws_xl`). All tokens of the number right, and in brackets the first token:
+
+  | model | 64k | 128k | 256k |
+  |---|---|---|---|
+  | run 5, cloud, 256k rows, every concept scored | 16 (16) | 14 (15) | 10 (15) |
+  | run 4, cloud, 256k rows, walk down | 6 (16) | 5 (13) | 1 (20) |
+  | first home screen, 128k rows, step 150 | 29 (29) | 22 (32) | 22 (31) |
+  | first home screen, final | 26 (27) | 23 (32) | 14 (30) |
+
+  Run 5 trained on rows of 256k and reads fewer planted numbers at every length than a home screen that never saw
+  a row beyond 128k. The two fail differently: the home screen finds the place in nearly every text and loses a
+  later token in a third; run 5 does not find the place in half the texts (first token 15-16 of 32) and reads
+  nearly every number whose place it found (16 of 16, 14 of 15, 10 of 15). The released model untrained for this
+  read found the first token in 6 of 8 at 256k, so run 5 finds places less often than the model it started from.
+  With the fall of RULER's single planted number at 16k and 32k this points at the start of the cloud stage (Muon
+  1e-3, ten times the released final rate) moving the queries and keys that find a place; the decay then
+  restored the ordinary reading and not that. The 512k and 1M parts of both batteries were stopped (the cards
+  were needed, and 256k already answers).
+- **2026-11-27 14:06 UTC, two home screens on the rate alone** (Odra, `scripts/e41_home_screen.sh`, arm
+  `tree_xl_scan`, 360 rows of 131,072 from the recall run's final weights, a 10-step warm-up and a fall to a tenth;
+  16 numbers per checkpoint at 64k, 128k and 256k on card 2): `xl128_scan_d3e-4` (card 1: Muon 3e-4, AdamW 2e-5,
+  run 6's rates on 128k rows) and `xl128_scan_d1e-3` (card 0: Muon 1e-3, AdamW 6e-5, run 5's rates on 128k
+  rows). If the second loses the first token as run 5 did, it is the rate; if it learns the lookup like the first
+  home screen, it is the 256k rows.
+- **2026-11-27 14:08 UTC, queued on card 2** (`scripts/gpu_when_free.sh`, one at a time): where a missed number's
+  place went (`scripts/e41_needle_why.py`: for each answer token, whether the read opened its source position) on
+  the first home screen's step-150 weights and on run 5's; and the recall run's own read on the same 32 numbers at
+  64k and 128k (the baseline row).
 
 ## Result
 <Filled in after, by experiment-track.>
