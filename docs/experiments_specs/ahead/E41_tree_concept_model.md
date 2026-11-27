@@ -960,6 +960,35 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   answer length, sampled text. Until now runs 4-6 had the node tests only (the seven core tasks in full, RULER's
   first 100 documents, the long-document loss by position): the spec's marks S1, S3 and S5's BLiMP are decided
   by this set. The models are 141.5M parameters, the recall model's count (the tree read adds no weights).
+- **2026-11-27 22:38 UTC, run 2 ended and its node was stopped by hand** (`tree_read_step`: the tree read and the
+  closed-book rows through stages 2 and 3, no new weights; the 64k stage ended 20:54 UTC, every test was in S3
+  by 22:01, and the node was left running the old-loop cross-check alone; $169.86). Node tests against the recall
+  run, the like-for-like comparison (same data, order and rates; saved in
+  `docs/2_Experiments_Registry/results/evaluations/E41_run2_64k_tree_read_closed_book_rows/`):
+
+  | | the recall run | run 2 |
+  |---|---|---|
+  | long-document loss per token, 4k / 16k / 32k / 64k / 128k | 2.0655 / 1.8899 / 1.9040 / 1.8811 / 1.7746 | 2.0685 / 1.8969 / 1.9124 / 1.8913 / 1.7846 |
+  | RULER, mean of 13 tasks, 4k / 8k / 16k / 32k | 0.572 / 0.526 / 0.405 / 0.360 | 0.453 / 0.413 / 0.367 / 0.316 |
+  | `niah_single_3` (a long value to copy), 4k / 8k / 16k / 32k | 0.97 / 0.91 / 0.44 / 0.59 | 0.28 / 0.15 / 0.13 / 0.25 |
+  | LAMBADA perplexity; ARC-Easy; HellaSwag | 50.27; 0.491; 0.301 | 50.06; 0.485; 0.298 |
+
+  Run 2 fails S1 and S2: 0.003 to 0.010 worse on long documents at every length and 0.04 to 0.12 lower on RULER,
+  with the copy of a long value collapsing already at 4k (0.28 against 0.97); the general quizzes are level.
+  The recipe with closed-book rows through both stages is closed. Its release tests are not run (the node
+  tests decide it).
+- **2026-11-27 22:35 UTC, the re-rank does not move RULER's lookups among distractors.** Run 5's weights at 16k,
+  100 documents, at home (Odra card 0, `Cache/e41/evals/ruler_home/`): `niah_single_3` 0.19 without and 0.18 with
+  the re-rank, `niah_multikey_2` 0.28 and 0.29 (on the node, batch 8: 0.11 and 0.29). So that weakness is not the
+  summary's rank. What the three trained E41 models share and the recall run lacks is rows that are read
+  bounded or cut (run 2: 20 % bounded and 40 % cut through two stages, the copy of a long value falls to 0.28
+  at 4k; runs 5 and 6: 80 % bounded and 20 % cut for 286 steps, it holds at 4k and 8k and falls at 16k and 32k).
+  Working reading: rows cut at a level teach the model to answer without opened tokens, and the exact copy of a
+  long random value pays for it. Two checks queued to separate the read from the weights: the recall run's
+  weights read run 5's way, and run 5's weights read the recall run's way (same task, 16k).
+- **2026-11-27 22:25 UTC, the re-rank screen's third checkpoint** (step 150): 16 / 11 / 15 of 16 at 64k / 128k /
+  256k (steps 50 and 100: 16 / 9 / 14 and 16 / 12 / 12).
+- **Spend, 22:38 UTC:** E41's nodes sum to $405.71; one node left running (run 7, 1.2 h in).
 
 ## Result
 <Filled in after, by experiment-track.>
