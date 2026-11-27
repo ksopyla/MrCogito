@@ -740,6 +740,46 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   place went (`scripts/e41_needle_why.py`: for each answer token, whether the read opened its source position) on
   the first home screen's step-150 weights and on run 5's; and the recall run's own read on the same 32 numbers at
   64k and 128k (the baseline row).
+- **2026-11-27 16:08 UTC, CORRECTION to the 14:05 entry: run 5 did not lose the place, the score undercounted
+  it.** The test counted a number as read only when the first predicted token was the number's first token. The
+  planted sentence reads "... is: 1234567." and the question ends "... is": run 5's model says an opening quote,
+  a colon, "the" or a comma first in half the texts (16 texts at 64k: ` "` 6, `:` 3, ` the` 2, `,` 1) and then
+  copies every digit. `scripts/e41_needle_why.py` on run 5's final weights, the battery's own 32 texts (Odra card
+  2): at 64k the number's place was opened for every answer token of every text and all 224 later tokens are
+  right; at 128k the place was opened for 223 of 224 later tokens and 208 are right. Counted as RULER counts
+  (the number is in what the model goes on to say; here: every token after the first right, the first given):
+
+  | read as "all tokens after the first" | 64k | 128k |
+  |---|---|---|
+  | run 5, cloud, 256k rows, every concept scored | 32 of 32 | 23 of 32 |
+  | first home screen, 128k rows, step 150 | 32 of 32 | 22 of 32 (its first token was right in all 32) |
+
+  So run 5 reads planted numbers at 64k and 128k as well as the best home screen, and the 14:05 entry's reading
+  ("does not find the place in half the texts", "finds places less often than the model it started from", the
+  start rate as the cause) is withdrawn. What stays measured: both cloud runs' fall on RULER's lookups among
+  distractors at 8k-32k (generated and string-matched, so not this artifact), and the recall run's own read on
+  the old score (64k 9 of 32 with the first token right in 16; 128k 3 of 32 with the first token right in 28: its
+  later tokens fail, which is a reading failure). The 15 wrong later tokens of run 5 at 128k had their place
+  opened: opened and not used, not a routing miss.
+  The test now reports both scores and what was said first (`digits_after_first`, `said_first_instead`; commit
+  `5bd6ac85`); every earlier planted-number figure in this log is the strict score and undercounts models that
+  open with a quote or colon. Re-measured with both scores on Odra card 0 (`Cache/e41/evals/fair/`): the recall
+  run's own read, run 5's final and step-150 weights, run 4's final, the first home screen's step 150.
+- **2026-11-27 15:41 UTC, the two rate screens' first checkpoint** (step 50, 16 numbers, strict score with the
+  first token in brackets, 64k / 128k / 256k): gentle (3e-4) 10 (11) / 9 (16) / 12 (15); run 5's rates (1e-3)
+  14 (14) / 13 (16) / 9 (13). Held-out loss on the 128k rows at steps 60, 120, 180, 240: gentle 2.5503, 2.5442,
+  2.5416; run 5's rates 2.5916, 2.5946, 2.5676, 2.5459 (thrown 0.04 off at the start, closing as the rate falls).
+  The high-rate screen was stopped by hand at step 240 (16:11 UTC): its question went with the correction above,
+  and the server needed the room (below). The gentle one runs on (card 1) as run 6's forecast.
+- **2026-11-27 15:01-16:12 UTC, card 2 on Odra.** (1) Two checkpoint evaluators and a queued test started on it in
+  the same seconds and the test ran out of memory at 128k: the evaluators waited for an empty card without a lock.
+  Fixed: `scripts/gpu_when_free.sh` holds a per-card lock while its command runs, `scripts/e41_ck_watch.sh` takes
+  its card through it (commits `22409638`, `0be25c8d`). (2) With cards 0 and 1 both training, card 2 read 81 C the
+  moment its job ran and 69-70 C paused: the heat guard held it at a half duty cycle but could not keep the
+  reading under 80. Card 2 was left idle and its queue moved to card 0 (freed by stopping the high-rate screen);
+  the guard is back at pause 78 C / resume 70 C, checked every 5 s.
+- **Run 6 stands** (256k rows at a third of the start rate; step 80 at 15:43 UTC, 13-14k tokens/s): its reason is
+  now only the RULER lookups among distractors and the size of the drift, not a lost lookup.
 
 ## Result
 <Filled in after, by experiment-track.>
