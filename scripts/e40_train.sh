@@ -10,6 +10,8 @@
 # Usage (Odra, repo root): setsid nohup bash scripts/e40_train.sh ARM GPU [OUT] > /dev/null 2>&1 < /dev/null &
 #   events (UTC): OUT/events.log; logs: OUT/{decay,long}.log; weights: OUT/{decay,long}/<run>/final
 #   Waits until card GPU runs no compute process (other sessions' jobs included), checking once a minute.
+#   MUON_LR / ADAMW_LR: other constant rates (E41's 256k screen: a mix whose `long` phase has rows of 262,144, so
+#   LONG_STEPS counts quarter rows there: tokens = LONG_STEPS x 65,536).
 #   STOP_AFTER=decay ends after part 1; ONLY_PART=long runs part 2 alone from INIT (speed checks). TOKENS_SCALE
 #   (default 1) scales both parts (pipeline checks only).
 set -uo pipefail
@@ -46,7 +48,8 @@ part() {  # part <phase> <init> <steps> <rows per step> <eval every>
   tokens=$(( steps * rows * seq ))
   cmd=$(.venv/bin/python scripts/run_e33n.py cmd --arm "$ARM" --size m120t --phase "$ph" --data "$OUT" --out "$OUT" \
         --init "$init" --mix "$MIX" --mix_lenient --tokens "$tokens" --rows "$rows" --micro 1 --gpus 1 --grad_ckpt \
-        --optimizer muon --lr 1e-4 --muon_adamw_lr 6e-6 --constant_lr --eval_every "$ev" --save_every "$ev" \
+        --optimizer muon --lr "${MUON_LR:-1e-4}" --muon_adamw_lr "${ADAMW_LR:-6e-6}" --constant_lr \
+        --eval_every "$ev" --save_every "$ev" \
         --fast --workers "${WORKERS:-2}" "${EXTRA[@]}" 2>> "$OUT/$ph.log") || { say "$ph: the command failed"; return 1; }
   echo "$cmd" > "$OUT/$ph.cmd"
   say "$ph start on GPU $GPU: $steps steps x $rows rows of $seq = $tokens tokens, from $init"
