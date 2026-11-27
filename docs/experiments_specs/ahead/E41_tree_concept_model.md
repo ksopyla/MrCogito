@@ -799,6 +799,64 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   100 (run 5: 2.4305, run 4: 2.4528), $23.62; run 2 in its 64k stage at step 390 (held-out 1.9748, 1.9719, 1.9645),
   $125.01; the gentle home screen at step 330 of 360, held-out on the 128k rows 2.5503, 2.5442, 2.5416, 2.5353,
   2.5328 (the lowest of all the home screens: the constant final rates ended at 2.5333).
+- **2026-11-27 19:22 UTC, planted numbers, every model with both scores** (Odra cards 0 and 1,
+  `Cache/e41/evals/fair/`, saved in
+  `docs/2_Experiments_Registry/results/evaluations/E41_planted_numbers_both_scores/`; 32 texts per length, one
+  forward each, each model's own read). A number is read when every token after the first is right; the strict
+  score (the first token too) in brackets:
+
+  | model | 64k | 128k | 256k |
+  |---|---|---|---|
+  | the recall run, its own read | 23 (9) | 4 (3) | - |
+  | run 4, 256k rows, walk down | 13 (6) | 8 (5) | 2 (1) |
+  | run 5, 256k rows, every concept scored, final | **32** (16) | **23** (14) | 20 (10) |
+  | run 5 at step 150 of 286 | 22 (15) | 15 (14) | not run |
+  | first home screen (128k rows, the released model's final rates held), step 150 | 32 (29) | 22 (22) | **22** (22) |
+  | gentle home screen (128k rows, 3e-4 falling to 3e-5), final, step 360 | 31 (26) | 22 (22) | 20 (19) |
+  | run 5 final, four times the opening budget (2,048 tokens from 512 concepts) | 28 (13) | 23 (16) | 19 (11) |
+
+  Run 5's final weights read streamed (8 texts, the prefix read once, forward only): 6 of 8 (1) at 512k, 3 of 8
+  (0) at 1M. Three readings. (1) The walk down (run 4) reads far fewer numbers than scoring every concept
+  (run 5): 13 against 32 at 64k, below the recall run's own 23; the walk down is closed as the way to choose
+  tokens. (2) Run 5 gained its lookup in the second half of its stage, while the rate fell (22 and 15 at step 150,
+  32 and 23 at the end). (3) Every scan model stops at about 22 of 32 at 128k and 20-22 at 256k, whatever the row
+  length (128k at home, 256k in the cloud), the rate or the number of steps (150 to 360): more of the same
+  training does not move it.
+- **2026-11-27 19:22 UTC, SECOND CORRECTION (to the 16:08 entry's last claim) and where the misses come from.**
+  The 16:08 entry said run 5's wrong later tokens at 128k "had their place opened: opened and not used". That
+  counted a place as opened when any of the reader's four passes opened it. Per pass
+  (`scripts/e41_needle_why.py` with the scan rank of the concept that holds each answer token's source, 0 = the
+  best of the row's 8,192 / 16,384 / 32,768 concepts, the read opens tokens from the best 128;
+  `run5_final_where_the_place_ranked.json`):
+
+  | run 5 final | pass 1 | pass 2 | pass 3 | pass 4 |
+  |---|---|---|---|---|
+  | later tokens that end right, 256k (199): median rank, 90th percentile | 6, 2605 | 0, 53 | 0, 1 | 0, 3 |
+  | the same: place opened | 124 | 180 | 198 | 198 |
+  | later tokens that end wrong, 256k (25): median rank, 90th percentile | 247, 4245 | 53, 425 | 37, 1099 | 803, 4914 |
+  | the same: place opened | 9 | 13 | 16 | 8 |
+  | later tokens that end wrong, 128k (16): median rank; place opened | 381; 6 | 48; 10 | 4; 12 | 0; 11 |
+  | first token, 64k / 128k / 256k: median rank | 444 / 638 / 1690 | 44 / 75 / 91 | 1 / 1 / 2 | 11 / 7 / 15 |
+  | the same: place opened, of 32 | 2 / 1 / 1 | 19 / 16 / 15 | 32 / 27 / 25 | 23 / 19 / 17 |
+
+  What it says: the reader's question sharpens pass by pass (in pass 1 it does not know yet what it is looking
+  for, by pass 3 the right concept is the best or second best of tens of thousands), and in pass 4 it drifts
+  off again. A token ends right when the place is found and stays found; it ends wrong when the place is found
+  in some passes only (rank in the tens to thousands in the others: a choice miss) or, less often, found in all
+  four with the attention spread over other opened tokens (5 of the 16 wrong tokens at 128k, 2 of the 25 at
+  256k: in the last pass the best head put 0.07-0.46 on the token; right tokens get 0.86-0.91 in their best
+  pass). A larger budget does not help
+  (the table's last row): the model was trained on 512 opened tokens and more opened tokens are more
+  distractors. Which texts are missed differs by length (128k: texts 0, 2, 3, 7, 10, 14, 16, 17, 24; 256k:
+  3-7, 9, 11, 12, 13, 16, 20, 22; three in common, chance gives 3.4) and every number within the last fifth of
+  the text is read: the miss depends on what else is in the row (more concepts to outrank), not on the number.
+  The weak link is therefore a place that has to be found again by every pass and every answer token; next
+  tested on the trained model as it is: an opened token bringing the tokens after it (`--span 2` and `8`, the
+  parked `tree_span`).
+- **2026-11-27 19:23 UTC, standing:** run 6 at step 240 of 286, held-out loss on the 256k rows 2.4236 and 2.4163
+  at steps 100 and 200 (run 5: 2.4305, 2.4144: level), $42.33; run 2 at step 740 of its 64k stage (held-out
+  1.9541, falling), $143.48; the gentle home screen ended 17:09 UTC at 2.5314 on the 128k rows (the constant
+  final rates: 2.5333; run 5's rates stopped at step 240: 2.5459).
 
 ## Result
 <Filled in after, by experiment-track.>

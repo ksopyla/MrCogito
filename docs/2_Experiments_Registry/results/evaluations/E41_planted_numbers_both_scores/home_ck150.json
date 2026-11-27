@@ -1,0 +1,45 @@
+{
+  "checkpoint": "/nas/ml_data/mrcogito/tmp_e41/tree_xl128_scan/checkpoint-150",
+  "lengths": {
+    "65536": {
+      "on": {
+        "all_digits": 0.90625,
+        "first_token": 0.90625,
+        "digits_after_first": 1.0,
+        "said_first_instead": {
+          " _": 2,
+          ":": 1
+        },
+        "seconds_per_row": 6.985134705901146,
+        "rows": 32
+      }
+    },
+    "131072": {
+      "on": {
+        "all_digits": 0.6875,
+        "first_token": 1.0,
+        "digits_after_first": 0.6875,
+        "said_first_instead": {},
+        "seconds_per_row": 13.853106267750263,
+        "rows": 32
+      }
+    },
+    "262144": {
+      "on": {
+        "all_digits": 0.6875,
+        "first_token": 0.96875,
+        "digits_after_first": 0.6875,
+        "said_first_instead": {
+          " the": 1
+        },
+        "seconds_per_row": 33.353760197758675,
+        "rows": 32
+      }
+    }
+  },
+  "modes": [
+    "on"
+  ],
+  "depths": 32,
+  "peak_gpu_gb": 8.669808387756348
+}

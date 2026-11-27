@@ -1,0 +1,51 @@
+{
+  "checkpoint": "Cache/e41/aws_models/xls_final",
+  "lengths": {
+    "65536": {
+      "on": {
+        "all_digits": 0.5,
+        "first_token": 0.5,
+        "digits_after_first": 1.0,
+        "said_first_instead": {
+          ":": 9,
+          " the": 6,
+          " that": 1
+        },
+        "seconds_per_row": 6.734402425587177,
+        "rows": 32
+      }
+    },
+    "131072": {
+      "on": {
+        "all_digits": 0.4375,
+        "first_token": 0.46875,
+        "digits_after_first": 0.71875,
+        "said_first_instead": {
+          " the": 8,
+          ":": 9
+        },
+        "seconds_per_row": 13.582926742732525,
+        "rows": 32
+      }
+    },
+    "262144": {
+      "on": {
+        "all_digits": 0.3125,
+        "first_token": 0.46875,
+        "digits_after_first": 0.625,
+        "said_first_instead": {
+          " the": 15,
+          " saffron": 1,
+          ":": 1
+        },
+        "seconds_per_row": 33.07881689071655,
+        "rows": 32
+      }
+    }
+  },
+  "modes": [
+    "on"
+  ],
+  "depths": 32,
+  "peak_gpu_gb": 8.669808387756348
+}

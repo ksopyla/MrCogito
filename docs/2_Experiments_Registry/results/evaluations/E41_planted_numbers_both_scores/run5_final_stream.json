@@ -1,0 +1,36 @@
+{
+  "checkpoint": "Cache/e41/aws_models/xls_final",
+  "lengths": {
+    "524288": {
+      "on": {
+        "all_digits": 0.125,
+        "first_token": 0.25,
+        "digits_after_first": 0.75,
+        "said_first_instead": {
+          " the": 5,
+          ":": 1
+        },
+        "seconds_per_row": 119.12830722332001,
+        "rows": 8
+      }
+    },
+    "1048576": {
+      "on": {
+        "all_digits": 0.0,
+        "first_token": 0.5,
+        "digits_after_first": 0.375,
+        "said_first_instead": {
+          ":": 1,
+          " the": 3
+        },
+        "seconds_per_row": 325.46875685453415,
+        "rows": 8
+      }
+    }
+  },
+  "modes": [
+    "on"
+  ],
+  "depths": 8,
+  "peak_gpu_gb": 5.887345314025879
+}
