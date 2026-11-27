@@ -138,6 +138,16 @@ LIST_SETS: dict[str, dict] = {
 # statement-style prompt it often does not begin (RULER several keys at 16k: 32 of 50 answers start no list).
 LIST_SETS["recall_16k"] = {**LIST_SETS["list_16k"], "statements": 0.5}
 LIST_SETS["recall_64k"] = {**LIST_SETS["list_64k"], "statements": 0.5}
+# Recall rows of 262,144 tokens (2026-11-27, E41's stage on 256k rows): the released 150M models find a planted
+# number at 64k and never at 256k, and no row longer than 65,536 tokens was ever trained. About one book in twenty
+# is this long, so a row's prose is several books in a row (`join`: books of the split are joined until they hold
+# JOIN_CHARS characters per token of the row); the facts and the question block are the recall sets'. The 64k sets'
+# book buckets (the same books, other spans and other facts).
+LIST_SETS["recall_256k"] = {"kind": "lookup", "seq_len": 262144, "tokens": 0.08e9, "facts": (16, 40),
+                            "lists": (3, 6), "list_values": (2, 6), "multi": (3, 5), "multi_keys": (2, 4),
+                            "spans_per_book": 1, "statements": 0.5, "join": True,
+                            "buckets": {"val": (6, 26), "train": (26, 56)}}
+JOIN_CHARS = 5.0       # a joined text is emitted once it holds this many characters per token of the row
 P_REVISED = 0.15       # share of planted facts stated twice (the later statement wins)
 P_MISSING_ROW = 0.15   # share of lookup rows with 1-2 questions about something never planted
 
@@ -1674,6 +1684,7 @@ def build_lookup_set(name: str, cfg: dict, source, tok: Tok, out: Path, seed: in
     used = {s: [] for s in splits}
     c: collections.Counter = collections.Counter()
     batch, chars, last = [], 0, [0.0]
+    pending = {s: [] for s in splits}  # a `join` set: the books waiting to be joined into one text, per split
 
     def full(split: str) -> bool:
         return writers[split].rows >= rows[split]
@@ -1710,7 +1721,14 @@ def build_lookup_set(name: str, cfg: dict, source, tok: Tok, out: Path, seed: in
         split = next((s for s in splits if cfg["buckets"][s][0] <= b < cfg["buckets"][s][1]), None)
         if split is None or full(split):
             continue
-        if len(text) < 2 * S:  # under two characters per token: it cannot hold seq_len tokens of prose
+        if cfg.get("join"):  # rows longer than most books: the prose is several books of the split in a row
+            pending[split].append((doc_id, text))
+            if sum(len(t) for _, t in pending[split]) < JOIN_CHARS * S:
+                continue
+            c["books_joined"] += len(pending[split])
+            doc_id, text = "+".join(i for i, _ in pending[split]), "\n\n\n".join(t for _, t in pending[split])
+            pending[split] = []
+        elif len(text) < 2 * S:  # under two characters per token: it cannot hold seq_len tokens of prose
             c["books_under_seq_len"] += 1
             continue
         batch.append((split, doc_id, text))

@@ -338,6 +338,28 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   **2.1863** (the recall run 2.3081, 2.2554, 2.2226, 2.1947, 2.1773; mark 2.227). Behind by −0.000, 0.006, 0.011,
   0.008, 0.009 on the normal read. Its training loss on the same rows is 0.061 above the recall run's at the start
   and 0.051 by step 1,000 (the cost of the cut and bounded rows; the number to watch fall).
+- **2026-11-27 03:44 UTC, wide summaries built** (commit `c8720da6`, arm `tree_wide`). Why: a summary hands a
+  reader one value of 64 numbers, shared by all 14 heads: about 8 numbers per token of the text it stands for. The
+  reasoner's corrections to that value have not helped the cut rows, so the limit may be the room, not the content.
+  With `tree_wide` a writer (one zero-initialised linear map, 0.8M weights, its own AdamW rate) turns a node's mean
+  state (896 numbers) into a value per head (14 × 64), added to the shared value in the reference, flex, streamed and
+  cached reads: 14 times the room, and each head reads its own slice with its own attention. A fresh model is still
+  the concept model. Tests: 174 on the laptop, 23 on a GPU (flex = reference forward and backward for three wide
+  cases, causality, the three reads and the cached decoder agree). Screen: home retrofit on Odra card 1 (queued
+  03:48 UTC behind `tree_vals`, whose 64k part was dropped: value corrections alone are a null result), compared
+  with `tree_read` on the same rows.
+- **2026-11-27 03:45 UTC, home cards.** Another session started an evaluation on Polonez card 1, so the queued 64k
+  part of `tree_read` there was cancelled (by process id) to keep Polonez at three busy cards. Polonez has been
+  under load since 23:35 UTC: `tree_kv` ends about 05:35 UTC, then a cooldown of at least 20 minutes.
+- **2026-11-27 04:00 UTC, the next step is a stage on rows of 262,144 tokens.** The released model finds a planted
+  number at 64k (3 of 4) and never at 256k (0 of 4, every read): no row longer than 65,536 tokens was ever trained,
+  because the concept read ranks every concept for every query (the cost per row grows with the square of its
+  length). The tree's bounded read is the part of this design that removes that limit, and "memory on text at 256k"
+  is the first rung of the author's roadmap. Plan: (1) time a real training step at 64k, 128k and 256k through the
+  bounded read (`scripts/e41_long_step.py`); (2) rows: long documents (books, PDFs, government and parliament
+  records of at least 262,144 tokens) and planted-fact recall rows at 256k (`scripts/build_reasoning_rows.py`, a new
+  set `recall_256k`); (3) a home screen from the released weights: does the number at 256k and 1M get found;
+  (4) on AWS as stage 4 of the best stages-2-3 run.
 
 ## Result
 <Filled in after, by experiment-track.>

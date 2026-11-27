@@ -470,7 +470,7 @@ LIST = {"kind": "lookup", "seq_len": 2048, "tokens": 2048 * 9, "facts": (4, 8), 
 
 
 def test_list_facts_and_templates():
-    assert set(b.LIST_SETS) == {"list_16k", "list_64k", "recall_16k", "recall_64k"}
+    assert set(b.LIST_SETS) == {"list_16k", "list_64k", "recall_16k", "recall_64k", "recall_256k"}
     assert not set(b.LIST_SETS) & set(b.SETS)
     for s in b.list_templates():
         assert b.banned_in(s) is None, s
@@ -662,6 +662,30 @@ def test_lookup_set_skips_held_out_and_other_licence_books(tmp_path):
     assert src.read < len(books)                                   # it stops reading when both splits are full
     assert [p.name for p in sorted(tmp_path.glob("lk_*"))] == ["lk_train_000000.bin", "lk_train_000001.bin",
                                                                "lk_val_000000.bin"]
+
+
+def test_lookup_set_joins_books_for_rows_longer_than_a_book(tmp_path):
+    """A `join` set: no book holds a row, so a row's prose is several books of its split in a row; the facts, the
+    question block and the split rule are the lookup set's."""
+    cfg = {**LIST, "seq_len": 8192, "statements": 0.5, "join": True, "spans_per_book": 1,
+           "buckets": {"val": (0, 30), "train": (30, 100)}}
+    assert b.LIST_SETS["recall_256k"]["join"] and b.LIST_SETS["recall_256k"]["seq_len"] == 262144
+    books = some_books(60, words=5200)                              # about 7k tokens each: none holds 8,192
+    plain = b.build_lookup_set("pl", {**cfg, "join": False}, FakeBooks(books), FakeTok(), tmp_path, 0,
+                               {"train": 3, "val": 2}, 8192 * 4)
+    assert plain["train"]["n_rows"] == 0 and plain["val"]["n_rows"] == 0
+    res = b.build_lookup_set("jn", cfg, FakeBooks(books), FakeTok(), tmp_path, 0, {"train": 3, "val": 2}, 8192 * 4)
+    assert res["train"]["n_rows"] == 3 and res["val"]["n_rows"] == 2 and res["train"]["target_met"]
+    assert res["books"]["books_joined"] >= 2 * res["books"]["books_used"]
+    for split, lo, hi in (("train", 30, 100), ("val", 0, 30)):
+        for joined in res[split]["book_ids"]:
+            ids = joined.split("+")
+            assert len(ids) >= 2 and all(lo <= b.book_bucket(i) < hi for i in ids)
+    used = [i for s in ("train", "val") for j in res[s]["book_ids"] for i in j.split("+")]
+    assert len(used) == len(set(used))                              # a book feeds one row
+    rows = shard_rows(tmp_path / "jn_train_000000.bin", 8192)
+    assert rows.shape == (3, 8192) and (rows[:, 0] == 0).all()
+    assert all((r[1:] == 0).sum() < 8192 * 0.05 for r in rows)       # a row is filled: padding under 5 %
 
 
 # ----------------------------------------------------------------------------------------------------------------
