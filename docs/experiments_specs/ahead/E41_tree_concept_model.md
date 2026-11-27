@@ -396,6 +396,36 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   1.9299, 1.9272, 1.9240; key and value corrections 1.9291, 1.9267, 1.9256 (running); those with both losses
   1.9303, 1.9280, 1.9276 (running). The plan's cost fades with training (+0.006 at step 286, +0.001 at step 1,430
   against value corrections alone); nothing with a reasoner is ahead of the closed-book rows alone yet.
+- **2026-11-27 04:42 UTC, a 256k training row does not fit a 24 GB card** (top-down read; peak 20.2 GB, then out of memory). It is not the far read (a 256k forward peaks at
+  8.2 GB): gradient checkpointing keeps every block's input, 262,144 × 896 fp32 numbers = 0.94 GB each, about
+  19 GB for the 13 layers and the reading layer's loop passes. So the 256k stage runs on the 48 GB AWS cards and the
+  home screen at rows of 131,072 (set `recall_128k`, recipe `m21_mix_xl128.json`, built on Odra 04:48–04:53 UTC).
+- **2026-11-27 04:44 UTC, the 256k mix on AWS:** the long sources of m21mix_v2 copied to `data/m21mix_xl1/` (64 files,
+  7.2 GB, server side from the laptop); a CPU node (`m21xl1-data`, c7i.8xlarge `i-036d239be4b2a713c`, 3 h cap)
+  builds `recall_256k` at full scale and writes mix.json. Jobs: `infra/aws/jobs/m21xl1_data_build.sh` and
+  `infra/aws/jobs/e41_long.sh` (e33n_run.sh's `long` phase on that mix from a finished model: the run's folder is
+  seeded with it as both stage 1 and stage 2).
+- **2026-11-27 04:48 UTC, wide summaries, first reading: the writer's rate was far too high.** Held-out loss at
+  step 286: 1.9413 (control 1.9275, closed-book rows alone 1.9295); training loss on the same rows +0.022 above
+  the closed-book rows alone, already +0.017 over the first ten steps. A zero-initialised map trained by AdamW at
+  6e-4 moves every weight by about its rate on the first steps whatever the gradient, and this one feeds every
+  summary's value. Stopped 04:49 UTC and relaunched with 5e-5 for the writer (`tree_wide_lr5e-5`, Odra card 1,
+  04:49:41 UTC).
+- **2026-11-27 04:51 UTC, run 3 stopped by hand** (the reasoner with key and value corrections and both losses,
+  no plan): held-out loss 2.3304 and 2.3244 at steps 200 and 400 against run 2's 2.3077 and 2.2616, nearly flat,
+  so the 2.227 mark at step 1,000 was out of reach an hour before the watcher would have tripped it. Speed 62.7k
+  tokens/s (0.90 × the recall run). $10.29. Its next-word loss on training rows is only about 0.02 above run 2's
+  on the same steps while its held-out loss (the normal read) is 0.06 above: the corrections help or do not hurt
+  the closed-book rows and cost the normal read. The home retrofit of the same arm was within 0.003 of the
+  closed-book rows alone; the difference is the rates (at home the token layers train 100 times slower, so the
+  extra losses barely move them). Two runs with a reasoner have now failed this mark and the run without one
+  passed it: the reasoner as built is out of the recipe. Run 2 at steps 1,200 and 1,400: 2.1732, 2.1632.
+- **2026-11-27 04:52 UTC, the top-down read's own backward** (commit `015b8bbc`): a gather's backward allocates
+  a tensor the size of its source, so every chunk of queries paid for the whole row several times and a training
+  step's cost grew with the square of the row again. Now a chunk is computed without a graph, recomputed alone
+  for its backward, and its gradients to the row's keys, values and nodes go through one buffer per tensor. 64k
+  training rows on one RTX 3090: 16–31 s a step by the budget drawn (23–39 s before; the whole read through the
+  flex kernel 19 s).
 
 ## Result
 <Filled in after, by experiment-track.>
