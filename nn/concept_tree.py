@@ -774,6 +774,12 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     kmax = [0, 0] + [int(fol[:, lv].max()) for lv in range(2, L + 1)]
     logn = torch.where(tree.n > 0, tree.n.clamp_min(1.0).log(), torch.zeros_like(tree.n)).detach().float()
     var = tree.var.detach().float()
+    # dot products and values in the queries' own precision (bf16 under autocast, as the flex kernel); logits and
+    # the softmax in fp32
+    wd = q.dtype
+    kt, vt, vu = kt.to(wd), vt.to(wd), vu.to(wd)
+    key_w, val_w = tree.key.to(wd), tree.val.to(wd)
+    valh_w = tree.val_h.to(wd) if wide else None
     opens = open_tokens and bool((reads.cap > 0).any())
     members = [None]
     # a query's own candidates: about 8 children per followed node (the chunk size's estimate, with a margin)
@@ -788,6 +794,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
         tau = s0 // blk
         ch = s1 - s0
         qp = torch.arange(s0, s1, device=dev)
+        qw = qc.to(wd)
         qc = qc.float()
         qd = doc[:, s0:s1]
         okq = (qd >= 0)[..., None]
@@ -799,9 +806,9 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
         ok = (jw[None, :] <= qp[:, None])[None] & (doc[:, j0:s1][:, None, :] == qd[..., None]) & okq
         if key_valid is not None:
             ok = ok & (key_valid.bool()[:, j0:s1][:, None, :] | (jw[None, :] == qp[:, None])[None])
-        lw = torch.einsum("bqhd,bkd->bqhk", qc, kt[:, j0:s1].float()) * sc
+        lw = torch.einsum("bqhd,bkd->bqhk", qw, kt[:, j0:s1]).float() * sc
         logits.append(lw.masked_fill(~ok[:, :, None, :], NEG))
-        vals.append(("shared", torch.where((jw < own_lo)[None, :, None], vu[:, j0:s1], vt[:, j0:s1]).float()))
+        vals.append(("shared", torch.where((jw < own_lo)[None, :, None], vu[:, j0:s1], vt[:, j0:s1])))
         # the document's sinks outside the window
         if n_sinks and j0 > 0:
             sp = ds[:, s0:s1][..., None] + torch.arange(n_sinks, device=dev)
@@ -809,9 +816,9 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
             ok = (sp < j0) & (_take(doc, spc) == qd[..., None]) & okq
             if key_valid is not None:
                 ok = ok & _take(key_valid.bool(), spc)
-            ls = torch.einsum("bqhd,bqpd->bqhp", qc, _take(kt, spc).float()) * sc
+            ls = torch.einsum("bqhd,bqpd->bqhp", qw, _take(kt, spc)).float() * sc
             logits.append(ls.masked_fill(~ok[:, :, None, :], NEG))
-            vals.append(("own", _take(vu, spc).float()))
+            vals.append(("own", _take(vu, spc)))
         if tau < 2:
             return _mix(logits, vals)
         qq = (qc.detach() ** 2).sum(-1, keepdim=True) / (2 * d) if variance else None     # [B, ch, h, 1]
@@ -839,7 +846,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 ns = sid.shape[1]
                 s_root = torch.cat([p[1] for p in parts], 2)                             # [B, ch, ns]
                 s_cand = s_root & (_pick(tree.doc, sid)[:, None, :] == qd[..., None]) & okq
-                s_lg = torch.einsum("bqhd,bnd->bqhn", qc, _pick(tree.key, sid).float()) * sc \
+                s_lg = torch.einsum("bqhd,bnd->bqhn", qw, _pick(key_w, sid)).float() * sc \
                     + _pick(logn, sid)[:, None, None, :]
                 if variance:
                     s_lg = s_lg + qq * _pick(var, sid)[:, None, None, :]
@@ -859,7 +866,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 o_cand = j < tot
                 oid = torch.where(o_cand, _pick(order, at.clamp(0, order.shape[1] - 1)), torch.zeros_like(j))
                 no = W
-                o_lg = torch.einsum("bqhd,bqnd->bqhn", qc, _pick(tree.key, oid).float()) * sc \
+                o_lg = torch.einsum("bqhd,bqnd->bqhn", qw, _pick(key_w, oid)).float() * sc \
                     + _pick(logn, oid)[:, :, None, :]
                 if variance:
                     o_lg = o_lg + qq * _pick(var, oid)[:, :, None, :]
@@ -913,30 +920,29 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 vis = cand & ~taken
             if opened is not None:
                 pk, okp = opened
-                lo_t = torch.einsum("bqhd,bqpd->bqhp", qc, _take(kt, pk).float()) * sc
+                lo_t = torch.einsum("bqhd,bqpd->bqhp", qw, _take(kt, pk)).float() * sc
                 logits.append(lo_t.masked_fill(~okp[:, :, None, :], NEG))
-                vals.append(("own", _take(vu, pk).float()))
+                vals.append(("own", _take(vu, pk)))
             if summaries:
                 if sid is not None:
                     logits.append((s_lg + rho).masked_fill(~vis[:, :, None, :ns], NEG))
                     if wide:
-                        vals.append(("heads", _pick(tree.val, sid)[:, :, None].float() + _pick(tree.val_h, sid).float()))
+                        vals.append(("heads", _pick(val_w, sid)[:, :, None] + _pick(valh_w, sid)))
                     else:
-                        vals.append(("shared", _pick(tree.val, sid).float()))
+                        vals.append(("shared", _pick(val_w, sid)))
                 if oid is not None:
                     logits.append((o_lg + rho).masked_fill(~vis[:, :, None, ns:], NEG))
                     if wide:
-                        vals.append(("ownheads", _pick(tree.val, oid)[:, :, :, None].float()
-                                     + _pick(tree.val_h, oid).float()))
+                        vals.append(("ownheads", _pick(val_w, oid)[:, :, :, None] + _pick(valh_w, oid)))
                     else:
-                        vals.append(("own", _pick(tree.val, oid).float()))
+                        vals.append(("own", _pick(val_w, oid)))
         return _mix(logits, vals)
 
     out = []
     s0 = q0
     while s0 < q0 + Q:
         tau = s0 // blk
-        cs = chunk or max(8, min(blk, (1 << 26) // max(B * per, 1)))
+        cs = chunk or max(8, min(blk, (1 << 27) // max(B * per, 1)))
         s1 = min(q0 + Q, (tau + 1) * blk, s0 + cs)
         qc = q[:, s0 - q0:s1 - q0]
         o = checkpoint(partial(one, s0, s1), qc, use_reentrant=False) if grad else one(s0, s1, qc)
@@ -952,7 +958,7 @@ def _mix(logits: list, vals: list) -> torch.Tensor:
     o, a = 0.0, 0
     for lg, (kind, val) in zip(logits, vals):
         n_ = lg.shape[-1]
-        wi = w[..., a:a + n_]
+        wi = w[..., a:a + n_].to(val.dtype)
         a += n_
         if kind == "shared":
             o = o + torch.einsum("bqhk,bkd->bqhd", wi, val)
