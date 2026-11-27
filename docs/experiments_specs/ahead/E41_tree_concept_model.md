@@ -620,6 +620,32 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   speed was never read because the stage logs fewer than 33 lines, and the rule then treated a single failed read
   as a missing log). Fixed (`infra/aws/watch_run.sh`: only when the log was never read; `WATCH_SPEED_LINES` for
   short stages, commit `27b804eb`); the watchers of runs 4 and 5 restarted 08:31 UTC.
+- **2026-11-27 10:16 UTC, the lookup was bought with 0.018 on every read** (the scan screen's final weights, 360 rows of 131,072 tokens at Muon 3e-4 and AdamW 2e-5, constant:
+  three times the released model's final rates; the card's long-document test, loss per token on the last 4,096
+  tokens, 120 documents at 16k and 55 at 64k, against the released model on the same documents; Odra card 1):
+
+  | read | released, 16k | scan screen, 16k | released, 64k | scan screen, 64k |
+  |---|---|---|---|---|
+  | the model's own read of the whole document | 2.1257 | 2.1444 (+0.019) | 2.2933 | 2.3090 (+0.016) |
+  | every node followed (the released model's read) | 2.1257 | 2.1461 (+0.020) | 2.2933 | 2.3098 (+0.017) |
+  | the last 1k tokens only | 2.2200 | 2.2385 (+0.019) | 2.4410 | 2.4597 (+0.019) |
+  | concept summaries only | 2.3323 | 2.3373 | 2.5291 | 2.5287 |
+  | no far read | 2.3968 | 2.4105 | 2.5802 | 2.5946 |
+
+  The loss is the same 0.018–0.019 with a kilobyte of context as with the whole document, so it is not the far
+  read: the token layers drifted off their optimum at a rate three times the one they had settled at (what far
+  context is worth is unchanged: 0.151 at 64k against 0.148). The screen at ten times that rate lost 0.23 in 120
+  steps, the retrofits at the final rates lost nothing. The bounded own read costs nothing against every node
+  followed (−0.002 / −0.001). The screen's held-out loss ended at 2.5367 (2.5554 at step 60); its needle on 16
+  needles levelled at 12–14 of 16 (64k) and 9–10 of 16 (128k) from step 250 on.
+- **2026-11-27 10:16 UTC, streamed reading checked on the task:** the step-150 checkpoint at 256k, the same 32
+  needles, in one forward and window by window: 22 of 32 both ways (first token 31 of 32 both ways).
+- **2026-11-27 10:18 UTC, the same screen at the released model's final rates** (Muon 1e-4, AdamW 6e-6:
+  `Cache/e41/retro/tree_xl128_scan_lr1e-4`, Odra card 1, 360 rows; needle at 64k, 128k and 256k at every
+  checkpoint on card 2): does the lookup still come, without the drift. Next on card 0: only the reading layer's
+  attention training (arm `tree_xl_scan_read`, `--train_only_params layers.3.attn.`) at the first screen's rates.
+  The two 256k cloud runs end at a tenth of their starting rate (1e-4, the released model's final rate), so their
+  own no-harm reading is the one that counts for them.
 
 ## Result
 <Filled in after, by experiment-track.>
