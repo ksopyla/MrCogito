@@ -177,6 +177,10 @@ ARMS["tree_pred"] = {**ARMS["tree_vals"], "tree_plan": "true", "tree_plan_from":
 # reasoned states the corrections are read from (tree_np: the next-concept loss as the author meant it)
 ARMS["tree_kv"] = {**ARMS["tree_vals"], "tree_reasoner_keys": "true"}
 ARMS["tree_np"] = {**ARMS["tree_kv"], "tree_next_concept": 0.1, "tree_route_loss": 0.1}
+# the same with the extra losses kept off the token layers (they train the reasoner only): at the cloud runs' rates
+# the reasoner runs fell behind and the home screens at tiny rates did not; this isolates the losses' pull on the
+# token layers from the corrections themselves (screen at raised rates, 2026-11-27)
+ARMS["tree_np_side"] = {**ARMS["tree_np"], "tree_aux_detach": "true"}
 # wide summaries (2026-11-27): a summary hands a reader 64 numbers shared by all 14 heads; here every head reads its
 # own slice of a learned linear read of the node's mean state (896 numbers), nothing else new
 ARMS["tree_wide"] = {**ARMS["tree_read"], "tree_wide": "true"}
@@ -229,7 +233,7 @@ TINY_OPEN["tree_read_step"] = TINY_OPEN["tree_read"]
 TINY_OPEN["tree_vals"] = TINY_OPEN["tree_noaux"]
 TINY_OPEN["tree_gentle"] = TINY_OPEN["tree_pred"] = TINY_OPEN["tree"]
 TINY_OPEN["tree_vp"] = TINY_OPEN["tree_kv"] = TINY_OPEN["tree_noaux"]
-TINY_OPEN["tree_np"] = TINY_OPEN["tree_np_step"] = TINY_OPEN["tree"]
+TINY_OPEN["tree_np"] = TINY_OPEN["tree_np_step"] = TINY_OPEN["tree_np_side"] = TINY_OPEN["tree"]
 TINY_OPEN["tree_wide"] = TINY_OPEN["tree_xl"] = TINY_OPEN["tree_xl_wide"] = TINY_OPEN["tree_read"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
