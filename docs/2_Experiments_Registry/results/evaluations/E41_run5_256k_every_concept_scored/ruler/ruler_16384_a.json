@@ -1,0 +1,54 @@
+{
+  "checkpoint": "/opt/dlami/nvme/runs/e33n_m120t_tree_xl_scan_muon0.01-xl_tok8.0e9_seed42/long/perceiver_ar_perceiver_H896L3g1s9N128_20261127_065436_tree_xl_scan_m120t_long/final",
+  "suite": "ruler",
+  "lengths": [
+    16384
+  ],
+  "limit": 100,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "max_gen_toks": "task default",
+  "results": {
+    "16384": {
+      "niah_multikey_2": {
+        "alias": "niah_multikey_2",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.29,
+        "16384_stderr,none": "N/A"
+      },
+      "niah_multivalue": {
+        "alias": "niah_multivalue",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.4325,
+        "16384_stderr,none": "N/A"
+      },
+      "niah_single_1": {
+        "alias": "niah_single_1",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 1.0,
+        "16384_stderr,none": "N/A"
+      },
+      "ruler_cwe": {
+        "alias": "ruler_cwe",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.34299999999999997,
+        "16384_stderr,none": "N/A"
+      },
+      "ruler_qa_hotpot": {
+        "alias": "ruler_qa_hotpot",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.19,
+        "16384_stderr,none": "N/A"
+      }
+    }
+  },
+  "mean": {
+    "16384": 0.4511
+  },
+  "seconds": 948.4
+}

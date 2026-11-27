@@ -1,0 +1,68 @@
+{
+  "checkpoint": "/opt/dlami/nvme/runs/e33n_m120t_tree_xl_muon0.01-xl_tok8.0e9_seed42/long/perceiver_ar_perceiver_H896L3g1s9N128_20261127_051435_tree_xl_m120t_long/final",
+  "suite": "core",
+  "lengths": null,
+  "limit": 0,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "max_gen_toks": "task default",
+  "results": {
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.21160409556313994,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.24829351535836178,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.4823232323232323,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.43434343434343436,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "hellaswag": {
+      "alias": "hellaswag",
+      "acc,none": 0.29924317864967137,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.3372834096793467,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "lambada_openai": {
+      "alias": "lambada_openai",
+      "perplexity,none": 53.04940627959456,
+      "perplexity_stderr,none": "N/A",
+      "acc,none": 0.3192315156219678,
+      "acc_stderr,none": "N/A"
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.6327529923830251,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.6109902067464635,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "sciq": {
+      "alias": "sciq",
+      "acc,none": 0.765,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.708,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "wikitext": {
+      "alias": "wikitext",
+      "word_perplexity,none": 36.04267488176601,
+      "word_perplexity_stderr,none": "N/A",
+      "byte_perplexity,none": 1.9549360882829507,
+      "byte_perplexity_stderr,none": "N/A",
+      "bits_per_byte,none": 0.9671214430188515,
+      "bits_per_byte_stderr,none": "N/A"
+    },
+    "winogrande": {
+      "alias": "winogrande",
+      "acc,none": 0.5224940805051302,
+      "acc_stderr,none": "N/A"
+    }
+  },
+  "seconds": 154.5
+}

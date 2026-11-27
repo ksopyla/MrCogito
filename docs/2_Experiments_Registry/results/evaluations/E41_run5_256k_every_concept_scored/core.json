@@ -1,0 +1,68 @@
+{
+  "checkpoint": "/opt/dlami/nvme/runs/e33n_m120t_tree_xl_scan_muon0.01-xl_tok8.0e9_seed42/long/perceiver_ar_perceiver_H896L3g1s9N128_20261127_065436_tree_xl_scan_m120t_long/final",
+  "suite": "core",
+  "lengths": null,
+  "limit": 0,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "max_gen_toks": "task default",
+  "results": {
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.21245733788395904,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.24573378839590443,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.48695286195286197,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.44191919191919193,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "hellaswag": {
+      "alias": "hellaswag",
+      "acc,none": 0.29934276040629354,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.3372834096793467,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "lambada_openai": {
+      "alias": "lambada_openai",
+      "perplexity,none": 52.73920378055949,
+      "perplexity_stderr,none": "N/A",
+      "acc,none": 0.3178730836405977,
+      "acc_stderr,none": "N/A"
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.6262241566920566,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.6142546245919478,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "sciq": {
+      "alias": "sciq",
+      "acc,none": 0.776,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.709,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "wikitext": {
+      "alias": "wikitext",
+      "word_perplexity,none": 35.942737884422385,
+      "word_perplexity_stderr,none": "N/A",
+      "byte_perplexity,none": 1.9539212774242678,
+      "byte_perplexity_stderr,none": "N/A",
+      "bits_per_byte,none": 0.9663723429677726,
+      "bits_per_byte_stderr,none": "N/A"
+    },
+    "winogrande": {
+      "alias": "winogrande",
+      "acc,none": 0.5185477505919495,
+      "acc_stderr,none": "N/A"
+    }
+  },
+  "seconds": 153.6
+}
