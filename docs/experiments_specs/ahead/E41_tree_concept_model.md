@@ -903,6 +903,38 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   `runs/e41/e33n_m120t_tree_xl_scan_rr_muon0.01-xl_tok8.0e9_seed42/`. The account's spot limit is full with runs 2
   and 6: the keeper retries until run 6's node stops (its tests end about 21:50 UTC). One change against run 5,
   so the two compare directly: the planted numbers at 64k-1M, RULER, the long-document loss.
+- **2026-11-27 21:09 UTC, run 6 ended** (run 5 at a third of the starting rate, Muon 3e-4 falling to 3e-5;
+  training 13:54-20:04 UTC, tests done 21:06, node gone by 21:10; $55.95). Its node tests against the recall run
+  and run 5, each model's own read (saved in
+  `docs/2_Experiments_Registry/results/evaluations/E41_run6_256k_every_concept_scored_gentler_rate/`):
+
+  | | the recall run | run 5 | run 6 |
+  |---|---|---|---|
+  | long-document loss per token, 4k | 2.0655 | 2.0676 | 2.0650 |
+  | 16k | 1.8899 | 1.8912 | 1.8895 |
+  | 32k | 1.9040 | 1.9069 | 1.9050 |
+  | 64k | 1.8811 | 1.8840 | 1.8831 |
+  | 128k | 1.7746 | 1.7567 | 1.7573 |
+  | LAMBADA perplexity (lower is better) | 50.27 | 52.74 | 50.30 |
+  | WikiText word perplexity | 35.63 | 35.94 | 35.68 |
+  | RULER, mean of 13 tasks, 4k | 0.572 | 0.555 | 0.546 |
+  | 8k | 0.526 | 0.508 | 0.493 |
+  | 16k | 0.405 | 0.398 | 0.393 |
+  | 32k | 0.360 | 0.362 | 0.356 |
+  | held-out loss on the 256k rows, steps 100 and 200 | - | 2.4305, 2.4144 | 2.4236, 2.4163 |
+
+  The gentler rate takes away run 5's small cost on ordinary reading (within 0.002 of the recall run to 64k,
+  LAMBADA back to 50.3) and keeps the gain on 128k documents (0.017). It does not repair RULER's lookups among
+  distractors: `niah_single_3` (a long value to copy) 0.44 / 0.11 / 0.13 at 16k and 0.59 / 0.38 / 0.37 at 32k,
+  `niah_multikey_2` 0.62 / 0.38 / 0.33 at 8k (recall run / run 5 / run 6), so those are a matter of the read, not
+  of the rate or the drift. Being checked at home on run 5's weights with and without the re-rank
+  (`Cache/e41/evals/ruler_home/`, 16k, both tasks, 100 documents). Run 6's planted numbers: Odra card 0,
+  `fair/run6_final`.
+- **2026-11-27 20:59 UTC, the re-rank screen's first checkpoint** (step 50 of 360, 16 numbers per length): read
+  16 / 9 / 14 of 16 at 64k / 128k / 256k (strict 12 / 9 / 13). At 256k that is above the two thirds every scan
+  model stopped at (20-22 of 32); at 128k it is at or just below it. One early checkpoint, 16 texts.
+- **2026-11-27 21:10 UTC, spend:** E41's nodes sum to $384.42 (runs 1-6 and the data build; run 2 still
+  training); the family heartbeats stand at $4,111 of the launchers' $5,000 stop.
 
 ## Result
 <Filled in after, by experiment-track.>
