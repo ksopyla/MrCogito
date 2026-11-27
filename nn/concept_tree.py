@@ -55,8 +55,37 @@ BIG = 1 << 30
 # For scripts that ask where a read went (None: off; nothing in training or the tests sets it). A dict
 # {"q0": first query position watched, "pos": LongTensor [T] of source positions, "log": []}: every call of the
 # top-down read appends (the watched queries' positions [n], whether each source position was opened for each of
-# them [B, n, T], how many tokens each of them opened [B, n]). scripts/e41_needle_why.py.
+# them [B, n, T], how many tokens each of them opened [B, n]). With a "mass" list in it, every call also appends
+# the watched queries' attention by part (`_watch_mass`). scripts/e41_needle_why.py.
 WATCH: Optional[dict] = None
+
+
+@torch.no_grad()
+def _watch_mass(logits: list, opens_at: list, n_fixed: int, qp: torch.Tensor) -> None:
+    """Where the watched queries' attention went in one call of the top-down read: per head, the share on the
+    window (part 0), the sinks, the opened tokens, the summaries, and on each watched source position among the
+    opened tokens. `opens_at`: (index in `logits`, positions [B, ch, P]) of the opened-token parts; parts before
+    `n_fixed` are the window and the sinks, the others summaries. Appends (query positions [n], {part: [B, n, h],
+    "tgt": [B, n, h, T]}) to WATCH["mass"]."""
+    sel = qp >= WATCH["q0"]
+    if not bool(sel.any()):
+        return
+    w = torch.nan_to_num(torch.softmax(torch.cat([lg[:, sel] for lg in logits], -1).float(), -1), nan=0.0)
+    tgt = WATCH["pos"].to(w.device)
+    pos_of = dict(opens_at)
+    rec = {k: torch.zeros(w.shape[:3]) for k in ("win", "sink", "open", "sum")}
+    rec["tgt"] = torch.zeros(*w.shape[:3], tgt.numel())
+    a = 0
+    for i, lg in enumerate(logits):
+        n_ = lg.shape[-1]
+        wi = w[..., a:a + n_]
+        a += n_
+        part = "win" if i == 0 else "sink" if i < n_fixed else "open" if i in pos_of else "sum"
+        rec[part] += wi.sum(-1).cpu()
+        if part == "open":
+            hit = (pos_of[i][:, sel][..., None] == tgt).to(wi.dtype)                     # [B, n, P, T]
+            rec["tgt"] += torch.einsum("bnhp,bnpt->bnht", wi, hit).cpu()
+    WATCH["mass"].append((qp[sel].cpu(), rec))
 ALL = -1  # a "follow" budget: every readable node of the level is followed
 
 
@@ -978,6 +1007,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
             vals.append(("own", big(VU, spc)))
         if t0 < 2:
             return _mix(logits, vals)
+        n_fixed, opens_at = len(logits), []                                              # for the recorder only
         qq = (qc.detach() ** 2).sum(-1, keepdim=True) / (2 * d) if variance else None     # [B, ch, h, 1]
         rho = logrho[:, s0:s1][:, :, None, None] if logrho is not None else 0.0
         cat = lambda *ts: torch.cat([t for t in ts if t is not None], -1)
@@ -1039,6 +1069,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                 if lv == 1 and scan and opens:  # nothing to summarise, but the scan still opens tokens
                     pk, okp, _ = open_from(*scan_concepts(qw, qq, qp), qp, okq, s0, s1)
                     lo_t = torch.einsum("bqhd,bqpd->bqhp", qw, big(KT, pk)).float() * sc
+                    opens_at.append((len(logits), pk))
                     logits.append(lo_t.masked_fill(~okp[:, :, None, :], NEG))
                     vals.append(("own", big(VU, pk)))
                 continue
@@ -1080,6 +1111,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
             if opened is not None:
                 pk, okp = opened
                 lo_t = torch.einsum("bqhd,bqpd->bqhp", qw, big(KT, pk)).float() * sc
+                opens_at.append((len(logits), pk))
                 logits.append(lo_t.masked_fill(~okp[:, :, None, :], NEG))
                 vals.append(("own", big(VU, pk)))
             if summaries:
@@ -1095,6 +1127,8 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                     logits.append((o_lg + rho).masked_fill(~vis[:, :, None, nr + nt:], NEG))
                     vals.append(("ownheads", big(VAL, oid)[:, :, :, None] + big(VALH, oid)) if wide
                                 else ("own", big(VAL, oid)))
+        if WATCH is not None and "mass" in WATCH:
+            _watch_mass(logits, opens_at, n_fixed, qp)
         return _mix(logits, vals)
 
     out = []

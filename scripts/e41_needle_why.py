@@ -86,13 +86,13 @@ def main() -> None:
                 continue
             p0 = 1 + at + k                                     # the row position of the number's first token
             x = torch.tensor(ids, device="cuda")[None]
-            ct.WATCH = {"q0": S - n - 1, "pos": torch.arange(p0 - 1, p0 + n), "log": []}
+            ct.WATCH = {"q0": S - n - 1, "pos": torch.arange(p0 - 1, p0 + n), "log": [], "mass": []}
             try:
                 with torch.no_grad(), torch.autocast("cuda", dtype=torch.bfloat16):
                     with model.open_impl("list" if S >= a.list_from else None):
                         h = model.hidden_states(x)[0][S - n - 1:S - 1]
                     pred = torch.nn.functional.linear(h.float(), model.lm_head.weight.float()).argmax(-1).tolist()
-                log = ct.WATCH["log"]
+                log, mass = ct.WATCH["log"], ct.WATCH["mass"]
             finally:
                 ct.WATCH = None
             # per pass of the reading layer: [n answer queries, n + 1 source positions]
@@ -107,6 +107,16 @@ def main() -> None:
                         c[j] = cnt[0, i]
                 passes.append(m)
                 opened_n.append(c)
+            # where each answer query's attention went, per pass: {part: [n, h]}, "tgt": [n, h, n + 1]
+            att = []
+            for qp, rec in mass:
+                m = {k: torch.zeros(n, *v.shape[2:]) for k, v in rec.items()}
+                for i, q in enumerate(qp.tolist()):
+                    j = q - (S - n - 1)
+                    if 0 <= j < n:
+                        for k, v in rec.items():
+                            m[k][j] = v[0, i]
+                att.append(m)
             toks = []
             for j in range(n):
                 # the source of answer token j: positions p0 + j - 1 (context) and p0 + j (the token) = columns j, j + 1
@@ -114,7 +124,16 @@ def main() -> None:
                              "token_opened": [bool(m[j, j + 1]) for m in passes],
                              "before_opened": [bool(m[j, j]) for m in passes],
                              "any_of_number_opened": [bool(m[j].any()) for m in passes],
-                             "opened": [int(c[j]) for c in opened_n]})
+                             "opened": [int(c[j]) for c in opened_n],
+                             # per pass: the best head's share on the token to copy, on the one before it, on
+                             # the whole number; and the heads' mean share by part
+                             "on_token": [round(float(m["tgt"][j, :, j + 1].max()), 4) for m in att],
+                             "on_before": [round(float(m["tgt"][j, :, j].max()), 4) for m in att],
+                             "on_number": [round(float(m["tgt"][j].sum(-1).max()), 4) for m in att],
+                             "on_other_digit": [round(float((m["tgt"][j].sum(-1) - m["tgt"][j, :, j + 1]
+                                                             - m["tgt"][j, :, j]).max()), 4) for m in att],
+                             "parts": [{k: round(float(m[k][j].mean()), 4) for k in ("win", "sink", "open", "sum")}
+                                       for m in att]})
             rows.append({"depth": d, "at": at, "n": n, "tokens": toks, "all": pred == ans})
             print(f"L={S} depth {d + 1}/{a.depths}: " + " ".join(
                 ("+" if t["right"] else "-") + ("o" if any(t["token_opened"]) else ".") for t in toks), flush=True)
@@ -136,6 +155,15 @@ def main() -> None:
                           "right_when_not_opened": frac(t["right"] for t in no),
                           "mean_tokens_opened": round(sum(sum(t["opened"]) / max(len(t["opened"]), 1) for t in sel)
                                                       / max(len(sel), 1), 1)}
+            for lab, grp in (("right", [t for t in sel if t["right"]]), ("wrong", [t for t in sel if not t["right"]])):
+                if grp and grp[0].get("on_token"):
+                    mean = lambda f: round(sum(f(t) for t in grp) / len(grp), 4)
+                    summ[name][f"attention_when_{lab}"] = {
+                        "n": len(grp),
+                        "best_head_on_token_max_over_passes": mean(lambda t: max(t["on_token"])),
+                        "best_head_on_before_max_over_passes": mean(lambda t: max(t["on_before"])),
+                        "best_head_on_other_digit_max_over_passes": mean(lambda t: max(t["on_other_digit"])),
+                        "last_pass_parts": {k: mean(lambda t, k=k: t["parts"][-1][k]) for k in ("win", "sink", "open", "sum")}}
         out["lengths"][str(S)] = {"summary": summ, "rows": rows}
         print(f"L={S}: {json.dumps(summ)}", flush=True)
         Path(a.out).parent.mkdir(parents=True, exist_ok=True)
