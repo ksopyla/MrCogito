@@ -744,7 +744,7 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
                      width: int, variance: bool = True, summaries: bool = True, open_tokens: bool = True,
                      dv_tok: Optional[torch.Tensor] = None, sum_len: int = 0, q_offset: int = 0, chunk: int = 0,
                      index: Optional[dict] = None, reuse: Optional[torch.Tensor] = None,
-                     scan: bool = False) -> torch.Tensor:
+                     scan: bool = False, span: int = 0) -> torch.Tensor:
     """The bounded read made top-down, for rows of any length (2026-11-27). The table and streamed reads score every
     concept of the row for every query before they bound what is read, so their cost per query grows with the row
     (the reason no row was longer than 65,536 tokens). Here a query scores, level by level from the top, only the
@@ -763,6 +763,12 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
     concept is scored, head by head with a running maximum (one matrix product each: 8 numbers per token of the
     row, no table), and the walk down bounds the summaries only. The cost per query then grows with the row, with
     a small constant.
+
+    `span` n > 0 (experimental, this read only): every opened token brings the n tokens after it (inside the
+    query's document and before its window), the best concepts' runs first, each position once, within the same
+    cap. A fact is a run of tokens: the released model finds where a planted number starts at 256k (the first
+    token right in 6 of 8) and loses the digits after it, because each later digit must win the choice again by a
+    weak cue (the digit before it), while the place itself keeps matching the question.
 
     `reuse` [B, Q, h, d]: this call's output, computed before from the same inputs (a gradient checkpoint's
     recomputation of the layer): the chunks hand it on instead of computing it again; their backward is unchanged."""
@@ -869,6 +875,27 @@ def tree_read_sparse(q, k, v, *, tree: TreeIndex, reads: RowReads, doc, ds, n_si
         okp = (torch.arange(Pn, device=dev) < okp.sum(-1, keepdim=True)) & okq
         if key_valid is not None:
             okp = okp & _take(key_valid.bool(), pk)
+        if span > 0 and Pn > 0:
+            r1 = span + 1
+            n2 = Pn * r1
+            cand = (pk[..., None] + torch.arange(r1, device=dev)).reshape(B, ch, n2)   # a token, then its run
+            ok2 = okp[..., None].expand(B, ch, Pn, r1).reshape(B, ch, n2)
+            ok2 = ok2 & (cand <= (qp - blk)[None, :, None])                            # before the query's window
+            cc = cand.clamp(max=S - 1)
+            ok2 = ok2 & (_take(doc, cc) == doc[:, qp][..., None])
+            if key_valid is not None:
+                ok2 = ok2 & _take(key_valid.bool(), cc)
+            # each position once (the first, best, mention wins), then the cap by that order
+            pri = torch.arange(n2, device=dev)
+            key = torch.where(ok2, cc * n2 + pri, torch.full_like(cc, S * n2))
+            srt = key.sort(dim=-1).values
+            ps, pr = torch.div(srt, n2, rounding_mode="floor"), srt % n2
+            first = torch.ones_like(ps, dtype=torch.bool)
+            first[..., 1:] = ps[..., 1:] != ps[..., :-1]
+            good = first & (ps < S)
+            top = torch.where(good, pr, torch.full_like(pr, n2)).topk(min(top_k, n2), dim=-1, largest=False)
+            pk = ps.gather(2, top.indices).clamp(max=S - 1)
+            okp = top.values < n2
         return pk, okp, off
 
     def one(s0: int, s1: int, qc: torch.Tensor, leaves: Optional[list] = None) -> torch.Tensor:

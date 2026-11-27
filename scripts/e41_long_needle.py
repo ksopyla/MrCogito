@@ -69,6 +69,9 @@ def main() -> None:
     ap.add_argument("--scan", action="store_true",
                     help="tokens are opened from the best concepts of the whole row (tree_scan) whatever the "
                          "checkpoint's config says; the followed nodes bound the summaries")
+    ap.add_argument("--span", type=int, default=-1,
+                    help="an opened token brings this many tokens after it (tree_span; top-down read); default: "
+                         "the checkpoint's own")
     ap.add_argument("--top_down", action="store_true",
                     help="bounded reads by descent go through the top-down path (tree_sparse) whatever the "
                          "checkpoint's config says")
@@ -89,6 +92,8 @@ def main() -> None:
                 mod.tree["sparse"] = True
             if a.scan:
                 mod.tree["scan"] = True
+            if a.span >= 0:
+                mod.tree["span"] = a.span
     rng = random.Random(a.seed)
     lengths = [int(x) for x in a.lengths.split(",")]
     text = filler(a.mix, a.sources.split(","), max(lengths) + 4096, eot)

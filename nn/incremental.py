@@ -151,6 +151,8 @@ def decode_kind(model: PerceiverARLM) -> str:
             _refuse("the concept read with a notebook or a compressor")
         if att.concept_stats is not None or getattr(att, "tree_stats", None) is not None:
             _refuse("a concept-read probe is armed")
+        if int((getattr(att, "tree", None) or {}).get("span", 0) or 0) > 0:
+            _refuse("the tree read with spans after opened tokens (tree_span: the forward only, so far)")
         return "concept"
     if att.lsa is not None:
         if m.memory_writer is not None:

@@ -826,6 +826,31 @@ def test_streamed_reading_gives_the_single_forward_states(window, overlap, scan)
         m.hidden_states_streamed(ids, window=100, overlap=48)
 
 
+@pytest.mark.parametrize("scan", [False, True])
+def test_spans_after_opened_tokens_stay_causal_and_inside_the_cap(scan):
+    """tree_span: an opened token brings the tokens after it. The read stays causal, differs from the plain one, and
+    with a span of 0 it is the plain one."""
+    from nn.concept_tree import tree_read_sparse
+
+    q, k, v, x, doc, sink, ds = _inputs(S=592, seed=31, docs=True)
+    B, S = doc.shape
+    tree = _tree(k, v, x, doc, sink)
+    reads = _reads(tree, B, "two", 24)
+    kw = dict(tree=tree, reads=reads, doc=doc, ds=ds, n_sinks=2, key_valid=None, top_k=24, width=12, scan=scan)
+    plain = tree_read_sparse(q, k, v, **kw)
+    torch.testing.assert_close(tree_read_sparse(q, k, v, span=0, **kw), plain)
+    out = tree_read_sparse(q, k, v, span=3, **kw)
+    assert not torch.allclose(out, plain, atol=1e-3)
+    for ch in (5, 48):
+        torch.testing.assert_close(tree_read_sparse(q, k, v, span=3, chunk=ch, **kw), out, atol=2e-5, rtol=1e-4)
+    # values of positions a query may not read (its own window is read raw; nothing after it) do not reach it
+    for t in (200, 400):
+        v2 = v.clone()
+        v2[:, t:] += 5.0
+        out2 = tree_read_sparse(q, k, v2, span=3, **kw)
+        assert float((out2 - out)[:, :t].abs().max()) < 1e-4
+
+
 def test_a_top_down_model_trains_and_checkpointing_agrees():
     cfg_kw = {**TREE, **SPARSE, **WIDE, "tree_row_mix": "0.3,0.4,0.3", "tree_train_follow": 2}
     m = _model(warm=True, **cfg_kw).train()
