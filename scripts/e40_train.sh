@@ -10,6 +10,8 @@
 # Usage (Odra, repo root): setsid nohup bash scripts/e40_train.sh ARM GPU [OUT] > /dev/null 2>&1 < /dev/null &
 #   events (UTC): OUT/events.log; logs: OUT/{decay,long}.log; weights: OUT/{decay,long}/<run>/final
 #   Waits until card GPU runs no compute process (other sessions' jobs included), checking once a minute.
+#   SCHED=decay: the rates fall to a tenth over the part, after a 3 % warm-up (the cloud stages' schedule; E41:
+#   the lookup comes at three times the final rates and the ordinary reading drifts when that rate is held).
 #   MUON_LR / ADAMW_LR: other constant rates (E41's 256k screen: a mix whose `long` phase has rows of 262,144, so
 #   LONG_STEPS counts quarter rows there: tokens = LONG_STEPS x 65,536).
 #   STOP_AFTER=decay ends after part 1; ONLY_PART=long runs part 2 alone from INIT (speed checks). TOKENS_SCALE
@@ -42,13 +44,14 @@ case "$ARM" in
   tree*) EXTRA=(--tree_reasoner_lr "${TREE_LR:-6e-4}") ;;
 esac
 
+HOLD=(--constant_lr); [[ ${SCHED:-} == decay ]] && HOLD=()
 part() {  # part <phase> <init> <steps> <rows per step> <eval every>
   local ph="$1" init="$2" steps="$3" rows="$4" ev="$5" seq tokens cmd rc
   seq=$([[ $ph == decay ]] && echo 16384 || echo 65536)
   tokens=$(( steps * rows * seq ))
   cmd=$(.venv/bin/python scripts/run_e33n.py cmd --arm "$ARM" --size m120t --phase "$ph" --data "$OUT" --out "$OUT" \
         --init "$init" --mix "$MIX" --mix_lenient --tokens "$tokens" --rows "$rows" --micro 1 --gpus 1 --grad_ckpt \
-        --optimizer muon --lr "${MUON_LR:-1e-4}" --muon_adamw_lr "${ADAMW_LR:-6e-6}" --constant_lr \
+        --optimizer muon --lr "${MUON_LR:-1e-4}" --muon_adamw_lr "${ADAMW_LR:-6e-6}" ${HOLD[@]+"${HOLD[@]}"} \
         --eval_every "$ev" --save_every "$ev" \
         --fast --workers "${WORKERS:-2}" "${EXTRA[@]}" 2>> "$OUT/$ph.log") || { say "$ph: the command failed"; return 1; }
   echo "$cmd" > "$OUT/$ph.cmd"
