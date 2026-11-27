@@ -1,7 +1,9 @@
 # E39a — living concepts with every span competing (stages 2–3 again)
 
-- **Status:** approved by the author 2026-11-26 ("Rerun stages 2–3"); trained on AWS 2026-11-26/27 ($148.32); the
-  card protocol runs on Polonez (see the log at the end).
+- **Status:** approved by the author 2026-11-26 ("Rerun stages 2–3"); trained on AWS 2026-11-26/27 ($148.32); card
+  protocol 2026-11-27: **the flavour fails** (A1 missed at 16k and 64k, A2 missed at 32k; see "Verdict"). By the
+  spec's own rule E39's line closes; awaiting the author's word. Three reported-only tests (board, samples, list
+  exam) did not run: Polonez's `/home` disk froze at about 06:03 UTC.
 - **Serves:** the 10M-context goal: whether E39's grouping keeps long text once the reader's choice no longer hides
   the right span, before any work on a choice that scales (the concept tree).
 - **Implementation plan:** none of its own: one arm over E39's build ([E39_plan.md](E39_plan.md)); the arm
@@ -53,6 +55,36 @@ single lookups.** If it does not, the grouping itself costs long text and E39's 
   search itself scores every span per reader and does not reach 10M tokens.
 - A1 missed → the grouping's summaries and spans cost long text against concept memory's fixed blocks; close E39.
 
+## Verdict (card protocol, 2026-11-27, Polonez card 1; against the recall run / E39)
+- **A1 missed at both lengths.** 64k documents **2.337** nats per token (mark ≤ 2.305; 2.291 / 2.388), 16k documents
+  **2.140** (mark ≤ 2.137; 2.125 / 2.161). About half of E39's gap closed (53 % at 64k, 58 % at 16k), not all of it.
+- **A2 missed at 32k only.** One number in an essay 1.00 / 1.00 / 0.99 / **0.91** at 4k / 8k / 16k / 32k (mark ≥ 0.95
+  at each; 1.00 / 1.00 / 1.00 / 0.92 and 0.98 / 0.98 / 0.48 / 0.31). The 32k bar was above the recall run's own 0.92,
+  so on this cell the two tie. One number among distractor keys at 16k 0.89 (mark ≥ 0.80; 0.79 / 0.55): met.
+- **Reported, not marks:**
+  - RULER 13-task mean 0.514 / 0.491 / 0.399 / 0.331 (0.567 / 0.527 / 0.392 / 0.362; 0.436 / 0.387 / 0.269 / 0.201):
+    a tie with the recall run at 16k, behind at 4k, 8k and 32k, above E39 everywhere.
+  - Several far items: all values of one key (multivalue) 0.66 / 0.78 / 0.56 / 0.54, above the recall run at every
+    length (0.59 / 0.43 / 0.35 / 0.36); several questions at once (multiquery) 0.61 / 0.62 / 0.30 / 0.21 (0.54 /
+    0.60 / 0.36 / 0.16); two distractor keys (multikey 2) 0.67 / 0.46 / 0.30 / 0.22 (0.72 / 0.63 / 0.26 / 0.20);
+    the hardest distractors (multikey 3) 0.08 / 0.02 / 0.00 / 0.02 (0.33 / 0.15 / 0.05 / 0.05).
+  - Weak: a UUID in an essay (niah_single_3) 0.40 / 0.42 / 0.13 / 0.13 (0.97 / 0.88 / 0.46 / 0.53; E39 0.11 / 0.16 /
+    0.06 / 0.02): copying a long exact string out of a span stays poor.
+  - Use of far text: removing the memory costs 0.237 nats per token at 64k (recall run 0.285, E39 0.184); cutting
+    the 64k text to its last 16k costs 0.034 (0.060 / 0.006). The model leans on the far text less than the recall
+    run does.
+  - Summaries switched off (R3): +0.059 at 64k (+0.067 / +0.051), +0.028 at 16k (+0.022 / +0.025), +0.072 at 128k
+    (+0.030 / +0.068).
+  - 128k documents 2.453 (2.461 / 2.487; 15 documents): a tie with the recall run.
+  - Compare test (55 documents, bits per byte, lower is better): whole document 0.810 (0.794 / 0.827); saved from
+    1k to most context 0.037 (0.051 / 0.020); another document's far past 0.840 (0.831 / 0.850).
+  - 7 core tasks 45.79 (45.72 / 45.73): a tie.
+  - Not run: the board (BLiMP and the leaderboard tier), samples and the list exam (Polonez's disk, see the log).
+- **What it says.** Training with every span competing brings back the single lookups and closes about half of E39's
+  long-text gap, but documents at 16k and 64k stay behind concept memory's fixed blocks. The spec's rule applies: the
+  grouping's spans and summaries cost long text, so E39's line closes. One property is worth carrying over: finding
+  every value of one key, which every other model fails, is better here at every length.
+
 ## Plan
 - Seed `runs/e39a/e33n_m120t_living_flat_muon0.01_tok8.0e9_seed42/trunk/` with E39's stage-1 final from the laptop
   (admin profile), then launch the job on spot g6e.12xlarge (us-east-1, cheapest zones first) through the keeper
@@ -91,3 +123,13 @@ single lookups.** If it does not, the grouping itself costs long text and E39's 
     (+0.014), so A1 at 64k is likely missed; 16k is close; A2 met on the job test. The card protocol decides.
 - **2026-11-27 03:23 UTC card protocol started** on Polonez card 1 alone (cards 0 and 3 run another session's jobs,
   card 2 holds a stuck process), the list exam after it; waiter `Cache/ops/e39a_release_wait.sh`.
+- **2026-11-27 03:23–06:23 UTC** ten of the twelve card jobs done (real documents 64k, 128k and 16k, RULER 4k to 32k,
+  the compare test, 7 core tasks). **06:23 UTC** the board job started and froze. Polonez's `/home` (LVM volume
+  `vg0-nvme` over both NVMe drives) has had one write stuck in the LVM layer since about 06:03 UTC: both drives show
+  nothing in flight, the ext4 journal thread waits, and every process that writes to `/home` hangs (this run's board
+  job and another session's job among them). The kernel log needs root. The waiter stopped at its 8 h limit (11:23
+  UTC).
+- **2026-11-27 11:31 UTC** results read without access-time writes (`O_NOATIME`) and copied to
+  `Cache/results/e39a_release`. The queue's own processes on Polonez (the board job in a disk wait, the queue and the
+  list-exam waiter) were left as they are: if the disk recovers, they finish the three remaining tests on card 1.
+  Verdict above.

@@ -125,7 +125,10 @@
   reader, which does not scale to 10M tokens. The open question for a flavour: trained with every span competing
   in stages 2–3 (from this run's stage-1 weights, where the first level cost nothing), does the grouping match the
   recall run on long text? **Asked and approved 2026-11-26 ("Rerun stages 2–3"): flavour
-  [E39a](E39a_living_flat.md).**
+  [E39a](E39a_living_flat.md).** **E39a's answer (card protocol, 2026-11-27): no.** 64k documents 2.337 and 16k
+  2.140 (recall run 2.291 and 2.125): about half of this run's gap closed, not all; single lookups back to the recall
+  run's level (one number in an essay 0.99 at 16k, 0.91 at 32k). By E39a's rule this line closes; the author
+  confirms.
 - **Serves:** the 10M-context goal (author, 2026-11-20: full attention is the ceiling up to 64k, the target is the
   lengths it cannot reach) and Vision priority 1 (reasoning in latent space: concepts that exist for the whole
   document are what a later reasoner would work on).
