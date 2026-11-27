@@ -177,6 +177,8 @@ ARMS["tree_pred"] = {**ARMS["tree_vals"], "tree_plan": "true", "tree_plan_from":
 # reasoned states the corrections are read from (tree_np: the next-concept loss as the author meant it)
 ARMS["tree_kv"] = {**ARMS["tree_vals"], "tree_reasoner_keys": "true"}
 ARMS["tree_np"] = {**ARMS["tree_kv"], "tree_next_concept": 0.1, "tree_route_loss": 0.1}
+# run 3: tree_np with the read drawn per step (several cards), next to run 2's tree_read_step
+ARMS["tree_np_step"] = {**ARMS["tree_np"], "tree_row_draw": "step"}
 ARMS["catalogue_2l"] = {**ARMS["catalogue"], "lm_open_levels": 2, "lm_open_pages": 16}  # pages first, then notes
 # E40 (docs/experiments_specs/done_failed/E40_depth_mixed_read.md): concept memory with DeepCrossAttention's GRN-v3 depth
 # mixes for the query, key and value inputs (nn/depth_mix.py): the reading layer's runs only, or 2-DCA on every run.
@@ -217,7 +219,7 @@ TINY_OPEN["tree_read_step"] = TINY_OPEN["tree_read"]
 TINY_OPEN["tree_vals"] = TINY_OPEN["tree_noaux"]
 TINY_OPEN["tree_gentle"] = TINY_OPEN["tree_pred"] = TINY_OPEN["tree"]
 TINY_OPEN["tree_vp"] = TINY_OPEN["tree_kv"] = TINY_OPEN["tree_noaux"]
-TINY_OPEN["tree_np"] = TINY_OPEN["tree"]
+TINY_OPEN["tree_np"] = TINY_OPEN["tree_np_step"] = TINY_OPEN["tree"]
 TINY_OPEN["catalogue_reuse"] = TINY_OPEN["catalogue"]
 TINY_OPEN["catalogue_reuse_n4"] = {**TINY_OPEN["catalogue"], "lm_latents": 16}               # tiny pages are 64
 TINY_OPEN["catalogue_reuse_n16"] = {**TINY_OPEN["catalogue"], "lm_latents": 4}
