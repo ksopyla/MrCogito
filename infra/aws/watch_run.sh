@@ -24,7 +24,10 @@ stop_all() {
   kill "$(cat "$PIDF" 2>/dev/null)" 2>/dev/null
   bash infra/aws/terminate.sh "$NAME" 2>&1 | tee -a "$EV"
 }
-t0=$(date +%s); did_speed=""; did_loss=""; bad=0; last_usd=""
+t0=$(date +%s); did_speed=""; did_loss=""; bad=0; last_usd=""; seen=""
+# WATCH_SPEED_LINES (default 33): stage-log lines the speed's median needs (a stage of few steps logs fewer: the
+# 256k stage has 28 lines in all)
+SPL="${WATCH_SPEED_LINES:-33}"
 say "watching $S3R (stage $STAGE): stop above loss $LOSS_MAX at the 5th evaluation, report below $SPEED_MIN tokens/s, cap \$$CAP"
 while true; do
   now=$(date +%s)
@@ -51,19 +54,20 @@ PY
     fi
   fi
   if aws s3 cp --only-show-errors "$S3R/$STAGE.log" "$TMP" 2>/dev/null; then
-    bad=0
-    read -r n sp ev5 evl < <(python3 - "$TMP" <<'PY'
+    bad=0; seen=1
+    read -r n sp ev5 evl < <(python3 - "$TMP" "$SPL" <<'PY'
 import re, statistics, sys
 t = open(sys.argv[1], errors="replace").read()
+k = int(sys.argv[2])
 sp = [float(x) for x in re.findall(r"'perf/real_tokens_per_second': ([0-9.]+)", t)]
 ev = [float(x) for x in re.findall(r"'eval_loss': ([0-9.]+)", t)]
 n = len(re.findall(r"\{'loss'", t))
-print(n, f"{statistics.median(sp[3:33]):.0f}" if len(sp) >= 33 else "-", f"{ev[4]:.4f}" if len(ev) >= 5 else "-",
+print(n, f"{statistics.median(sp[3:k]):.0f}" if len(sp) >= k else "-", f"{ev[4]:.4f}" if len(ev) >= 5 else "-",
       f"{ev[-1]:.4f}" if ev else "-")
 PY
 )
     if [ -z "$did_speed" ] && [ "$sp" != "-" ]; then
-      did_speed=1; say "speed: median $sp tokens/s over $STAGE log lines 4-33 (report below $SPEED_MIN)"
+      did_speed=1; say "speed: median $sp tokens/s over $STAGE log lines 4-$SPL (report below $SPEED_MIN)"
       [ "$sp" -lt "$SPEED_MIN" ] && { say "SPEED BELOW THE MARK: report before going on"; exit 10; }
     fi
     if [ -z "$did_loss" ] && [ "$ev5" != "-" ]; then
@@ -75,7 +79,9 @@ PY
   else
     bad=$((bad + 1))
     if ! aws sts get-caller-identity >/dev/null 2>&1 && [ "$bad" -ge 24 ]; then say "S3 unreadable 2 h (login?)"; exit 6; fi
-    [ -z "$did_speed" ] && [ $((now - t0)) -ge 10800 ] && { say "no $STAGE log 3 h after the start"; exit 4; }
+    # only when the stage log was never read: one failed read later is not a missing log (run 4's watcher left on
+    # such a read at 08:25 UTC on 2026-11-27, its speed never read because the stage logs fewer than 33 lines)
+    [ -z "$seen" ] && [ $((now - t0)) -ge 10800 ] && { say "no $STAGE log 3 h after the start"; exit 4; }
   fi
   kill -0 "$(cat "$PIDF" 2>/dev/null)" 2>/dev/null || {
     aws s3 ls "$S3R/eval_core_long.json" >/dev/null 2>&1 && { say "DONE"; exit 0; }
