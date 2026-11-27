@@ -16,6 +16,9 @@
 # Usage: bash infra/aws/jobs/e37_evals_long.sh CHECKPOINT OUT_DIR DATA_DIR [S3_DIR]
 #   DATA_DIR holds tokenizer_gpt2/ and longdocs_lite_gpt2/. GPUs: CUDA_VISIBLE_DEVICES (default: all).
 #   E37_EVAL_QUICK=1: a pipeline check (4k loss on 1 row, RULER 2 documents at 4k and 8k only, core 10 documents).
+#   E37_EVAL_NO_OLDLOOP=1: without the 4k check against the old decoding loop (a top-down model takes 16 s per
+#   request there, 4.5-6 h for the 1,300, on one card of a node whose other tests end in 1.3 h: E41 runs 4 and 5,
+#   2026-11-27; its cached decoding is checked in tests/test_concept_tree.py).
 set -uo pipefail
 CK="${1:?checkpoint}"; O="${2:?out dir}"; D="${3:?data dir}"; S3D="${4:-}"
 export PATH="$HOME/.local/bin:$PATH" TOKENIZERS_PARALLELISM=false HF_HUB_DISABLE_IMPLICIT_TOKEN=1 PYTHONUNBUFFERED=1 \
@@ -45,7 +48,8 @@ else
 fi
 # ITEM = NAME|KIND|LENGTH|TASKS|BATCH, longest first (the catalogue model, one L40S: loss 4k-128k ~3,000 s, core
 # ~1,500 s, RULER 4k with the old loop ~900 s; cached RULER: 16k group and 32k task a few hundred s each)
-ITEMS=("longdoc|longdoc|||" "core|core|||" "check_ruler_4096_oldloop|ruler_old|4096|${ALL13}|8")
+ITEMS=("longdoc|longdoc|||" "core|core|||")
+[ -z "${E37_EVAL_NO_OLDLOOP:-}" ] && ITEMS+=("check_ruler_4096_oldloop|ruler_old|4096|${ALL13}|8")
 for g in "${L16[@]}"; do ITEMS+=("ruler_16384_${g##*:}|ruler|16384|${g%%:*}|8"); done
 for t in "${L32[@]}"; do ITEMS+=("ruler_32768_${t}|ruler|32768|${t}|2"); done
 ITEMS+=("ruler_${L8}_all|ruler|${L8}|${ALL13}|8" "ruler_4096_all|ruler|4096|${ALL13}|8")

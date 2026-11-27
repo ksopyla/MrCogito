@@ -15,6 +15,43 @@ exact code version. Tag format: `arch/{feature}` for architecture changes,
 
 ---
 
+## [2026-11-27] - E41: tokens opened from the best concepts of the whole row; reading window by window
+
+**Why:**
+- Walking down the tree to choose which tokens to open fails for single facts: a node of thousands of tokens
+  averages one fact away, and a planted number's success tracked the share of upper nodes followed. Scoring every
+  closed concept of the row for the opening (the tree then bounds the summaries only) restored it.
+- A forward of 1M tokens does not fit a 24 GB card in one piece.
+
+**What changed:**
+- [added] `nn/concept_tree.py` - `tree_read_sparse(scan=True)` (config `tree_scan`): tokens are opened from the best
+  concepts of the whole row, one matrix product per head with a running maximum (the variance term folded into
+  the product), scores in fp32 whatever the model's precision; `scan` passed through `choose_chunk`,
+  `tree_choice`, `tree_read_stream` and the cached decoding.
+- [added] `nn/perceiver_ar_lm.py` - `PerceiverARLM.hidden_states_streamed` (a long row read in windows, default
+  65,536 with 8,192 overlap; the reading layer's keys and values carried from window to window per loop pass,
+  concepts and tree rebuilt per window; `Attention._tree_read_window`, `Attention.stream`). Forward only.
+- [added] `tree_span` (experimental, forward only, off): an opened token brings the tokens after it. Parked: no
+  help on the planted-number test without training.
+- [added] `scripts/run_e33n.py` arms `tree_xl_scan` (`tree_xl` + `tree_scan`), `tree_xl_scan_read` (the same with
+  only the reading layer's attention training, `train_only_params layers.3.attn.`), `tree_np_side`.
+- [added] `scripts/e41_long_needle.py` - `--scan`, `--span`, `--stream_from`, `--window`, `--overlap`;
+  `scripts/e41_needle_battery.sh` (one model on one home card: 32 numbers at 64k, 128k, 256k in one forward, 8 at
+  512k and 1M window by window); `scripts/e41_ck_watch.sh` (copies a screen's checkpoints to the NAS and tests
+  each one); `scripts/e41_rate_screen.sh`.
+- [fixed] `infra/aws/watch_run.sh` - a single failed S3 read no longer ends the watcher once the stage log has
+  been read; `WATCH_SPEED_LINES` for stages that log fewer than 33 lines.
+
+**Impact:**
+- A model with `tree_scan` reads 1M tokens on a 24 GB card in about 6 GB (327 s per text on one RTX 3090).
+- Nothing changes for models without `tree_sparse` / `tree_scan`.
+
+**Tests:** `tests/test_concept_tree.py` (the top-down read against the streamed read with and without the scan,
+streamed reading against the single forward, spans causal and inside the cap), `tests/test_concept_tree_cuda.py`
+(`top_down_scan`, `scan_bounded`).
+
+---
+
 ## [2026-11-27] - E41: the top-down read, rows of 262,144 tokens, wide summaries
 
 **Why:**
