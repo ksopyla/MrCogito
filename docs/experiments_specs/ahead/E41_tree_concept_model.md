@@ -492,6 +492,35 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   Its held-out loss at step 60 is 2.566 (its own rows; no baseline yet). 512k on the released model: 0 of 6.
   A second screen at the cloud run's rate (Muon 1e-3, AdamW 6e-5, constant) is queued on Polonez card 0 for
   06:03 UTC, after the 20-minute cooldown (`Cache/e41/retro/tree_xl128_lr1e-3`).
+- **2026-11-27 06:06 UTC, why walking down the tree loses single facts** (the 128k screen's first checkpoint, 50 steps, on Polonez: 64k 7 of 8, 128k 2 of 8, 256k 0 of 8 with 64
+  followed per level). With 64 followed per level a query follows half of the level-3 nodes of a 64k text, a
+  quarter at 128k and an eighth at 256k, and the needle's success follows those shares. A node of thousands of
+  tokens is a mean over them: one sentence moves its key by a fiftieth of the sentence's own match, less than the
+  spread between nodes, so above the block level the choice by a node's own estimate is close to chance for a
+  single fact. A concept (about 8 tokens) keeps it. So the walk down is the right bound for *summaries* and the
+  wrong tool for *finding tokens*.
+- **2026-11-27 06:10–06:20 UTC, `tree_scan` built** (commits `c450ff67`, `161e71e2`, arm `tree_xl_scan`): the
+  tokens are opened from the best concepts of the whole row, the choice the concept read makes (every closed
+  concept scored; in the top-down read one matrix product per head with a running maximum, the variance term
+  folded into the product: 8 numbers per token of the row, no table); the followed nodes bound the summaries only.
+  In the table, streamed, top-down and cached reads; the top-down read equals the streamed one in the same 18
+  cases with the scan on. Its cost per query grows with the row (unlike the walk down) with a small constant; an
+  index over quantised concept keys (the NCM ladder's codes as an inverted file) is the way to make it flat later.
+  The released model with it, untrained (8 depths, all digits / first token): 64k 3 of 8 / 3 of 8 (the walk down:
+  3 of 8 / 8 of 8); 128k 4 of 8 / 8 of 8 (2 of 8 / 8 of 8). Eight needles do not separate the two.
+- **2026-11-27 06:25 UTC, Polonez: a kernel fault.** `general protection fault ... pagecache_get_page` inside an
+  ext4 write by my second 128k screen (started 06:03:55 UTC on card 0), at about its first checkpoint save. Every
+  GPU job on the machine stalled (all cards at 0 %), the needle test on card 3 is in uninterruptible state and
+  cannot be stopped, and at 05:21 UTC a CPU-only data build had segfaulted there. Cards were at 37–64 °C. My other
+  processes there were stopped by process id (06:32 UTC) and nothing new is started on Polonez until the author
+  has looked (reboot, memory check). Lost: the scan needle test at 256k, the higher-rate screen (22 minutes).
+- **2026-11-27 06:33 UTC, the two reads side by side at 128k rows on Odra:** the walk down (`tree_xl128`, card 0,
+  since 04:53 UTC, a step in about 17 s: it ends about 07:40 UTC) and the scan (`tree_xl128_scan`, card 1, the same
+  rows and rates, started 06:33:13 UTC). The screen at raised rates was stopped for it after one evaluation (the
+  closed-book rows alone at Muon 3e-3: held-out loss 2.1625 at step 120, from 1.93: that rate throws the finished
+  model far off, so the screen needs a gentler one). Every checkpoint (each 50 steps, and step 0) gets the needle
+  test at 64k and 128k with 16 depths on card 2 (`scripts/e41_ck_watch.sh`; results `Cache/e41/evals/tree_xl128*/
+  needle.log` on Odra).
 
 ## Result
 <Filled in after, by experiment-track.>
