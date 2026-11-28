@@ -1250,6 +1250,15 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   numbers (`Cache/ops/queue_lowrecall.sh`). If its long value stays near 0.5 the mix's share is the cause.
 - **2026-11-28 06:56 UTC, run 7's standard release tests started** on Odra cards 2 and 1 (`Cache/e41/release/run7`;
   each worker waits for its card to be idle).
+- **2026-11-28 08:03 UTC, the home pair's planted numbers** (the same 32 texts; digits after the first right at
+  64k / 128k / 256k): without closed-book rows (`xl128_rc_open`) 30 / 25 / 24, with them (`xl128_rc_cut`)
+  28 / 24 / 26; the recall run's weights read the bounded way with the re-rank before the screen 30 / 19 / 2, run 7
+  30 / 24 / 24. The closed-book rows change nothing here either; 180 rows of 128k from the recall run's weights
+  bring the 256k number from 2 to 24-26 of 32, as far as run 7's whole long stage. Models trained from the recall
+  run's weights answer the first digit wrong in about a third of the texts because they put a colon (`:`) or
+  "the" before the number (the same habit RULER's replies show), which the fair score ignores; screens from the
+  released model do not (`gentle`, `xl128_scan_rr_d3e-4`: first digit right 27-32 of 32).
+- **Run 7 read window by window** (`run7_final_stream`): 512k 7 of 8, 1M 2 of 8 (whole number 6 and 1); run 5 6 and 3 of 8 the same way, so past 512k neither keeps the number.
 
 ## Result
 <Filled in after, by experiment-track.>
