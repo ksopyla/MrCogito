@@ -1275,7 +1275,7 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   against 0.42, the recall run 0.27). The loss on the held-out rows is the same (4 rows, the mixes' own). So the
   long stage's mix taught the model to describe instead of copy when a quarter of its rows were planted-fact
   question-and-answer rows; the bounded read and the closed-book rows are cleared (entries above).
-- **2026-11-28 11:15 UTC, run 9: run 8 on the low-recall 256k mix** (`e41-xllr`, branch `e41-run9`; one change
+- **2026-11-28 10:54 UTC, run 9: run 8 on the low-recall 256k mix** (`e41-xllr`, branch `e41-run9`; one change
   against run 8: recipe `data/mix_recipes/m21_mix_xl1_lowrecall.json`, data `s3://.../data/m21mix_xl1_lowrecall/`
   = the same 83 shards with `mix.json` recomputed by the builder's formula (`Cache/ops/make_xl1_lowrecall_mix.py`;
   every source still has the rows it needs: recall_256k 58 of 305); arm `tree_xl_scan_rr_open`, Muon peak 0.003,
