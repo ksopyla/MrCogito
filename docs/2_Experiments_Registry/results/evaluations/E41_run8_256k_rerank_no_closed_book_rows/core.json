@@ -1,0 +1,68 @@
+{
+  "checkpoint": "/opt/dlami/nvme/runs/e33n_m120t_tree_xl_scan_rr_open_muon0.003-xl_tok8.0e9_seed42/long/perceiver_ar_perceiver_H896L3g1s9N128_20261128_025016_tree_xl_scan_rr_open_m120t_long/final",
+  "suite": "core",
+  "lengths": null,
+  "limit": 0,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "max_gen_toks": "task default",
+  "results": {
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.2158703071672355,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.24573378839590443,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.4877946127946128,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.4372895622895623,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "hellaswag": {
+      "alias": "hellaswag",
+      "acc,none": 0.3000398327026489,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.3359888468432583,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "lambada_openai": {
+      "alias": "lambada_openai",
+      "perplexity,none": 51.125221291078674,
+      "perplexity_stderr,none": "N/A",
+      "acc,none": 0.32117213273821077,
+      "acc_stderr,none": "N/A"
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.6245919477693145,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.6164309031556039,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "sciq": {
+      "alias": "sciq",
+      "acc,none": 0.775,
+      "acc_stderr,none": "N/A",
+      "acc_norm,none": 0.704,
+      "acc_norm_stderr,none": "N/A"
+    },
+    "wikitext": {
+      "alias": "wikitext",
+      "word_perplexity,none": 35.658056245989705,
+      "word_perplexity_stderr,none": "N/A",
+      "byte_perplexity,none": 1.9510178477609161,
+      "byte_perplexity_stderr,none": "N/A",
+      "bits_per_byte,none": 0.9642269756703581,
+      "bits_per_byte_stderr,none": "N/A"
+    },
+    "winogrande": {
+      "alias": "winogrande",
+      "acc,none": 0.5185477505919495,
+      "acc_stderr,none": "N/A"
+    }
+  },
+  "seconds": 152.0
+}

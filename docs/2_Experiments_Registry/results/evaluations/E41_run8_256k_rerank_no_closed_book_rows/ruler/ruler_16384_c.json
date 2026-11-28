@@ -1,0 +1,47 @@
+{
+  "checkpoint": "/opt/dlami/nvme/runs/e33n_m120t_tree_xl_scan_rr_open_muon0.003-xl_tok8.0e9_seed42/long/perceiver_ar_perceiver_H896L3g1s9N128_20261128_025016_tree_xl_scan_rr_open_m120t_long/final",
+  "suite": "ruler",
+  "lengths": [
+    16384
+  ],
+  "limit": 100,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "max_gen_toks": "task default",
+  "results": {
+    "16384": {
+      "niah_multikey_1": {
+        "alias": "niah_multikey_1",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.86,
+        "16384_stderr,none": "N/A"
+      },
+      "niah_single_3": {
+        "alias": "niah_single_3",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.28,
+        "16384_stderr,none": "N/A"
+      },
+      "ruler_qa_squad": {
+        "alias": "ruler_qa_squad",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.2275,
+        "16384_stderr,none": "N/A"
+      },
+      "ruler_vt": {
+        "alias": "ruler_vt",
+        "4096,none": -1,
+        "4096_stderr,none": "N/A",
+        "16384,none": 0.002,
+        "16384_stderr,none": "N/A"
+      }
+    }
+  },
+  "mean": {
+    "16384": 0.342375
+  },
+  "seconds": 796.6
+}

@@ -1322,6 +1322,26 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   (0.05) reads RULER's 13 tasks at full scale; if its mean is no better than run 8's (0.25) the next run takes a
   middle share (about 0.12). Both screens are behind run 7 on documents (64k +0.0037, 128k +0.0068): 180 rows of
   128k are not run 7's whole 256k stage.
+- **2026-11-28 11:40 UTC, run 8 ended: without the closed-book rows it is ahead of run 7 on every test** (`e41-xlrro`:
+  node tests in S3 at 11:40 UTC, the node gone by itself, $67.60; the laptop's AWS login lapsed from 08:49 UTC until shortly before 10:50, so
+  the keeper waited and the watcher stopped at 10:41 on "S3 unreadable 2 h", the node unaffected; files in the
+  registry under `E41_run8_256k_rerank_no_closed_book_rows/`). Node tests, the same code on every node:
+
+  | test | recall run | run 7 (a fifth closed-book rows) | run 8 (none) |
+  |---|---|---|---|
+  | long documents 4k / 16k / 32k (nats per token) | 2.0655 / 1.8899 / 1.9040 | 2.0651 / 1.8887 / 1.9033 | 2.0646 / 1.8877 / 1.9021 |
+  | 64k | 1.8811 | 1.8799 | **1.8783** |
+  | 128k | 1.7746 | 1.7525 | **1.7505** |
+  | RULER 13-task mean 4k / 8k / 16k / 32k | .572 / .526 / .405 / .360 | .550 / .502 / .395 / .386 | .561 / .516 / **.414 / .396** |
+  | `niah_single_3` (36-character value) | .97 / .91 / .44 / .59 | .97 / .82 / .11 / .47 | .98 / .95 / .28 / .63 |
+  | `niah_multikey_2` (one pair among many alike) | .73 / .62 / .25 / .13 | .58 / .39 / .31 / .31 | .64 / .45 / .37 / .37 |
+  | LAMBADA perplexity | 50.27 | 50.74 | 51.13 |
+
+  So at full scale the closed-book rows cost a little on every lookup and on documents (the home pair's 0.22 against
+  0.19 pointed the same way, within noise there). Run 8 is the first of our models above the recall run on
+  RULER at 16k and 32k (and above S2's 32k mark, 0.390, on its node); still under it at 4k and 8k. Run 9 (10:54 UTC)
+  is run 8 with the planted-fact rows at 0.05. Run 8's final is on Odra (`Cache/e41/aws_models/xlrro_final`, 11:57
+  UTC); its release tests run on cards 1 and 2, its planted numbers on card 0 (`Cache/ops/queue_run8.sh`).
 
 ## Result
 <Filled in after, by experiment-track.>
