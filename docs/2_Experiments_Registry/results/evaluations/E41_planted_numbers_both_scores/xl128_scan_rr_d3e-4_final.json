@@ -1,0 +1,53 @@
+{
+  "checkpoint": "Cache/e41/retro/xl128_scan_rr_d3e-4/long/perceiver_ar_perceiver_H896L3g1s9N128_20261127_210541/final",
+  "lengths": {
+    "65536": {
+      "on": {
+        "all_digits": 0.875,
+        "first_token": 0.875,
+        "digits_after_first": 1.0,
+        "said_first_instead": {
+          " '": 1,
+          " _": 2,
+          ":": 1
+        },
+        "later_tokens_right": 1.0,
+        "later_tokens": 224,
+        "seconds_per_row": 9.168639831244946,
+        "rows": 32
+      }
+    },
+    "131072": {
+      "on": {
+        "all_digits": 0.78125,
+        "first_token": 1.0,
+        "digits_after_first": 0.78125,
+        "said_first_instead": {},
+        "later_tokens_right": 0.9553571428571429,
+        "later_tokens": 224,
+        "seconds_per_row": 21.41116788238287,
+        "rows": 32
+      }
+    },
+    "262144": {
+      "on": {
+        "all_digits": 0.78125,
+        "first_token": 0.9375,
+        "digits_after_first": 0.8125,
+        "said_first_instead": {
+          " the": 1,
+          ":": 1
+        },
+        "later_tokens_right": 0.96875,
+        "later_tokens": 224,
+        "seconds_per_row": 52.69874756783247,
+        "rows": 32
+      }
+    }
+  },
+  "modes": [
+    "on"
+  ],
+  "depths": 32,
+  "peak_gpu_gb": 8.669808387756348
+}

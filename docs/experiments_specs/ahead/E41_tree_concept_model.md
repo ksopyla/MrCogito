@@ -1013,6 +1013,31 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
 - **2026-11-27 22:53 UTC, the re-rank screen's fourth checkpoint** (step 200): 16 / 11 / 16 of 16 at 64k / 128k /
   256k; held-out loss at step 240 2.5302 (without the re-rank 2.5353). At 256k the four checkpoints read 14, 12,
   15, 16 of 16; at 128k 9, 12, 11, 11.
+- **2026-11-28 01:11 UTC, the re-rank screen's final weights: trained with the re-rank, 26 of 32 numbers at
+  256k** (screen ended 23:45:19 UTC after 360 steps of 128k rows, 47.2M tokens, from the recall run's final; the
+  same 32 texts, Odra card 0, `fair/xl128_scan_rr_d3e-4_final.json`). Digits after the first right, whole number
+  right in brackets:
+
+  | weights | 64k | 128k | 256k |
+  |---|---|---|---|
+  | the same home screen without the re-rank, final | 31 (26) | 22 (22) | 20 (19) |
+  | **the home screen trained with the re-rank, final** | **32 (28)** | **25 (25)** | **26 (25)** |
+  | run 5's final (cloud, 256k rows), its own read | 32 (16) | 23 (14) | 20 (10) |
+  | run 5's final, the re-rank switched on untrained (20:41 entry) | 30 | 25 | 24 |
+
+  Held-out loss on the 128k rows at steps 60, 120, ... 360: 2.5462, 2.5399, 2.5372, 2.5302, 2.5282, 2.5272 with
+  the re-rank against 2.5503, 2.5442, 2.5416, 2.5353, 2.5328, 2.5314 without (0.004 lower at every point). The
+  16-number checkpoint tests at 128k stayed between 9 and 12 of 16 all the way (step 250: 16 / 9 / 15), so the
+  128k length is the screen's weak one and 256k its strong one, as in the plain screen. Reading: training with
+  the re-rank adds to what the untrained switch gave at 256k (24 to 26, against 20 without it) and costs nothing
+  on the rows' loss; run 7 is this arm on the 256k rows.
+- **2026-11-28 01:13 UTC, the long-value tests moved to card 2.** The queue of 23:15 UTC never started: the
+  release tests run back to back on card 0 and `gpu_when_free.sh` only takes a card nothing computes on. Both
+  queues were stopped by process group and restarted on card 2 (`Cache/ops/queue_uuid2.sh`; the training screen
+  that kept card 2 idle for heat has ended; card 2 read 68-69 C under the tests, cards 0 and 1 56-58 C under the
+  release tests, heat guard on at 78 C). Added to the queue: the two home screens' finals (with and without the
+  re-rank), then RULER's two 16k lookups for the recall weights read run 5's way with the re-rank and for both
+  screens.
 
 ## Result
 <Filled in after, by experiment-track.>
