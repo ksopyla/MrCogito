@@ -1191,6 +1191,31 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   04:33 the screen with closed-book rows (`xl128_rc_cut`) started on card 0 at 04:39:02 UTC instead of waiting for
   card 2 (`Cache/ops/queue_cutrows_pair2.sh`; the sequential driver's parent was stopped by its PID, the training
   it had started left running).
+- **2026-11-28 05:28 UTC, run 7 ended: the re-rank at the gentle rate is ahead of the recall run on documents of
+  every length** (`e41-xlrr3`: training done 04:20:12 UTC, node tests done 05:27 UTC, node gone by itself, $62.09;
+  files in the registry under `E41_run7_256k_rerank_gentler_rate/`). Node tests, the same code on every node:
+
+  | test | recall run | run 5 | run 6 (run 5 at a third of the rate) | run 7 (run 6 with the re-rank) |
+  |---|---|---|---|---|
+  | long documents 4k (nats per token) | 2.0655 | 2.0676 | 2.0650 | 2.0651 (-0.0004) |
+  | 16k | 1.8899 | 1.8912 | 1.8895 | 1.8887 (-0.0012) |
+  | 32k | 1.9040 | 1.9069 | 1.9050 | 1.9033 (-0.0007) |
+  | 64k | 1.8811 | 1.8840 | 1.8831 | 1.8799 (-0.0013) |
+  | 128k | 1.7746 | 1.7567 | 1.7573 | **1.7525 (-0.0222)** |
+  | LAMBADA perplexity | 50.27 | 52.74 | 50.30 | 50.74 |
+  | WikiText word perplexity | 35.63 | 35.94 | 35.68 | 35.69 |
+  | RULER 13-task mean 4k / 8k / 16k / 32k | .572 / .526 / .405 / .360 | .555 / .508 / .398 / .362 | .546 / .493 / .393 / .356 | .550 / .502 / .395 / **.386** |
+  | `niah_single_3` (36-character value) | .97 / .91 / .44 / .59 | .98 / .82 / .11 / .38 | .96 / .82 / .13 / .37 | .97 / .82 / .11 / .47 |
+  | `niah_multikey_2` (one pair among many alike) | .73 / .62 / .25 / .13 | .61 / .38 / .29 / .18 | .58 / .33 / .26 / .16 | .58 / .39 / .31 / .31 |
+
+  Against run 6 (the same rate, no re-rank) the re-rank is worth 0.003 at 64k, 0.005 at 128k and 0.030 on RULER's
+  mean at 32k (the lookup among similar pairs 0.16 to 0.31, the long value 0.37 to 0.47, the single number 0.92 to
+  1.00). The long value at 16k stays at 0.11, as the closed-book reading of 02:45 expects of a run that keeps those
+  rows; run 8 (02:47 UTC, the same without them) is the test. Run 7's final is on Odra
+  (`Cache/e41/aws_models/xlrr3_final`, 05:31 UTC); its planted numbers run on card 1
+  (`Cache/ops/queue_run7.sh`), its release tests start when the home pair has left the cards.
+- **Spend, 05:30 UTC:** E41's nodes sum to $479.10 (run 7 $62.09, run 8 $20.72 so far and running); the family's
+  heartbeats $4,205.86 of the launchers' 5000.
 
 ## Result
 <Filled in after, by experiment-track.>

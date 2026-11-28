@@ -1,0 +1,84 @@
+{
+  "checkpoint": "/opt/dlami/nvme/runs/e33n_m120t_tree_xl_scan_rr_muon0.003-xl_tok8.0e9_seed42/long/perceiver_ar_perceiver_H896L3g1s9N128_20261127_212950_tree_xl_scan_rr_m120t_long/final",
+  "suite": "ruler",
+  "lengths": [
+    4096
+  ],
+  "limit": 100,
+  "notes_off": false,
+  "concept_sum_len": -1,
+  "max_gen_toks": "task default",
+  "results": {
+    "4096": {
+      "niah_multikey_1": {
+        "alias": "niah_multikey_1",
+        "4096,none": 0.96,
+        "4096_stderr,none": "N/A"
+      },
+      "niah_multikey_2": {
+        "alias": "niah_multikey_2",
+        "4096,none": 0.58,
+        "4096_stderr,none": "N/A"
+      },
+      "niah_multikey_3": {
+        "alias": "niah_multikey_3",
+        "4096,none": 0.24,
+        "4096_stderr,none": "N/A"
+      },
+      "niah_multiquery": {
+        "alias": "niah_multiquery",
+        "4096,none": 0.56,
+        "4096_stderr,none": "N/A"
+      },
+      "niah_multivalue": {
+        "alias": "niah_multivalue",
+        "4096,none": 0.595,
+        "4096_stderr,none": "N/A"
+      },
+      "niah_single_1": {
+        "alias": "niah_single_1",
+        "4096,none": 1.0,
+        "4096_stderr,none": "N/A"
+      },
+      "niah_single_2": {
+        "alias": "niah_single_2",
+        "4096,none": 1.0,
+        "4096_stderr,none": "N/A"
+      },
+      "niah_single_3": {
+        "alias": "niah_single_3",
+        "4096,none": 0.97,
+        "4096_stderr,none": "N/A"
+      },
+      "ruler_cwe": {
+        "alias": "ruler_cwe",
+        "4096,none": 0.564,
+        "4096_stderr,none": "N/A"
+      },
+      "ruler_fwe": {
+        "alias": "ruler_fwe",
+        "4096,none": 0.21,
+        "4096_stderr,none": "N/A"
+      },
+      "ruler_qa_hotpot": {
+        "alias": "ruler_qa_hotpot",
+        "4096,none": 0.2,
+        "4096_stderr,none": "N/A"
+      },
+      "ruler_qa_squad": {
+        "alias": "ruler_qa_squad",
+        "4096,none": 0.2608333333333333,
+        "4096_stderr,none": "N/A"
+      },
+      "ruler_vt": {
+        "alias": "ruler_vt",
+        "4096,none": 0.01,
+        "4096_stderr,none": "N/A"
+      }
+    }
+  },
+  "mean": {
+    "4096": 0.5499871794871795
+  },
+  "seconds": 796.2
+}
