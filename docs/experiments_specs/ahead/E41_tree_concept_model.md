@@ -1216,6 +1216,40 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   (`Cache/ops/queue_run7.sh`), its release tests start when the home pair has left the cards.
 - **Spend, 05:30 UTC:** E41's nodes sum to $479.10 (run 7 $62.09, run 8 $20.72 so far and running); the family's
   heartbeats $4,205.86 of the launchers' 5000.
+- **2026-11-28 06:07 UTC, run 7's planted numbers** (Odra card 1, the same 32 texts, `fair/run7_final.json`):
+  digits after the first right 30 / 24 / 24 of 32 at 64k / 128k / 256k (whole number 11 / 16 / 15); run 6 (the
+  same rate without the re-rank) 28 / 21 / 18, run 5 32 / 23 / 20. Read window by window: 7 of 8 at 512k (run 5
+  6 of 8); 1M still running. So the re-rank in training is worth 2 / 3 / 6 numbers at 64k / 128k / 256k over run 6,
+  as the home screens showed (26 against 20 at 256k).
+- **2026-11-28 06:51 UTC, the closed-book rows are cleared too.** The home pair from the recall run's true final
+  (180 rows of 128k each, the same rate and re-rank; RULER 16k, 100 documents, replies saved):
+
+  | weights | `niah_single_3` (36-character value) | `niah_multikey_2` | held-out loss (128k rows) |
+  |---|---|---|---|
+  | the recall run, read the bounded way (02:43 entry) | 0.56 | 0.27 | - |
+  | after the screen without closed-book rows (`xl128_rc_open`) | 0.22 | 0.42 | 2.5266 |
+  | after the screen with a fifth closed-book rows (`xl128_rc_cut`) | 0.19 | 0.39 | 2.5277 |
+
+  The long value is lost with and without them (0.56 to 0.22 and 0.19: a difference of three documents in 100),
+  and both screens gain on the lookup among similar pairs (0.27 to 0.42 and 0.39). The 02:45 reading is withdrawn;
+  run 8 still tests what the closed-book rows buy at full scale (documents, the summaries alone). What is left in
+  common: the long stage's data (`m21mix_xl1`, `m21mix_xl128`) and its long rows.
+- **How RULER's long-value replies begin** (16k, the saved replies; `Cache/ops/reply_starts.py`): a right reply
+  starts by copying the needle's colon (": f87f43fd-..."), a wrong one starts describing ("the uuid for ...", "the
+  unique ...", "a special ..."). The share of replies that start with the colon follows the score in every model:
+  released 8 (score 7), the recall run 45 (47), read the bounded way 54 (56), run 5 15 (19), run 6 16 (18), the
+  home pair 20 (22) and 17 (19). The teacher-forced first token of `--value uuid` (01:20 entry) is wrong in 0 of 32
+  for every model, the recall run included, because the true answer begins with the value and every model prefers
+  the colon there: it does not measure this failure, the share of replies starting with the colon does.
+- **2026-11-28 06:56 UTC, the next suspect: the share of planted-fact rows in the long stage's mix.** The recall
+  run's long stage had them at 0.05 (`recall_64k`; with `lookup_64k` and `multihop_64k` 0.20 of question-and-answer
+  rows), the 256k and 128k mixes at 0.25 (with the others 0.36). Their answers follow `Answer:` and a value; the
+  RULER question ends in "... is". Home screen `xl128_lr_open`: `xl128_rc_open` with recipe
+  `data/mix_recipes/m21_mix_xl128_lowrecall.json` (recall rows 0.05, every other source scaled up in proportion,
+  the same shards linked; question-and-answer rows 0.19 in all), Odra card 0, queued behind the pair's planted
+  numbers (`Cache/ops/queue_lowrecall.sh`). If its long value stays near 0.5 the mix's share is the cause.
+- **2026-11-28 06:56 UTC, run 7's standard release tests started** on Odra cards 2 and 1 (`Cache/e41/release/run7`;
+  each worker waits for its card to be idle).
 
 ## Result
 <Filled in after, by experiment-track.>
