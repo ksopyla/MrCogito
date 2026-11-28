@@ -1305,6 +1305,23 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   plain cut to the last 1k 0.155: -0.072 against the mark's +0.030, the released model -0.091); S5's core 45.39
   against 45.7 (BLiMP met). With the summaries off the 64k loss rises 0.063 (run 6 0.052): the summaries are used
   more. Run 9 (the low-recall mix) is the attempt on S2.
+- **2026-11-28 12:05 UTC, the low-recall screen at 32k and on the release documents** (Odra; RULER 100 documents
+  with the replies saved, `Cache/ops/queue_lr_32k.sh`; the release protocol's own-document tests with the memory
+  also switched off, `Cache/ops/queue_lr_docs.sh`, compared by `Cache/ops/docs_pair.py`):
+
+  | test | recall rows at 0.25 (`xl128_rc_open`) | recall rows at 0.05 (`xl128_lr_open`) |
+  |---|---|---|
+  | `niah_single_3` at 32k (36-character value) | 0.56 | **0.72** |
+  | `niah_multikey_2` at 32k (one pair among many alike) | **0.43** | 0.29 |
+  | real documents 64k (55, nats per token) | 2.2864 | 2.2861 (-0.0003, interval -0.0011 to +0.0006) |
+  | real documents 128k (15) | 2.3851 | 2.3853 (+0.0002, interval -0.0016 to +0.0020) |
+
+  The planted-fact rows cost nothing on documents either way; they trade one lookup for the other (at 16k 0.22
+  against 0.61 for the long value, 0.42 against 0.36 for the pair among similar ones; at 32k the trade is larger
+  on the pairs). So the share is a dial between copying a long value and choosing among similar pairs: run 9
+  (0.05) reads RULER's 13 tasks at full scale; if its mean is no better than run 8's (0.25) the next run takes a
+  middle share (about 0.12). Both screens are behind run 7 on documents (64k +0.0037, 128k +0.0068): 180 rows of
+  128k are not run 7's whole 256k stage.
 
 ## Result
 <Filled in after, by experiment-track.>
