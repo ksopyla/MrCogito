@@ -8,16 +8,17 @@
 # This is e33n_run.sh's `long` phase on another mix: the run's folder is seeded beforehand from the laptop (admin
 # profile: the node's role may not copy between S3 folders) with the model it continues, as BOTH trunk/<x>/final
 # and decay/<x>/final, so the runner finds stages 1 and 2 done and starts at `long` from decay's final weights.
-# Usage (launch.sh JOB words): infra/aws/jobs/e41_long.sh [ARM] [TAG] [PEAK] [NEEDLE]
+# Usage (launch.sh JOB words): infra/aws/jobs/e41_long.sh [ARM] [TAG] [PEAK] [NEEDLE] [MIX]
 #   NEEDLE default 1: the planted-number test on the node after the tests; 0 leaves it to the home cards
 #   (scripts/e41_needle_battery.sh reads 1M window by window in 6 GB), so the node stops with its tests.
 #   ARM default tree_xl (also tree_xl_wide); TAG default xl: a word in the run name; PEAK default 0.01: the Muon
 #   peak the stage's rate starts at a tenth of (1e-3, where the 64k stage started; a step holds four rows, 1M
-#   tokens, four times the 64k stage's).
+#   tokens, four times the 64k stage's). MIX default m21mix_xl1: the data mix in s3://BUCKET/data/ (2026-11-28:
+#   m21mix_xl1_lowrecall, the planted-fact recall rows at 0.05 instead of 0.25, the same shards).
 # Results: s3://BUCKET/runs/e41/e33n_m120t_<ARM>_muon<PEAK>-<TAG>_tok8.0e9_seed42/
 set -uo pipefail
 source /etc/mrcogito.env
-ARM="${1:-tree_xl}"; RTAG="${2:-xl}"; PEAK="${3:-0.01}"; NEEDLE="${4:-1}"
+ARM="${1:-tree_xl}"; RTAG="${2:-xl}"; PEAK="${3:-0.01}"; NEEDLE="${4:-1}"; MIX="${5:-m21mix_xl1}"
 # the tests without the old decoding loop: hours for a top-down model (see e37_evals_long.sh)
 export E37_EVAL_NO_OLDLOOP=1
 DST="s3://$MC_BUCKET/runs/e41/e33n_m120t_${ARM}_muon${PEAK}-${RTAG}_tok8.0e9_seed42"
@@ -30,7 +31,8 @@ for ph in trunk decay; do
 done
 GPU=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)
 case "$GPU" in *H100*) export E38_SAVE_EVERY="${E38_SAVE_EVERY:-200}" ;; *) export E38_SAVE_EVERY="${E38_SAVE_EVERY:-100}" ;; esac
-export E38_EXPERIMENT=E41 E38_MIX=m21mix_xl1 E38_TAG="$RTAG" E38_PLAIN_NOTE="on 256k rows" E33N_LONG_STAGE="stage 4"
+case "$MIX" in *lowrecall*) PNOTE="on 256k rows, fewer planted facts";; *) PNOTE="on 256k rows";; esac
+export E38_EXPERIMENT=E41 E38_MIX="$MIX" E38_TAG="$RTAG" E38_PLAIN_NOTE="$PNOTE" E33N_LONG_STAGE="stage 4"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 bash "$HERE/e38_board.sh" 42 "muon:$PEAK" "$ARM"
 RC=$?
@@ -39,7 +41,7 @@ RC=$?
 # continued at 1M through the same top-down read (its shorter lengths are measured at home). After the tests'
 # marker, so a spot interruption here is not relaunched: the results are then measured at home up to 512k.
 RUN="e33n_m120t_${ARM}_muon${PEAK}-${RTAG}_tok8.0e9_seed42"
-R="$MC_DISK/runs/$RUN"; D="$MC_DISK/data/m21mix_xl1"
+R="$MC_DISK/runs/$RUN"; D="$MC_DISK/data/$MIX"
 LONG=$(ls -d "$R"/long/*/final 2>/dev/null | tail -1)
 SEED=$(ls -d "$R"/decay/*/final 2>/dev/null | tail -1)
 if [ "$NEEDLE" = 1 ] && [ -n "$LONG" ] && [ ! -f "$R/needle_long.json" ]; then

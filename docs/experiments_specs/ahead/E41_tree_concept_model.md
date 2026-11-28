@@ -1259,6 +1259,29 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   "the" before the number (the same habit RULER's replies show), which the fair score ignores; screens from the
   released model do not (`gentle`, `xl128_scan_rr_d3e-4`: first digit right 27-32 of 32).
 - **Run 7 read window by window** (`run7_final_stream`): 512k 7 of 8, 1M 2 of 8 (whole number 6 and 1); run 5 6 and 3 of 8 the same way, so past 512k neither keeps the number.
+- **2026-11-28 10:03 UTC, the cause found: the share of planted-fact rows in the long stage's mix.** Home screen
+  `xl128_lr_open` (`xl128_rc_open` with recipe `m21_mix_xl128_lowrecall`: the recall rows at 0.05 instead of 0.25,
+  the other sources scaled up, the same shards; 180 rows of 128k from the recall run's true final; Odra card 0,
+  07:13-09:17 UTC):
+
+  | weights | `niah_single_3` (36-character value) | `niah_multikey_2` | replies starting with ':' | planted numbers 64k / 128k / 256k | held-out loss (4 rows of 128k) |
+  |---|---|---|---|---|---|
+  | the recall run, read the bounded way | 0.56 | 0.27 | 54 | 30 / 19 / 2 (with the re-rank) | - |
+  | recall rows at 0.25 (`xl128_rc_open`) | 0.22 | 0.42 | 20 | 30 / 25 / 24 | 2.5266 |
+  | recall rows at 0.05 (`xl128_lr_open`) | **0.61** | 0.36 | 57 | 30 / 24 / 23 | 2.5280 |
+
+  With the planted-fact rows cut to a fifth the long value is kept (0.61, the recall run 0.56) and the 256k
+  planted number is gained as before (23 against 24 of 32); the lookup among similar pairs gains less (0.36
+  against 0.42, the recall run 0.27). The loss on the held-out rows is the same (4 rows, the mixes' own). So the
+  long stage's mix taught the model to describe instead of copy when a quarter of its rows were planted-fact
+  question-and-answer rows; the bounded read and the closed-book rows are cleared (entries above).
+- **2026-11-28 11:15 UTC, run 9: run 8 on the low-recall 256k mix** (`e41-xllr`, branch `e41-run9`; one change
+  against run 8: recipe `data/mix_recipes/m21_mix_xl1_lowrecall.json`, data `s3://.../data/m21mix_xl1_lowrecall/`
+  = the same 83 shards with `mix.json` recomputed by the builder's formula (`Cache/ops/make_xl1_lowrecall_mix.py`;
+  every source still has the rows it needs: recall_256k 58 of 305); arm `tree_xl_scan_rr_open`, Muon peak 0.003,
+  from the recall run's true final, spot g6e.12xlarge, watcher cap $180; `infra/aws/jobs/e41_long.sh` takes the
+  mix as a fifth word). Marks: the long value at 16k at least 0.45 (run 7 0.11), the 128k documents no worse than
+  run 7 (1.7525) by more than 0.005, RULER's 13-task mean at 32k at least run 7's 0.386.
 
 ## Result
 <Filled in after, by experiment-track.>
