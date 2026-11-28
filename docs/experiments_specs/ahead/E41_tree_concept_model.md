@@ -1282,6 +1282,29 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   from the recall run's true final, spot g6e.12xlarge, watcher cap $180; `infra/aws/jobs/e41_long.sh` takes the
   mix as a fifth word). Marks: the long value at 16k at least 0.45 (run 7 0.11), the 128k documents no worse than
   run 7 (1.7525) by more than 0.005, RULER's 13-task mean at 32k at least run 7's 0.386.
+- **2026-11-28 11:09 UTC, run 7's standard release tests are complete** (the card's protocol, Odra cards 2 and 1,
+  06:56 to 11:09 UTC; registry `E41_run7_256k_rerank_gentler_rate/release_tests/`; table by
+  `Cache/ops/release_table.py run5 run6 run7`):
+
+  | test | released model | run 5 | run 6 | run 7 (run 6 with the re-rank) |
+  |---|---|---|---|---|
+  | real documents, 16k (nats per token, 120 documents) | 2.1257 | 2.1270 | 2.1255 | 2.1238 (-0.0019, interval -0.0051 to +0.0010) |
+  | real documents, 64k (55 documents) | 2.2933 | 2.2892 | 2.2885 | **2.2825 (-0.0108, interval -0.0162 to -0.0055, better on 37 of 55)** |
+  | real documents, 128k (15 documents) | 2.4511 | 2.3810 | 2.3825 | **2.3785 (-0.0726, interval -0.0842 to -0.0609, 15 of 15)** |
+  | cross-model test, 64k spans (bits per byte) | 0.7948 | 0.7934 | 0.7932 | 0.7911 |
+  | RULER 13-task mean, 4k / 8k / 16k / 32k | .488 / .439 / .373 / .319 | .553 / .505 / .403 / .355 | .552 / .495 / .387 / .357 | .548 / .500 / .394 / .375 |
+  | BLiMP (67 sets) | 80.56 | 80.66 | 80.18 | 80.20 |
+  | 7 core tasks | 45.72 | 45.46 | 45.49 | 45.39 |
+  | LAMBADA perplexity | 48.81 | 52.73 | 50.27 | 50.72 |
+
+  Run 7 is the best of our models on long documents: the first whose 64k gain over the released model is clear
+  of noise, the 128k gain the largest (2.3785 against full attention's best of six, 2.421: S4's 128k mark met), the
+  cross-model test the lowest. Against the marks: S1 missed narrowly (64k 2.2825 against 2.281, 16k 2.1238 against
+  2.120); S2 missed (RULER above the released model at every length, under the recall run at 4k-16k, the long
+  value lost as the 10:03 entry explains); S3 missed (summaries alone at 64k 0.227 worse than the full read, the
+  plain cut to the last 1k 0.155: -0.072 against the mark's +0.030, the released model -0.091); S5's core 45.39
+  against 45.7 (BLiMP met). With the summaries off the 64k loss rises 0.063 (run 6 0.052): the summaries are used
+  more. Run 9 (the low-recall mix) is the attempt on S2.
 
 ## Result
 <Filled in after, by experiment-track.>

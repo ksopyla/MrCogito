@@ -1,0 +1,51 @@
+{
+  "model": "Cache/e41/aws_models/xlrr3_final",
+  "new_tokens": 60,
+  "start_tokens": [
+    0
+  ],
+  "sample": {
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "repetition_penalty": 1.1,
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "beam": {
+    "beams": 4,
+    "no_repeat_ngram": 3
+  },
+  "date_utc": "2026-11-28 11:06 UTC",
+  "prompts": [
+    {
+      "prompt": "The capital of France is",
+      "sample": {
+        "0": " Paris, the capital of France, and the capital of France.\n\nThe capital of France is Paris, the capital of France, and the capital of France.\n\nParis is a city that has been growing since 1830, but it is still a city that has a long",
+        "1": " Paris. It is one of the world's most important cities, and is a hub of commerce and culture.\n\nParis is located in the western region of France, in the province of Bordeaux. The capital is known for its rich history, art, and architecture. The city has a",
+        "2": " Paris, the most populous city in France. The capital is located in the central region of the country and is known for its economic and cultural importance.\n\nParis is a vibrant and dynamic city with a rich history and culture. The city is home to a wide range of industries, including manufacturing,"
+      },
+      "beam": " Paris. It is the largest city in the world, with a population of over 100 million people. Paris is known for its rich history, art, and culture, and it is home to some of the world's most famous artists, philosophers, and philosophers.\n\nParis is also"
+    },
+    {
+      "prompt": "In 1905, Albert Einstein published",
+      "sample": {
+        "0": " his famous work on the universe, The Theory of Relativity. This book is a must-read for anyone who wants to understand the universe and how it works.\n\nThe theory of relativity is a set of laws that describes how objects move around the universe. This means that even the smallest object can",
+        "1": " a book called \"On the Origin and Nature of the Universe.\" It was a book that has been very influential in the history of physics and cosmology. It was written by a French physicist, Pierre-Auguste Renan, and published in 1906.\n\nIn 19",
+        "2": " the famous \"Einstein's Theory of Relativity.\" It was a theory that predicts that the speed of light is constant, and that it does not change with time. The theory was criticized by both scientific and political authorities, and it is now generally accepted that it is correct.\n\nOne of the"
+      },
+      "beam": " his famous theory of special relativity, which states that the speed of light is constant and equal to the mass of an object at a given time.\n\nThe theory is based on Einstein's theory of general relativity. General relativity is a branch of physics that studies the motion of objects in space and time"
+    },
+    {
+      "prompt": "def fibonacci(n):",
+      "sample": {
+        "0": "\nreturn fibonacci(n-1) + fibonacci(n-2) + fibonacci(n-3)\n\nTutorial: Fibonacci numbers\n\nWe will use the Fibonacci numbers in our next tutorial.\n\nThis tutorial is designed to help students understand how the Fib",
+        "1": "\nreturn fib(n+1)\n\n# In the 1st book of Pascal's 1st book, the book was written by Pascal in 1640. It is a collection of the most important works of the 20th century. In it Pascal has made",
+        "2": "\ndef fibonacci(n):\nif n <= 0:\nreturn 0\nif n == 1:\nreturn 1\n\nIn the following code, we will create a class called fibonacci and define it in Java. The code is short and simple. We will only"
+      },
+      "beam": "\nfor i in range(1, n + 1):\nif n % i == 0:\nreturn i\nelse:\nfibonacci(i+1)\nend\n\nThe Fibonacci sequence is a series of numbers in which each number is the sum of the two preceding"
+    }
+  ]
+}

@@ -1,0 +1,142 @@
+{
+  "tag": "run7_core7",
+  "model_kind": "perceiver_ar",
+  "model": "Cache/e41/aws_models/xlrr3_final",
+  "tasks": [
+    "arc_challenge",
+    "arc_easy",
+    "hellaswag",
+    "lambada_openai",
+    "piqa",
+    "sciq",
+    "winogrande",
+    "wikitext"
+  ],
+  "num_fewshot": 0,
+  "limit": null,
+  "max_length": 2048,
+  "elapsed_s": 217.36381030082703,
+  "results": {
+    "arc_challenge": {
+      "alias": "arc_challenge",
+      "acc,none": 0.20819112627986347,
+      "acc_stderr,none": 0.011864866118448116,
+      "acc_norm,none": 0.2440273037542662,
+      "acc_norm_stderr,none": 0.012551447627856151
+    },
+    "arc_easy": {
+      "alias": "arc_easy",
+      "acc,none": 0.4852693602693603,
+      "acc_stderr,none": 0.010255329977562138,
+      "acc_norm,none": 0.43813131313131315,
+      "acc_norm_stderr,none": 0.010180937100600149
+    },
+    "hellaswag": {
+      "alias": "hellaswag",
+      "acc,none": 0.30023899621589323,
+      "acc_stderr,none": 0.004574250396870965,
+      "acc_norm,none": 0.3359888468432583,
+      "acc_norm_stderr,none": 0.004713696694131908
+    },
+    "lambada_openai": {
+      "alias": "lambada_openai",
+      "perplexity,none": 50.7178943002457,
+      "perplexity_stderr,none": 2.141321077098486,
+      "acc,none": 0.3236949349893266,
+      "acc_stderr,none": 0.006518555157810343
+    },
+    "piqa": {
+      "alias": "piqa",
+      "acc,none": 0.6267682263329706,
+      "acc_stderr,none": 0.011284653078254844,
+      "acc_norm,none": 0.6169749727965179,
+      "acc_norm_stderr,none": 0.01134208170908282
+    },
+    "sciq": {
+      "alias": "sciq",
+      "acc,none": 0.778,
+      "acc_stderr,none": 0.013148721948877349,
+      "acc_norm,none": 0.706,
+      "acc_norm_stderr,none": 0.014414290540008265
+    },
+    "wikitext": {
+      "alias": "wikitext",
+      "word_perplexity,none": 35.68906101559415,
+      "word_perplexity_stderr,none": "N/A",
+      "byte_perplexity,none": 1.9513349737629855,
+      "byte_perplexity_stderr,none": "N/A",
+      "bits_per_byte,none": 0.9644614578571076,
+      "bits_per_byte_stderr,none": "N/A"
+    },
+    "winogrande": {
+      "alias": "winogrande",
+      "acc,none": 0.5122336227308603,
+      "acc_stderr,none": 0.014048278820405729
+    }
+  },
+  "versions": {
+    "arc_challenge": 1.0,
+    "arc_easy": 1.0,
+    "hellaswag": 1.0,
+    "lambada_openai": 1.0,
+    "piqa": 1.0,
+    "sciq": 1.0,
+    "wikitext": 2.0,
+    "winogrande": 1.0
+  },
+  "n_samples": {
+    "wikitext": {
+      "original": 62,
+      "effective": 62
+    },
+    "winogrande": {
+      "original": 1267,
+      "effective": 1267
+    },
+    "sciq": {
+      "original": 1000,
+      "effective": 1000
+    },
+    "piqa": {
+      "original": 1838,
+      "effective": 1838
+    },
+    "lambada_openai": {
+      "original": 5153,
+      "effective": 5153
+    },
+    "hellaswag": {
+      "original": 10042,
+      "effective": 10042
+    },
+    "arc_easy": {
+      "original": 2376,
+      "effective": 2376
+    },
+    "arc_challenge": {
+      "original": 1172,
+      "effective": 1172
+    }
+  },
+  "lm_eval_config": {
+    "model": "Cache/e41/aws_models/xlrr3_final",
+    "model_args": null,
+    "model_num_parameters": 141506208,
+    "model_dtype": "torch.bfloat16",
+    "model_revision": "main",
+    "model_sha": "",
+    "batch_size": null,
+    "batch_sizes": [
+      64
+    ],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": null,
+    "random_seed": 1234,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  }
+}
