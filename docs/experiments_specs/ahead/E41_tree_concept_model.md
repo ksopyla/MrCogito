@@ -1038,6 +1038,49 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   release tests, heat guard on at 78 C). Added to the queue: the two home screens' finals (with and without the
   re-rank), then RULER's two 16k lookups for the recall weights read run 5's way with the re-rank and for both
   screens.
+- **2026-11-28 01:20 UTC, THIRD CORRECTION: at home, "the recall run" was the released concept-memory model.**
+  The folder every home test and home screen used under that name
+  (`~/dev/MrCogito-eng/Cache/e38_board/e37a_m120t_final` on Odra) was written on 2026-11-17 and holds the released
+  model (sha256 `bdc07023...`); the recall run ended on 2026-11-25 and its final (sha256 `c6348f43...`, S3
+  `runs/e38/e33n_m120t_e37a_muon0.01-recall_tok8.0e9_seed42/long/.../final`) was never on Odra until today
+  (fetched 01:19 UTC to `Cache/e41/aws_models/recall_run_final`). The two configs read alike (they differ in unused
+  defaults and the tokenizer path). Found through the released model's saved RULER replies, which score its
+  long-value lookup at 16k 0.07, not the 0.44 the recall run's node tests give. What it changes:
+  - **Withdrawn: "the bounded read loses the long value" (23:11 entry).** The table's row "the recall run, read run
+    5's way" (0.08 / 0.65) is the released model read run 5's way; its own read scores 0.07 / 0.76 (card files,
+    same documents). The read changes little for those weights. The cloud rows of that table (the recall run's
+    node tests, run 5's) stand.
+  - **Relabelled, numbers unchanged:** in every planted-number table "the recall run, own read" (23 / 4 at 64k /
+    128k) is the released model; the recall run itself was not measured at home. Every home screen (`tree*`,
+    `xl128_*`, the gentle screen, the re-rank screen) started from the released model's final, not the recall
+    run's, so the screens compare with each other and not with the cloud runs, which all started from the recall
+    run's final (seeded from S3, 05:12 entry). The views `recall_as_run5` and `recall_as_run5_rr512` and the
+    long-value queue's `recall_*` names are the released model's weights.
+  - **What the cloud nodes' own files say** (same test code on every node, batch 8; 4k / 8k / 16k / 32k):
+
+    | weights | `niah_single_3` (36-character value) | `niah_multikey_2` (one pair among many alike) | `niah_multiquery` | 13-task mean |
+    |---|---|---|---|---|
+    | released model (card files, home) | .29 / .27 / .07 / .07 | .92 / .84 / .76 / .41 | - | .488 / .439 / .373 / .319 |
+    | the recall run | .97 / .91 / .44 / .59 | .73 / .62 / .25 / .13 | .58 / .59 / .29 / .15 | .572 / .526 / .405 / .360 |
+    | run 4 (256k rows, walk down) | .95 / .82 / .26 / .20 | .57 / .32 / .24 / .05 | .51 / .50 / .35 / .16 | .528 / .467 / .377 / .304 |
+    | run 5 (256k rows, every concept scored) | .98 / .82 / .11 / .38 | .61 / .38 / .29 / .18 | .58 / .68 / .45 / .28 | .555 / .508 / .398 / .362 |
+    | run 6 (run 5 at a third of the rate) | .96 / .82 / .13 / .37 | .58 / .33 / .26 / .16 | .56 / .64 / .41 / .28 | .546 / .493 / .393 / .356 |
+
+    Against the model it started from, the 256k stage loses the long value at 16k and 32k (0.44 to 0.11-0.26, 0.59
+    to 0.20-0.38) and the lookup among similar pairs at 4k and 8k (0.73 to 0.57-0.61, 0.62 to 0.32-0.38), and gains
+    on several questions at once (`niah_multiquery` 16k 0.29 to 0.45, 32k 0.15 to 0.28). With the two losses held
+    at the recall run's level, run 5's mean would be about .564 / .533 / .420 / .374: above the recall run at 8k,
+    16k and 32k and 0.008 under it at 4k (the rest there is `niah_multikey_3`, 0.34 to 0.25). They are nearly the
+    whole RULER gap. The gentler rate does not bring them back (run 6), so it is not the size of the steps.
+  - **The long value is lost at its first token.** Released model, a planted UUID in RULER's wording, the answer
+    scored token by token with the true prefix given (`Cache/e41/evals/uuid/`, 32 texts): the first token is right
+    in 0 of 32 at 16k, 32k and 64k (it says a line break, a quote mark, a colon or "the" instead), and with the
+    first token given every later token is right in 29 / 29 / 26 of 32 (99.7 % of the tokens). RULER's replies
+    agree: 93 of 100 hold no UUID at all ("a special magic uuid. The special magic uuid for ..."). So the place is
+    read; what fails is beginning the value.
+  - **Queued on Odra card 2** (`Cache/ops/queue_recallrun.sh`): the recall run's true final under its own read,
+    run 5's read, and run 5's read with the re-rank: RULER's two 16k lookups with every reply saved, the planted
+    UUID, the planted numbers at 64k-256k.
 
 ## Result
 <Filled in after, by experiment-track.>
