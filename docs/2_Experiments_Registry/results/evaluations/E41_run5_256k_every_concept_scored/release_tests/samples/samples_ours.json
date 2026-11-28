@@ -1,0 +1,51 @@
+{
+  "model": "Cache/e41/aws_models/xls_final",
+  "new_tokens": 60,
+  "start_tokens": [
+    0
+  ],
+  "sample": {
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "repetition_penalty": 1.1,
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "beam": {
+    "beams": 4,
+    "no_repeat_ngram": 3
+  },
+  "date_utc": "2026-11-28 01:58 UTC",
+  "prompts": [
+    {
+      "prompt": "The capital of France is",
+      "sample": {
+        "0": " Paris, the capital of the world. It is the most populous city in Europe, and it has the most visited tourist attractions in Europe. It is the second largest city in France after Paris. The capital is a major port, and it is the main market for the export of all commodities.\n",
+        "1": " Paris. Its very name comes from the French word \"monaco\" which means \"city of men.\"\n\nIn 1498, the king of France, Louis XIV, was forced to flee from the Continent. He was captured by the French army and then fled to the English capital",
+        "2": " Paris, the most important city in France. The capital is located in the middle of a wide stretch of the Seine, which is one of the most beautiful rivers in France.\n\nParis is a major economic and cultural centre of the French nation. It is also a great tourist destination, with"
+      },
+      "beam": " the city of Paris. It is the largest city in the world, with a population of over 100 million people. The capital is located in the heart of the country, and it is one of the most important cities in France.\n\nThe city is known for its rich history and"
+    },
+    {
+      "prompt": "In 1905, Albert Einstein published",
+      "sample": {
+        "0": " his famous work on the theory of relativity. His paper \"On the Relation between the Theory of Relativity and the Standard Model\" is the first definitive document on the subject.\n\nThe first appearance of the new theory of relativity was in 1909 by German physicist Heinrich Heisenberg",
+        "1": " a book on the work of the Japanese physicist in his thesis, \"On the Origin and Evolution of the Masses of Matter,\" which was inspired by the works of Charles D. Rockefeller.\n\nThe thesis stated that matter is a highly elastic, highly malleable material, capable of undergoing both mechanical",
+        "2": " an article on the science of relativity, \"The Relation of the Universe to the Mind.\" He pointed out that the universe, as we know it, is a continuous, ever-changing, and ever-changing thing. This is the reason why the universe is constantly changing.\n\nThe discovery"
+      },
+      "beam": " his famous theory of special relativity, which states that the speed of light is constant and equal to that of light. Einstein's theory has had a profound impact on our understanding of the universe, and it remains one of the most influential theories in the history of physics.\n\nIn this article, we"
+    },
+    {
+      "prompt": "def fibonacci(n):",
+      "sample": {
+        "0": "\nreturn fibonacci(n-1) + fibonacci(n-2) + fibonacci(n-3)\n\nTutorial: Fibonacci\n\nThe Fibonacci numbers are defined as the number of positive integers less than or equal to 1 that are divisible by 5.",
+        "1": "\nif n == 1:\n    return 1\nend if\nprint(\" fibonacci:\", fibonacci(n))\nend if\nfibonacci(n)\n```\ndef fibonacci(n):\n    if n == 1:\n        return 1\n    else:\n        return fib",
+        "2": "\ndef fibonacci(n):\nif n < 0:\n    return 0\nif n == 1:\n    return 1\nreturn fibonacci(n-1) + fibonacci(n-2)\n\nLet's use it to calculate the number of ways to arrange"
+      },
+      "beam": "\n    if n == 0:\n        return 0\n    for i in range(1, n + 1):\n        fib = 0\n        while fib < n:\n            fib = fib + fib % n\n            fib += fib\n        return fib\n    return 1\n\nprint(fibonacci"
+    }
+  ]
+}

@@ -1081,6 +1081,37 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   - **Queued on Odra card 2** (`Cache/ops/queue_recallrun.sh`): the recall run's true final under its own read,
     run 5's read, and run 5's read with the re-rank: RULER's two 16k lookups with every reply saved, the planted
     UUID, the planted numbers at 64k-256k.
+- **2026-11-28 02:01 UTC, run 5's standard release tests are complete** (`scripts/release_evals.sh`, the card's
+  protocol; Odra cards 0 and 1, 22:00 to 02:01 UTC; files in the registry under
+  `E41_run5_256k_every_concept_scored/release_tests/`, the saved replies on Odra in
+  `Cache/e41/release/run5/ruler/`; table by `Cache/ops/release_table.py run5`). Next to the released model's
+  card files (same documents, paired) and the recall run's figures from this spec's scoreboard:
+
+  | test | released model | recall run | run 5 |
+  |---|---|---|---|
+  | real documents, 16k (nats per token on the last 4,096, 120 documents) | 2.1257 | 2.125 | 2.1270 (+0.0013 against released, interval -0.0025 to +0.0048) |
+  | real documents, 64k (55 documents) | 2.2933 | 2.291 | 2.2892 (-0.0041, interval -0.0097 to +0.0016) |
+  | real documents, 128k (15 documents) | 2.4511 | 2.461 | **2.3810** (-0.0702, interval -0.0816 to -0.0581, better on 15 of 15) |
+  | cross-model test, 64k spans (bits per byte, whole document) | 0.7948 | - | 0.7934 |
+  | RULER 13-task mean, 4k / 8k / 16k / 32k | .488 / .439 / .373 / .319 | .567 / .527 / .392 / .362 (its node: .572 / .526 / .405 / .360) | .553 / .505 / .403 / .355 |
+  | BLiMP (67 sets) | 80.56 | 79.9 | 80.66 |
+  | ARC-Easy | 48.95 | - | 48.15 |
+  | 7 core tasks | 45.72 | 46.37 | 45.46 |
+  | LAMBADA perplexity | 48.81 | 50.27 (node) | 52.73 |
+
+  At 64k, with the memory off the loss rises 0.284, with the summaries off 0.045 (released 0.068), and on the
+  summaries alone 0.218, against 0.151 for the plain cut to the last 1k tokens: the summaries alone are still worse
+  than the cut (by 0.067; the released model by 0.090). The home harness and the node agree on run 5's RULER
+  (.553 / - / .403 against .555 / .508 / .398).
+
+  Against the marks: **S1 missed** (16k 2.127 and 64k 2.289 against 2.120 and 2.281: level with the recall run, not
+  0.010 better). **S2 missed** (.553 / .505 / .403 / .355 against .567 / .540 / .439 / .390; above the released
+  model at every length, above the topic index at 4k only). **S3 missed** (summaries alone 0.067 worse than the
+  cut; the mark asks for 0.030 better). **S4 met at 64k** (the model's own read is the bounded one and is level
+  with the flat reads) and 1M is read window by window (3 of 8 numbers). **S5:** BLiMP met, core 45.46 against
+  45.7 (0.24 short; the high starting rate, LAMBADA 52.7). Outside the marks, the stage's own gain: 128k documents
+  0.070 better than the released model on every document, and the planted numbers at 128k-1M.
+  Run 6's set started at 02:01:34 UTC on the same cards.
 
 ## Result
 <Filled in after, by experiment-track.>
