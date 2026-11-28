@@ -1112,6 +1112,57 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   45.7 (0.24 short; the high starting rate, LAMBADA 52.7). Outside the marks, the stage's own gain: 128k documents
   0.070 better than the released model on every document, and the planted numbers at 128k-1M.
   Run 6's set started at 02:01:34 UTC on the same cards.
+- **2026-11-28 02:43 UTC, the recall run's true weights under each read: the bounded read costs nothing.** RULER at
+  16k, 100 documents, at home (Odra card 2, batch 4, replies saved in `Cache/e41/evals/ruler_home/answers_*.jsonl`):
+
+  | weights, read | `niah_single_3` (36-character value) | `niah_multikey_2` (one pair among many alike) |
+  |---|---|---|
+  | the recall run, its own read (its node: 0.44 / 0.25) | 0.47 | 0.27 |
+  | the recall run, read run 5's way (summaries bounded by the walk) | 0.56 | 0.27 |
+  | the recall run, run 5's way with the re-rank | 0.57 | 0.33 |
+  | run 5, its own read (release tests) | 0.19 | 0.24 |
+  | run 5, with the re-rank | 0.18 | 0.29 |
+  | run 5, read the recall run's way | 0.10 | 0.23 |
+
+  The read is cleared: on the weights the cloud runs started from it loses nothing (0.47 to 0.56 on the long
+  value) and the re-rank adds a little among similar pairs (0.27 to 0.33). The long value is lost by what the 256k
+  stage does to the weights (0.56 to 0.19 under the same read).
+- **2026-11-28 02:17 UTC, the place of the long value is opened and not used** (`scripts/e41_needle_why.py --value
+  uuid`, 32 planted UUIDs at 16k and 32k, `Cache/e41/evals/why_uuid/`): for run 5 the value's first token ranks 1
+  (median) among all the row's tokens for the question's last token and its concept ranks 0 by its summary; the
+  place is opened in 2.8 of the 4 passes at 16k (never in 2 of 32 texts), and the best head puts 0.09 of its
+  attention on it. The recall run's weights under the same read: the same ranks, opened in 2.8 passes. So routing
+  is not the difference between the two; what differs is whether the model starts the copy. In RULER's replies a
+  right answer starts with the planted sentence's colon and then the value; run 5 starts with a comma or "the"
+  in 24 of 32 planted texts and with the colon in 7 (22 %, RULER 0.19); the released model with the colon in 3
+  (9 %, RULER 0.07). With the first token given, every model copies the rest (24 to 31 of 32 whole values at
+  16k-64k, 99 % of the tokens).
+- **2026-11-28 02:45 UTC, the closed-book rows are the suspect again** (the 22:35 reading, withdrawn at 23:11 on a
+  comparison that the mislabelled folder made wrong). On a row cut at a level no token is opened, so a planted
+  value cannot be copied and the loss on its tokens teaches the model not to start a copy after such a question.
+  The share of closed-book training and the loss of the long value go together across the runs
+  (`niah_single_3` at 4k / 8k / 16k / 32k, node tests):
+
+  | weights | closed-book rows | `niah_single_3` | `niah_multikey_2` |
+  |---|---|---|---|
+  | the recall run | none | .97 / .91 / .44 / .59 | .73 / .62 / .25 / .13 |
+  | runs 4, 5, 6 (256k stage) | a fifth of 286 steps | .95-.98 / .82 / .11-.26 / .20-.38 | .57-.61 / .32-.38 / .24-.29 / .05-.18 |
+  | run 2 (64k stages 2-3) | two fifths of 6,676 steps | .28 / .15 / .13 / .25 | .40 / .44 / .41 / .17 |
+
+  Not yet separated from the other things those runs share (the tree read in training, the 256k mix). What the
+  closed-book rows bought: the summaries alone at 64k are 0.218 worse than the whole document (released 0.233), so
+  very little.
+- **2026-11-28 02:47:19 UTC, run 8 launched: run 7 without closed-book rows.** Name `e41-xlrro`, branch `e41-run8`
+  frozen at `3069aba4`, arm `tree_xl_scan_rr_open` (every row a bounded read, `tree_row_mix 0.0,1.0,0.0`; the
+  re-rank on; run 7's rate, `PEAK=0.003`, Muon 3e-4 falling to 3e-5; `NEEDLE=0`), S3
+  `runs/e41/e33n_m120t_tree_xl_scan_rr_open_muon0.003-xl_tok8.0e9_seed42`, spot g6e.12xlarge
+  `i-0f76f87e0815db122` (us-east-1c, 14 h cap), keeper `Cache/keepers/e41-xlrro.pid`, watcher with a $180 cap,
+  events `Cache/ops/e41-xlrro_events.log`. Runs 7 and 8 differ in the closed-book rows alone. A laptop DNS failure
+  on the bucket's name (02:45-02:46 UTC) delayed the seeding by two minutes.
+- **2026-11-28 02:47 UTC, the same pair at home from the recall run's true final** (Odra card 2, one after the
+  other, `Cache/ops/queue_cutrows_pair.sh`): `xl128_rc_open` (arm `tree_xl_scan_rr_open`) then `xl128_rc_cut` (arm
+  `tree_xl_scan_rr`), 180 rows of 128k each, Muon 3e-4 to 3e-5, AdamW 2e-5; then RULER's two 16k lookups and the
+  planted numbers for each final. These are the first home screens that start from the recall run.
 
 ## Result
 <Filled in after, by experiment-track.>
