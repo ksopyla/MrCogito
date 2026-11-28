@@ -1,0 +1,51 @@
+{
+  "model": "Cache/e41/aws_models/xls3_final",
+  "new_tokens": 60,
+  "start_tokens": [
+    0
+  ],
+  "sample": {
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "repetition_penalty": 1.1,
+    "seeds": [
+      0,
+      1,
+      2
+    ]
+  },
+  "beam": {
+    "beams": 4,
+    "no_repeat_ngram": 3
+  },
+  "date_utc": "2026-11-28 04:29 UTC",
+  "prompts": [
+    {
+      "prompt": "The capital of France is",
+      "sample": {
+        "0": " Paris, the capital of France, and the capital of France.\n\nThe capital of France is Paris, the capital of France, and the capital of France.\n\nParis is a city that has been growing since 1830, but it is still a city that has a long",
+        "1": " Paris. It is one of the world's most important cities, and is a hub of commerce and culture.\n\nParis is located in the western region of France, in the province of Bordeaux. The capital is known for its rich history, art, and culture, and it has become",
+        "2": " Paris, the most populous city in France. The capital is located in the central region of the country and is known for its economic and cultural importance.\n\nParis is a vibrant and dynamic city with a rich history and a thriving economy. It has been a popular destination for tourists and visitors for centuries"
+      },
+      "beam": " Paris. It is the largest city in the world, with a population of over 100 million people. Paris is known for its rich history, art, and culture, and it is home to some of the world's most famous museums, including the Louvre, the Prado, and"
+    },
+    {
+      "prompt": "In 1905, Albert Einstein published",
+      "sample": {
+        "0": " his famous work on the universe, The Theory of Relativity. This book is a must-read for anyone who wants to understand the universe and how it works.\n\nThe theory of relativity is a set of laws that describes how objects move around the universe. This means that even the smallest object can",
+        "1": " a book called \"On the Origin and Nature of the Universe.\" The book was a great success in the world. In it, he described the laws of physics that govern the universe and then pointed out that the universe was a complex one with many sub-systems.\n\n\"In the end,\"",
+        "2": " the famous \"Einstein's Theory of Relativity.\" It was a theory that predicts that the speed of light is constant, and that it does not change with time. The theory was criticized by both scientific and political authorities, and it is now generally accepted that it is correct.\n\nOne of the"
+      },
+      "beam": " his famous theory of special relativity, which states that the speed of light is the same for all observers at the same time.\n\nThe theory is based on Einstein's theory of general relativity. General relativity is a theory that describes the motion of objects in space and time. It is the study of"
+    },
+    {
+      "prompt": "def fibonacci(n):",
+      "sample": {
+        "0": "\nreturn fibonacci(n-1) + fibonacci(n-2) + fibonacci(n-3)\n\nTutorial: Fibonacci numbers\n\nWe will use the Fibonacci numbers in our next tutorial.\n\nThis tutorial is designed to help students understand how the Fib",
+        "1": "\nreturn fib(n+1)\n\n# In the 1st book of Pascal's 3nd book, the book was written by the mathematician\nLeonhard Euler, who was a student of Euler's at the University of Paris. He\npublished his book in 181",
+        "2": "\ndef fibonacci(n):\nif n <= 0:\nreturn 0\nif n == 1:\nreturn 1\n\nIn the following code, we will create a class called fibonacci and then print the numbers from 1 to 5 using a for loop."
+      },
+      "beam": "\nfor i in range(1, n + 1):\nif n % i == 0:\nreturn i\nelse:\nfibonacci(i+1)\nend\n\nThe Fibonacci sequence is a series of numbers in which each number is the sum of the two preceding"
+    }
+  ]
+}

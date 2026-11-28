@@ -1163,6 +1163,34 @@ and fast multipole codes (far field by moments, opened where it matters); BEST-R
   other, `Cache/ops/queue_cutrows_pair.sh`): `xl128_rc_open` (arm `tree_xl_scan_rr_open`) then `xl128_rc_cut` (arm
   `tree_xl_scan_rr`), 180 rows of 128k each, Muon 3e-4 to 3e-5, AdamW 2e-5; then RULER's two 16k lookups and the
   planted numbers for each final. These are the first home screens that start from the recall run.
+- **2026-11-28 04:33 UTC, run 6's standard release tests are complete** (the card's protocol, Odra cards 0 and 1,
+  02:01 to 04:33 UTC; registry `E41_run6_256k_every_concept_scored_gentler_rate/release_tests/`; table by
+  `Cache/ops/release_table.py run5 run6`):
+
+  | test | released model | run 5 | run 6 (a third of run 5's rate) |
+  |---|---|---|---|
+  | real documents, 16k (nats per token, 120 documents) | 2.1257 | 2.1270 | 2.1255 (-0.0003 against released, interval -0.0036 to +0.0028) |
+  | real documents, 64k (55 documents) | 2.2933 | 2.2892 | 2.2885 (-0.0047, interval -0.0099 to +0.0004) |
+  | real documents, 128k (15 documents) | 2.4511 | 2.3810 | 2.3825 (-0.0686, interval -0.0791 to -0.0572, better on 15 of 15) |
+  | cross-model test, 64k spans (bits per byte) | 0.7948 | 0.7934 | 0.7932 |
+  | RULER 13-task mean, 4k / 8k / 16k / 32k | .488 / .439 / .373 / .319 | .553 / .505 / .403 / .355 | .552 / .495 / .387 / .357 |
+  | BLiMP (67 sets) | 80.56 | 80.66 | 80.18 |
+  | ARC-Easy | 48.95 | 48.15 | 48.70 |
+  | 7 core tasks | 45.72 | 45.46 | 45.49 |
+  | LAMBADA perplexity | 48.81 | 52.73 | 50.27 |
+
+  The gentler rate keeps the whole 128k gain and removes run 5's drift on ordinary short reading (LAMBADA 50.27,
+  the recall run's own figure; WikiText and ARC-Easy back within noise of the released model) at the price already
+  measured on the planted numbers (28 / 21 / 18 against 32 / 23 / 20). Against the marks it stands where run 5
+  does: S1 and S2 missed (level with the recall run on documents to 64k; RULER above the released model at every
+  length, under the recall run at 4k-16k), core 45.49 against S5's 45.7. With the memory off the 64k loss rises
+  0.282, with the summaries off 0.052, on the summaries alone 0.219 (the plain cut to the last 1k: 0.149).
+- **2026-11-28 04:39 UTC, the home pair on two cards.** The screen without closed-book rows (`xl128_rc_open`)
+  started at 03:11:36 UTC on card 2; while the release tests held cards 0 and 1 the heat guard paused it 103 times
+  between 03:54 and 04:25 UTC (card 2 at 78 C, six readings of 79 C; never 80). With cards 0 and 1 free since
+  04:33 the screen with closed-book rows (`xl128_rc_cut`) started on card 0 at 04:39:02 UTC instead of waiting for
+  card 2 (`Cache/ops/queue_cutrows_pair2.sh`; the sequential driver's parent was stopped by its PID, the training
+  it had started left running).
 
 ## Result
 <Filled in after, by experiment-track.>
